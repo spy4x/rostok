@@ -32,9 +32,9 @@ not after understanding the code, not after "figuring out what to do".**
 ### → Create branch + worktree immediately
 
 ```bash
-# ONE COMMAND (run from inside main/ worktree):
-git -C .. worktree add -b <type>/<short-description> <type>/<short-description> main
-cd ../<type>/<short-description>
+# ONE COMMAND: create branch+worktree from main and cd into it
+git worktree add -b <type>/<short-description> <type>/<short-description> main
+cd <type>/<short-description>
 ```
 
 After creation, run `pwd` to confirm you're in the new directory, and `git
@@ -43,34 +43,29 @@ branch --show-current` to confirm you're on the new branch.
 ### Worktree directory layout
 
 ```
-homelab/                          ← bare repo (.git data lives here)
-├── .git/config                   ← bare repo config
-├── HEAD, objects/, refs/         ← git internals (shared)
-├── main/                         ← worktree for main branch
-│   ├── stacks/                   # Service catalog (reusable)
-│   │   └── {service}/
-│   │       ├── compose.yml
-│   │       ├── backup.ts
-│   │       └── README.md
-│   ├── servers/                  # Server-specific configs + .env
-│   ├── scripts/                  # TypeScript automation
-│   ├── ansible/                  # Ansible playbooks
-│   ├── deno.jsonc                # Deno configuration
-│   └── AGENTS.md                 ← this file (present in every worktree)
+homelab/                          ← main worktree + .git/
+├── .git/                         ← git data (shared across all worktrees)
+├── stacks/                       # Service catalog (reusable)
+│   └── {service}/
+│       ├── compose.yml
+│       ├── backup.ts
+│       └── README.md
+├── servers/                      # Server-specific configs + .env
+├── scripts/                      # TypeScript automation
+├── ansible/                      # Ansible playbooks
+├── deno.jsonc                    # Deno configuration
+├── AGENTS.md                     ← this file
 ├── feat/add-dark-mode/           ← worktree for feature branch
-│   ├── .git                      ← pointer to ../worktrees/add-dark-mode
+│   ├── .git                      ← pointer to ../.git/worktrees/add-dark-mode
 │   ├── stacks/
 │   ├── servers/
 │   └── ...
 ├── fix/backup-errors/            ← worktree for fix branch
-└── worktrees/                    ← git worktree admin data
-    ├── main/
-    └── add-dark-mode/
+└── ...
 ```
 
-**Every branch gets its own sibling directory.** Worktrees live **alongside**
-each other under the bare repo root (unlike antonshubin.com which uses a
-standard clone layout). You `cd` into that directory and do ALL work there.
+**Every branch gets its own subdirectory.** Worktrees live **inside** the
+repo directory. You `cd` into that subdirectory and do ALL work there.
 
 ### Branch naming convention (Angular)
 
@@ -103,15 +98,15 @@ is ALWAYS:
 
 ```bash
 # STEP 1 (mandatory, no exceptions): create worktree
-git -C .. worktree add -b feat/my-task feat/my-task main
-cd ../feat/my-task
+git worktree add -b feat/my-task feat/my-task main
+cd feat/my-task
 
 # STEP 2: now explore and make changes
 ```
 
 ### Rules
 
-- The bare repo is at `..` (parent directory) from any worktree
+- The `.git` directory is at the repo root (shared across all worktrees)
 - Branch names with `/` create subdirectories (e.g., `fix/foo` → `fix/foo/`)
 - Flat names create flat directories (e.g., `feat-foo` → `feat-foo/`)
 - You cannot check out the same branch in two worktrees at once — always
@@ -231,11 +226,11 @@ gh pr merge --squash --delete-branch
 gh pr merge --rebase --delete-branch
 ```
 
-Then switch back to `main` worktree and remove the worktree + branch:
+Then switch back to the repo root and remove the worktree + branch:
 
 ```bash
-cd ../main
-git worktree remove ../<type>/<short-description>
+cd $(git rev-parse --show-toplevel)
+git worktree remove <type>/<short-description>
 git branch -d <type>/<short-description>
 ```
 
