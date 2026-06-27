@@ -1,66 +1,123 @@
-# AGENTS.md - Development Guidelines for Agentic Coding
+# AGENTS.md — Dev Guidelines (Strict Git Flow)
 
-This file contains guidelines for agentic coding agents (including AI assistants) working in this homelab infrastructure repository.
+Guidelines for AI agents working on this homelab infrastructure repository.
+This project uses **git worktrees** with a **strict branch-per-feature** flow.
+Multiple AI agents may work on different features simultaneously, so breaking
+the rules causes conflicts.
 
-## 🏗️ Git Worktree Structure (IMPORTANT)
+---
 
-This repo uses **git worktrees** — every branch gets its own directory under the same root, sharing one `.git`.
+## 🔴 IMMUTABLE RULE: Branch + Worktree FIRST
 
-```
-homelab/                          ← bare repo (contains .git data)
-├── main/                         ← worktree for main branch
-├── fix/backup-errors/            ← worktree for fix branch
-├── feat-my-feature/              ← worktree for feature branch
-└── ...
-```
+**This is the single most important rule. Violations cause merge conflicts
+between parallel AI workers.**
 
-### ⚠️ MANDATORY: Create a new worktree for every session
+The very first action you take when given any task involving code changes
+MUST be to create a new branch and worktree. You MUST NOT open any files,
+read any source code, explore the codebase, or make any changes in the
+**current directory first**. You work inside the new worktree.
 
-When you receive a task that requires code changes, you **MUST** create a new branch and worktree instead of modifying the current directory directly. The only exception is trivial changes (typo fixes, README edits).
+### Why this rule is absolute
+
+This repo may have another AI agent working on a different feature in the
+`main` worktree at the same time. If you start editing files in `main`,
+you will either:
+- Clobber their in-progress changes
+- Force them to resolve merge conflicts
+- Lose your own work when their agent commits
+
+**Creating the branch first is your very first action — not after exploring,
+not after understanding the code, not after "figuring out what to do".**
+
+### → Create branch + worktree immediately
 
 ```bash
-# 1. Create a new branch + worktree (from main)
-git -C .. worktree add -b feat/my-thing feat/my-thing main
-
-# 2. Do ALL work inside the new worktree
-cd ../feat/my-thing
-
-# 3. Commit and push as normal
-git add -A && git commit -m "feat(my-thing): add the thing"
-git push -u origin feat/my-thing
+# ONE COMMAND (run from inside main/ worktree):
+git -C .. worktree add -b <type>/<short-description> <type>/<short-description> main
+cd ../<type>/<short-description>
 ```
 
-**Why:** This allows parallel OpenHands sessions to work on different branches simultaneously without conflicts.
+After creation, run `pwd` to confirm you're in the new directory, and `git
+branch --show-current` to confirm you're on the new branch.
 
-**Rules:**
+### Worktree directory layout
+
+```
+homelab/                          ← bare repo (.git data lives here)
+├── .git/config                   ← bare repo config
+├── HEAD, objects/, refs/         ← git internals (shared)
+├── main/                         ← worktree for main branch
+│   ├── stacks/                   # Service catalog (reusable)
+│   │   └── {service}/
+│   │       ├── compose.yml
+│   │       ├── backup.ts
+│   │       └── README.md
+│   ├── servers/                  # Server-specific configs + .env
+│   ├── scripts/                  # TypeScript automation
+│   ├── ansible/                  # Ansible playbooks
+│   ├── deno.jsonc                # Deno configuration
+│   └── AGENTS.md                 ← this file (present in every worktree)
+├── feat/add-dark-mode/           ← worktree for feature branch
+│   ├── .git                      ← pointer to ../worktrees/add-dark-mode
+│   ├── stacks/
+│   ├── servers/
+│   └── ...
+├── fix/backup-errors/            ← worktree for fix branch
+└── worktrees/                    ← git worktree admin data
+    ├── main/
+    └── add-dark-mode/
+```
+
+**Every branch gets its own sibling directory.** Worktrees live **alongside**
+each other under the bare repo root (unlike antonshubin.com which uses a
+standard clone layout). You `cd` into that directory and do ALL work there.
+
+### Branch naming convention (Angular)
+
+```
+<type>/<short-kebab-description>
+```
+
+| Type        | Use when                              |
+| ----------- | ------------------------------------- |
+| `feat/`     | New feature or enhancement            |
+| `fix/`      | Bug fix                               |
+| `refactor/` | Code restructuring (no behaviour change) |
+| `chore/`    | Tooling, deps, CI, config             |
+| `docs/`     | Documentation only                    |
+| `style/`    | Formatting, styling, design tweaks    |
+| `ci/`       | CI/CD pipeline changes                |
+
+Examples:
+```
+feat/add-dark-mode
+fix/backup-errors
+refactor/extract-backup-utils
+chore/upgrade-deno-version
+```
+
+### What about exploration / understanding the codebase first?
+
+NO. Create the branch first. Then explore inside the worktree. The sequence
+is ALWAYS:
+
+```bash
+# STEP 1 (mandatory, no exceptions): create worktree
+git -C .. worktree add -b feat/my-task feat/my-task main
+cd ../feat/my-task
+
+# STEP 2: now explore and make changes
+```
+
+### Rules
+
 - The bare repo is at `..` (parent directory) from any worktree
 - Branch names with `/` create subdirectories (e.g., `fix/foo` → `fix/foo/`)
 - Flat names create flat directories (e.g., `feat-foo` → `feat-foo/`)
-- You cannot check out the same branch in two worktrees at once — always create a fresh branch for new work
+- You cannot check out the same branch in two worktrees at once — always
+  create a fresh branch for new work
 
-### 🔄 Pull Requests & Issues
-
-**Creating PRs:** After committing and pushing changes, always create a PR. Use the GitHub CLI:
-```bash
-gh pr create --fill
-```
-
-**Commits:** Always add `Co-authored-by: openhands <openhands@all-hands.dev>` to commit messages. This applies to initial commits and any follow-up commits on a PR.
-
-**Linking Issues:** If the task references an existing GitHub issue, include `Fixes #N` or `Closes #N` in the PR body so the issue auto-closes on merge.
-
-**Merge Strategy:**
-- **Squash merge** (`gh pr merge --squash`): Use when all commits in a PR relate to a single change/fix/feature. Default choice.
-- **Rebase merge** (`gh pr merge --rebase`): Use when commits are independent/distinct changes that should remain separate in history.
-
-### ✅ Deploy & Verify (REQUIRED)
-
-**Before committing or reporting "done", you MUST:**
-1. Deploy the changed service(s) to production: `deno task deploy <server> [stack]`
-2. Verify the service starts, stays healthy, and the fix/feature actually works as expected
-3. Only after verification passes, commit and push
-
-This applies to any change that affects deployed services (compose files, scripts, configs). Trivial doc-only changes can skip this step.
+---
 
 ## 📝 Commit Convention (Angular-adapted)
 
@@ -82,6 +139,107 @@ fix(gatus): correct Healthchecks endpoint URL
 refactor: drop freshrss, roundcube stacks
 chore(deps): bump traefik to v3.3
 ```
+
+### Commit message requirements
+
+1. Every commit MUST include the co-author trailer:
+   ```
+   Co-authored-by: openhands <openhands@all-hands.dev>
+   ```
+2. Keep commits small and focused (one logical change per commit).
+3. Run `deno task check` before every commit — all checks MUST pass.
+
+---
+
+## 🔄 Pull Requests & Issues
+
+### Creating a PR
+
+After committing and pushing your branch, create a pull request:
+
+```bash
+gh pr create --fill
+```
+
+If the task references a GitHub issue, include `Fixes #N` or `Closes #N` in
+the PR body so the issue auto-closes on merge. If no issue exists yet, create
+one first:
+
+```bash
+gh issue create --title "<type>(<scope>): <summary>" --body "<description>"
+```
+
+If an issue already exists for this feature, link it. Use the same Angular
+convention for the issue title as you would for a commit.
+
+### Updating an existing PR
+
+Never create a second PR for the same task. Push additional commits to the
+same branch and the PR updates automatically.
+
+### Deploy & Verify (REQUIRED)
+
+**Before committing or reporting "done", you MUST:**
+1. Deploy the changed service(s) to production: `deno task deploy <server> [stack]`
+2. Verify the service starts, stays healthy, and the fix/feature actually works as expected
+3. Only after verification passes, commit and push
+
+This applies to any change that affects deployed services (compose files, scripts, configs). Trivial doc-only changes can skip this step.
+
+---
+
+## ✅ Pre-Commit Checklist (MANDATORY)
+
+Before EVERY commit, run:
+
+```bash
+deno task check
+```
+
+This runs `fmt + lint + type-check + tests`. All checks MUST pass before you
+commit. If they don't, fix the issues first.
+
+---
+
+## 🧹 Merge Protocol (Human-in-the-Loop)
+
+**After all changes are done and the PR is created, you DO NOT merge
+yourself. You STOP and wait.**
+
+### What you do after pushing + creating PR
+
+1. Stay in the worktree/branch you created.
+2. Report to the human with a summary of what was done and a link to the PR.
+3. Wait for the human to review the PR and give you instructions.
+
+### When the human says "merge" (or "merge it")
+
+Decide the merge strategy:
+
+| Condition                                                  | Strategy     |
+| ---------------------------------------------------------- | ------------ |
+| All commits relate to the same feature/issue/fix           | **Squash**   |
+| Some commits fix independent things that should stay apart | **Rebase**   |
+
+Then:
+
+```bash
+# Squash (default choice — all commits for one feature):
+gh pr merge --squash --delete-branch
+
+# Rebase (commits have independent meaning):
+gh pr merge --rebase --delete-branch
+```
+
+Then switch back to `main` worktree and remove the worktree + branch:
+
+```bash
+cd ../main
+git worktree remove ../<type>/<short-description>
+git branch -d <type>/<short-description>
+```
+
+This prevents stale worktree directories from accumulating.
 
 ## 🚀 Quick Start Commands
 
@@ -392,33 +550,6 @@ curl -s -X POST "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/dns_records
 - Home: uses cloud tunnel or dynamic DNS — check existing Cloudflare records
 
 **Token**: stored in `.env.root` as `CLOUDFLARE_API_TOKEN` (encrypted in `.env.root.age`). Read-only + DNS edit scope.
-
-## 📁 Project Structure
-
-```
-homelab/                         ← bare repo (parent of all worktrees)
-├── main/                        ← YOUR CURRENT WORKTREE
-│   ├── stacks/                  # Service catalog (reusable)
-│   │   └── {service}/
-│   │       ├── compose.yml
-│   │       ├── backup.ts
-│   │       └── README.md
-│   ├── servers/                 # Server-specific configs
-│   ├── scripts/                 # TypeScript automation
-│   ├── ansible/                 # Ansible playbooks
-│   ├── deno.jsonc               # Deno configuration
-│   └── AGENTS.md                ← this file (in every worktree)
-├── fix/backup-errors/           # Another worktree for fix branch
-└── feat-*/                      # More worktrees for parallel work
-```
-
-## 🔧 Development Workflow
-
-1. **Create worktree**: `git -C .. worktree add -b feat/my-thing feat/my-thing main && cd ../feat/my-thing`
-2. **Make changes**: Follow existing patterns and conventions
-3. **After changes**: Run `deno task fix` to auto-format and lint
-4. **Final check**: Run `deno task check` to verify all passes
-5. **Deploy & verify**: Before committing, deploy to the target server and verify the changed functionality actually works. Push only after confirming services are healthy and behaving as expected.
 
 ## 🚨 Error Handling Patterns
 
