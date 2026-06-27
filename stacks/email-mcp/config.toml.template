@@ -1,0 +1,56 @@
+# Rendered by stacks/email-mcp/before.deploy.ts from EMAIL_MCP_* env vars.
+# Source: https://github.com/ai-zerolab/mcp-email-server — mcp_email_server/config.py
+# Multi-account via [[emails]] array. Per-account credentials nest under
+# [emails.incoming] (IMAP) and [emails.outgoing] (SMTP).
+
+# --- Account: primary (anton@antonshubin.com) ---
+[[emails]]
+account_name = "personal"
+full_name = "Anton Shubin"
+email_address = "${EMAIL_MCP_PRIMARY_USER}"
+
+[emails.incoming]
+user_name = "${EMAIL_MCP_PRIMARY_USER}"
+password = "${EMAIL_MCP_PRIMARY_PASSWORD}"
+host = "host.docker.internal"
+port = 1993
+use_ssl = true
+start_ssl = false
+verify_ssl = false
+
+[emails.outgoing]
+user_name = "${EMAIL_MCP_PRIMARY_USER}"
+password = "${EMAIL_MCP_PRIMARY_PASSWORD}"
+host = "host.docker.internal"
+port = 1587
+use_ssl = false
+start_ssl = true
+verify_ssl = false
+
+# --- Account: neatsoft (anton@neatsoft.dev) ---
+[[emails]]
+account_name = "neatsoft"
+full_name = "Anton Shubin (Neatsoft)"
+email_address = "${EMAIL_MCP_NEATSOFT_USER}"
+
+[emails.incoming]
+user_name = "${EMAIL_MCP_NEATSOFT_USER}"
+password = "${EMAIL_MCP_NEATSOFT_PASSWORD}"
+host = "host.docker.internal"
+port = 1993
+use_ssl = true
+start_ssl = false
+verify_ssl = false
+
+[emails.outgoing]
+user_name = "${EMAIL_MCP_NEATSOFT_USER}"
+password = "${EMAIL_MCP_NEATSOFT_PASSWORD}"
+host = "host.docker.internal"
+port = 1587
+use_ssl = false
+start_ssl = true
+verify_ssl = false
+
+# --- Behaviour (top-level scalars) ---
+# Attachments disabled — enable explicitly if a tool needs them.
+enable_attachment_download = false

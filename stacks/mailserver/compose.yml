@@ -45,6 +45,9 @@ services:
       - ${VOLUMES_PATH}/mailserver/mail-logs:/var/log/mail:z
       - ${VOLUMES_PATH}/mailserver/config:/tmp/docker-mailserver:z
       - ${VOLUMES_PATH}/mailserver/config/ssl:/etc/letsencrypt/live/mail.${DOMAIN}:ro,z
+      # Persistent fail2ban policy (whitelist LAN / docker / WireGuard).
+      # Mounted read-only at /etc/fail2ban/jail.local — overrides defaults.
+      - ./fail2ban/jail.local:/etc/fail2ban/jail.local:ro,z
       - /etc/localtime:/etc/localtime:ro,z
     environment:
       # Basic settings
