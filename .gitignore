@@ -23,3 +23,7 @@ key.txt
 
 .playwright-mcp/
 todos.txt.playwright-mcp/
+
+# Rendered secrets (do not commit; rendered by before.deploy.ts)
+stacks/*/config.toml
+stacks/*/*.rendered

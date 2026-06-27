@@ -5,6 +5,7 @@ networks:
 services:
   # Email MCP — IMAP + SMTP for AI assistants (OpenWebUI).
   # Source: https://github.com/ai-zerolab/mcp-email-server (BSD-3-Clause)
+  # Multi-account via TOML config (see config.toml.template + before.deploy.ts).
   # Speaks Streamable HTTP on port 9557. Open WebUI connects via TOOL_SERVER_CONNECTIONS.
   email-mcp:
     container_name: hl-email-mcp
@@ -21,33 +22,11 @@ services:
       - MCP_ALLOWED_ORIGINS=http://hl-email-mcp:*,http://hl-open-webui:*,http://localhost:*,http://127.0.0.1:*
       - MCP_ENABLE_DNS_REBINDING_PROTECTION=true
 
-      # --- Account: primary (anton@antonshubin.com) ---
-      - MCP_EMAIL_SERVER_ACCOUNT_NAME=primary
-      - MCP_EMAIL_SERVER_FULL_NAME=Anton Shubin
-      - MCP_EMAIL_SERVER_EMAIL_ADDRESS=${EMAIL_MCP_PRIMARY_USER}
-      - MCP_EMAIL_SERVER_PASSWORD=${EMAIL_MCP_PRIMARY_PASSWORD}
-
-      # --- IMAP via SSH tunnel (cloud-tunnel) ---
-      - MCP_EMAIL_SERVER_IMAP_HOST=host.docker.internal
-      - MCP_EMAIL_SERVER_IMAP_PORT=1993
-      - MCP_EMAIL_SERVER_IMAP_SSL=true
-      - MCP_EMAIL_SERVER_IMAP_START_SSL=false
-      - MCP_EMAIL_SERVER_IMAP_VERIFY_SSL=false
-
-      # --- SMTP via SSH tunnel (cloud-tunnel) ---
-      - MCP_EMAIL_SERVER_SMTP_HOST=host.docker.internal
-      - MCP_EMAIL_SERVER_SMTP_PORT=1587
-      - MCP_EMAIL_SERVER_SMTP_SSL=false
-      - MCP_EMAIL_SERVER_SMTP_START_SSL=true
-      - MCP_EMAIL_SERVER_SMTP_VERIFY_SSL=false
-
-      # --- Behaviour ---
-      # Docker Mailserver uses "Sent" (not INBOX.Sent). Auto-detect usually works,
-      # but setting explicitly avoids surprises.
-      - MCP_EMAIL_SERVER_SENT_FOLDER_NAME=Sent
-      - MCP_EMAIL_SERVER_SAVE_TO_SENT=true
-      # Attachments disabled by default — enable explicitly if needed (see README).
-      - MCP_EMAIL_SERVER_ENABLE_ATTACHMENT_DOWNLOAD=false
+      # --- Multi-account config (rendered by before.deploy.ts from EMAIL_MCP_* env) ---
+      - MCP_EMAIL_SERVER_CONFIG_PATH=/config.toml
+    volumes:
+      # Rendered by before.deploy.ts; mode 0600 on disk.
+      - ./config.toml:/config.toml:ro
     deploy:
       resources:
         limits:
