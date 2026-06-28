@@ -20,7 +20,7 @@ wraps a self-hosted protocol server.
 | Tool                  | Description                                              |
 | --------------------- | -------------------------------------------------------- |
 | `list_accounts`       | List configured accounts                                 |
-| `list_mailboxes`      | List IMAP folders (INBOX, Sent, Drafts, Trash, â€¦)        |
+| `list_mailboxes`      | List IMAP folders (INBOX, Sent, Drafts, Trash, â€¦)      |
 | `get_mailbox_status`  | Unread count + total per folder                          |
 | `search_emails`       | Search by sender, subject, body, date range              |
 | `get_emails_content`  | Read full email (body + headers + attachment list)       |
@@ -31,7 +31,7 @@ wraps a self-hosted protocol server.
 | `delete_email`        | Trash or hard-delete                                     |
 | `mark_email`          | Read/unread, flag/unflag                                 |
 | `save_draft`          | Save draft to Drafts folder                              |
-| `download_attachment` | Download attachment (disabled by default â€” see below)    |
+| `download_attachment` | Download attachment (disabled by default â€” see below)  |
 
 ## Setup
 
@@ -158,7 +158,7 @@ both pointed at the same mailserver via the homelab→cloudlab SSH tunnel.
 | Symptom                              | Cause                                  | Fix                                                               |
 | ------------------------------------ | -------------------------------------- | ----------------------------------------------------------------- |
 | `535 Authentication failed`          | Wrong password or missing account      | `setup email update anton@antonshubin.com`                        |
-| `Connection refused` on port 993/587 | Firewall blocks home â†’ cloud           | Check cloud security group                                        |
+| `Connection refused` on port 993/587 | Firewall blocks home â†’ cloud         | Check cloud security group                                        |
 | `CERTIFICATE_VERIFY_FAILED`          | Wrong cert or clock skew               | Verify `mail.${DOMAIN}` resolves to cloud, check `date`           |
 | Tools not showing in Open WebUI      | TOOL_SERVER_CONNECTIONS misconfigured  | Check JSON syntax; restart Open WebUI container                   |
 | 403 from MCP                         | DNS rebinding protection blocks origin | Add host to `MCP_ALLOWED_HOSTS` / origin to `MCP_ALLOWED_ORIGINS` |
