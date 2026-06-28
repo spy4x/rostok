@@ -12,12 +12,13 @@ log:
   level: info
 
 # Session — stored in Redis (survives restarts)
+# Long durations so you can move between services without re-authenticating
 session:
   name: authelia_session
   secret: ${AUTHELIA_SESSION_SECRET}
-  expiration: 1h
-  inactivity: 5m
-  remember_me: 1d
+  expiration: 24h
+  inactivity: 2h
+  remember_me: 30d
   cookies:
     - domain: "antonshubin.com"
       authelia_url: https://auth.antonshubin.com
