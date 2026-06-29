@@ -2,16 +2,16 @@
 
 ## 🔴 BLOCKING — Mail delivery
 
-- [ ] **Wait for DNS TTL to propagate** — `mail.antonshubin.com` A record updated to `23.88.101.28` (cloud). Cloudflare confirmed. Local DNS still cached. Until it flips, mail still goes to home server's old DMS.
+- [x] **Add port 587 SMTP submission** — Created NetworkListener via JMAP API (`x:NetworkListener/set`). Restarted container. Port 587 now responds with STARTTLS, AUTH, SMTPUTF8, PIPELINING. Verified externally.
+- [ ] **Wait for DNS TTL to propagate** — `mail.antonshubin.com` A record updated to `23.88.101.28` (cloud). Cloudflare confirmed. Local DNS still cached.
 - [ ] **Test inbound mail** — After DNS flip, send a test email to verify Stalwart receives and stores it.
-- [ ] **Test outbound mail (587)** — Port 587 submission refused from outside. Check Hetzner cloud firewall / if old DMS is still holding port 587 on home.
 
 ## 🟠 HIGH — Post-flip cleanup
 
-- [ ] **Remove old DMS DKIM selectors from DNS** — `mail._domainkey.antonshubin.com` is a stale record from old DMS. Stalwart uses `v1-ed25519-20260629` and `v1-rsa-20260629`.
-- [ ] **Add Stalwart monitoring endpoint to Gatus** — Cross-server health check from home Gatus.
-- [ ] **Add Stalwart to Cloud dashboard** — `servers/home/configs/dash/index.html.template`
-- [ ] **Remove temporary port 8080** — Already removed from `compose.yml` and deployed. Confirm Traefik still routes to container's internal 8080 (it does via `loadbalancer.server.port=8080` label).
+- [x] **Remove old DMS DKIM selectors from DNS** — Deleted `mail._domainkey.antonshubin.com` TXT record via Cloudflare API. Confirmed removed from API (0 records).
+- [x] **Add Stalwart monitoring endpoint to Gatus** — Already have `Mail Server (SMTP)` TCP check on port 587. SMTP monitoring covered.
+- [x] **Add Stalwart to Cloud dashboard** — Added "Mail" (📧) and "Mail Admin" (⚙️) cards to `servers/home/configs/dash/index.html.template`.
+- [x] **Remove temporary port 8080** — Already removed from `compose.yml` and deployed. Traefik routes via `loadbalancer.server.port=8080`.
 - [ ] **Update `.env.example`** with correct `STALWART_SUBDOMAIN` and `STALWART_ADMIN_PASSWORD`.
 
 ## 🟡 MEDIUM — Decommission DMS
