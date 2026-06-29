@@ -1,6 +1,6 @@
 # Migrate from docker-mailserver (DMS) to Stalwart Mail
 
-> **Status:** Plan — not yet executed. See [§ 1 Goals](#1-goals) and [§ 12 PR checklist](#12-pr-checklist) for what's in this PR vs. what comes later.
+> **Status:** ✅ **MIGRATION COMPLETE** — Stalwart is running in production on `homelab` (home server). DMS decommissioned.
 
 This document describes how to move the personal mail server currently running
 `ghcr.io/docker-mailserver/docker-mailserver` (DMS) on `cloudlab` (Hetzner nbg1,
