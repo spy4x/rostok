@@ -40,7 +40,6 @@
     { "name": "akaunting" },
     { "name": "gitea" },
     { "name": "traggo" },
-    { "name": "stalwart" },
     { "name": "monitoring" },
     { "name": "docker-registry" },
     { "name": "authelia" },
@@ -53,6 +52,7 @@
     { "name": "email-mcp" },
     { "name": "google-maps-mcp" },
     { "name": "monica-mcp" },
+    { "name": "github-mcp" },
     { "name": "zond" },
     { "name": "omni-tools" }
   ]

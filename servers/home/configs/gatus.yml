@@ -21,9 +21,27 @@ alerting:
       success-threshold: 2
 
 endpoints:
+  - name: Mail (HTTPS)
+    group: cloud
+    url: "https://mail.${DOMAIN}"
+    interval: 1m
+    conditions:
+      - "[STATUS] == 200"
+    alerts:
+      - type: ntfy
+
   - name: Mail Server (SMTP)
     group: cloud
     url: "tcp://mail.${DOMAIN}:587"
+    interval: 1m
+    conditions:
+      - "[CONNECTED] == true"
+    alerts:
+      - type: ntfy
+
+  - name: Mail Server (IMAP)
+    group: cloud
+    url: "tcp://mail.${DOMAIN}:993"
     interval: 1m
     conditions:
       - "[CONNECTED] == true"

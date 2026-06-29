@@ -9,7 +9,6 @@ networks:
 
 services:
   # Stalwart Mail Server - Modern mail server with JMAP support
-  # NOTE: This stack replaces the existing mailserver stack. Stop mailserver before enabling.
   stalwart:
     container_name: hl-stalwart
     image: stalwartlabs/stalwart:latest
@@ -18,6 +17,8 @@ services:
       - "465:465"
       - "587:587"
       - "993:993"
+      # Internal HTTP port published on Docker host gateway for Traefik (different compose stack)
+      - "172.18.0.1:8080:8080"
     environment:
       - TZ=${TIMEZONE:-UTC}
       - STALWART_RECOVERY_ADMIN=admin:${STALWART_ADMIN_PASSWORD}
@@ -38,12 +39,34 @@ services:
     labels:
       - "traefik.enable=true"
       - "traefik.docker.network=proxy"
-      - "traefik.http.services.hl-stalwart.loadbalancer.server.port=8080"
-      - "traefik.http.routers.hl-stalwart.rule=Host(`${STALWART_SUBDOMAIN:-stalwart}.${DOMAIN}`)"
+      # Stalwart runs in its own compose stack; Traefik (separate stack) can't
+      # resolve service-name DNS across stacks. 8080 published on Docker host
+      # gateway (172.18.0.1) lets Traefik reach it reliably.
+      - "traefik.http.services.hl-stalwart.loadbalancer.server.url=http://172.18.0.1:8080"
+      # Web UI + JMAP on mail.DOMAIN → Stalwart backend
+      - "traefik.http.routers.hl-stalwart.rule=Host(`mail.${DOMAIN}`)"
       - "traefik.http.routers.hl-stalwart.entrypoints=websecure"
       - "traefik.http.routers.hl-stalwart.tls=true"
       - "traefik.http.routers.hl-stalwart.tls.certresolver=myresolver"
-      - "traefik.http.middlewares.hl-stalwart-redirect.redirectregex.regex=^(https?://[^/]+)/?$$"
-      - "traefik.http.middlewares.hl-stalwart-redirect.redirectregex.replacement=$${1}/admin"
-      - "traefik.http.middlewares.hl-stalwart-redirect.redirectregex.permanent=true"
-      - "traefik.http.routers.hl-stalwart.middlewares=hl-stalwart-redirect,robots-deny@file"
+      - "traefik.http.routers.hl-stalwart.service=hl-stalwart"
+      - "traefik.http.routers.hl-stalwart.middlewares=robots-deny@file"
+
+  # Synchronizes Let's Encrypt certs from Traefik's acme.json into Stalwart
+  cert-sync:
+    container_name: hl-cert-sync
+    image: python:3-alpine
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+          echo "15 3 * * * cd / && python3 /script.py" | crontab -
+          exec crond -f -l 2
+    volumes:
+      - ${PATH_APPS}/stacks/stalwart/cert-sync.py:/script.py:ro,z
+      - ${VOLUMES_PATH}/traefik/letsencrypt/acme.json:/acme.json:ro,z
+      - ${VOLUMES_PATH}/stalwart/cert-sync-state:/root/.cache/stalwart-cert-sync:z
+    environment:
+      - ACME_PATH=/acme.json
+      - STALWART_PASSWORD=${STALWART_ADMIN_PASSWORD}
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true

@@ -150,9 +150,19 @@ chore(deps): bump traefik to v3.3
 
 ## 🔄 Pull Requests & Issues
 
-### Creating a PR
+### PR Discipline (MANDATORY)
 
-After committing and pushing your branch, create a pull request:
+**A PR MUST exist at all times when working on a task.** Never work without one.
+
+1. **Create the PR immediately** after the first commit — even if the task is incomplete.
+2. **Prefix the title with `[WIP]`** if the task is not yet complete.
+3. **Update the PR after every human interaction** — if the human gives feedback, comments, or new information, push a new commit and update the PR body.
+4. **Remove `[WIP]` only when the task is fully complete** and ready for final review.
+5. **Keep the PR body accurate** — reflect the current state, known issues, and next steps.
+
+This ensures the human can always see what's been done, what's pending, and review intermediate progress.
+
+### Creating a PR
 
 ```bash
 gh pr create --fill
@@ -168,6 +178,9 @@ gh issue create --title "<type>(<scope>): <summary>" --body "<description>"
 
 If an issue already exists for this feature, link it. Use the same Angular
 convention for the issue title as you would for a commit.
+
+**Create the PR immediately after pushing — never ask "do you want a PR?".**
+Just run `gh pr create --fill` and report the link.
 
 ### Updating an existing PR
 
