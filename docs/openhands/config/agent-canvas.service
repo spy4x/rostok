@@ -15,8 +15,8 @@ Environment=GITHUB_TOKEN=REPLACE_WITH_GITHUB_TOKEN_FROM_ENV_ROOT
 Environment=LLM_MODEL=deepseek-v4-pro
 Environment=LLM_BASE_URL=https://api.deepseek.com/v1
 Environment=LLM_API_KEY=REPLACE_WITH_DEEPSEEK_API_KEY
-Environment=LLM_SUBAGENT_MODEL=deepseek-v4-flash
-Environment=LLM_ESCALATION_MODEL=minimax-m3
+Environment=LLM_TEMPERATURE=0.2
+Environment=LLM_MAX_OUTPUT_TOKENS=8192
 Environment=RUNTIME=process
 Environment=AGENT_SERVER_BIND_ADDRESS=0.0.0.0
 

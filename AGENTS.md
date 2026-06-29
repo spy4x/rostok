@@ -167,6 +167,9 @@ gh issue create --title "<type>(<scope>): <summary>" --body "<description>"
 If an issue already exists for this feature, link it. Use the same Angular
 convention for the issue title as you would for a commit.
 
+**Create the PR immediately after pushing — never ask "do you want a PR?".**
+Just run `gh pr create --fill` and report the link.
+
 ### Updating an existing PR
 
 Never create a second PR for the same task. Push additional commits to the

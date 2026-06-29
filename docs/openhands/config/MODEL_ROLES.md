@@ -16,6 +16,8 @@ Use for ALL of the following:
 - Decision-making ("which approach?", "which library?")
 - Anything where missing context would cause bugs
 
+**Configured via:** `agent-canvas.service` env var `LLM_MODEL=deepseek-v4-pro`
+
 ## Subagent Pool (deepseek-v4-flash)
 
 Use ONLY for:
@@ -27,6 +29,8 @@ Use ONLY for:
 **Prerequisite:** task MUST have a clear spec, exact signature, and expected output.
 Never give Flash open-ended or ambiguous instructions.
 
+**Configured via:** agent definition files in `.openhands/agents/*.md` with `model: deepseek-v4-flash`
+
 ## Escalation Model (minimax-m3)
 
 Use ONLY when:
@@ -37,18 +41,50 @@ Use ONLY when:
 
 **DO NOT use M3 iteratively — one shot per hard problem.**
 
-## Escalating to M3
+## Deployment
+
+### 1. Install LLM profiles on the host
+
+Copy the profile JSON files to `~/.openhands/profiles/`:
 
 ```bash
-# Per-run override:
-OPENHANDS_LLM_MODEL=minimax-m3 OPENHANDS_LLM_API_KEY=$M3_API_KEY \
-  openhands run "debug the race condition in src/scheduler.py"
-
-# Or edit config.toml temporarily:
-# [llm] model = "minimax-m3"
+cp docs/openhands/config/profiles/deepseek-v4-pro.json ~/.openhands/profiles/
+cp docs/openhands/config/profiles/deepseek-v4-flash.json ~/.openhands/profiles/
+cp docs/openhands/config/profiles/minimax-m3.json ~/.openhands/profiles/
 ```
+
+Replace placeholder values with actual API keys before deploying.
+
+### 2. Agent definition files
+
+Agent definition overrides for built-in subagents are in `.openhands/agents/*.md`.
+These are auto-loaded by agent-canvas when the project directory is the workspace.
+
+The override files set `model: deepseek-v4-flash` for:
+- `bash-runner` — shell commands, tests, builds
+- `code-explorer` — codebase exploration
+- `general-purpose` — mixed tasks (edit + shell)
+- `web-researcher` — web research
+
+Custom agents in `docs/openhands/agents/` use `model: inherit` (parent model = Pro).
+These are judgment-heavy roles and should NOT use Flash.
+
+### 3. Update systemd service
+
+```bash
+sudo cp docs/openhands/config/agent-canvas.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl restart agent-canvas
+```
+
+### 4. Escalating to M3
+
+Edit `.openhands/agents/` files to temporarily change `model:` to `minimax-m3`,
+or switch the profile in the Settings UI before running the problem task.
+Switch back after.
 
 ## Budget Heuristic
 - ~60% of tokens via Flash (bulk implementation)
 - ~30% via Pro (architecture, review)
 - ~10% via M3 (escalation only)
+
