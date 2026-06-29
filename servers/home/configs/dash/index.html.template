@@ -515,6 +515,19 @@
               <img src="https://uptime-cloud.${DOMAIN}/api/v1/endpoints/home_stalwart/health/badge.svg" alt="Home Stalwart Uptime Badge" onclick="window.open('https://uptime-cloud.${DOMAIN}/endpoints/home_stalwart', '_blank')" style="cursor:pointer" />
             </a>
           </li>
+          <!-- Home section: Bulwark -->
+          <li class="service-item">
+            <a
+              href="https://webmail.${DOMAIN}"
+              target="_blank"
+              class="service-link"
+            >
+              <div class="service-icon">📧</div>
+              <div class="service-name">Webmail</div>
+              <div class="service-name-detail">Bulwark</div>
+              <img src="https://uptime-cloud.${DOMAIN}/api/v1/endpoints/home_bulwark/health/badge.svg" alt="Home Bulwark Uptime Badge" onclick="window.open('https://uptime-cloud.${DOMAIN}/endpoints/home_bulwark', '_blank')" style="cursor:pointer" />
+            </a>
+          </li>
           <!-- Home section: Stats -->
           <li class="service-item">
             <a

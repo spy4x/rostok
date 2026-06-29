@@ -1,0 +1,59 @@
+name: ${PROJECT}
+
+# Bulwark — Modern JMAP webmail client for Stalwart Mail.
+# Connects to hl-stalwart:8080 (JMAP) on the proxy network.
+# Provides mail, calendar, contacts, tasks, and files in one UI.
+# https://bulwarkmail.org/
+
+networks:
+  proxy:
+    external: true
+  default:
+    external: true
+    name: proxy
+
+services:
+  bulwark:
+    container_name: hl-bulwark
+    image: ghcr.io/bulwarkmail/webmail:1.7.6
+    restart: unless-stopped
+    environment:
+      - HOSTNAME=0.0.0.0
+      - PORT=3000
+      - JMAP_SERVER_URL=http://hl-stalwart:8080
+    volumes:
+      - ${VOLUMES_PATH}/bulwark/settings:/app/data/settings:z
+      - ${VOLUMES_PATH}/bulwark/admin:/app/data/admin:z
+      - ${VOLUMES_PATH}/bulwark/admin-state:/app/data/admin-state:z
+      - ${VOLUMES_PATH}/bulwark/telemetry:/app/data/telemetry:z
+    networks:
+      - proxy
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: [
+        "CMD",
+        "wget",
+        "--no-verbose",
+        "--tries=1",
+        "--spider",
+        "http://127.0.0.1:3000/api/health",
+      ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 512M
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=proxy"
+      - "traefik.http.services.hl-bulwark.loadbalancer.server.port=3000"
+      - "traefik.http.routers.hl-bulwark.rule=Host(`webmail.${DOMAIN}`)"
+      - "traefik.http.routers.hl-bulwark.entrypoints=websecure"
+      - "traefik.http.routers.hl-bulwark.tls=true"
+      - "traefik.http.routers.hl-bulwark.tls.certresolver=myresolver"
+      - "traefik.http.routers.hl-bulwark.middlewares=robots-deny@file"

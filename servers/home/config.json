@@ -41,6 +41,7 @@
     { "name": "gitea" },
     { "name": "traggo" },
     { "name": "stalwart" },
+    { "name": "bulwark" },
     { "name": "monitoring" },
     { "name": "docker-registry" },
     { "name": "authelia" },
