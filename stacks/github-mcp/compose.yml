@@ -1,0 +1,45 @@
+networks:
+  proxy:
+    external: true
+
+services:
+  # GitHub MCP — wraps github-mcp-server (Go stdio binary) in Streamable HTTP via supergateway
+  # Source: https://github.com/github/github-mcp-server (MIT)
+  github-mcp:
+    container_name: hl-github-mcp
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        # Pin release tag for reproducibility. Bump deliberately.
+        GITHUB_MCP_VERSION: ${GITHUB_MCP_VERSION:-v1.5.0}
+    image: hl-github-mcp:latest
+    restart: unless-stopped
+    environment:
+      # GitHub PAT — must have repo + read:user scopes at minimum
+      # Mapped from GITHUB_TOKEN (in servers/home/.env)
+      - GITHUB_PERSONAL_ACCESS_TOKEN=${GITHUB_TOKEN}
+
+      # Optional: restrict to specific tool groups (use "all" for everything)
+      - GITHUB_TOOLSETS=${GITHUB_TOOLSETS:-all}
+
+      # HTTP server config (passed to supergateway)
+      - PORT=3000
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+          cpus: "0.2"
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - proxy
+    labels:
+      # Internal MCP — no Traefik exposure. OpenWebUI reaches it via Docker DNS.
+      - "traefik.enable=false"
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:3000/healthz"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
