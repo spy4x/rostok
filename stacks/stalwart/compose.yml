@@ -40,10 +40,37 @@ services:
       - "traefik.docker.network=proxy"
       # Shared backend via host gateway (bypasses Docker inter-container issue)
       - "traefik.http.services.hl-stalwart.loadbalancer.server.url=http://172.18.0.1:8080"
-      # Single router on webmail.DOMAIN → /account (admin at /admin)
+      # Webmail on webmail.DOMAIN → Stalwart UI (/account, /admin)
       - "traefik.http.routers.hl-stalwart-webmail.rule=Host(`webmail.${DOMAIN}`)"
       - "traefik.http.routers.hl-stalwart-webmail.entrypoints=websecure"
       - "traefik.http.routers.hl-stalwart-webmail.tls=true"
       - "traefik.http.routers.hl-stalwart-webmail.tls.certresolver=myresolver"
       - "traefik.http.routers.hl-stalwart-webmail.service=hl-stalwart"
       - "traefik.http.routers.hl-stalwart-webmail.middlewares=robots-deny@file"
+      # JMAP API on mail.DOMAIN → Stalwart JMAP backend
+      - "traefik.http.routers.hl-stalwart-jmap.rule=Host(`mail.${DOMAIN}`)"
+      - "traefik.http.routers.hl-stalwart-jmap.entrypoints=websecure"
+      - "traefik.http.routers.hl-stalwart-jmap.tls=true"
+      - "traefik.http.routers.hl-stalwart-jmap.tls.certresolver=myresolver"
+      - "traefik.http.routers.hl-stalwart-jmap.service=hl-stalwart"
+      - "traefik.http.routers.hl-stalwart-jmap.middlewares=robots-deny@file"
+
+  # Synchronizes Let's Encrypt certs from Traefik's acme.json into Stalwart
+  cert-sync:
+    container_name: hl-cert-sync
+    image: python:3-alpine
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+          echo "15 3 * * * cd / && python3 /script.py" | crontab -
+          exec crond -f -l 2
+    volumes:
+      - ${PATH_APPS}/stacks/stalwart/cert-sync.py:/script.py:ro,z
+      - ${VOLUMES_PATH}/traefik/letsencrypt/acme.json:/acme.json:ro,z
+      - ${VOLUMES_PATH}/stalwart/cert-sync-state:/root/.cache/stalwart-cert-sync:z
+    environment:
+      - ACME_PATH=/acme.json
+      - STALWART_PASSWORD=${STALWART_ADMIN_PASSWORD}
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true

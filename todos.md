@@ -1,30 +1,25 @@
 # Stalwart Migration — To-Do (ordered by urgency)
 
-## 🔴 BLOCKING — Mail delivery
+## ✅ DONE
 
-- [x] **Add port 587 SMTP submission** — Created NetworkListener via JMAP API (`x:NetworkListener/set`). Restarted container. Port 587 now responds with STARTTLS, AUTH, SMTPUTF8, PIPELINING. Verified externally.
-- [ ] **Wait for DNS TTL to propagate** — `mail.antonshubin.com` A record updated to `23.88.101.28` (cloud). Cloudflare confirmed. Local DNS still cached.
-- [ ] **Test inbound mail** — After DNS flip, send a test email to verify Stalwart receives and stores it.
+- [x] **DNS zone published to Cloudflare** — All DKIM, TLSA, SRV, MTA-STS, CNAME records published
+- [x] **Passwords rotated** — New strong passwords for anton@antonshubin.com and anton@neatsoft.dev
+- [x] **Cert auto-renewal cron as stack** — `cert-sync` service in `stacks/stalwart/compose.yml` runs daily at 3:15 AM
+- [x] **mail-ai removed** — Containers stopped, volumes cleaned, stack directory removed from repo
+- [x] **.env updated** — STALWART_ADMIN_PASSWORD added, MAIL_AI vars removed from both .env and .env.example
+- [x] **System cron migrated to Docker** — Old `crontab` entry removed, replaced by hl-cert-sync container
+- [x] **TLS serving** — Both mail.antonshubin.com and mail.neatsoft.dev serve valid Let's Encrypt certs
+- [x] **Catch-all forwarding** — *@antonshubin.com → anton@antonshubin.com, *@neatsoft.dev → anton@neatsoft.dev
+- [x] **Old emails imported** — 1637 (antonshubin.com) + 206 (neatsoft.dev) emails migrated via Vandelay
+- [x] **Accounts deployable** — STALWART_ADMIN_PASSWORD in .env, compose deploys cleanly
 
-## 🟠 HIGH — Post-flip cleanup
+## 🟡 MEDIUM — Future cleanup
 
-- [x] **Remove old DMS DKIM selectors from DNS** — Deleted `mail._domainkey.antonshubin.com` TXT record via Cloudflare API. Confirmed removed from API (0 records).
-- [x] **Add Stalwart monitoring endpoint to Gatus** — Already have `Mail Server (SMTP)` TCP check on port 587. SMTP monitoring covered.
-- [x] **Add Stalwart to Cloud dashboard** — Added "Mail" (📧) and "Mail Admin" (⚙️) cards to `servers/home/configs/dash/index.html.template`.
-- [x] **Remove temporary port 8080** — Already removed from `compose.yml` and deployed. Traefik routes via `loadbalancer.server.port=8080`.
-- [ ] **Update `.env.example`** with correct `STALWART_SUBDOMAIN` and `STALWART_ADMIN_PASSWORD`.
-
-## 🟡 MEDIUM — Decommission DMS
-
-- [ ] **Stop and remove DMS container** on home server.
-- [ ] **Remove DMS volumes** after verifying backup.
-- [ ] **Remove SnappyMail stack** (`stacks/snappymail`) — Stalwart has built-in webmail.
-- [ ] **Remove `extract-certs.sh`** flow — Stalwart has native ACME.
-- [ ] **Remove mailserver from servers/home/config.json**.
+- [ ] **Remove DMS container/volumes** on home server (after 30-day verification)
+- [ ] **Remove SnappyMail stack** (`stacks/snappymail`) — Stalwart has built-in webmail
+- [ ] **Fix Cloud Traefik dashboard 500** — Pre-existing, not caused by migration
 
 ## 🔵 LOW — Improvements
 
-- [ ] **Fix Cloud Traefik dashboard 500** — `https://proxy-cloud.antonshubin.com/` returns 500. Pre-existing, not caused by migration.
-- [ ] **Update server READMEs** — Document new mail architecture in `servers/cloud/README.md` and `servers/home/README.md`.
-- [ ] **Verify JMAP works from FairEmail / Thunderbird** — Test push notifications, calendar sync.
-- [ ] **Set up DMARC reporting** — Stalwart has built-in DMARC report generation.
+- [ ] **Verify JMAP works from FairEmail / Thunderbird** — Test push notifications, calendar sync
+- [ ] **Set up DMARC reporting** — Stalwart has built-in DMARC report generation
