@@ -37,7 +37,7 @@ Configured via `STALWART_RECOVERY_ADMIN` env var. First login at `/admin` uses t
 | `antonshubin.com` A                                  | `165.173.1.38` (cloud)                                         |
 | `mail.antonshubin.com` A                             | `165.173.1.38` (cloud)                                         |
 | `antonshubin.com` MX                                 | `mail.antonshubin.com`                                         |
-| `antonshubin.com` SPF                                | `v=spf1 mx ip4:165.173.1.38 ~all`                              |
+| `antonshubin.com` SPF                                | `v=spf1 mx ip4:23.88.101.28 ~all`                              |
 | `_dmarc.antonshubin.com` TXT                         | `v=DMARC1; p=quarantine; pct=100; rua=mailto:2spy4x@gmail.com` |
 | `v1-ed25519-20260629._domainkey.antonshubin.com` TXT | DKIM Ed25519 key                                               |
 | `v1-rsa-20260629._domainkey.antonshubin.com` TXT     | DKIM RSA key                                                   |
