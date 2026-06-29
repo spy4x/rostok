@@ -25,7 +25,7 @@
 
 - First run triggers database migrations automatically
 - Configure via UI after initial setup
-- SMTP uses the shared `mailserver` stack on the cloud server (not `stalwart` — that's an unfinished experiment)
+- SMTP uses the `stalwart` stack on the home server (replaces the old `mailserver` stack on the cloud server)
 - DNS for `mail.${DOMAIN}` → cloud server public IP (Cloudflare A record)
 - STARTTLS cert: Let's Encrypt via Traefik's `myresolver` (CN=mail.${DOMAIN})
 

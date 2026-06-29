@@ -9,20 +9,22 @@ networks:
 
 services:
   # Stalwart Mail Server - Modern mail server with JMAP support
-  # NOTE: This stack conflicts with the existing mailserver stack on ports 25, 465, 587, 993.
-  # Run only one mail server at a time. Disable mailserver before enabling stalwart.
+  # NOTE: This stack replaces the existing mailserver stack. Stop mailserver before enabling.
   stalwart:
     container_name: hl-stalwart
     image: stalwartlabs/stalwart:latest
+    ports:
+      - "25:25"
+      - "465:465"
+      - "587:587"
+      - "993:993"
     environment:
       - TZ=${TIMEZONE:-UTC}
-      - STALWART_MAIL_PORT=25
-      - STALWART_SUBMISSION_PORT=587
-      - STALWART_SUBMISSIONS_PORT=465
-      - STALWART_IMAPS_PORT=993
       - STALWART_RECOVERY_ADMIN=admin:${STALWART_ADMIN_PASSWORD}
     volumes:
       - ${VOLUMES_PATH}/stalwart/data:/opt/stalwart-mail/data:z
+      - ${VOLUMES_PATH}/stalwart/config:/etc/stalwart:z
+      - ${VOLUMES_PATH}/stalwart/lib:/var/lib/stalwart:z
     restart: unless-stopped
     deploy:
       resources:

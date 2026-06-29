@@ -1,0 +1,4 @@
+{
+  "@type": "Sqlite",
+  "path": "/var/lib/stalwart/"
+}

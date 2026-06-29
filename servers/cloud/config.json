@@ -6,10 +6,7 @@
     { "name": "gatus", "watchFilesAndRestartIfChanged": ["configs/gatus.yml"] },
     { "name": "ntfy" },
     { "name": "librespeed" },
-    { "name": "mailserver" },
     { "name": "healthchecks" },
-    { "name": "snappymail" },
-    { "name": "mail-ai" },
     { "name": "upwork-triage" },
     {
       "name": "nginx",
