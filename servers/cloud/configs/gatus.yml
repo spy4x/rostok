@@ -201,7 +201,6 @@ endpoints:
     alerts:
       - type: ntfy
 
-
   - name: Traefik
     group: offsite
     url: "https://proxy-offsite.${DOMAIN}/dashboard"

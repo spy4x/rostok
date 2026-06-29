@@ -119,15 +119,6 @@ endpoints:
       - type: ntfy
         failure-threshold: 9
 
-  - name: Upwork Triage
-    group: cloud
-    url: "https://upwork-triage.${DOMAIN}/health"
-    interval: 1m
-    conditions:
-      - "[STATUS] == 202"
-    alerts:
-      - type: ntfy
-
   - name: NeatSoft Landing
     group: cloud
     url: "https://neatsoft.dev"

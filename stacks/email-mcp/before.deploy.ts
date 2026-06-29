@@ -14,7 +14,7 @@ const keys = [
   "EMAIL_MCP_NEATSOFT_PASSWORD",
 ] as const
 
-let missing: string[] = []
+const missing: string[] = []
 for (const k of keys) {
   if (!Deno.env.get(k)) missing.push(k)
 }
