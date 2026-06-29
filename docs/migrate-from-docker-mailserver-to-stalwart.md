@@ -1,6 +1,7 @@
 # Migrate from docker-mailserver (DMS) to Stalwart Mail
 
-> **Status:** Plan — not yet executed. See [§ 1 Goals](#1-goals) and [§ 12 PR checklist](#12-pr-checklist) for what's in this PR vs. what comes later.
+> **Status:** 🏗 **IN PROGRESS** — Stalwart deployed on `cloudlab` (Hetzner VM, `165.173.1.38`). Bootstrap complete.
+> Pending: Hetzner port 25 unblock, mail flow verification, client config updates.
 
 This document describes how to move the personal mail server currently running
 `ghcr.io/docker-mailserver/docker-mailserver` (DMS) on `cloudlab` (Hetzner nbg1,

@@ -9,7 +9,6 @@ networks:
 
 services:
   # Stalwart Mail Server - Modern mail server with JMAP support
-  # NOTE: This stack replaces the existing mailserver stack. Stop mailserver before enabling.
   stalwart:
     container_name: hl-stalwart
     image: stalwartlabs/stalwart:latest
