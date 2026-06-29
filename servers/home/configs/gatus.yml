@@ -136,3 +136,21 @@ endpoints:
       - "[STATUS] == 200"
     alerts:
       - type: ntfy
+
+  - name: Stalwart
+    group: cloud
+    url: "https://stalwart.${DOMAIN}"
+    interval: 1m
+    conditions:
+      - "[STATUS] == 200"
+    alerts:
+      - type: ntfy
+
+  - name: Bulwark
+    group: cloud
+    url: "https://webmail.${DOMAIN}/api/health"
+    interval: 1m
+    conditions:
+      - "[STATUS] == 200"
+    alerts:
+      - type: ntfy

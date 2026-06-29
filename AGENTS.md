@@ -524,28 +524,44 @@ export default backupConfig
 
 ### 7. DNS Records (Cloudflare)
 
-If the service uses a **new subdomain** (not yet in DNS), add A records via Cloudflare API:
+**Default routing**: `*.antonshubin.com` is a wildcard A record pointing to the
+**home** server (`165.173.1.38`). All subdomains resolve to home by default.
+
+**Cloud and offsite servers** need explicit A records for their subdomains:
+
+- Cloud: `23.88.101.28`
+- Offsite: `213.21.10.17`
+
+When adding a service that runs on cloud or offsite, **always add a DNS record**.
+When migrating a service from cloud/offsite to home, **delete its DNS record** so
+the wildcard takes over.
+
+#### Add a DNS record
 
 ```bash
-# Get zone ID
+CF_TOKEN=$(grep CLOUDFLARE_API_TOKEN .env.root | cut -d= -f2)
 ZONE_ID=$(curl -s -X GET "https://api.cloudflare.com/client/v4/zones?name=antonshubin.com" \
-  -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
+  -H "Authorization: Bearer $CF_TOKEN" \
   | python3 -c "import sys,json; print(json.load(sys.stdin)['result'][0]['id'])")
 
-# Add A record (proxied=false for direct, true for CDN)
 curl -s -X POST "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/dns_records" \
-  -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
+  -H "Authorization: Bearer $CF_TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{"type":"A","name":"SUBDOMAIN","content":"IP_ADDRESS","ttl":1,"proxied":false}'
+  -d '{"type":"A","name":"SUBDOMAIN","content":"SERVER_IP","ttl":1,"proxied":false}'
 ```
 
-**When to add DNS**: Only for services that get a **new subdomain** (e.g. `speed-home`, `speed-cloud`). If the subdomain already exists (e.g. existing service on same server), skip.
+#### Delete a DNS record (e.g. when moving a service to home)
 
-**Where to find IPs**:
+```bash
+# Find the record ID
+RECORD_ID=$(curl -s "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/dns_records?name=SUBDOMAIN.antonshubin.com&type=A" \
+  -H "Authorization: Bearer $CF_TOKEN" \
+  | python3 -c "import sys,json; r=json.load(sys.stdin)['result']; print(r[0]['id'] if r else '')")
 
-- Cloud: check Hetzner console or `ssh cloudlab "curl -s ifconfig.me"`
-- Offsite: check server provider's control panel or `ssh offsite "curl -s ifconfig.me"`
-- Home: uses cloud tunnel or dynamic DNS — check existing Cloudflare records
+# Delete it
+curl -s -X DELETE "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/dns_records/$RECORD_ID" \
+  -H "Authorization: Bearer $CF_TOKEN"
+```
 
 **Token**: stored in `.env.root` as `CLOUDFLARE_API_TOKEN` (encrypted in `.env.root.age`). Read-only + DNS edit scope.
 

@@ -60,10 +60,6 @@ targets:
     url: http://hl-reitti:8080/
   - name: searxng
     url: http://hl-searxng:8080/
-  - name: stalwart
-    url: http://hl-stalwart:8080/
-  - name: bulwark
-    url: http://hl-bulwark:3000/
   - name: syncthing
     url: http://hl-syncthing:8384/
   - name: traefik

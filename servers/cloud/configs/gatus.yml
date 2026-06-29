@@ -313,26 +313,6 @@ endpoints:
     alerts:
       - type: ntfy
 
-  - name: Stalwart
-    group: home
-    url: "https://probe-home.${DOMAIN}/health/stalwart"
-    interval: 1m
-    headers:
-      Authorization: Basic ${BASIC_AUTH_BASE64}
-    conditions:
-      - "[STATUS] == 200"
-    alerts:
-      - type: ntfy
-
-  - name: Bulwark
-    group: home
-    url: "https://probe-home.${DOMAIN}/health/bulwark"
-    interval: 1m
-    conditions:
-      - "[STATUS] == 200"
-    alerts:
-      - type: ntfy
-
   - name: Authelia
     group: home
     url: "https://probe-home.${DOMAIN}/health/authelia"

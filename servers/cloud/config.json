@@ -8,6 +8,7 @@
     { "name": "librespeed" },
     { "name": "healthchecks" },
     { "name": "upwork-triage" },
+    { "name": "bulwark" },
     {
       "name": "nginx",
       "deployAs": "neatsoft-landing",
