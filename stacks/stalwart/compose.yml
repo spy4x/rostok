@@ -17,6 +17,7 @@ services:
       - "465:465"
       - "587:587"
       - "993:993"
+      - "172.18.0.1:8080:8080"
     environment:
       - TZ=${TIMEZONE:-UTC}
       - STALWART_RECOVERY_ADMIN=admin:${STALWART_ADMIN_PASSWORD}
@@ -37,12 +38,25 @@ services:
     labels:
       - "traefik.enable=true"
       - "traefik.docker.network=proxy"
-      - "traefik.http.services.hl-stalwart.loadbalancer.server.port=8080"
-      - "traefik.http.routers.hl-stalwart.rule=Host(`${STALWART_SUBDOMAIN:-stalwart}.${DOMAIN}`)"
-      - "traefik.http.routers.hl-stalwart.entrypoints=websecure"
-      - "traefik.http.routers.hl-stalwart.tls=true"
-      - "traefik.http.routers.hl-stalwart.tls.certresolver=myresolver"
-      - "traefik.http.middlewares.hl-stalwart-redirect.redirectregex.regex=^(https?://[^/]+)/?$$"
-      - "traefik.http.middlewares.hl-stalwart-redirect.redirectregex.replacement=$${1}/admin"
-      - "traefik.http.middlewares.hl-stalwart-redirect.redirectregex.permanent=true"
-      - "traefik.http.routers.hl-stalwart.middlewares=hl-stalwart-redirect,robots-deny@file"
+      # Shared backend via host gateway (bypasses Docker inter-container issue)
+      - "traefik.http.services.hl-stalwart.loadbalancer.server.url=http://172.18.0.1:8080"
+      # Admin router on stalwart.DOMAIN → /admin
+      - "traefik.http.routers.hl-stalwart-admin.rule=Host(`${STALWART_SUBDOMAIN:-stalwart}.${DOMAIN}`)"
+      - "traefik.http.routers.hl-stalwart-admin.entrypoints=websecure"
+      - "traefik.http.routers.hl-stalwart-admin.tls=true"
+      - "traefik.http.routers.hl-stalwart-admin.tls.certresolver=myresolver"
+      - "traefik.http.routers.hl-stalwart-admin.service=hl-stalwart"
+      - "traefik.http.routers.hl-stalwart-admin.middlewares=hl-stalwart-root-redirect,robots-deny@file"
+      - "traefik.http.middlewares.hl-stalwart-root-redirect.redirectregex.regex=^(https?://[^/]+)/?$$"
+      - "traefik.http.middlewares.hl-stalwart-root-redirect.redirectregex.replacement=$${1}/admin"
+      - "traefik.http.middlewares.hl-stalwart-root-redirect.redirectregex.permanent=true"
+      # Webmail router on webmail.DOMAIN → /account
+      - "traefik.http.routers.hl-stalwart-webmail.rule=Host(`webmail.${DOMAIN}`)"
+      - "traefik.http.routers.hl-stalwart-webmail.entrypoints=websecure"
+      - "traefik.http.routers.hl-stalwart-webmail.tls=true"
+      - "traefik.http.routers.hl-stalwart-webmail.tls.certresolver=myresolver"
+      - "traefik.http.routers.hl-stalwart-webmail.service=hl-stalwart"
+      - "traefik.http.routers.hl-stalwart-webmail.middlewares=hl-stalwart-webmail-redirect,robots-deny@file"
+      - "traefik.http.middlewares.hl-stalwart-webmail-redirect.redirectregex.regex=^(https?://[^/]+)/?$$"
+      - "traefik.http.middlewares.hl-stalwart-webmail-redirect.redirectregex.replacement=$${1}/account"
+      - "traefik.http.middlewares.hl-stalwart-webmail-redirect.redirectregex.permanent=true"
