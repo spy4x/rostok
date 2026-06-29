@@ -704,19 +704,6 @@
               <img src="https://uptime-home.${DOMAIN}/api/v1/endpoints/cloud_ntfy/health/badge.svg" alt="Cloud Notifications Uptime Badge" onclick="window.open('https://uptime-home.${DOMAIN}/endpoints/cloud_ntfy', '_blank')" style="cursor:pointer" />
             </a>
           </li>
-          <!-- Cloud section: Rspamd -->
-          <li class="service-item">
-            <a
-              href="https://rspamd.${DOMAIN}"
-              target="_blank"
-              class="service-link"
-            >
-              <div class="service-icon">🛡️</div>
-              <div class="service-name">Rspamd</div>
-              <div class="service-name-detail">Rspamd</div>
-              <img src="https://uptime-home.${DOMAIN}/api/v1/endpoints/cloud_rspamd/health/badge.svg" alt="Cloud Rspamd Uptime Badge" onclick="window.open('https://uptime-home.${DOMAIN}/endpoints/cloud_rspamd', '_blank')" style="cursor:pointer" />
-            </a>
-          </li>
           <!-- Cloud section: Speed -->
           <li class="service-item">
             <a

@@ -30,17 +30,6 @@ endpoints:
     alerts:
       - type: ntfy
 
-  - name: Rspamd
-    group: cloud
-    url: "https://rspamd.${DOMAIN}"
-    interval: 1m
-    headers:
-      Authorization: Basic ${BASIC_AUTH_BASE64}
-    conditions:
-      - "[STATUS] == 200"
-    alerts:
-      - type: ntfy
-
   - name: Healthchecks
     group: cloud
     url: "https://healthchecks.${DOMAIN}"
