@@ -16,6 +16,8 @@ services:
       # --- HTTP transport ---
       - MCP_HOST=0.0.0.0
       - MCP_PORT=9557
+      # DOMAIN used in config.toml.template to build mail.${...} hostnames
+      - EMAIL_MCP_DOMAIN=${DOMAIN}
       # Allow connections from OpenWebUI container on the proxy network.
       # DNS rebinding protection enabled (default). Bare host entries allow any port.
       - MCP_ALLOWED_HOSTS=hl-email-mcp:*,hl-open-webui:*,localhost:*,127.0.0.1:*
@@ -34,8 +36,6 @@ services:
           cpus: "0.3"
     security_opt:
       - no-new-privileges:true
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
     networks:
       - proxy
     labels:

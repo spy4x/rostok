@@ -8,13 +8,14 @@ const outputPath = new URL("./config.toml", import.meta.url).pathname
 const tpl = Deno.readTextFileSync(templatePath)
 
 const keys = [
+  "EMAIL_MCP_DOMAIN",
   "EMAIL_MCP_PRIMARY_USER",
-  "EMAIL_MCP_PRIMARY_PASSWORD",
+  "EMAIL_MCP_PERSONAL_PASSWORD",
   "EMAIL_MCP_NEATSOFT_USER",
   "EMAIL_MCP_NEATSOFT_PASSWORD",
 ] as const
 
-let missing: string[] = []
+const missing: string[] = []
 for (const k of keys) {
   if (!Deno.env.get(k)) missing.push(k)
 }

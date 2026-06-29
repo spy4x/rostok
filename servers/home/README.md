@@ -1,6 +1,8 @@
 # Home Server
 
-Primary services: media, automation, productivity.
+Local media, automation, productivity, and self-hosted services.
+
+**⚠️ Reliability:** This is an old gaming PC with a dying SATA SSD (to be replaced soon). Prone to electricity outages and internet disruptions. Critical services (email, external-facing) run on the [cloud server](../cloud/README.md).
 
 ## Services
 
@@ -11,9 +13,9 @@ Primary services: media, automation, productivity.
 
 ## Hardware
 
-- **OS**: Fedora 40
-- **Storage**: SSD + external drives
-- **Network**: Gigabit ethernet
+- **OS**: Fedora 40 (old gaming PC, to be replaced)
+- **Storage**: Dying SATA SSD + external drives
+- **Network**: Gigabit ethernet (residential, periodic outages)
 
 ## Quick Access
 

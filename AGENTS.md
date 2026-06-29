@@ -22,6 +22,7 @@ read any source code, explore the codebase, or make any changes in the
 This repo may have another AI agent working on a different feature in the
 `main` worktree at the same time. If you start editing files in `main`,
 you will either:
+
 - Clobber their in-progress changes
 - Force them to resolve merge conflicts
 - Lose your own work when their agent commits
@@ -73,17 +74,18 @@ repo directory. You `cd` into that subdirectory and do ALL work there.
 <type>/<short-kebab-description>
 ```
 
-| Type        | Use when                              |
-| ----------- | ------------------------------------- |
-| `feat/`     | New feature or enhancement            |
-| `fix/`      | Bug fix                               |
+| Type        | Use when                                 |
+| ----------- | ---------------------------------------- |
+| `feat/`     | New feature or enhancement               |
+| `fix/`      | Bug fix                                  |
 | `refactor/` | Code restructuring (no behaviour change) |
-| `chore/`    | Tooling, deps, CI, config             |
-| `docs/`     | Documentation only                    |
-| `style/`    | Formatting, styling, design tweaks    |
-| `ci/`       | CI/CD pipeline changes                |
+| `chore/`    | Tooling, deps, CI, config                |
+| `docs/`     | Documentation only                       |
+| `style/`    | Formatting, styling, design tweaks       |
+| `ci/`       | CI/CD pipeline changes                   |
 
 Examples:
+
 ```
 feat/add-dark-mode
 fix/backup-errors
@@ -148,9 +150,19 @@ chore(deps): bump traefik to v3.3
 
 ## 🔄 Pull Requests & Issues
 
-### Creating a PR
+### PR Discipline (MANDATORY)
 
-After committing and pushing your branch, create a pull request:
+**A PR MUST exist at all times when working on a task.** Never work without one.
+
+1. **Create the PR immediately** after the first commit — even if the task is incomplete.
+2. **Prefix the title with `[WIP]`** if the task is not yet complete.
+3. **Update the PR after every human interaction** — if the human gives feedback, comments, or new information, push a new commit and update the PR body.
+4. **Remove `[WIP]` only when the task is fully complete** and ready for final review.
+5. **Keep the PR body accurate** — reflect the current state, known issues, and next steps.
+
+This ensures the human can always see what's been done, what's pending, and review intermediate progress.
+
+### Creating a PR
 
 ```bash
 gh pr create --fill
@@ -175,6 +187,7 @@ same branch and the PR updates automatically.
 ### Deploy & Verify (REQUIRED)
 
 **Before committing or reporting "done", you MUST:**
+
 1. Deploy the changed service(s) to production: `deno task deploy <server> [stack]`
 2. Verify the service starts, stays healthy, and the fix/feature actually works as expected
 3. Only after verification passes, commit and push
@@ -211,10 +224,10 @@ yourself. You STOP and wait.**
 
 Decide the merge strategy:
 
-| Condition                                                  | Strategy     |
-| ---------------------------------------------------------- | ------------ |
-| All commits relate to the same feature/issue/fix           | **Squash**   |
-| Some commits fix independent things that should stay apart | **Rebase**   |
+| Condition                                                  | Strategy   |
+| ---------------------------------------------------------- | ---------- |
+| All commits relate to the same feature/issue/fix           | **Squash** |
+| Some commits fix independent things that should stay apart | **Rebase** |
 
 Then:
 
