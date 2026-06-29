@@ -3,7 +3,8 @@ networks:
     external: true
 
 services:
-  # GitHub MCP — wraps github-mcp-server (Go stdio binary) in Streamable HTTP via supergateway
+  # GitHub MCP — wraps github-mcp-server (Go stdio binary) in Streamable HTTP
+  # via a Node.js http-wrapper for proper session management.
   # Source: https://github.com/github/github-mcp-server (MIT)
   github-mcp:
     container_name: hl-github-mcp
@@ -23,7 +24,7 @@ services:
       # Optional: restrict to specific tool groups (use "all" for everything)
       - GITHUB_TOOLSETS=${GITHUB_TOOLSETS:-all}
 
-      # HTTP server config (passed to supergateway)
+      # HTTP server config
       - PORT=3000
     deploy:
       resources:

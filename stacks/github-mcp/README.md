@@ -1,7 +1,8 @@
 # GitHub MCP Server
 
 Exposes the [GitHub MCP Server](https://github.com/github/github-mcp-server) via
-Streamable HTTP using [SuperGateway](https://github.com/supercorp-ai/supergateway).
+Streamable HTTP using a Node.js http-wrapper (routes JSON-RPC between HTTP
+and the Go binary's stdio with session management).
 
 ## What it does
 
