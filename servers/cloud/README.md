@@ -1,10 +1,13 @@
 # Cloud Server
 
-Email infrastructure and external monitoring on Hetzner VPS.
+Primary production server. Runs critical infrastructure, email (Stalwart), and external-facing services.
+
+**Reliability:** 99.99% — Hetzner VPS with redundant power, network, and 24/7 monitoring.
+Services that must stay online (email, DNS-dependent services) run here.
 
 ## Services
 
-**Email** - [Mail Server](docs/mailserver.md), [Roundcube](docs/roundcube.md)\
+**Email** - [Stalwart Mail Server](../../stacks/stalwart/)\
 **Monitoring** - [Gatus](../../sharedStacks/gatus/), [Healthchecks](docs/healthchecks.md), [ntfy](../../sharedStacks/ntfy/)\
 **Infrastructure** - [Traefik](../../sharedStacks/traefik/), [Syncthing](../../sharedStacks/syncthing/)
 
@@ -25,31 +28,20 @@ TXT     mail._domainkey     v=DKIM1; k=rsa; p=<get-from-server>
 PTR     <VPS-IP>            mail.yourdomain.com
 ```
 
-Get DKIM key after deployment:
+Get DKIM public key for DNS:
 
 ```bash
-docker exec mailserver cat /tmp/docker-mailserver/opendkim/keys/*/mail.txt
+docker exec hl-stalwart cat /etc/stalwart/config/keys/*/dkim/*.pem 2>/dev/null | openssl rsa -pubout 2>/dev/null | grep -v '^-----'
 ```
 
 ## Email Management
 
-```bash
-# Add user
-docker exec -it mailserver setup email add user@domain.com
-
-# List users
-docker exec mailserver setup email list
-
-# Add alias
-docker exec mailserver setup alias add alias@domain.com target@domain.com
-```
-
-See [mailserver docs](docs/mailserver.md) for details.
+Accounts and aliases are managed via the Stalwart admin API/web UI at `https://stalwart.${DOMAIN}/admin`.
 
 ## Access
 
-- Webmail: `https://webmail.${DOMAIN}`
-- Rspamd: `https://rspamd.${DOMAIN}`
+- Stalwart admin: `https://stalwart.${DOMAIN}/admin`
+- JMAP endpoint: `https://mail.${DOMAIN}/jmap`
 - Monitoring: `https://uptime.${DOMAIN}`
 
 ## Deployment
@@ -88,18 +80,14 @@ dig mail._domainkey.yourdomain.com TXT +short
 docker compose ps
 
 # View logs
-docker logs mailserver
-docker logs webmail
-docker logs gatus
+docker logs hl-stalwart
+docker logs hl-gatus
 
 # Enter mail container
-docker exec -it mailserver bash
+docker exec -it hl-stalwart sh
 
-# Check Rspamd stats
-docker exec mailserver rspamc stat
-
-# Check Fail2ban
-docker exec mailserver fail2ban-client status
+# Check Stalwart queue
+docker exec hl-stalwart stalwart-cli queue list
 ```
 
 ## Backups
@@ -118,7 +106,5 @@ ansible-playbook ansible/playbooks/backup-cronjob.yml -K --limit cloud
 
 ## Notes
 
-- Email accounts managed via docker exec (not stored in compose/env files)
-- SMTP credentials for other services use `noreply@domain.com` account
 - Gatus should monitor home server and vice versa for cross-checking
 - Syncthing syncs backups between cloud and home servers

@@ -11,21 +11,21 @@ email_address = "${EMAIL_MCP_PRIMARY_USER}"
 
 [emails.incoming]
 user_name = "${EMAIL_MCP_PRIMARY_USER}"
-password = "${EMAIL_MCP_PRIMARY_PASSWORD}"
-host = "host.docker.internal"
-port = 1993
+password = "${EMAIL_MCP_PERSONAL_PASSWORD}"
+host = "mail.${EMAIL_MCP_DOMAIN}"
+port = 993
 use_ssl = true
 start_ssl = false
-verify_ssl = false
+verify_ssl = true
 
 [emails.outgoing]
 user_name = "${EMAIL_MCP_PRIMARY_USER}"
-password = "${EMAIL_MCP_PRIMARY_PASSWORD}"
-host = "host.docker.internal"
-port = 1587
+password = "${EMAIL_MCP_PERSONAL_PASSWORD}"
+host = "mail.${EMAIL_MCP_DOMAIN}"
+port = 587
 use_ssl = false
 start_ssl = true
-verify_ssl = false
+verify_ssl = true
 
 # --- Account: neatsoft (anton@neatsoft.dev) ---
 [[emails]]
@@ -36,20 +36,20 @@ email_address = "${EMAIL_MCP_NEATSOFT_USER}"
 [emails.incoming]
 user_name = "${EMAIL_MCP_NEATSOFT_USER}"
 password = "${EMAIL_MCP_NEATSOFT_PASSWORD}"
-host = "host.docker.internal"
-port = 1993
+host = "mail.${EMAIL_MCP_DOMAIN}"
+port = 993
 use_ssl = true
 start_ssl = false
-verify_ssl = false
+verify_ssl = true
 
 [emails.outgoing]
 user_name = "${EMAIL_MCP_NEATSOFT_USER}"
 password = "${EMAIL_MCP_NEATSOFT_PASSWORD}"
-host = "host.docker.internal"
-port = 1587
+host = "mail.${EMAIL_MCP_DOMAIN}"
+port = 587
 use_ssl = false
 start_ssl = true
-verify_ssl = false
+verify_ssl = true
 
 # --- Behaviour (top-level scalars) ---
 # Attachments disabled — enable explicitly if a tool needs them.
