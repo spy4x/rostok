@@ -21,7 +21,7 @@ from base64 import b64decode
 # ── Configuration ────────────────────────────────────────────────────────────
 
 ACME_PATH = os.environ.get("ACME_PATH", "/home/spy4x/cloudlab/apps/.volumes/traefik/letsencrypt/acme.json")
-STALWART_URL = os.environ.get("STALWART_URL", "http://172.18.0.8:8080/jmap/")
+STALWART_URL = os.environ.get("STALWART_URL", "http://stalwart:8080/jmap/")
 STALWART_USER = os.environ.get("STALWART_USER", "admin")
 STATE_DIR = os.environ.get("STATE_DIR", os.path.expanduser("~/.cache/stalwart-cert-sync"))
 

@@ -17,6 +17,7 @@ services:
       - "465:465"
       - "587:587"
       - "993:993"
+      # Internal HTTP port published on Docker host gateway for Traefik (different compose stack)
       - "172.18.0.1:8080:8080"
     environment:
       - TZ=${TIMEZONE:-UTC}
@@ -38,22 +39,17 @@ services:
     labels:
       - "traefik.enable=true"
       - "traefik.docker.network=proxy"
-      # Shared backend via host gateway (bypasses Docker inter-container issue)
+      # Stalwart runs in its own compose stack; Traefik (separate stack) can't
+      # resolve service-name DNS across stacks. 8080 published on Docker host
+      # gateway (172.18.0.1) lets Traefik reach it reliably.
       - "traefik.http.services.hl-stalwart.loadbalancer.server.url=http://172.18.0.1:8080"
-      # Webmail on webmail.DOMAIN → Stalwart UI (/account, /admin)
-      - "traefik.http.routers.hl-stalwart-webmail.rule=Host(`webmail.${DOMAIN}`)"
-      - "traefik.http.routers.hl-stalwart-webmail.entrypoints=websecure"
-      - "traefik.http.routers.hl-stalwart-webmail.tls=true"
-      - "traefik.http.routers.hl-stalwart-webmail.tls.certresolver=myresolver"
-      - "traefik.http.routers.hl-stalwart-webmail.service=hl-stalwart"
-      - "traefik.http.routers.hl-stalwart-webmail.middlewares=robots-deny@file"
-      # JMAP API on mail.DOMAIN → Stalwart JMAP backend
-      - "traefik.http.routers.hl-stalwart-jmap.rule=Host(`mail.${DOMAIN}`)"
-      - "traefik.http.routers.hl-stalwart-jmap.entrypoints=websecure"
-      - "traefik.http.routers.hl-stalwart-jmap.tls=true"
-      - "traefik.http.routers.hl-stalwart-jmap.tls.certresolver=myresolver"
-      - "traefik.http.routers.hl-stalwart-jmap.service=hl-stalwart"
-      - "traefik.http.routers.hl-stalwart-jmap.middlewares=robots-deny@file"
+      # Web UI + JMAP on mail.DOMAIN → Stalwart backend
+      - "traefik.http.routers.hl-stalwart.rule=Host(`mail.${DOMAIN}`)"
+      - "traefik.http.routers.hl-stalwart.entrypoints=websecure"
+      - "traefik.http.routers.hl-stalwart.tls=true"
+      - "traefik.http.routers.hl-stalwart.tls.certresolver=myresolver"
+      - "traefik.http.routers.hl-stalwart.service=hl-stalwart"
+      - "traefik.http.routers.hl-stalwart.middlewares=robots-deny@file"
 
   # Synchronizes Let's Encrypt certs from Traefik's acme.json into Stalwart
   cert-sync:

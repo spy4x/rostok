@@ -502,19 +502,6 @@
               <img src="https://uptime-cloud.${DOMAIN}/api/v1/endpoints/home_librespeed/health/badge.svg" alt="Home Speed Uptime Badge" onclick="window.open('https://uptime-cloud.${DOMAIN}/endpoints/home_librespeed', '_blank')" style="cursor:pointer" />
             </a>
           </li>
-          <!-- Home section: Stalwart -->
-          <li class="service-item">
-            <a
-              href="https://stalwart.${DOMAIN}"
-              target="_blank"
-              class="service-link"
-            >
-              <div class="service-icon">✉️</div>
-              <div class="service-name">Stalwart</div>
-              <div class="service-name-detail">Stalwart</div>
-              <img src="https://uptime-cloud.${DOMAIN}/api/v1/endpoints/home_stalwart/health/badge.svg" alt="Home Stalwart Uptime Badge" onclick="window.open('https://uptime-cloud.${DOMAIN}/endpoints/home_stalwart', '_blank')" style="cursor:pointer" />
-            </a>
-          </li>
           <!-- Home section: Stats -->
           <li class="service-item">
             <a
@@ -717,17 +704,17 @@
               <img src="https://uptime-home.${DOMAIN}/api/v1/endpoints/cloud_rspamd/health/badge.svg" alt="Cloud Rspamd Uptime Badge" onclick="window.open('https://uptime-home.${DOMAIN}/endpoints/cloud_rspamd', '_blank')" style="cursor:pointer" />
             </a>
           </li>
-          <!-- Cloud section: Stalwart Admin -->
+          <!-- Cloud section: Mail Admin -->
           <li class="service-item">
             <a
-              href="https://stalwart.${DOMAIN}/admin"
+              href="https://mail.${DOMAIN}/admin"
               target="_blank"
               class="service-link"
             >
               <div class="service-icon">⚙️</div>
               <div class="service-name">Mail Admin</div>
               <div class="service-name-detail">Stalwart</div>
-              <img src="https://uptime-home.${DOMAIN}/api/v1/endpoints/cloud_stalwart/health/badge.svg" alt="Cloud Stalwart Admin Uptime Badge" onclick="window.open('https://uptime-home.${DOMAIN}/endpoints/cloud_stalwart', '_blank')" style="cursor:pointer" />
+              <img src="https://uptime-home.${DOMAIN}/api/v1/endpoints/cloud_mail/health/badge.svg" alt="Cloud Mail Uptime Badge" onclick="window.open('https://uptime-home.${DOMAIN}/endpoints/cloud_mail', '_blank')" style="cursor:pointer" />
             </a>
           </li>
           <!-- Cloud section: Speed -->
