@@ -21,6 +21,11 @@ services:
       - HOSTNAME=0.0.0.0
       - PORT=3000
       - JMAP_SERVER_URL=http://hl-stalwart:8080
+      # Admin password for the setup wizard + admin dashboard.
+      # Remove this after first login (password is hashed to admin.json).
+      - ADMIN_PASSWORD=${BULWARK_ADMIN_PASSWORD}
+      # Required for admin session cookies. Generate with: openssl rand -hex 32
+      - SESSION_SECRET=${BULWARK_SESSION_SECRET}
     volumes:
       - ${VOLUMES_PATH}/bulwark/settings:/app/data/settings:z
       - ${VOLUMES_PATH}/bulwark/admin:/app/data/admin:z

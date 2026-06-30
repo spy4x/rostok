@@ -20,10 +20,6 @@ services:
     user: "${PUID:-1000}:${PGID:-1000}"
     group_add:
       - "${DOCKER_GROUP_ID:-990}" # Allow access to docker.sock for Traefik
-    environment:
-      # Passed through for Traefik file provider env var substitution (e.g., dashboard-auth)
-      - BASIC_AUTH_USER=${BASIC_AUTH_USER}
-      - BASIC_AUTH_PASSWORD=${BASIC_AUTH_PASSWORD}
     security_opt:
       - label=type:container_runtime_t # Required for SELinux to access docker.sock
     command:
