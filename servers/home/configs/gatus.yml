@@ -128,7 +128,7 @@ endpoints:
 
   - name: Stalwart
     group: cloud
-    url: "https://stalwart.${DOMAIN}"
+    url: "https://mail.${DOMAIN}/admin"
     interval: 1m
     conditions:
       - "[STATUS] == 200"

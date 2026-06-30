@@ -505,14 +505,14 @@
           <!-- Home section: Stalwart -->
           <li class="service-item">
             <a
-              href="https://stalwart.${DOMAIN}"
+              href="https://mail.${DOMAIN}"
               target="_blank"
               class="service-link"
             >
               <div class="service-icon">✉️</div>
               <div class="service-name">Stalwart</div>
               <div class="service-name-detail">Stalwart</div>
-              <img src="https://uptime-cloud.${DOMAIN}/api/v1/endpoints/home_stalwart/health/badge.svg" alt="Home Stalwart Uptime Badge" onclick="window.open('https://uptime-cloud.${DOMAIN}/endpoints/home_stalwart', '_blank')" style="cursor:pointer" />
+              <img src="https://uptime-home.${DOMAIN}/api/v1/endpoints/cloud_stalwart/health/badge.svg" alt="Home Stalwart Uptime Badge" onclick="window.open('https://uptime-home.${DOMAIN}/endpoints/cloud_stalwart', '_blank')" style="cursor:pointer" />
             </a>
           </li>
           <!-- Home section: Bulwark -->
