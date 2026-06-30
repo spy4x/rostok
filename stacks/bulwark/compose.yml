@@ -20,7 +20,7 @@ services:
     environment:
       - HOSTNAME=0.0.0.0
       - PORT=3000
-      - JMAP_SERVER_URL=http://hl-stalwart:8080
+      - JMAP_SERVER_URL=https://mail.${DOMAIN}
       # Admin password for the setup wizard + admin dashboard.
       # Remove this after first login (password is hashed to admin.json).
       - ADMIN_PASSWORD=${BULWARK_ADMIN_PASSWORD}
