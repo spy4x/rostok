@@ -27,7 +27,7 @@ services:
       - "--api.insecure=true"
       - "--providers.docker=true"
       - "--providers.docker.exposedbydefault=false"
-      - "--providers.file.filename=/etc/traefik/dynamic.yml"
+      - "--providers.file.directory=/etc/traefik/dynamic"
       - "--providers.file.watch=true"
       - "--entrypoints.websecure.address=:443"
       - "--entrypoints.web.address=:80"
@@ -55,7 +55,7 @@ services:
     volumes:
       - ${VOLUMES_PATH}/traefik/letsencrypt:/letsencrypt:z
       - /var/run/docker.sock:/var/run/docker.sock:ro
-      - ./dynamic.yml:/etc/traefik/dynamic.yml:ro
+      - ./dynamic/:/etc/traefik/dynamic/:ro
     networks:
       - proxy
     deploy:
@@ -71,4 +71,4 @@ services:
       - "traefik.http.routers.hl-traefik.entrypoints=websecure"
       - "traefik.http.routers.hl-traefik.tls=true"
       - "traefik.http.routers.hl-traefik.tls.certresolver=myresolver"
-      - "traefik.http.routers.hl-traefik.middlewares=authelia@file"
+      - "traefik.http.routers.hl-traefik.middlewares=dashboard-auth@file"
