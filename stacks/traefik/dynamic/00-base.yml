@@ -26,7 +26,9 @@ http:
         customResponseHeaders:
           Cross-Origin-Opener-Policy: same-origin
           Cross-Origin-Resource-Policy: same-site
-          Cross-Origin-Embedder-Policy: require-corp
+          # Cross-Origin-Embedder-Policy is NOT in security-headers —
+          # it breaks cross-origin JMAP (Bulwark → Stalwart on different
+          # subdomains). Add to individual router middlewares if needed.
           # X-Robots-Tag is intentionally NOT in security-headers. It lives in
           # its own middleware (robots-deny) so public sites (antonshubin,
           # neatsoft) can opt out by not including it in their router labels.
@@ -45,6 +47,13 @@ http:
       headers:
         customResponseHeaders:
           X-Robots-Tag: "all"
+    # Stalwart JMAP — needs permissive COEP/CORP so Bulwark's browser can
+    # make cross-origin JMAP requests from webmail.antonshubin.com.
+    stalwart-jmap:
+      headers:
+        customResponseHeaders:
+          Cross-Origin-Embedder-Policy: "unsafe-none"
+          Cross-Origin-Resource-Policy: "cross-origin"
 
   # Routers and services for file-based (non-Docker) routes.
   # Home-server specific routes (authelia, openhands, etc.) are
