@@ -45,10 +45,8 @@ services:
     labels:
       - "traefik.enable=true"
       - "traefik.docker.network=proxy"
-      # Stalwart runs in its own compose stack; Traefik (separate stack) can't
-      # resolve service-name DNS across stacks. 8080 published on Docker host
-      # gateway (172.18.0.1) lets Traefik reach it reliably.
-      - "traefik.http.services.hl-stalwart.loadbalancer.server.url=http://172.18.0.1:8080"
+      # Container name resolves across stacks on the same Docker network.
+      - "traefik.http.services.hl-stalwart.loadbalancer.server.url=http://hl-stalwart:8080"
       - "traefik.http.services.hl-stalwart.loadbalancer.healthCheck.path=/healthz/live"
       - "traefik.http.services.hl-stalwart.loadbalancer.healthCheck.interval=30s"
       # Web UI + JMAP on mail.DOMAIN → Stalwart backend
