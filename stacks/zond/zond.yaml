@@ -48,8 +48,6 @@ targets:
     url: http://hl-open-webui:8080/
   - name: opencode-web
     url: http://172.23.0.1:8002/
-  - name: openhands
-    url: http://172.23.0.1:8000/health
   - name: paperless
     url: http://hl-paperless:8000/
   - name: piped

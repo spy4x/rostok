@@ -1,6 +1,6 @@
 // Copies server-specific Traefik dynamic config files into the dynamic/
 // directory before deployment. This allows per-server overrides (e.g.,
-// authelia middleware + openhands route on home) while keeping a shared
+// authelia middleware + opencode-web route on home) while keeping a shared
 // base config (00-base.yml) used by all servers.
 //
 // Also substitutes ${ENV_VAR} placeholders in all YAML files with values

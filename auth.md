@@ -45,24 +45,22 @@ Every HTTP service works, no exceptions.
 
 Change `middlewares=auth,...` → `middlewares=authelia@file,...`
 
-| Stack            | Domain               | Notes                                                 |
-| ---------------- | -------------------- | ----------------------------------------------------- |
-| metube           | metube.${DOMAIN}     | No own auth                                           |
-| ollama           | ollama.${DOMAIN}     | No own auth                                           |
-| traggo           | time.${DOMAIN}       | Has own auth (weak)                                   |
-| grafana          | metrics.${DOMAIN}    | Has own auth, can trust Remote-User header            |
-| victoria-metrics | metrics-vm.${DOMAIN} | Same as grafana                                       |
-| mailserver       | rspamd.${DOMAIN}     | No own web auth                                       |
-| openhands        | code.${DOMAIN}       | Has API key auth (--public mode), UI needs protection |
-| traefik          | proxy-home.${DOMAIN} | Admin panel                                           |
+| Stack            | Domain               | Notes                                      |
+| ---------------- | -------------------- | ------------------------------------------ |
+| metube           | metube.${DOMAIN}     | No own auth                                |
+| ollama           | ollama.${DOMAIN}     | No own auth                                |
+| traggo           | time.${DOMAIN}       | Has own auth (weak)                        |
+| grafana          | metrics.${DOMAIN}    | Has own auth, can trust Remote-User header |
+| victoria-metrics | metrics-vm.${DOMAIN} | Same as grafana                            |
+| mailserver       | rspamd.${DOMAIN}     | No own web auth                            |
+| opencode-web     | code.${DOMAIN}       | Has API key auth, UI needs protection      |
+| traefik          | proxy-home.${DOMAIN} | Admin panel                                |
 
 **Complex middleware chains — edit carefully:**
 
 ```yaml
-# openhands:
-  middlewares=auth,robots-deny@file
-# → middlewares=authelia@file,robots-deny@file
-# (API key handled by --public mode in systemd unit, not via HTTP header middlewares)
+# opencode-web:
+  middlewares=authelia@file,robots-deny@file
 
 # grafana / victoria-metrics:
   middlewares=auth,robots-deny@file
@@ -105,9 +103,9 @@ These stay `bypass` (no Authelia in front):
 | **Stalwart**         | stalwart.${DOMAIN}  | Admin password, already behind wireguard                      |
 | **Paperless-ngx**    | docs.${DOMAIN}      | Own auth + API tokens for automation                          |
 
-### What about Grafana + OpenHands?
+### What about Grafana?
 
-These have own auth BUT they can trust the `Remote-User` header
+Grafana has own auth BUT can trust the `Remote-User` header
 that Traefik injects after Authelia passes the request:
 
 **Grafana** — add these env vars to auto-login:
@@ -122,9 +120,6 @@ that Traefik injects after Authelia passes the request:
 
 This way: visit metrics.${DOMAIN} → Authelia (2FA) → Grafana
 auto-logged-in. No second login.
-
-**OpenHands** — already accepts header-based auth via its session
-middleware. Authelia + openhands-session-key work together.
 
 ---
 
@@ -206,7 +201,7 @@ deno task deploy home traggo
 deno task deploy home grafana
 deno task deploy home victoria-metrics
 deno task deploy home mailserver   # rspamd
-deno task deploy home openhands
+deno task deploy home opencode-web
 deno task deploy home traefik
 
 # 3. After each: visit domain → confirm redirect to Authelia

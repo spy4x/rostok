@@ -414,7 +414,7 @@
           <!-- Home section: OpenCode Web -->
           <li class="service-item">
             <a
-              href="https://opencode.${DOMAIN}"
+              href="https://code.${DOMAIN}"
               target="_blank"
               class="service-link"
             >
@@ -424,19 +424,7 @@
               <img src="https://uptime-cloud.${DOMAIN}/api/v1/endpoints/home_opencode-web/health/badge.svg" alt="Home OpenCode Web Uptime Badge" onclick="window.open('https://uptime-cloud.${DOMAIN}/endpoints/home_opencode-web', '_blank')" style="cursor:pointer" />
             </a>
           </li>
-          <!-- Home section: OpenHands -->
-          <li class="service-item">
-            <a
-              href="https://code.${DOMAIN}"
-              target="_blank"
-              class="service-link"
-            >
-              <div class="service-icon">💻</div>
-              <div class="service-name">OpenHands</div>
-              <div class="service-name-detail">OpenHands</div>
-              <img src="https://uptime-cloud.${DOMAIN}/api/v1/endpoints/home_openhands/health/badge.svg" alt="Home OpenHands Uptime Badge" onclick="window.open('https://uptime-cloud.${DOMAIN}/endpoints/home_openhands', '_blank')" style="cursor:pointer" />
-            </a>
-          </li>
+
           <!-- Home section: Passwords -->
           <li class="service-item">
             <a

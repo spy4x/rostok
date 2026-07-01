@@ -83,8 +83,6 @@ access_control:
       policy: two_factor
     - domain: "code.antonshubin.com"
       policy: two_factor
-    - domain: "opencode.antonshubin.com"
-      policy: two_factor
     - domain: "metrics.antonshubin.com"
       policy: two_factor
     - domain: "metrics-vm.antonshubin.com"

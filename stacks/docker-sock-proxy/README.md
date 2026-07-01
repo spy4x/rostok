@@ -2,7 +2,7 @@
 
 Secure proxy for the Docker API socket. Restricts which API endpoints containers can access via Docker socket.
 
-Prevents the need to mount `/var/run/docker.sock` directly into application containers like OpenHands, Watchtower, or Portainer.
+Prevents mounting `/var/run/docker.sock` directly into containers like Watchtower or Portainer.
 
 ## Access
 

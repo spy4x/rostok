@@ -47,7 +47,7 @@ Affected stacks: `adguard`, `audiobookshelf`, `caldav-mcp`, `caldiy`,
 `docker-registry`, `docker-sock-proxy`, `email-mcp`, `filebrowser`, `gitea`,
 `google-maps-mcp`, `grafana`, `healthchecks`, `home-assistant`, `immich`\*,
 `jellyfin`, `mail-ai`, `mailserver`, `metube`, `monica-mcp`, `nginx`,
-`openhands`, `open-webui`, `paperless-ngx`, `piped`\*, `playwright`, `radicale`,
+`open-webui`, `paperless-ngx`, `piped`\*, `playwright`, `radicale`,
 `transmission`, `vaultwarden`, `victoria-metrics`, `wireguard`, `woodpecker`.
 
 > \*`immich` and `piped` should use `${PROJECT}-immich` / `${PROJECT}-piped`

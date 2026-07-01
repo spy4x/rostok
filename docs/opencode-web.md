@@ -2,7 +2,7 @@
 
 ## Architecture Decision
 
-OpenCode Web runs directly on the host as the **spy4x** user, like OpenHands.
+OpenCode Web runs directly on the host as the **spy4x** user.
 No container isolation needed — it needs filesystem access for repos, MCP
 servers, and config.
 
@@ -24,7 +24,7 @@ servers, and config.
 │  │ Middlewares: authelia@file               │            │
 │  └──────────────┬──────────────────────────┘            │
 │                 │                                       │
-│                 ▼ opencode.antonshubin.com               │
+│                 ▼ code.antonshubin.com                   │
 └─────────────────────────────────────────────────────────┘
 ```
 
@@ -84,7 +84,7 @@ Configured in `servers/home/configs/traefik/dynamic/01-home.yml`:
 
 ```yaml
 hl-opencode-web:
-  rule: "Host(`opencode.antonshubin.com`)"
+  rule: "Host(`code.antonshubin.com`)"
   middlewares:
     - authelia
     - robots-deny
