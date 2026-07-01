@@ -141,7 +141,7 @@ chore(deps): bump traefik to v3.3
 
 1. Every commit MUST include the co-author trailer:
    ```
-   Co-authored-by: openhands <openhands@all-hands.dev>
+   Co-authored-by: opencode <opencode@all-hands.dev>
    ```
 2. Keep commits small and focused (one logical change per commit).
 3. Run `deno task check` before every commit — all checks MUST pass.

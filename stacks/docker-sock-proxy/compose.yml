@@ -26,7 +26,7 @@ services:
       - SESSION=0
       - DISTRIBUTION=0
       - SYSTEM=0
-      # Grant only what OpenHands/agent-server needs
+      # Grant only what's needed for Docker access
       - CONTAINERS=1
       - ALLOW_START=1
       - ALLOW_STOP=1

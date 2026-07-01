@@ -7,7 +7,7 @@ and the Go binary's stdio with session management).
 ## What it does
 
 Provides AI assistants with GitHub API access: repositories, issues, pull requests,
-Actions, code search, users, and more. Used by OpenWebUI and OpenHands.
+Actions, code search, users, and more. Used by OpenWebUI and OpenCode Web.
 
 ## Setup
 
@@ -42,7 +42,6 @@ Default (`*`) enables all tool groups.
 
 ## Consumers
 
-| Consumer  | Connection                                                      |
-| --------- | --------------------------------------------------------------- |
-| OpenWebUI | `http://hl-github-mcp:3000/mcp` (via TOOL_SERVER_CONNECTIONS)   |
-| OpenHands | `http://<container-ip>:3000/mcp` (via settings.json mcp_config) |
+| Consumer  | Connection                                                    |
+| --------- | ------------------------------------------------------------- |
+| OpenWebUI | `http://hl-github-mcp:3000/mcp` (via TOOL_SERVER_CONNECTIONS) |

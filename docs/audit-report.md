@@ -119,21 +119,10 @@ maintainer who adds `command:` will silently skip the dependency chain. **Fix:**
 delete `command:` and rely on `dependencies:`, or document the pattern with
 a comment.
 
-### 1.6 `docs/openhands.md` exists but the *real* OpenHands runs via systemd  🟡
+### 1.6 ~~`docs/openhands.md` — OpenHands removed~~ ✅
 
-`stacks/openhands/compose.yml` literally says:
-
-```yaml
-# DECOMMISSIONED — OpenHands runs as standalone systemd service.
-# See docs/openhands.md for deployment instructions.
-# This compose file is kept for reference only, not deployed.
-```
-
-But the file is still in `stacks/` (54 stacks, not 53). Either:
-- Delete `stacks/openhands/` and keep `docs/openhands.md`, or
-- Keep it but rename to `stacks/_archive/openhands/` so it's clearly out of the catalog.
-
-If it stays in `stacks/`, it inflates counts and confuses audits. See 2.6.
+OpenHands service removed from repo. `stacks/openhands/`, `docs/openhands/`,
+and `docs/openhands.md` deleted. OpenCode Web replaces it at `code.antonshubin.com`.
 
 ### 1.7 Mismatch between README claims and Gatus reality  🟡
 
@@ -251,11 +240,10 @@ stacks/watchtower/compose.yml:     container_name: watchtower
 Five violations, not four. Fix `container_name: hl-mail-ai` and
 `hl-mail-ai-neatsoft`.
 
-### 2.4 `stacks/openhands/` is dead code in the catalog  🟡
+### 2.4 `stacks/openhands/` deleted ✅
 
-The compose file says "DECOMMISSIONED" but the directory still lives in
-`stacks/`. Audit tools and stack-count numbers are wrong. Move to
-`stacks/_archive/openhands/` or delete.
+OpenHands directory removed from repo. `stacks/openhands/`, `docs/openhands/`,
+and `docs/openhands.md` deleted.
 
 ### 2.5 `mail-ai` has no `proxy` network and uses `denoland/deno:latest`  🔴
 
@@ -308,10 +296,10 @@ version.
 
 `auth.md` Phase 1 lists 8 stacks that should switch from `auth` to
 `authelia@file`: metube, ollama, traggo, grafana, victoria-metrics, mailserver
-(rspamd), openhands, traefik. From the `authelia` config and dynamic.yml:
+(rspamd), traefik. From the `authelia` config and dynamic.yml:
 
 - **Traefik router** already uses `authelia@file` ✅
-- **OpenHands** uses `authelia` ✅ (in `dynamic.yml`)
+- **OpenCode Web** uses `authelia` ✅ (in `01-home.yml`)
 - **Grafana, Victoria-Metrics, Metube, Ollama, Traggo, Mailserver (rspamd)** —
   need to verify the actual `*.env` and compose labels.
 
@@ -345,7 +333,7 @@ labels:
 If the host port is intentional (LAN access), keep it and document why. If
 not, remove. Currently undocumented.
 
-### 2.10 `stacks/openhands/compose.yml` (placeholder) has `restart: "no"`  🔵
+### 2.10 `stacks/openhands/` removed (was decommissioned) ✅
 
 Minor, but inconsistent. The rest of the project uses `unless-stopped`. If
 this file is truly dead, see 2.4.
@@ -432,7 +420,7 @@ Audit grep showed **40 of 54 compose files use `:latest`**. Examples
 (not exhaustive): adguard, adguardhome, audiobookshelf, authelia, cloudflared,
 docker-registry, docker-sock-proxy, filebrowser, gatus, gitea, grafana
 (11.3.0 is fine but there's also `grafana/grafana:latest`), mail-ai, mailserver,
-mirotalk, monitoring, ntfy, ollama, openhands, open-webui, paperless-ngx,
+mirotalk, monitoring, ntfy, ollama, open-webui, paperless-ngx,
 plausible, radicale, reitti, searxng, stalwart, syncthing, watchtower, etc.
 
 `latest` makes builds non-reproducible. A pull next week can break the deploy.
@@ -762,7 +750,7 @@ biggest "ready for viral" gap.
 `docs/architecture.md` is ASCII-only. A simple `docs/architecture.mmd`
 would render in GitHub. Helps the public-readiness goal.
 
-### 5.12 `docs/openhands.md` is referenced from `stacks/openhands/compose.yml`  🟡
+### 5.12 `docs/openhands.md` removed alongside stack ✅
 
 OK, but is the file actually useful? Read it. If it's just "see
 <https://docs.all-hands.dev/>", drop it.
@@ -841,7 +829,7 @@ If `deno task check` ever silently no-ops, AGENTS.md guidance is broken.
 Verify. (If it's there, document which extensions you require for the
 project — `denoland.vscode-deno`, etc.)
 
-### 7.3 `stacks/openhands/compose.yml` profile="decommissioned"  🔵
+### 7.3 `stacks/openhands/` removed from catalog ✅
 
 Clever, but `docker compose --profile decommissioned up` would still work.
 Document or delete.
@@ -922,7 +910,7 @@ That's fine for a one-person project — but the README shouldn't claim
 
 10. **Migrate `grafana`, `victoria-metrics`, `metube`, `ollama`, `traggo`,
     `mailserver-rspamd`** to Authelia per `auth.md` Phase 1. 2.7, 4.15.
-11. **Move `stacks/openhands/` to `_archive/`** or delete. 2.4.
+11. ~~Move `stacks/openhands/` to `_archive/` or delete.~~ **Done.** 2.4.
 12. **Add healthchecks to the 12 priority stacks** listed in improvements.md. 2.16.
 13. **Add `backup.ts` for `victoria-metrics`**. 1.4.
 14. **Set up Woodpecker CI** running `deno task check`. 5.8.
@@ -986,7 +974,7 @@ This audit was performed by:
    exposed host ports, env vars in compose labels, basic-auth references,
    gatus endpoint coverage.
 6. Sampling 6 representative stacks in full (`authelia`, `traefik`, `immich`,
-   `monitoring` via grep, `openhands`, `open-webui`, `mail-ai`,
+   `monitoring` via grep, `open-webui`, `mail-ai`,
    `cloudflared`, `watchtower`, `mailserver`).
 
 Not audited:
@@ -1014,7 +1002,7 @@ scripts/backup/+main.ts (full), scripts/encryption/+lib.ts (full),
 scripts/ansible/+main.ts (full), scripts.test.ts,
 stacks/authelia/compose.yml, stacks/traefik/compose.yml,
 stacks/traefik/dynamic.yml, stacks/immich/compose.yml,
-stacks/openhands/compose.yml, stacks/open-webui/compose.yml (head),
+stacks/open-webui/compose.yml (head),
 stacks/mail-ai/compose.yml (head),
 stacks/cloudflared/compose.yml, stacks/watchtower/compose.yml,
 stacks/mailserver/compose.yml (head), stacks/mail-ai/+main.ts (head),
