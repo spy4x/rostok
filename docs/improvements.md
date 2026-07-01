@@ -100,7 +100,7 @@ document why.
 `akaunting`, `authelia`, `caldav-mcp`, `docker-registry`, `gitea`, `grafana`,
 `librespeed`, `mail-ai`, `mirotalk`, `monica`, `monica-mcp`, `monitoring`,
 `ollama`, `paperless-ngx`, `plausible`, `reitti`, `stalwart`, `traggo`,
-`umami`, `upwork-triage`, `usememos`, `zond`
+`umami`, `usememos`, `zond`
 
 Each should follow the pattern in [adding-services.md](adding-services.md):
 service description, setup, configuration notes, troubleshooting.
@@ -170,8 +170,8 @@ Immix uses `restart: always` for 4 services but `restart: unless-stopped` for
 
 ### 3.4 Missing Dockerfile HEALTHCHECK
 
-The 5 custom Dockerfiles (`caldav-mcp`, `google-maps-mcp`, `monica-mcp`,
-`playwright` MCP proxy, `upwork-triage`) should include Dockerfile-level
+The 4 custom Dockerfiles (`caldav-mcp`, `google-maps-mcp`, `monica-mcp`,
+`playwright` MCP proxy) should include Dockerfile-level
 `HEALTHCHECK` instructions as a fallback even when compose-level healthchecks
 exist.
 

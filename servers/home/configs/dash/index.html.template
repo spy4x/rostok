@@ -502,32 +502,7 @@
               <img src="https://uptime-cloud.${DOMAIN}/api/v1/endpoints/home_librespeed/health/badge.svg" alt="Home Speed Uptime Badge" onclick="window.open('https://uptime-cloud.${DOMAIN}/endpoints/home_librespeed', '_blank')" style="cursor:pointer" />
             </a>
           </li>
-          <!-- Home section: Stalwart -->
-          <li class="service-item">
-            <a
-              href="https://mail.${DOMAIN}"
-              target="_blank"
-              class="service-link"
-            >
-              <div class="service-icon">✉️</div>
-              <div class="service-name">Stalwart</div>
-              <div class="service-name-detail">Stalwart</div>
-              <img src="https://uptime-home.${DOMAIN}/api/v1/endpoints/cloud_stalwart/health/badge.svg" alt="Home Stalwart Uptime Badge" onclick="window.open('https://uptime-home.${DOMAIN}/endpoints/cloud_stalwart', '_blank')" style="cursor:pointer" />
-            </a>
-          </li>
-          <!-- Home section: Bulwark -->
-          <li class="service-item">
-            <a
-              href="https://webmail.${DOMAIN}"
-              target="_blank"
-              class="service-link"
-            >
-              <div class="service-icon">📧</div>
-              <div class="service-name">Webmail</div>
-              <div class="service-name-detail">Bulwark</div>
-              <img src="https://uptime-home.${DOMAIN}/api/v1/endpoints/cloud_bulwark/health/badge.svg" alt="Home Bulwark Uptime Badge" onclick="window.open('https://uptime-home.${DOMAIN}/endpoints/cloud_bulwark', '_blank')" style="cursor:pointer" />
-            </a>
-          </li>
+
           <!-- Home section: Stats -->
           <li class="service-item">
             <a
@@ -702,6 +677,45 @@
               <div class="service-name">Notifications</div>
               <div class="service-name-detail">Ntfy</div>
               <img src="https://uptime-home.${DOMAIN}/api/v1/endpoints/cloud_ntfy/health/badge.svg" alt="Cloud Notifications Uptime Badge" onclick="window.open('https://uptime-home.${DOMAIN}/endpoints/cloud_ntfy', '_blank')" style="cursor:pointer" />
+            </a>
+          </li>
+          <!-- Cloud section: Mail -->
+          <li class="service-item">
+            <a
+              href="https://mail.${DOMAIN}"
+              target="_blank"
+              class="service-link"
+            >
+              <div class="service-icon">📧</div>
+              <div class="service-name">Mail</div>
+              <div class="service-name-detail">Stalwart</div>
+              <img src="https://uptime-home.${DOMAIN}/api/v1/endpoints/cloud_mail/health/badge.svg" alt="Cloud Mail Uptime Badge" onclick="window.open('https://uptime-home.${DOMAIN}/endpoints/cloud_mail', '_blank')" style="cursor:pointer" />
+            </a>
+          </li>
+          <!-- Cloud section: Webmail -->
+          <li class="service-item">
+            <a
+              href="https://webmail.${DOMAIN}"
+              target="_blank"
+              class="service-link"
+            >
+              <div class="service-icon">📧</div>
+              <div class="service-name">Webmail</div>
+              <div class="service-name-detail">Bulwark</div>
+              <img src="https://uptime-home.${DOMAIN}/api/v1/endpoints/cloud_bulwark/health/badge.svg" alt="Cloud Webmail Uptime Badge" onclick="window.open('https://uptime-home.${DOMAIN}/endpoints/cloud_bulwark', '_blank')" style="cursor:pointer" />
+            </a>
+          </li>
+          <!-- Cloud section: Mail Admin -->
+          <li class="service-item">
+            <a
+              href="https://mail.${DOMAIN}/admin"
+              target="_blank"
+              class="service-link"
+            >
+              <div class="service-icon">⚙️</div>
+              <div class="service-name">Mail Admin</div>
+              <div class="service-name-detail">Stalwart</div>
+              <img src="https://uptime-home.${DOMAIN}/api/v1/endpoints/cloud_mail/health/badge.svg" alt="Cloud Mail Uptime Badge" onclick="window.open('https://uptime-home.${DOMAIN}/endpoints/cloud_mail', '_blank')" style="cursor:pointer" />
             </a>
           </li>
           <!-- Cloud section: Speed -->

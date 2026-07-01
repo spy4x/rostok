@@ -1,0 +1,8 @@
+{
+  "name": "deepseek-v4-pro",
+  "model": "deepseek-v4-pro",
+  "api_key": "${DEEPSEEK_API_KEY}",
+  "base_url": "https://api.deepseek.com/v1",
+  "temperature": 0.2,
+  "max_output_tokens": 8192
+}

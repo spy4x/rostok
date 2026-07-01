@@ -17,7 +17,8 @@ services:
       - "465:465"
       - "587:587"
       - "993:993"
-      - "0.0.0.0:8080:8080"
+      # Internal HTTP port published on Docker host gateway for Traefik (different compose stack)
+      - "172.18.0.1:8080:8080"
     healthcheck:
       test: ["CMD", "curl", "-f", "http://127.0.0.1:8080/healthz/live"]
       interval: 30s
@@ -44,11 +45,36 @@ services:
     labels:
       - "traefik.enable=true"
       - "traefik.docker.network=proxy"
-      - "traefik.http.services.hl-stalwart.loadbalancer.server.port=8080"
+      # Stalwart runs in its own compose stack; Traefik (separate stack) can't
+      # resolve service-name DNS across stacks. 8080 published on Docker host
+      # gateway (172.18.0.1) lets Traefik reach it reliably.
+      - "traefik.http.services.hl-stalwart.loadbalancer.server.url=http://172.18.0.1:8080"
       - "traefik.http.services.hl-stalwart.loadbalancer.healthCheck.path=/healthz/live"
       - "traefik.http.services.hl-stalwart.loadbalancer.healthCheck.interval=30s"
-      - "traefik.http.routers.hl-stalwart.rule=Host(`mail.antonshubin.com`)"
+      # Web UI + JMAP on mail.DOMAIN → Stalwart backend
+      - "traefik.http.routers.hl-stalwart.rule=Host(`mail.${DOMAIN}`)"
       - "traefik.http.routers.hl-stalwart.entrypoints=websecure"
       - "traefik.http.routers.hl-stalwart.tls=true"
       - "traefik.http.routers.hl-stalwart.tls.certresolver=myresolver"
+      # stalwart-jmap middleware provides COEP/CORS headers for cross-origin JMAP (Bulwark)
       - "traefik.http.routers.hl-stalwart.middlewares=stalwart-jmap@file,robots-deny@file"
+
+  # Synchronizes Let's Encrypt certs from Traefik's acme.json into Stalwart
+  cert-sync:
+    container_name: hl-cert-sync
+    image: python:3-alpine
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+          echo "15 3 * * * cd / && python3 /script.py" | crontab -
+          exec crond -f -l 2
+    volumes:
+      - ${PATH_APPS}/stacks/stalwart/cert-sync.py:/script.py:ro,z
+      - ${VOLUMES_PATH}/traefik/letsencrypt/acme.json:/acme.json:ro,z
+      - ${VOLUMES_PATH}/stalwart/cert-sync-state:/root/.cache/stalwart-cert-sync:z
+    environment:
+      - ACME_PATH=/acme.json
+      - STALWART_PASSWORD=${STALWART_ADMIN_PASSWORD}
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
