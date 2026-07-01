@@ -411,6 +411,19 @@
               <img src="https://uptime-cloud.${DOMAIN}/api/v1/endpoints/home_ollama/health/badge.svg" alt="Home Ollama Uptime Badge" onclick="window.open('https://uptime-cloud.${DOMAIN}/endpoints/home_ollama', '_blank')" style="cursor:pointer" />
             </a>
           </li>
+          <!-- Home section: OpenCode Web -->
+          <li class="service-item">
+            <a
+              href="https://opencode.${DOMAIN}"
+              target="_blank"
+              class="service-link"
+            >
+              <div class="service-icon">💻</div>
+              <div class="service-name">OpenCode Web</div>
+              <div class="service-name-detail">OpenCode</div>
+              <img src="https://uptime-cloud.${DOMAIN}/api/v1/endpoints/home_opencode-web/health/badge.svg" alt="Home OpenCode Web Uptime Badge" onclick="window.open('https://uptime-cloud.${DOMAIN}/endpoints/home_opencode-web', '_blank')" style="cursor:pointer" />
+            </a>
+          </li>
           <!-- Home section: OpenHands -->
           <li class="service-item">
             <a

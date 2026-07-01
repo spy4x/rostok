@@ -46,6 +46,8 @@ targets:
     url: http://hl-ollama:11434/api/tags
   - name: open-webui
     url: http://hl-open-webui:8080/
+  - name: opencode-web
+    url: http://172.23.0.1:8002/
   - name: openhands
     url: http://172.23.0.1:8000/health
   - name: paperless

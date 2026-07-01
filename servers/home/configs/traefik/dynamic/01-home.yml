@@ -28,8 +28,23 @@ http:
       tls:
         certResolver: myresolver
 
+    # OpenCode Web — standalone systemd service on host, not a container
+    hl-opencode-web:
+      rule: "Host(`opencode.antonshubin.com`)"
+      entrypoints: websecure
+      middlewares:
+        - authelia
+        - robots-deny
+      service: hl-opencode-web
+      tls:
+        certResolver: myresolver
+
   services:
     hl-openhands:
       loadBalancer:
         servers:
           - url: "http://172.23.0.1:8001"
+    hl-opencode-web:
+      loadBalancer:
+        servers:
+          - url: "http://172.23.0.1:8002"
