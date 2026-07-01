@@ -1,0 +1,18 @@
+# DECOMMISSIONED — OpenCode Web runs as standalone systemd service.
+# See docs/opencode-web.md for deployment instructions.
+# This compose file is kept for reference only, not deployed.
+
+networks:
+  proxy:
+    external: true
+
+services:
+  opencode-web:
+    # NOT DEPLOYED — placeholder
+    image: scratch
+    profiles:
+      - decommissioned
+    container_name: hl-opencode-web
+    restart: "no"
+    networks:
+      - proxy

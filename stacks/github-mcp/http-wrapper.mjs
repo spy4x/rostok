@@ -136,13 +136,17 @@ const server = createServer((req, res) => {
     const keepalive = setInterval(() => {
       try {
         res.write(": keepalive\n\n")
-      } catch {}
+      } catch {
+        // Intentionally empty - keepalive errors are non-fatal
+      }
     }, 30000)
     req.on("close", () => {
       clearInterval(keepalive)
       try {
         res.end()
-      } catch {}
+      } catch {
+        // Intentionally empty - close errors are non-fatal
+      }
     })
     return
   }
