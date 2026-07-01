@@ -19,7 +19,7 @@
 - import_playbook: after-deploy/monitoring.yml
 - import_playbook: after-deploy/backup-cronjob.yml
 - import_playbook: after-deploy/mailserver-certs-renewal.yml
-- import_playbook: after-deploy/radicale-setup.yml
+- import_playbook: after-deploy/cloud-tunnel.yml
 - name: After Deploy Complete
   hosts: homelab_servers
   tasks:
@@ -33,7 +33,6 @@
           - "  ✓ Container health monitoring"
           - "  ✓ Automated backups via cron"
           - "  ✓ Mailserver SSL certificate auto-renewal (if deployed)"
-          - "  ✓ Radicale user accounts (if applicable)"
           - ""
           - "🎉 Your homelab is fully configured and secured!"
           - ""

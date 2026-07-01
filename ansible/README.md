@@ -45,7 +45,7 @@ All playbooks are in the `playbooks/` directory:
 
 ### Specific Services
 
-- `radicale-setup.yml` - Setup Radicale CalDAV/CardDAV server
+- `radicale-setup.yml` — **removed** CalDAV migrated to Stalwart on cloud
 - `fix-raspberry-pi.yml` - Fix Raspberry Pi read-only boot partition
 
 ## 🚀 Usage
