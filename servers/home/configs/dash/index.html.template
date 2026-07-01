@@ -414,7 +414,7 @@
           <!-- Home section: OpenCode Web -->
           <li class="service-item">
             <a
-              href="https://opencode.${DOMAIN}"
+              href="https://code.${DOMAIN}"
               target="_blank"
               class="service-link"
             >
