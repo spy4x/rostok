@@ -556,27 +556,19 @@ the lowest-traffic window (Sunday 04:00 local).
 
 8. Update email-mcp config on homelab:
 
-   ```toml
-   # stacks/email-mcp/config.toml.template
-   # Change ports from 1993 (DMS) to direct Stalwart ports:
-   host = "mail.antonshubin.com"
-   port = 993        # was: host.docker.internal:1993 (tunnel)
-   use_ssl = true
-   ```
-
-   Or keep the tunnel and just retarget it.
-
-   **IMPORTANT:** After changing `config.toml.template`, you MUST re-deploy
-   email-mcp to regenerate `config.toml` from the template:
+   The template (`config.toml.template`) already points directly to Stalwart
+   (`mail.antonshubin.com:993/587`). Re-deploy to regenerate `config.toml`:
 
    ```bash
    deno task deploy home email-mcp
    ```
 
    The `before.deploy.ts` script renders `config.toml` from the template and
-   replaces `${EMAIL_MCP_*}` env vars with values from
-   `servers/home/.env`. Without a re-deploy, the container uses the stale
-   config pointing at the old tunnel/Hetzner firewall bug workaround ports.
+   replaces `${EMAIL_MCP_*}` env vars with values from `servers/home/.env`.
+
+   **Note:** The old SSH tunnel (`cloud-tunnel`) that forwarded ports 1993/1587
+   has been removed — it was a Hetzner firewall workaround that is no longer
+   needed. All services connect directly to `mail.antonshubin.com:993/587`.
 
 ## 11. Phase 5 — Decommission DMS
 
