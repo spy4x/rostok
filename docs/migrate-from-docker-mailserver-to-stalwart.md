@@ -566,6 +566,18 @@ the lowest-traffic window (Sunday 04:00 local).
 
    Or keep the tunnel and just retarget it.
 
+   **IMPORTANT:** After changing `config.toml.template`, you MUST re-deploy
+   email-mcp to regenerate `config.toml` from the template:
+
+   ```bash
+   deno task deploy home email-mcp
+   ```
+
+   The `before.deploy.ts` script renders `config.toml` from the template and
+   replaces `${EMAIL_MCP_*}` env vars with values from
+   `servers/home/.env`. Without a re-deploy, the container uses the stale
+   config pointing at the old tunnel/Hetzner firewall bug workaround ports.
+
 ## 11. Phase 5 — Decommission DMS
 
 After 30 days of clean Stalwart operation:
