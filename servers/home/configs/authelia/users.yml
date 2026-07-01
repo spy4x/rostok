@@ -6,3 +6,9 @@ users:
     groups:
       - admins
       - users
+  michael:
+    displayname: "Michael"
+    password: "$argon2id$v=19$m=65536,t=3,p=4$Wzx+vCVSSMtry15l/E+ruw$rWPwJdBt/Bc87b2p5LCLQ+ZPmJp7ggxbR64e43D31xA"
+    email: michael@antonshubin.com
+    groups:
+      - users
