@@ -138,15 +138,6 @@ endpoints:
     alerts:
       - type: ntfy
 
-  - name: Radicale
-    group: home
-    url: "https://probe-home.${DOMAIN}/health/radicale"
-    interval: 1m
-    conditions:
-      - "[STATUS] == 200"
-    alerts:
-      - type: ntfy
-
   - name: SearXNG
     group: home
     url: "https://probe-home.${DOMAIN}/health/searxng"

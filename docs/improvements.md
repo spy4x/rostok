@@ -47,7 +47,7 @@ Affected stacks: `adguard`, `audiobookshelf`, `caldav-mcp`, `caldiy`,
 `docker-registry`, `docker-sock-proxy`, `email-mcp`, `filebrowser`, `gitea`,
 `google-maps-mcp`, `grafana`, `healthchecks`, `home-assistant`, `immich`\*,
 `jellyfin`, `mail-ai`, `mailserver`, `metube`, `monica-mcp`, `nginx`,
-`openhands`, `open-webui`, `paperless-ngx`, `piped`\*, `playwright`, `radicale`,
+`openhands`, `open-webui`, `paperless-ngx`, `piped`\*, `playwright`,
 `transmission`, `vaultwarden`, `victoria-metrics`, `wireguard`, `woodpecker`.
 
 > \*`immich` and `piped` should use `${PROJECT}-immich` / `${PROJECT}-piped`
@@ -60,7 +60,7 @@ all services need one, every stateful or user-facing service would benefit.
 Priority targets (by impact):
 
 1. **Stateful services**: `adguard`, `audiobookshelf`, `authelia`, `filebrowser`,
-   `home-assistant`, `jellyfin`, `mailserver`, `paperless-ngx`, `radicale`,
+   `home-assistant`, `jellyfin`, `mailserver`, `paperless-ngx`,
    `searxng`, `syncthing`, `usememos`, `vaultwarden`
 2. **User-facing**: `grafana`, `gitea`, `immich`, `open-webui`
 3. **Infra**: `traefik`, `ntfy`, `gatus`, `healthchecks`, `cloudflared`

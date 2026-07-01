@@ -143,6 +143,15 @@ endpoints:
     alerts:
       - type: ntfy
 
+  - name: CalDAV
+    group: cloud
+    url: "https://cal.${DOMAIN}/"
+    interval: 1m
+    conditions:
+      - "[STATUS] == 200"
+    alerts:
+      - type: ntfy
+
   - name: Bulwark
     group: cloud
     url: "https://webmail.${DOMAIN}/api/health"

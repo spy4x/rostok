@@ -264,8 +264,8 @@
             >
               <div class="service-icon">📅</div>
               <div class="service-name">Calendar & Contacts</div>
-              <div class="service-name-detail">Radicale</div>
-              <img src="https://uptime-cloud.${DOMAIN}/api/v1/endpoints/home_radicale/health/badge.svg" alt="Home Calendar & Contacts Uptime Badge" onclick="window.open('https://uptime-cloud.${DOMAIN}/endpoints/home_radicale', '_blank')" style="cursor:pointer" />
+              <div class="service-name-detail">Stalwart</div>
+              <img src="https://uptime-home.${DOMAIN}/api/v1/endpoints/cloud_caldav/health/badge.svg" alt="Cloud CalDAV Uptime Badge" onclick="window.open('https://uptime-home.${DOMAIN}/endpoints/cloud_caldav', '_blank')" style="cursor:pointer" />
             </a>
           </li>
           <!-- Home section: CI/CD -->

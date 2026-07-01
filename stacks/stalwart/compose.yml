@@ -58,6 +58,13 @@ services:
       - "traefik.http.routers.hl-stalwart.tls.certresolver=myresolver"
       # stalwart-jmap middleware provides COEP/CORS headers for cross-origin JMAP (Bulwark)
       - "traefik.http.routers.hl-stalwart.middlewares=stalwart-jmap@file,robots-deny@file"
+      # CalDAV/CardDAV on cal.DOMAIN → same Stalwart backend
+      - "traefik.http.routers.hl-stalwart-caldav.rule=Host(`cal.${DOMAIN}`)"
+      - "traefik.http.routers.hl-stalwart-caldav.entrypoints=websecure"
+      - "traefik.http.routers.hl-stalwart-caldav.tls=true"
+      - "traefik.http.routers.hl-stalwart-caldav.tls.certresolver=myresolver"
+      - "traefik.http.routers.hl-stalwart-caldav.middlewares=robots-deny@file"
+      - "traefik.http.routers.hl-stalwart-caldav.service=hl-stalwart"
 
   # Synchronizes Let's Encrypt certs from Traefik's acme.json into Stalwart
   cert-sync:
