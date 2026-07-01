@@ -55,6 +55,8 @@ services:
       - ALLOWED_HOSTNAMES=["schedule.${DOMAIN}"]
       - CALENDSO_ENCRYPTION_KEY=${CALDIY_ENCRYPTION_KEY}
       - REDIS_URL=redis://caldiy-redis:6379
+      # CRON_API_KEY — shared secret for cron endpoints (scheduleEmailReminders etc.)
+      - CRON_API_KEY=${CALDIY_CRON_API_KEY}
       # SMTP — uses shared mailserver on cloud (mail.${DOMAIN})
       # Resolves via Cloudflare DNS to cloud server (23.88.x.x).
       # STARTTLS cert is Let's Encrypt (CN=mail.${DOMAIN}), valid.
@@ -93,3 +95,40 @@ services:
       - "traefik.http.routers.hl-schedule.tls.certresolver=myresolver"
       - "traefik.http.routers.hl-schedule.middlewares=robots-deny@file"
 
+  # Processes background task queue (sendWorkflowEmails, sendWebhook, etc.)
+  # Cal.com creates Task records in Postgres but has no built-in scheduler to
+  # consume them. This container runs a poll loop via the REST cron endpoints.
+  # Tradeoff: polling adds ~1m latency. Trigger.dev would be real-time but
+  # requires external infra. Polling is simpler for a homelab.
+  caldiy-cron:
+    container_name: hl-caldiy-cron
+    image: alpine/curl:latest
+    environment:
+      - CRON_API_KEY=${CALDIY_CRON_API_KEY}
+      - TZ=${TIMEZONE}
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -x
+        while true; do
+          for ep in scheduleEmailReminders scheduleSMSReminders scheduleWhatsappReminders; do
+            curl -sf -X POST "http://hl-caldiy:3000/api/cron/workflows/$${ep}" \
+              -H "authorization: $${CRON_API_KEY}" \
+              -H "user-agent: caldiy-cron/1.0" \
+              || echo "[$${ep}] failed: $$?"
+          done
+          sleep 60
+        done
+    depends_on:
+      caldiy:
+        condition: service_started
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 16M
+          cpus: "0.05"
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - default

@@ -94,6 +94,26 @@ ssh home "docker exec hl-caldiy-db psql -U caldiy -d caldiy -c 'SELECT type, sch
 # Shows queued tasks waiting for cron processing
 ```
 
+### 9. Create workflow directly in DB (if UI paywalled)
+
+If Workflows are locked behind a paywall in the Cal.com UI, create one directly:
+
+```bash
+ssh home 'docker exec -i hl-caldiy-db psql -U caldiy -d caldiy' << SQL
+INSERT INTO "Workflow" (id, name, "userId", trigger, time, "timeUnit", position, "isActiveOnAll", type)
+VALUES (1, 'Booking Confirmation', 1, 'NEW_EVENT', NULL, NULL, 0, false, 'EVENT_TYPE');
+
+INSERT INTO "WorkflowStep" (id, "stepNumber", action, "workflowId", "reminderBody", "emailSubject", template, "numberRequired", sender, "numberVerificationPending", "includeCalendarEvent", "verifiedAt")
+VALUES (1, 1, 'EMAIL_HOST', 1, NULL, NULL, 'REMINDER', NULL, 'Cal.com', false, false, NOW());
+
+INSERT INTO "WorkflowStep" (id, "stepNumber", action, "workflowId", "reminderBody", "emailSubject", template, "numberRequired", sender, "numberVerificationPending", "includeCalendarEvent", "verifiedAt")
+VALUES (2, 2, 'EMAIL_ATTENDEE', 1, NULL, NULL, 'REMINDER', NULL, 'Cal.com', false, false, NOW());
+
+INSERT INTO "WorkflowsOnEventTypes" ("workflowId", "eventTypeId")
+VALUES (1, 3), (1, 2);
+SQL
+```
+
 ## Common Failures
 
 | Symptom                       | Cause                                  | Fix                                                       |
