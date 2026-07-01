@@ -362,6 +362,38 @@ try {
     log("No stacks to deploy")
   }
 
+  // Handle "after.deploy.ts" scripts for stacks (runs AFTER docker compose deployment)
+  for (const stackConfig of stacks) {
+    const stackName = stackConfig.name
+    const deployAs = stackConfig.deployAs || stackName
+
+    const stackAfterDeployPath = `${tempDir}/stacks/${stackName}/after.deploy.ts`
+    const hasStackAfterDeploy = await Deno.stat(stackAfterDeployPath).then(() => true).catch(() =>
+      false
+    )
+    if (hasStackAfterDeploy) {
+      log(`Running after.deploy.ts for stack ${stackName}...`)
+      const proc = new Deno.Command(Deno.execPath(), {
+        args: [
+          "run",
+          "-A",
+          "--env-file=.env.root",
+          "--env-file=.env",
+          stackAfterDeployPath,
+        ],
+        cwd: tempDir,
+        env: { DEPLOY_AS: deployAs, SSH_ADDRESS, PATH_APPS },
+      })
+      const output = await proc.output()
+      if (output.code !== 0) {
+        error(`after.deploy.ts failed for stack: ${stackName}`)
+        error(new TextDecoder().decode(output.stderr))
+        Deno.exit(1)
+      }
+      success(`✓ after.deploy.ts for ${stackName}`)
+    }
+  }
+
   log("Deployment script finished")
 } finally {
   // Clean up temp directory
