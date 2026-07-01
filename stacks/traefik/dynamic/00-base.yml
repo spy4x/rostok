@@ -1,17 +1,11 @@
 http:
   middlewares:
-    # Authelia forward auth - SSO with 2FA
-    # Uses new /api/authz/forward-auth endpoint (v4.39+)
-    # Old /api/verify?auth=send is deprecated, returns 401 without redirect
-    authelia:
-      forwardAuth:
-        address: http://hl-authelia:9091/api/authz/forward-auth
-        trustForwardHeader: true
-        authResponseHeaders:
-          - Remote-User
-          - Remote-Groups
-          - Remote-Email
-          - Remote-Name
+    # dashboard-auth — basic auth for Traefik dashboard.
+    # Works on all servers (unlike authelia which only runs on home).
+    dashboard-auth:
+      basicAuth:
+        users:
+          - "${BASIC_AUTH_USER}:${BASIC_AUTH_PASSWORD}"
     compression:
       compress:
         excludedContentTypes:
@@ -32,7 +26,9 @@ http:
         customResponseHeaders:
           Cross-Origin-Opener-Policy: same-origin
           Cross-Origin-Resource-Policy: same-site
-          Cross-Origin-Embedder-Policy: require-corp
+          # Cross-Origin-Embedder-Policy is NOT in security-headers —
+          # it breaks cross-origin JMAP (Bulwark → Stalwart on different
+          # subdomains). Add to individual router middlewares if needed.
           # X-Robots-Tag is intentionally NOT in security-headers. It lives in
           # its own middleware (robots-deny) so public sites (antonshubin,
           # neatsoft) can opt out by not including it in their router labels.
@@ -51,21 +47,17 @@ http:
       headers:
         customResponseHeaders:
           X-Robots-Tag: "all"
+    # Stalwart JMAP — needs permissive COEP/CORP so Bulwark's browser can
+    # make cross-origin JMAP requests from webmail.antonshubin.com.
+    stalwart-jmap:
+      headers:
+        customResponseHeaders:
+          Cross-Origin-Embedder-Policy: "unsafe-none"
+          Cross-Origin-Resource-Policy: "cross-origin"
+          Access-Control-Allow-Origin: "https://webmail.antonshubin.com"
+          Access-Control-Allow-Methods: "GET, POST, OPTIONS"
+          Access-Control-Allow-Headers: "Content-Type, Authorization"
 
-  # Non-Docker services — file-based routes (no Docker labels)
-  routers:
-    # OpenHands — standalone systemd service on host, not a container
-    hl-openhands:
-      rule: "Host(`code.antonshubin.com`)"
-      entrypoints: websecure
-      middlewares:
-        - authelia
-        - robots-deny
-      service: hl-openhands
-      tls:
-        certResolver: myresolver
-  services:
-    hl-openhands:
-      loadBalancer:
-        servers:
-          - url: "http://172.23.0.1:8001"
+  # Routers and services for file-based (non-Docker) routes.
+  # Home-server specific routes (authelia, openhands, etc.) are
+  # in servers/home/configs/traefik/dynamic/ and only deployed to home.

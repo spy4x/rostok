@@ -1,0 +1,35 @@
+# Home-server specific Traefik dynamic config.
+# Only deployed to the home server (via before.deploy.ts).
+# Extends the base config in stacks/traefik/dynamic/00-base.yml.
+
+http:
+  middlewares:
+    # Authelia forward auth - SSO with 2FA
+    # Uses new /api/authz/forward-auth endpoint (v4.39+)
+    authelia:
+      forwardAuth:
+        address: http://hl-authelia:9091/api/authz/forward-auth
+        trustForwardHeader: true
+        authResponseHeaders:
+          - Remote-User
+          - Remote-Groups
+          - Remote-Email
+          - Remote-Name
+
+  routers:
+    # OpenHands — standalone systemd service on host, not a container
+    hl-openhands:
+      rule: "Host(`code.antonshubin.com`)"
+      entrypoints: websecure
+      middlewares:
+        - authelia
+        - robots-deny
+      service: hl-openhands
+      tls:
+        certResolver: myresolver
+
+  services:
+    hl-openhands:
+      loadBalancer:
+        servers:
+          - url: "http://172.23.0.1:8001"

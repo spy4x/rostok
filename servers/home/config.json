@@ -40,7 +40,6 @@
     { "name": "akaunting" },
     { "name": "gitea" },
     { "name": "traggo" },
-    { "name": "stalwart" },
     { "name": "monitoring" },
     { "name": "docker-registry" },
     { "name": "authelia" },
