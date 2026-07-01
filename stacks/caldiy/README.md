@@ -33,51 +33,43 @@
 
 If confirmation/notification emails aren't being delivered, verify in this order:
 
-### 1. Network & DNS (verified working as of 2026-06-23)
+### 1. SMTP credentials (most common cause)
 
 ```bash
-dig mail.antonshubin.com +short     # → cloud public IP
+# Test SMTP auth from inside caldiy container
+ssh home "docker exec hl-caldiy node -e 'require(\"nodemailer\").createTransport({host:\"mail.antonshubin.com\",port:587,secure:false,auth:{user:\"noreply@antonshubin.com\",pass:process.env.EMAIL_SERVER_PASSWORD},tls:{rejectUnauthorized:false}}).sendMail({from:\"noreply@antonshubin.com\",to:\"anton@antonshubin.com\",subject:\"test\",text:\"hello\"}).then(r=>console.log(\"OK\",r.messageId)).catch(e=>console.error(\"FAIL\",e.message))'"
+# FAIL → goto step 2; OK → skip to step 6
+```
+
+### 2. Create noreply account on Stalwart (cloudlab)
+
+The `noreply@antonshubin.com` account must exist on the Stalwart mailserver
+(cloudlab). If missing, create it via the admin UI:
+
+1. Go to `https://mail.antonshubin.com/admin` → Directory → Add user
+2. Set name: `noreply`, email: `noreply@antonshubin.com`
+3. Set password matching `SMTP_PASSWORD` in `servers/home/.env`
+4. Verify with the SMTP test in step 1
+
+### 3. Network & DNS
+
+```bash
+dig mail.antonshubin.com +short     # → cloud public IP (23.88.101.28)
 nc -vz mail.antonshubin.com 587     # → open
 ```
 
-### 2. STARTTLS cert
+### 4. STARTTLS cert
 
 ```bash
 echo | openssl s_client -connect mail.antonshubin.com:587 -starttls smtp -servername mail.antonshubin.com 2>/dev/null | grep "subject="
 # Expected: subject=CN=mail.antonshubin.com
 ```
 
-### 3. Account exists on mailserver
+### 5. Caldiy container logs
 
 ```bash
-ssh cloud "docker exec mailserver setup email list"
-# Expected line: noreply@antonshubin.com
-```
-
-If missing, create it:
-
-```bash
-ssh cloud "docker exec -it mailserver setup email add noreply@antonshubin.com"
-# Enter the same password as SMTP_PASSWORD in servers/home/.env
-```
-
-### 4. Caldiy container logs
-
-```bash
-ssh home "docker logs hl-caldiy --tail 200 | grep -iE 'smtp|email|nodemailer'"
-# Look for: "Invalid login", "ECONNREFUSED", "ETIMEDOUT", "self signed certificate"
-```
-
-### 5. Test send directly from caldiy
-
-```bash
-ssh home "docker exec hl-caldiy node -e \"
-  require('nodemailer').createTransport({
-    host: 'mail.${DOMAIN}', port: 587, secure: false,
-    auth: { user: 'noreply@\${DOMAIN}', pass: process.env.EMAIL_SERVER_PASSWORD },
-    tls: { rejectUnauthorized: false }
-  }).sendMail({ from: 'noreply@\${DOMAIN}', to: 'anton@antonshubin.com', subject: 'test', text: 'hello' }).then(r => console.log('OK', r.messageId)).catch(e => console.error('FAIL', e.message))
-\""
+ssh home "docker logs hl-caldiy --tail 200 | grep -iE 'smtp|email|nodemailer|task'"
+# Look for: "Invalid login" (SMTP auth), "Creating task" (emails queued)
 ```
 
 ### 6. Verify Cal.com workflows enabled
@@ -88,12 +80,28 @@ In the caldiy admin UI:
 2. Ensure "Booking confirmation email" trigger is enabled
 3. Ensure "Host notification" + "Attendee notification" are on
 
+### 7. Check cron container is running
+
+```bash
+docker logs hl-caldiy-cron --tail 20
+# Should show periodic POST to scheduleEmailReminders
+```
+
+### 8. Check pending tasks in DB
+
+```bash
+ssh home "docker exec hl-caldiy-db psql -U caldiy -d caldiy -c 'SELECT type, scheduled_at, attempts FROM \"Task\" WHERE succeeded_at IS NULL ORDER BY scheduled_at LIMIT 10'"
+# Shows queued tasks waiting for cron processing
+```
+
 ## Common Failures
 
-| Symptom                   | Cause                             | Fix                                          |
-| ------------------------- | --------------------------------- | -------------------------------------------- |
-| `ECONNREFUSED`            | Wrong host (still `localhost`)    | Set `EMAIL_SERVER_HOST=mail.${DOMAIN}`       |
-| `ETIMEDOUT`               | Firewall blocks home → cloud 587  | Open port 587 on cloud security group        |
-| `Invalid login: 535`      | noreply account missing/wrong pw  | `setup email add noreply@antonshubin.com`    |
-| `self signed certificate` | StarTTLS chain issue              | `NODE_TLS_REJECT_UNAUTHORIZED=0` already set |
-| `Greeting never received` | DNS not resolving mail.\${DOMAIN} | Add Cloudflare A record → cloud public IP    |
+| Symptom                       | Cause                                  | Fix                                                       |
+| ----------------------------- | -------------------------------------- | --------------------------------------------------------- |
+| `ECONNREFUSED`                | Wrong host (still `localhost`)         | Set `EMAIL_SERVER_HOST=mail.${DOMAIN}`                    |
+| `ETIMEDOUT`                   | Firewall blocks home → cloud 587       | Open port 587 on cloud security group                     |
+| `Invalid login: 535`          | noreply account missing/wrong pw       | Create/reset in Stalwart admin UI (step 2)                |
+| `self signed certificate`     | STARTTLS chain issue                   | `NODE_TLS_REJECT_UNAUTHORIZED=0` already set              |
+| `Greeting never received`     | DNS not resolving mail.${DOMAIN}       | Add Cloudflare A record → cloud public IP                 |
+| Emails stuck (never sent)     | Task queue processor not running       | Ensure `hl-caldiy-cron` container is up (added in fix)    |
+| `Invalid credentials` (CalDAV) | Radicale creds mismatch in caldiy UI   | Reconnect CalDAV integration in caldiy settings           |
