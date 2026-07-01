@@ -17,6 +17,7 @@ services:
       - "465:465"
       - "587:587"
       - "993:993"
+      - "0.0.0.0:8080:8080"
     healthcheck:
       test: ["CMD", "curl", "-f", "http://127.0.0.1:8080/healthz/live"]
       interval: 30s
@@ -40,32 +41,12 @@ services:
       - no-new-privileges:true
     networks:
       - proxy
-
-  # Nginx sidecar — proxies to stalwart:8080 for Traefik.
-  # Traefik's Go HTTP client has issues reaching stalwart directly,
-  # so this sidecar bridges the gap. Routes exposed:
-  #   /         → redirect to /admin
-  #   /admin    → stalwart admin UI
-  #   /jmap     → JMAP API
-  stalwart-proxy:
-    container_name: hl-stalwart-proxy
-    image: nginx:1.27-alpine
-    restart: unless-stopped
-    volumes:
-      - ./nginx-stalwart.conf:/etc/nginx/conf.d/default.conf:ro,z
-    networks:
-      - proxy
-    deploy:
-      resources:
-        limits:
-          memory: 16M
-          cpus: "0.1"
-    security_opt:
-      - no-new-privileges:true
     labels:
       - "traefik.enable=true"
       - "traefik.docker.network=proxy"
-      - "traefik.http.services.hl-stalwart.loadbalancer.server.port=80"
+      - "traefik.http.services.hl-stalwart.loadbalancer.server.port=8080"
+      - "traefik.http.services.hl-stalwart.loadbalancer.healthCheck.path=/healthz/live"
+      - "traefik.http.services.hl-stalwart.loadbalancer.healthCheck.interval=30s"
       - "traefik.http.routers.hl-stalwart.rule=Host(`mail.antonshubin.com`)"
       - "traefik.http.routers.hl-stalwart.entrypoints=websecure"
       - "traefik.http.routers.hl-stalwart.tls=true"

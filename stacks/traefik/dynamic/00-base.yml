@@ -54,6 +54,9 @@ http:
         customResponseHeaders:
           Cross-Origin-Embedder-Policy: "unsafe-none"
           Cross-Origin-Resource-Policy: "cross-origin"
+          Access-Control-Allow-Origin: "https://webmail.antonshubin.com"
+          Access-Control-Allow-Methods: "GET, POST, OPTIONS"
+          Access-Control-Allow-Headers: "Content-Type, Authorization"
 
   # Routers and services for file-based (non-Docker) routes.
   # Home-server specific routes (authelia, openhands, etc.) are
