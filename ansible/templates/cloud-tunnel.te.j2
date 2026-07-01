@@ -1,9 +1,0 @@
-module cloud-tunnel 1.0;
-
-require {
-  type init_t;
-  type ssh_exec_t;
-  class file { execute execute_no_trans };
-};
-
-allow init_t ssh_exec_t:file { execute execute_no_trans };
