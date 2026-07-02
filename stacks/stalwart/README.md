@@ -7,6 +7,7 @@
 - **SMTP** (inbound 25, submission 465/587)
 - **IMAP4** (993) with JMAP (RFC 8620/8621)
 - **JMAP** for modern clients (push notifications, server-side search)
+- **CalDAV/CardDAV** — calendars, tasks, contacts via JMAP + WebDAV
 - **Built-in Webmail** at `/admin` (port 8080, proxied via Traefik)
 - **DKIM/ARC/DMARC/SPF** signing and verification
 - **Built-in anti-spam** (Bayesian, DNSBL, rate limiting)
@@ -25,6 +26,9 @@
 - **SMTP submission:** `mail.antonshubin.com:587` (STARTTLS) / `:465` (TLS)
 - **IMAP:** `mail.antonshubin.com:993` (TLS)
 - **JMAP:** `https://mail.antonshubin.com/jmap/`
+- **CalDAV:** `https://mail.antonshubin.com/caldav/{email}/` (or `cal.antonshubin.com`)
+- **CardDAV:** `https://mail.antonshubin.com/carddav/{email}/`
+- **CalDAV legacy domain:** `https://cal.antonshubin.com/` (replaces Radicale)
 
 ## Admin Account
 
@@ -36,6 +40,7 @@ Configured via `STALWART_RECOVERY_ADMIN` env var. First login at `/admin` uses t
 | ---------------------------------------------------- | -------------------------------------------------------------- |
 | `antonshubin.com` A                                  | `165.173.1.38` (cloud)                                         |
 | `mail.antonshubin.com` A                             | `165.173.1.38` (cloud)                                         |
+| `cal.antonshubin.com` A                              | `23.88.101.28` (cloud)                                         |
 | `antonshubin.com` MX                                 | `mail.antonshubin.com`                                         |
 | `antonshubin.com` SPF                                | `v=spf1 mx ip4:23.88.101.28 ~all`                              |
 | `_dmarc.antonshubin.com` TXT                         | `v=DMARC1; p=quarantine; pct=100; rua=mailto:2spy4x@gmail.com` |

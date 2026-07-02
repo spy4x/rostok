@@ -54,8 +54,6 @@ targets:
     url: http://hl-piped-frontend:80/
   - name: plausible
     url: http://hl-plausible:8000/
-  - name: radicale
-    url: http://hl-radicale:5232/
   - name: reitti
     url: http://hl-reitti:8080/
   - name: searxng

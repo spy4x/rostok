@@ -1,0 +1,18 @@
+# Cloud-server specific routes — only deployed to cloud.
+# Traefik container resolves hl-stalwart via Docker DNS (same network).
+http:
+  routers:
+    hl-stalwart:
+      rule: "Host(`mail.antonshubin.com`)"
+      entrypoints: websecure
+      middlewares:
+        - stalwart-jmap
+        - robots-deny
+      service: hl-stalwart
+      tls:
+        certResolver: myresolver
+  services:
+    hl-stalwart:
+      loadBalancer:
+        servers:
+          - url: "http://hl-stalwart:8080"

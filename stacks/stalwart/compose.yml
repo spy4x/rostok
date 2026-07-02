@@ -17,8 +17,6 @@ services:
       - "465:465"
       - "587:587"
       - "993:993"
-      # Internal HTTP port published on Docker host gateway for Traefik (different compose stack)
-      - "172.18.0.1:8080:8080"
     healthcheck:
       test: ["CMD", "curl", "-f", "http://127.0.0.1:8080/healthz/live"]
       interval: 30s
@@ -45,19 +43,67 @@ services:
     labels:
       - "traefik.enable=true"
       - "traefik.docker.network=proxy"
-      # Stalwart runs in its own compose stack; Traefik (separate stack) can't
-      # resolve service-name DNS across stacks. 8080 published on Docker host
-      # gateway (172.18.0.1) lets Traefik reach it reliably.
-      - "traefik.http.services.hl-stalwart.loadbalancer.server.url=http://172.18.0.1:8080"
+      # Use Python sidecar as backend: Traefik → sidecar (Python urllib) → Stalwart.
+      # Works around Go (Traefik/Alpine 3.23) ↔ Rust (Stalwart) HTTP interaction
+      # that causes connection resets on certain Docker IPs.
+      - "traefik.http.services.hl-stalwart.loadbalancer.server.url=http://hl-stalwart-proxy:8080"
       - "traefik.http.services.hl-stalwart.loadbalancer.healthCheck.path=/healthz/live"
       - "traefik.http.services.hl-stalwart.loadbalancer.healthCheck.interval=30s"
       # Web UI + JMAP on mail.DOMAIN → Stalwart backend
-      - "traefik.http.routers.hl-stalwart.rule=Host(`mail.${DOMAIN}`)"
+      - "traefik.http.routers.hl-stalwart.rule=Host(`mail.${DOMAIN}`) && !PathPrefix(`/dav/`)"
       - "traefik.http.routers.hl-stalwart.entrypoints=websecure"
       - "traefik.http.routers.hl-stalwart.tls=true"
       - "traefik.http.routers.hl-stalwart.tls.certresolver=myresolver"
       # stalwart-jmap middleware provides COEP/CORS headers for cross-origin JMAP (Bulwark)
       - "traefik.http.routers.hl-stalwart.middlewares=stalwart-jmap@file,robots-deny@file"
+      # CalDAV/CardDAV on mail.DOMAIN/dav → same Stalwart backend (no JMAP middleware
+      # which can interfere with PROPFIND/REPORT methods).
+      - "traefik.http.routers.hl-stalwart-dav.rule=Host(`mail.${DOMAIN}`) && PathPrefix(`/dav/`)"
+      - "traefik.http.routers.hl-stalwart-dav.entrypoints=websecure"
+      - "traefik.http.routers.hl-stalwart-dav.tls=true"
+      - "traefik.http.routers.hl-stalwart-dav.tls.certresolver=myresolver"
+      - "traefik.http.routers.hl-stalwart-dav.middlewares=robots-deny@file"
+      - "traefik.http.routers.hl-stalwart-dav.service=hl-stalwart"
+      # CalDAV/CardDAV on cal.DOMAIN → same Stalwart backend
+      - "traefik.http.routers.hl-stalwart-caldav.rule=Host(`cal.${DOMAIN}`)"
+      - "traefik.http.routers.hl-stalwart-caldav.entrypoints=websecure"
+      - "traefik.http.routers.hl-stalwart-caldav.tls=true"
+      - "traefik.http.routers.hl-stalwart-caldav.tls.certresolver=myresolver"
+      - "traefik.http.routers.hl-stalwart-caldav.middlewares=robots-deny@file"
+      - "traefik.http.routers.hl-stalwart-caldav.service=hl-stalwart"
+
+  # Python HTTP proxy sidecar: Traefik (Alpine 3.23 BusyBox wget) cannot reliably
+  # connect to Stalwart's Rust HTTP server. Python urllib (Alpine 3.24) can.
+  # Bridges HTTP traffic from Traefik to Stalwart on the internal proxy network.
+  # Fixed IP: 172.18.0.20 avoids a Docker network issue where IP .13 fails to
+  # connect to Stalwart's HTTP server.
+  stalwart-proxy:
+    container_name: hl-stalwart-proxy
+    image: python:3-alpine
+    command: ["python3", "/proxy/stalwart-proxy.py", "8080"]
+    volumes:
+      - ${PATH_APPS}/stacks/stalwart/stalwart-proxy.py:/proxy/stalwart-proxy.py:ro,z
+    restart: unless-stopped
+    networks:
+      proxy:
+        ipv4_address: 172.18.0.20
+    security_opt:
+      - no-new-privileges:true
+    deploy:
+      resources:
+        limits:
+          memory: 32M
+          cpus: "0.1"
+    healthcheck:
+      test: [
+        "CMD",
+        "python3",
+        "-c",
+        "import urllib.request; urllib.request.urlopen('http://hl-stalwart:8080/.well-known/jmap', timeout=3)",
+      ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
 
   # MTA-STS policy server — serves .well-known/mta-sts.txt for TLS enforcement
   # Covers mta-sts.${DOMAIN} and mta-sts.${NEATSOFT_DOMAIN} (same MX)
