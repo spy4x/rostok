@@ -60,7 +60,7 @@ services:
       - "traefik.http.routers.hl-stalwart.middlewares=stalwart-jmap@file,robots-deny@file"
 
   # MTA-STS policy server — serves .well-known/mta-sts.txt for TLS enforcement
-  # Covers mta-sts.antonshubin.com and mta-sts.neatsoft.dev (same MX)
+  # Covers mta-sts.${DOMAIN} and mta-sts.${NEATSOFT_DOMAIN} (same MX)
   mta-sts:
     container_name: hl-mta-sts
     image: nginx:alpine
@@ -81,16 +81,16 @@ services:
       - "traefik.enable=true"
       - "traefik.docker.network=proxy"
       - "traefik.http.services.hl-mta-sts.loadbalancer.server.port=8081"
-      # MTA-STS for antonshubin.com
-      - "traefik.http.routers.hl-mta-sts-antonshubin.rule=Host(`mta-sts.antonshubin.com`)"
-      - "traefik.http.routers.hl-mta-sts-antonshubin.entrypoints=websecure"
-      - "traefik.http.routers.hl-mta-sts-antonshubin.tls=true"
-      - "traefik.http.routers.hl-mta-sts-antonshubin.tls.certresolver=myresolver"
-      # MTA-STS for neatsoft.dev
-      - "traefik.http.routers.hl-mta-sts-neatsoft.rule=Host(`mta-sts.neatsoft.dev`)"
-      - "traefik.http.routers.hl-mta-sts-neatsoft.entrypoints=websecure"
-      - "traefik.http.routers.hl-mta-sts-neatsoft.tls=true"
-      - "traefik.http.routers.hl-mta-sts-neatsoft.tls.certresolver=myresolver"
+      # MTA-STS for primary domain
+      - "traefik.http.routers.hl-mta-sts-primary.rule=Host(`mta-sts.${DOMAIN}`)"
+      - "traefik.http.routers.hl-mta-sts-primary.entrypoints=websecure"
+      - "traefik.http.routers.hl-mta-sts-primary.tls=true"
+      - "traefik.http.routers.hl-mta-sts-primary.tls.certresolver=myresolver"
+      # MTA-STS for secondary domain (same MX)
+      - "traefik.http.routers.hl-mta-sts-secondary.rule=Host(`mta-sts.${NEATSOFT_DOMAIN}`)"
+      - "traefik.http.routers.hl-mta-sts-secondary.entrypoints=websecure"
+      - "traefik.http.routers.hl-mta-sts-secondary.tls=true"
+      - "traefik.http.routers.hl-mta-sts-secondary.tls.certresolver=myresolver"
 
   # Synchronizes Let's Encrypt certs from Traefik's acme.json into Stalwart
   cert-sync:

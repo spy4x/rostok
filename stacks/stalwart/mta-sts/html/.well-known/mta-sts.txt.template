@@ -1,4 +1,4 @@
 version: STSv1
 mode: enforce
-mx: mail.antonshubin.com
+mx: mail.${DOMAIN}
 max_age: 86400

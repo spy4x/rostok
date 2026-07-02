@@ -109,16 +109,16 @@ services:
     entrypoint: ["/bin/sh", "-c"]
     command:
       - |
-        set -x
-        while true; do
-          for ep in scheduleEmailReminders scheduleSMSReminders scheduleWhatsappReminders; do
-            curl -sf -X POST "http://hl-caldiy:3000/api/cron/workflows/$${ep}" \
-              -H "authorization: $${CRON_API_KEY}" \
-              -H "user-agent: caldiy-cron/1.0" \
-              || echo "[$${ep}] failed: $$?"
+          set -x
+          while true; do
+            for ep in scheduleEmailReminders scheduleSMSReminders scheduleWhatsappReminders; do
+              curl -sf -X POST "http://hl-caldiy:3000/api/cron/workflows/$${ep}" \
+                -H "authorization: $${CRON_API_KEY}" \
+                -H "user-agent: caldiy-cron/1.0" \
+                || echo "[$${ep}] failed: $$?"
+            done
+            sleep 60
           done
-          sleep 60
-        done
     depends_on:
       caldiy:
         condition: service_started

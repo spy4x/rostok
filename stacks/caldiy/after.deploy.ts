@@ -32,7 +32,9 @@ async function psql(sql: string): Promise<string> {
   }
   const stdout = new TextDecoder().decode(out.stdout).trim()
   // Remove psql notice lines (BEGIN, INSERT, COMMIT etc.)
-  const lines = stdout.split("\n").filter(l => !/^(BEGIN|INSERT|DELETE|UPDATE|COMMIT|ROLLBACK|DO)$/i.test(l.trim()))
+  const lines = stdout.split("\n").filter((l) =>
+    !/^(BEGIN|INSERT|DELETE|UPDATE|COMMIT|ROLLBACK|DO)$/i.test(l.trim())
+  )
   return lines.join("\n").trim()
 }
 
