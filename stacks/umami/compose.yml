@@ -69,3 +69,11 @@ services:
       - "traefik.http.routers.hl-umami.entrypoints=websecure"
       - "traefik.http.routers.hl-umami.tls=true"
       - "traefik.http.routers.hl-umami.tls.certresolver=myresolver"
+      # Proxy /umami/ through main domain (ad-blocker evasion)
+      - "traefik.http.middlewares.umami-stripprefix.stripprefix.prefixes=/umami"
+      - "traefik.http.routers.hl-umami-proxy.rule=Host(`${DOMAIN}`) && PathPrefix(`/umami/`)"
+      - "traefik.http.routers.hl-umami-proxy.middlewares=umami-stripprefix,robots-deny@file"
+      - "traefik.http.routers.hl-umami-proxy.entrypoints=websecure"
+      - "traefik.http.routers.hl-umami-proxy.tls=true"
+      - "traefik.http.routers.hl-umami-proxy.tls.certresolver=myresolver"
+      - "traefik.http.routers.hl-umami-proxy.service=hl-umami"
