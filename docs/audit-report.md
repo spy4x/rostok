@@ -393,7 +393,7 @@ Then audit each stack against it.
 `improvements.md` says 40 — verified accurate. **40 compose files lack any
 compose-level healthcheck** (14 have one). Priority services missing it:
 - adguard, audiobookshelf, filebrowser, home-assistant, jellyfin,
-  mailserver, paperless-ngx, radicale, searxng, syncthing, usememos,
+  mailserver, paperless-ngx, searxng, syncthing, usememos,
   vaultwarden
 - grafana, gitea, immich (already has one), open-webui, traefik, ntfy,
   gatus, healthchecks, cloudflared
@@ -421,7 +421,7 @@ Audit grep showed **40 of 54 compose files use `:latest`**. Examples
 docker-registry, docker-sock-proxy, filebrowser, gatus, gitea, grafana
 (11.3.0 is fine but there's also `grafana/grafana:latest`), mail-ai, mailserver,
 mirotalk, monitoring, ntfy, ollama, open-webui, paperless-ngx,
-plausible, radicale, reitti, searxng, stalwart, syncthing, watchtower, etc.
+plausible, reitti, searxng, stalwart, syncthing, watchtower, etc.
 
 `latest` makes builds non-reproducible. A pull next week can break the deploy.
 Some images (notably `denoland/deno:latest`, `denoland/deno:alpine`) are big

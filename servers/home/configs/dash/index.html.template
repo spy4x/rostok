@@ -255,19 +255,7 @@
               <img src="https://uptime-cloud.${DOMAIN}/api/v1/endpoints/home_authelia/health/badge.svg" alt="Home Auth Uptime Badge" onclick="window.open('https://uptime-cloud.${DOMAIN}/endpoints/home_authelia', '_blank')" style="cursor:pointer" />
             </a>
           </li>
-          <!-- Home section: Calendar & Contacts -->
-          <li class="service-item">
-            <a
-              href="https://cal.${DOMAIN}"
-              target="_blank"
-              class="service-link"
-            >
-              <div class="service-icon">📅</div>
-              <div class="service-name">Calendar & Contacts</div>
-              <div class="service-name-detail">Radicale</div>
-              <img src="https://uptime-cloud.${DOMAIN}/api/v1/endpoints/home_radicale/health/badge.svg" alt="Home Calendar & Contacts Uptime Badge" onclick="window.open('https://uptime-cloud.${DOMAIN}/endpoints/home_radicale', '_blank')" style="cursor:pointer" />
-            </a>
-          </li>
+
           <!-- Home section: CI/CD -->
           <li class="service-item">
             <a
