@@ -59,6 +59,39 @@ services:
       # stalwart-jmap middleware provides COEP/CORS headers for cross-origin JMAP (Bulwark)
       - "traefik.http.routers.hl-stalwart.middlewares=stalwart-jmap@file,robots-deny@file"
 
+  # MTA-STS policy server — serves .well-known/mta-sts.txt for TLS enforcement
+  # Covers mta-sts.antonshubin.com and mta-sts.neatsoft.dev (same MX)
+  mta-sts:
+    container_name: hl-mta-sts
+    image: nginx:alpine
+    restart: unless-stopped
+    volumes:
+      - ./mta-sts/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./mta-sts/html:/usr/share/nginx/html:ro
+    deploy:
+      resources:
+        limits:
+          memory: 32M
+          cpus: "0.1"
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - proxy
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=proxy"
+      - "traefik.http.services.hl-mta-sts.loadbalancer.server.port=8081"
+      # MTA-STS for antonshubin.com
+      - "traefik.http.routers.hl-mta-sts-antonshubin.rule=Host(`mta-sts.antonshubin.com`)"
+      - "traefik.http.routers.hl-mta-sts-antonshubin.entrypoints=websecure"
+      - "traefik.http.routers.hl-mta-sts-antonshubin.tls=true"
+      - "traefik.http.routers.hl-mta-sts-antonshubin.tls.certresolver=myresolver"
+      # MTA-STS for neatsoft.dev
+      - "traefik.http.routers.hl-mta-sts-neatsoft.rule=Host(`mta-sts.neatsoft.dev`)"
+      - "traefik.http.routers.hl-mta-sts-neatsoft.entrypoints=websecure"
+      - "traefik.http.routers.hl-mta-sts-neatsoft.tls=true"
+      - "traefik.http.routers.hl-mta-sts-neatsoft.tls.certresolver=myresolver"
+
   # Synchronizes Let's Encrypt certs from Traefik's acme.json into Stalwart
   cert-sync:
     container_name: hl-cert-sync

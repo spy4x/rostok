@@ -1,0 +1,4 @@
+version: STSv1
+mode: enforce
+mx: mail.antonshubin.com
+max_age: 86400
