@@ -10,8 +10,8 @@ maxretry = 3
 # Default action
 action = %(action_)s
 
-# Ignore local IPs (adjust to your network)
-ignoreip = 127.0.0.1/8 ::1 192.168.0.0/16 10.0.0.0/8
+# Ignore local IPs + monitoring servers (homelab 165.173.1.38, cloud 23.88.101.28)
+ignoreip = 127.0.0.1/8 ::1 192.168.0.0/16 10.0.0.0/8 165.173.1.38 23.88.101.28
 
 # ===== SSH Protection =====
 [sshd]
