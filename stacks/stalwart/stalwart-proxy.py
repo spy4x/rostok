@@ -40,11 +40,9 @@ class ProxyHandler(http.server.BaseHTTPRequestHandler):
             r = urllib.request.urlopen(req, timeout=30)
             body = r.read()
             self.send_response(r.status)
-            for h in ("Location", "Cache-Control", "Content-Type", "ETag", "DAV"):
-                if any(h.lower() == k.lower() for k in r.headers):
-                    val = next(v for k, v in r.headers.items() if k.lower() == h.lower())
-                    self.send_header(h, val)
-            self.send_header("Content-Length", str(len(body)))
+            for k, v in r.headers.items():
+                if k.lower() not in ("transfer-encoding", "connection", "keep-alive"):
+                    self.send_header(k, v)
             self.end_headers()
             self.wfile.write(body)
         except urllib.error.HTTPError as e:
