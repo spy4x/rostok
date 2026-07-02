@@ -39,44 +39,35 @@ services:
     security_opt:
       - no-new-privileges:true
     networks:
-      - proxy
+      proxy:
+        aliases:
+          - hl-stalwart
     labels:
+      # Traefik routes via Python sidecar, not direct labels here.
+      # Labels below feed Traefik's automatic discovery:
       - "traefik.enable=true"
       - "traefik.docker.network=proxy"
-      # Use Python sidecar as backend: Traefik → sidecar (Python urllib) → Stalwart.
-      # Works around Go (Traefik/Alpine 3.23) ↔ Rust (Stalwart) HTTP interaction
-      # that causes connection resets on certain Docker IPs.
+      # All traffic goes through hl-stalwart-proxy (Python sidecar)
       - "traefik.http.services.hl-stalwart.loadbalancer.server.url=http://hl-stalwart-proxy:8080"
       - "traefik.http.services.hl-stalwart.loadbalancer.healthCheck.path=/healthz/live"
       - "traefik.http.services.hl-stalwart.loadbalancer.healthCheck.interval=30s"
-      # Web UI + JMAP on mail.DOMAIN → Stalwart backend
+      # Web UI + JMAP on mail.DOMAIN (exclude /dav/ which has its own router)
       - "traefik.http.routers.hl-stalwart.rule=Host(`mail.${DOMAIN}`) && !PathPrefix(`/dav/`)"
       - "traefik.http.routers.hl-stalwart.entrypoints=websecure"
       - "traefik.http.routers.hl-stalwart.tls=true"
       - "traefik.http.routers.hl-stalwart.tls.certresolver=myresolver"
-      # stalwart-jmap middleware provides COEP/CORS headers for cross-origin JMAP (Bulwark)
       - "traefik.http.routers.hl-stalwart.middlewares=stalwart-jmap@file,robots-deny@file"
-      # CalDAV/CardDAV on mail.DOMAIN/dav → same Stalwart backend (no JMAP middleware
-      # which can interfere with PROPFIND/REPORT methods).
+      # CalDAV/CardDAV on mail.DOMAIN/dav (no JMAP middleware — interferes with PROPFIND/REPORT)
       - "traefik.http.routers.hl-stalwart-dav.rule=Host(`mail.${DOMAIN}`) && PathPrefix(`/dav/`)"
       - "traefik.http.routers.hl-stalwart-dav.entrypoints=websecure"
       - "traefik.http.routers.hl-stalwart-dav.tls=true"
       - "traefik.http.routers.hl-stalwart-dav.tls.certresolver=myresolver"
       - "traefik.http.routers.hl-stalwart-dav.middlewares=robots-deny@file"
       - "traefik.http.routers.hl-stalwart-dav.service=hl-stalwart"
-      # CalDAV/CardDAV on cal.DOMAIN → same Stalwart backend
-      - "traefik.http.routers.hl-stalwart-caldav.rule=Host(`cal.${DOMAIN}`)"
-      - "traefik.http.routers.hl-stalwart-caldav.entrypoints=websecure"
-      - "traefik.http.routers.hl-stalwart-caldav.tls=true"
-      - "traefik.http.routers.hl-stalwart-caldav.tls.certresolver=myresolver"
-      - "traefik.http.routers.hl-stalwart-caldav.middlewares=robots-deny@file"
-      - "traefik.http.routers.hl-stalwart-caldav.service=hl-stalwart"
 
-  # Python HTTP proxy sidecar: Traefik (Alpine 3.23 BusyBox wget) cannot reliably
-  # connect to Stalwart's Rust HTTP server. Python urllib (Alpine 3.24) can.
-  # Bridges HTTP traffic from Traefik to Stalwart on the internal proxy network.
-  # Fixed IP: 172.18.0.20 avoids a Docker network issue where IP .13 fails to
-  # connect to Stalwart's HTTP server.
+  # Python HTTP proxy sidecar: Traefik (Alpine 3.23) cannot reliably connect to
+  # Stalwart's Rust HTTP server. Python urllib (Alpine 3.24) can.
+  # Bridges all HTTP traffic from Traefik to Stalwart on the proxy network.
   stalwart-proxy:
     container_name: hl-stalwart-proxy
     image: python:3-alpine
