@@ -30,7 +30,7 @@ class ProxyHandler(http.server.BaseHTTPRequestHandler):
                 # urllib.request treats data=None as GET regardless of method.
                 # Use empty bytes to preserve the original method (PROPFIND, etc.).
                 data = b""
-            headers = {k: v for k, v in self.headers.items() if k.lower() not in ("host", "content-length")}
+            headers = {k: v for k, v in self.headers.items() if k.lower() not in ("host", "content-length", "accept-encoding", "transfer-encoding")}
             req = urllib.request.Request(
                 f"{UPSTREAM}{self.path}",
                 data=data,
@@ -41,8 +41,9 @@ class ProxyHandler(http.server.BaseHTTPRequestHandler):
             body = r.read()
             self.send_response(r.status)
             for k, v in r.headers.items():
-                if k.lower() not in ("transfer-encoding", "connection", "keep-alive"):
+                if k.lower() not in ("transfer-encoding", "connection", "keep-alive", "content-encoding"):
                     self.send_header(k, v)
+            self.send_header("Content-Length", str(len(body)))
             self.end_headers()
             self.wfile.write(body)
         except urllib.error.HTTPError as e:
