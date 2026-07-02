@@ -109,4 +109,4 @@ ssh home "docker exec hl-caldiy-db psql -U caldiy -d caldiy -c 'SELECT type, sch
 | `self signed certificate`      | STARTTLS chain issue                 | `NODE_TLS_REJECT_UNAUTHORIZED=0` already set           |
 | `Greeting never received`      | DNS not resolving mail.${DOMAIN}     | Add Cloudflare A record → cloud public IP              |
 | Emails stuck (never sent)      | Task queue processor not running     | Ensure `hl-caldiy-cron` container is up (added in fix) |
-| `Invalid credentials` (CalDAV) | Radicale creds mismatch in caldiy UI | Reconnect CalDAV integration in caldiy settings        |
+| `Invalid credentials` (CalDAV) | Stalwart creds mismatch in caldiy UI | Reconnect CalDAV integration in caldiy settings        |
