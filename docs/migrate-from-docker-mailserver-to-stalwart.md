@@ -285,7 +285,7 @@ services:
       - proxy
     labels:
       # Disabled until Phase 4 (cutover). During parallel run we hit the
-      # admin port directly via SSH tunnel.
+      # admin port directly via SSH tunnel (tunnel was removed; Stalwart runs on cloud behind Traefik).
       - "traefik.enable=false"
     healthcheck:
       test: ["CMD", "curl", "-fk", "https://127.0.0.1:7990/.well-known/jmap"]

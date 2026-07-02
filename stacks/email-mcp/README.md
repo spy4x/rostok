@@ -142,7 +142,7 @@ To add another account:
 
 The default template ships with **two** accounts preconfigured:
 `primary` (anton@antonshubin.com) and `neatsoft` (anton@neatsoft.dev),
-both pointed at the same mailserver via the homelab→cloudlab SSH tunnel.
+both pointed at the same mailserver via direct DNS (mail.antonshubin.com).
 
 ## Security notes
 

@@ -61,8 +61,6 @@ access_control:
       policy: bypass
     - domain: "stats.antonshubin.com"
       policy: bypass
-    - domain: "stalwart.antonshubin.com"
-      policy: bypass
     - domain: "docs.antonshubin.com"
       policy: bypass
 
