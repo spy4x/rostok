@@ -77,7 +77,7 @@ services:
     restart: unless-stopped
     networks:
       proxy:
-        ipv4_address: 172.18.0.20
+        ipv4_address: 172.18.0.30
     security_opt:
       - no-new-privileges:true
     deploy:
