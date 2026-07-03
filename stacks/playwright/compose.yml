@@ -9,6 +9,12 @@ services:
   playwright:
     container_name: hl-playwright
     image: mcr.microsoft.com/playwright:v1.58.0-noble
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
     restart: unless-stopped
     command: npx -y playwright@1.58.0 run-server --port 3000 --host 0.0.0.0
     deploy:

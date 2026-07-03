@@ -13,6 +13,12 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+    healthcheck:
+      test: ["CMD", "deno", "eval", "const r = await fetch('http://localhost:3000/'); Deno.exit(r.ok ? 0 : 1)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
     restart: unless-stopped
     environment:
       - CALDAV_URL=${CALDAV_SERVER_URL}

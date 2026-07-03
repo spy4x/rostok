@@ -10,6 +10,12 @@ services:
   # It is a lightweight, works on the server in background and has zero configuration.
   transmission:
     image: linuxserver/transmission
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:9091/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
     container_name: hl-transmission
     environment:
       - PUID=${PUID:-1000}

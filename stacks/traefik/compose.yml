@@ -16,6 +16,12 @@ services:
   traefik:
     container_name: "hl-traefik"
     image: "traefik:3.7.6"
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8080/ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
     restart: unless-stopped
     user: "${PUID:-1000}:${PGID:-1000}"
     group_add:

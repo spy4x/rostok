@@ -9,6 +9,12 @@ services:
   filebrowser:
     container_name: hl-filebrowser
     image: filebrowser/filebrowser:latest
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:80/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
     user: "${PUID:-1000}:${PGID:-1000}"
     environment:
       - PUID=${PUID:-1000}

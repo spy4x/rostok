@@ -11,6 +11,12 @@ services:
   metube:
     container_name: hl-metube
     image: ghcr.io/alexta69/metube
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8081/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
     environment:
       - PUID=${PUID:-1000}
       - PGID=${PGID:-1000}

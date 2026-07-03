@@ -12,6 +12,12 @@ services:
   adguard:
     container_name: hl-adguard
     image: adguard/adguardhome:latest
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:80/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
     volumes:
       - ${VOLUMES_PATH}/adguard/work:/opt/adguardhome/work:z
       - ${VOLUMES_PATH}/adguard/conf:/opt/adguardhome/conf:z

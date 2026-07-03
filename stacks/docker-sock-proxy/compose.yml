@@ -6,6 +6,12 @@ services:
   docker-sock-proxy:
     container_name: hl-docker-sock-proxy
     image: tecnativa/docker-socket-proxy:latest
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "http://localhost:2375/version"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
     restart: unless-stopped
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro

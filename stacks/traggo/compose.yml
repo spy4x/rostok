@@ -13,6 +13,12 @@ services:
   traggo:
     container_name: hl-traggo
     image: traggo/server:latest
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:3030/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
     environment:
       - TZ=${TIMEZONE:-UTC}
       - TRAGGO_PORT=3030

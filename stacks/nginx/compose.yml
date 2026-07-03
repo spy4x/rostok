@@ -14,6 +14,12 @@ services:
   nginx:
     container_name: ${NGINX_CONTAINER_NAME}
     image: nginx:alpine
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:80/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
     volumes:
       - ${NGINX_HTML:-../../config/nginx}:/usr/share/nginx/html:ro,z
     restart: unless-stopped

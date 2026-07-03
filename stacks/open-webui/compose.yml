@@ -9,6 +9,12 @@ services:
   open-webui:
     container_name: hl-open-webui
     image: ghcr.io/open-webui/open-webui:latest
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
     restart: unless-stopped
     environment:
       # --- Existing: Web loader via Playwright ---

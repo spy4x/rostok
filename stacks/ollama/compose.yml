@@ -11,6 +11,12 @@ services:
   ollama:
     container_name: hl-ollama
     image: ollama/ollama:latest
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:11434/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
     environment:
       - TZ=${TIMEZONE:-UTC}
     volumes:

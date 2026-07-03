@@ -10,6 +10,12 @@ services:
   audiobookshelf:
     container_name: hl-audiobookshelf
     image: ghcr.io/advplyr/audiobookshelf:latest
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:80/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
     environment:
       - PUID=${PUID:-1000}
       - PGID=${PGID:-1000}
