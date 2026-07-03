@@ -241,15 +241,6 @@ endpoints:
     alerts:
       - type: ntfy
 
-  - name: Grafana
-    group: home
-    url: "https://probe-home.${DOMAIN}/health/grafana"
-    interval: 1m
-    conditions:
-      - "[STATUS] == 200"
-    alerts:
-      - type: ntfy
-
   - name: Ollama
     group: home
     url: "https://probe-home.${DOMAIN}/health/ollama"

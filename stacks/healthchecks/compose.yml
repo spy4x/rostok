@@ -12,6 +12,8 @@ services:
   healthchecks:
     container_name: hl-healthchecks
     image: healthchecks/healthchecks:latest
+    expose:
+      - "8000"
     healthcheck:
       test: ["CMD", "wget", "--spider", "http://localhost:8000/health/"]
       interval: 30s
