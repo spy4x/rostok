@@ -36,16 +36,18 @@ Configured via `STALWART_RECOVERY_ADMIN` env var. First login at `/admin` uses t
 
 ## DNS Records
 
-| Record                                               | Value                                                          |
-| ---------------------------------------------------- | -------------------------------------------------------------- |
-| `antonshubin.com` A                                  | `165.173.1.38` (cloud)                                         |
-| `mail.antonshubin.com` A                             | `165.173.1.38` (cloud)                                         |
-| `cal.antonshubin.com` A                              | `23.88.101.28` (cloud)                                         |
-| `antonshubin.com` MX                                 | `mail.antonshubin.com`                                         |
-| `antonshubin.com` SPF                                | `v=spf1 mx ip4:23.88.101.28 ~all`                              |
-| `_dmarc.antonshubin.com` TXT                         | `v=DMARC1; p=quarantine; pct=100; rua=mailto:2spy4x@gmail.com` |
-| `v1-ed25519-20260629._domainkey.antonshubin.com` TXT | DKIM Ed25519 key                                               |
-| `v1-rsa-20260629._domainkey.antonshubin.com` TXT     | DKIM RSA key                                                   |
+| Record                                               | Value                                                       |
+| ---------------------------------------------------- | ----------------------------------------------------------- |
+| `antonshubin.com` A                                  | `165.173.1.38` (cloud)                                      |
+| `mail.antonshubin.com` A                             | `165.173.1.38` (cloud)                                      |
+| `cal.antonshubin.com` A                              | `23.88.101.28` (cloud)                                      |
+| `antonshubin.com` MX                                 | `mail.antonshubin.com`                                      |
+| `antonshubin.com` SPF                                | `v=spf1 mx ip4:23.88.101.28 -all`                           |
+| `_dmarc.antonshubin.com` TXT                         | `v=DMARC1; p=reject; rua=mailto:postmaster@antonshubin.com` |
+| `_mta-sts.antonshubin.com` TXT                       | `v=STSv1; id=20260702`                                      |
+| `_smtp._tls.antonshubin.com` TXT                     | `v=TLSRPTv1; rua=mailto:postmaster@antonshubin.com`         |
+| `v1-ed25519-20260629._domainkey.antonshubin.com` TXT | DKIM Ed25519 key                                            |
+| `v1-rsa-20260629._domainkey.antonshubin.com` TXT     | DKIM RSA key                                                |
 
 ## Ports
 

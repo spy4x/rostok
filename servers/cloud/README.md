@@ -22,11 +22,16 @@ Services that must stay online (email, DNS-dependent services) run here.
 ```dns
 A       mail                <VPS-IP>
 MX      @                   10 mail.yourdomain.com
-TXT     @                   v=spf1 mx ip4:<VPS-IP> ~all
-TXT     _dmarc              v=DMARC1; p=quarantine
+TXT     @                   v=spf1 mx ip4:<VPS-IP> -all
+TXT     _dmarc              v=DMARC1; p=reject; rua=mailto:postmaster@yourdomain.com
+TXT     _mta-sts            v=STSv1; id=<YYYYMMDD>
+TXT     _smtp._tls          v=TLSRPTv1; rua=mailto:postmaster@yourdomain.com
 TXT     mail._domainkey     v=DKIM1; k=rsa; p=<get-from-server>
 PTR     <VPS-IP>            mail.yourdomain.com
 ```
+
+MTA-STS policy served at `https://mta-sts.${DOMAIN}/.well-known/mta-sts.txt`.
+TLS-RPT reports are sent to the `rua` address — review periodically via mailbox.
 
 Get DKIM public key for DNS:
 
