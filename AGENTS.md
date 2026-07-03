@@ -282,7 +282,7 @@ deno task deploy <server>     # Deploy all services to server
 deno task deploy <server> <stack>  # Deploy single stack (e.g. `deno task deploy home plausible`)
 deno task ansible <playbook>  # Run Ansible playbooks
 deno task backup              # Run backup system
-deno task ssh <server>        # SSH into server
+deno task ssh <server> [cmd...]  # SSH into server or run remote command
 ```
 
 ## 📋 Code Style Guidelines
@@ -660,6 +660,6 @@ session and causes deploy commands to fail with "SSH_ADDRESS must be set".
 | Deploy      | `deno task deploy <server>`         | Deploy all services              |
 | Deploy one  | `deno task deploy <server> <stack>` | Deploy single stack              |
 | Backup      | `deno task backup`                  | Run backup system                |
-| SSH         | `deno task ssh <server>`            | SSH into server                  |
+| SSH         | `deno task ssh <server> [cmd]`      | SSH into server / run remote cmd |
 | Ansible     | `deno task ansible <playbook>`      | Run Ansible playbooks            |
 | Test single | `deno test path/to/file.test.ts`    | Run specific test                |
