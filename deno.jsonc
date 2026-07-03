@@ -53,7 +53,6 @@
 
     // #region Checks
     "check": {
-      "command": "echo '✅ All checks passed!'",
       "description": "✅ Run all checks (lint, fmt, types, tests)",
       "dependencies": [
         "lint:check",
