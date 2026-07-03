@@ -640,6 +640,17 @@ Before any manual container manipulation: check if the change can be codified in
 - Manual checks via `deno task check`
 - Focus on local development and manual deployment
 
+## 🗑️ DO NOT Delete Decrypted .env Files
+
+**NEVER `rm` or otherwise delete decrypted `.env` files.** They are gitignored
+and safe from accidental commit. Deleting them wastes the decrypt step on every
+session and causes deploy commands to fail with "SSH_ADDRESS must be set".
+
+- `.env` files in `servers/*/.env` and `.env.root` are gitignored — safe on disk
+- Only `.env.age` (encrypted) is tracked in git
+- If you must regenerate, run `deno task env:decrypt` again (requires age key)
+- **Keep decrypted `.env` files between deploy runs** — they do not leak
+
 ## 📋 Quick Reference
 
 | Task        | Command                             | Description                      |
