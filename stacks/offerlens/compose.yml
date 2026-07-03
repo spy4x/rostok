@@ -33,6 +33,7 @@ services:
       - "traefik.docker.network=proxy"
       - "traefik.http.services.hl-offerlens.loadbalancer.server.port=8000"
       - "traefik.http.routers.hl-offerlens.rule=Host(`offer-lens.${DOMAIN}`)"
+      - "traefik.http.routers.hl-offerlens.middlewares=robots-deny@file"
       - "traefik.http.routers.hl-offerlens.entrypoints=websecure"
       - "traefik.http.routers.hl-offerlens.tls=true"
       - "traefik.http.routers.hl-offerlens.tls.certresolver=myresolver"

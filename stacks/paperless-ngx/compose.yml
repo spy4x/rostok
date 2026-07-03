@@ -91,7 +91,7 @@ services:
       - "traefik.http.routers.hl-paperless.entrypoints=websecure"
       - "traefik.http.routers.hl-paperless.tls=true"
       - "traefik.http.routers.hl-paperless.tls.certresolver=myresolver"
-      # - "traefik.http.routers.hl-paperless.middlewares=auth,robots-deny@file"
+      - "traefik.http.routers.hl-paperless.middlewares=robots-deny@file"
 
   paperless-worker:
     container_name: hl-paperless-worker
