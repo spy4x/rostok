@@ -29,8 +29,20 @@ interface JmapResponse {
 async function jmap(calls: JmapCall): Promise<JmapResponse> {
   const body = JSON.stringify(calls)
   const proc = new Deno.Command("ssh", {
-    args: [SSH, "curl", "-s", "-u", `admin:${PASSWORD}`, "-X", "POST",
-           `http://${STALWART}/jmap/`, "-H", "Content-Type: application/json", "-d", body],
+    args: [
+      SSH,
+      "curl",
+      "-s",
+      "-u",
+      `admin:${PASSWORD}`,
+      "-X",
+      "POST",
+      `http://${STALWART}/jmap/`,
+      "-H",
+      "Content-Type: application/json",
+      "-d",
+      body,
+    ],
     stdout: "piped",
     stderr: "piped",
   })
@@ -42,7 +54,9 @@ async function jmap(calls: JmapCall): Promise<JmapResponse> {
   try {
     return JSON.parse(new TextDecoder().decode(out.stdout))
   } catch {
-    throw new Error(`jmap call returned invalid JSON: ${new TextDecoder().decode(out.stdout).slice(0, 200)}`)
+    throw new Error(
+      `jmap call returned invalid JSON: ${new TextDecoder().decode(out.stdout).slice(0, 200)}`,
+    )
   }
 }
 
@@ -62,7 +76,9 @@ async function clearBlockedIps(): Promise<number> {
   })
 
   const getResp = query.methodResponses.find(([m]) => m === "x:BlockedIp/get")
-  const list = (getResp?.[1] as Record<string, unknown>)?.list as Array<{ id: string; address: string }> | undefined
+  const list = (getResp?.[1] as Record<string, unknown>)?.list as
+    | Array<{ id: string; address: string }>
+    | undefined
   const toDestroy = (list ?? []).filter((e) => e.address.startsWith("172.18"))
 
   if (!toDestroy.length) return 0
@@ -94,7 +110,9 @@ async function ensureAllowedIp(): Promise<boolean> {
   })
 
   const getResp = query.methodResponses.find(([m]) => m === "x:AllowedIp/get")
-  const list = (getResp?.[1] as Record<string, unknown>)?.list as Array<{ id: string; address: string }> | undefined
+  const list = (getResp?.[1] as Record<string, unknown>)?.list as
+    | Array<{ id: string; address: string }>
+    | undefined
 
   if ((list ?? []).some((e) => e.address === SUBNET)) {
     return false // already exists
@@ -128,9 +146,15 @@ async function ensureSmtp587(): Promise<boolean> {
   })
 
   const getResp = query.methodResponses.find(([m]) => m === "x:NetworkListener/get")
-  const list = (getResp?.[1] as Record<string, unknown>)?.list as Array<{ id: string; protocol: string; bind: Record<string, boolean> }> | undefined
+  const list = (getResp?.[1] as Record<string, unknown>)?.list as
+    | Array<{ id: string; protocol: string; bind: Record<string, boolean> }>
+    | undefined
 
-  if ((list ?? []).some((e) => e.protocol === "smtp" && Object.keys(e.bind).some((b) => b.endsWith(":587")))) {
+  if (
+    (list ?? []).some((e) =>
+      e.protocol === "smtp" && Object.keys(e.bind).some((b) => b.endsWith(":587"))
+    )
+  ) {
     return false // port 587 listener already exists
   }
 
