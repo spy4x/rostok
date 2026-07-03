@@ -17,7 +17,7 @@ services:
     container_name: "hl-traefik"
     image: "traefik:3.7.6"
     healthcheck:
-      test: ["CMD", "curl", "-sf", "http://localhost:8080/ping"]
+      test: ["CMD", "wget", "--spider", "http://localhost:8080/api/version"]
       interval: 30s
       timeout: 10s
       retries: 3
