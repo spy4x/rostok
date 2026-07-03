@@ -541,6 +541,14 @@ export default backupConfig
 - Cloud: `23.88.101.28`
 - Offsite: `213.21.10.17`
 
+**Proxied (orange cloud) recommendation:**
+- Home records: proxied by default (wildcard `*.antonshubin.com` is proxied)
+- Cloud records: `sync-cloud`, `uptime-cloud` are proxied; others are DNS-only
+- **Offsite records: use `proxied: true`** — routes monitoring traffic through Cloudflare,
+  bypassing Hetzner→home ISP routing issues (Russian govt internet interference).
+  Cloudflare → origin may also fail during routing issues; a WireGuard tunnel
+  offsite→cloud is the long-term fix.
+
 When adding a service that runs on cloud or offsite, **always add a DNS record**.
 When migrating a service from cloud/offsite to home, **delete its DNS record** so
 the wildcard takes over.
