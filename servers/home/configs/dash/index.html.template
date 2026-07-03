@@ -216,19 +216,6 @@
               <img src="https://uptime-cloud.${DOMAIN}/api/v1/endpoints/home_open-webui/health/badge.svg" alt="Home AI Chat Uptime Badge" onclick="window.open('https://uptime-cloud.${DOMAIN}/endpoints/home_open-webui', '_blank')" style="cursor:pointer" />
             </a>
           </li>
-          <!-- Home section: Analytics -->
-          <li class="service-item">
-            <a
-              href="https://analytics.${DOMAIN}"
-              target="_blank"
-              class="service-link"
-            >
-              <div class="service-icon">📈</div>
-              <div class="service-name">Analytics</div>
-              <div class="service-name-detail">Plausible</div>
-              <img src="https://uptime-cloud.${DOMAIN}/api/v1/endpoints/home_plausible/health/badge.svg" alt="Home Analytics Uptime Badge" onclick="window.open('https://uptime-cloud.${DOMAIN}/endpoints/home_plausible', '_blank')" style="cursor:pointer" />
-            </a>
-          </li>
           <!-- Home section: Audiobooks -->
           <li class="service-item">
             <a
