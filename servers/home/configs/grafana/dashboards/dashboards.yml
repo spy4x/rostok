@@ -10,4 +10,4 @@ providers:
     options:
       path: /etc/grafana/provisioning/dashboards
     jsonSettings:
-      DS_PROMETHEUS: Prometheus
+      DS_PROMETHEUS: VictoriaMetrics

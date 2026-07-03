@@ -1,8 +1,8 @@
 global:
   scrape_interval: 15s
 
-# Scrape targets identical to stacks/monitoring/prometheus.yml
-# so the comparison is apples-to-apples.
+# Primary scrape config for VictoriaMetrics.
+# Replaces the previous Prometheus scrape config.
 scrape_configs:
   - job_name: "node"
     static_configs:

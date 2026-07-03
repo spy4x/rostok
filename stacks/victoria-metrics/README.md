@@ -1,53 +1,36 @@
-# VictoriaMetrics Stack (comparison)
+# VictoriaMetrics Stack
 
-Side-by-side deployment with the existing Prometheus + Loki + Grafana stack
-(`stacks/monitoring` + `stacks/grafana`). Same scrape targets, same data,
-different runtime. Goal: **measure resource consumption delta**.
+Primary observability stack. Provides metrics (VictoriaMetrics), logs (VictoriaLogs),
+and host/container-level exporters (node-exporter, cAdvisor).
 
-## Why VM?
-
-VictoriaMetrics is a single-binary, Prometheus-compatible metrics TSDB.
-VictoriaLogs is the same idea for logs. Both claim to be more efficient than
-the Prometheus + Loki stack they replace. This stack exists to verify that
-on the home server's actual workload.
+Replaces the previous Prometheus + Loki stack with ~35% less memory and ~80% less CPU.
 
 ## Components
 
-| Service            | Replaces             | Memory limit | CPU limit |
-| ------------------ | -------------------- | ------------ | --------- |
-| `victoria-metrics` | Prometheus           | 256M         | 0.3       |
-| `vmagent`          | (Prometheus scraper) | 128M         | 0.2       |
-| `victoria-logs`    | Loki                 | 256M         | 0.3       |
-| `promtail-vm`      | Promtail             | 128M         | 0.2       |
-| `grafana-vm`       | (Grafana, separate)  | 256M         | 0.3       |
-| **Total**          |                      | **1.02G**    | **1.3**   |
-
-For comparison, the existing stack:
-
-| Service    | Memory    | CPU     |
-| ---------- | --------- | ------- |
-| prometheus | 512M      | 0.5     |
-| loki       | 256M      | 0.3     |
-| promtail   | 128M      | 0.1     |
-| cadvisor   | 128M      | 0.3     |
-| grafana    | 512M      | 0.5     |
-| **Total**  | **1.54G** | **1.7** |
+| Service            | Role                       | Memory limit | CPU limit |
+| ------------------ | -------------------------- | ------------ | --------- |
+| `victoria-metrics` | Prometheus-compatible TSDB | 256M         | 0.3       |
+| `vmagent`          | Metrics scraper            | 128M         | 0.2       |
+| `victoria-logs`    | Log database               | 256M         | 0.3       |
+| `promtail`         | Log collector              | 128M         | 0.2       |
+| `node-exporter`    | Host metrics               | 64M          | 0.1       |
+| `cadvisor`         | Container metrics          | 128M         | 0.3       |
+| **Total**          |                            | **960M**     | **1.4**   |
 
 ## URLs
 
-- **VictoriaMetrics UI**: `https://metrics-vm.${DOMAIN}` (Grafana VM)
-- **Existing stack UI**: `https://metrics.${DOMAIN}` (Grafana, kept for comparison)
+- **Grafana**: `https://metrics.${DOMAIN}` (provided by `stacks/grafana`)
 - **VM API**: `http://hl-victoria-metrics:8428` (internal)
 - **VL API**: `http://hl-victoria-logs:9428` (internal)
 
 ## Setup
 
-1. Add env var to `servers/home/.env`:
+1. Add env vars to `servers/home/.env`:
 
    ```bash
-   #region VictoriaMetrics
-   GRAFANA_VM_ADMIN_PASSWORD=YOUR_SECURE_PASSWORD
-   #endregion VictoriaMetrics
+   #region Grafana
+   GRAFANA_ADMIN_PASSWORD=YOUR_SECURE_PASSWORD
+   #endregion Grafana
    ```
 
 2. Deploy:
@@ -56,39 +39,13 @@ For comparison, the existing stack:
    deno task deploy home victoria-metrics
    ```
 
-3. Open `https://metrics-vm.${DOMAIN}` and check the VM + VL datasources work.
+3. Open `https://metrics.${DOMAIN}` and check the VictoriaMetrics + VictoriaLogs datasources work.
 
-## Comparison methodology
+## Scrape targets
 
-After running both stacks for a week, compare:
-
-```bash
-docker stats --no-stream --format 'table {{.Name}}\t{{.MemUsage}}\t{{.CPUPerc}}' \
-  | grep -E 'hl-prometheus|hl-loki|hl-promtail|hl-grafana|hl-victoria'
-```
-
-- **Memory**: `docker stats` RSS over 24h
-- **Disk**: `du -sh /volumes/monitoring/*` vs `du -sh /volumes/victoria-metrics/*`
-- **Query latency**: same PromQL query against both backends
-- **Ingestion lag**: how quickly new metrics appear after scrape
-
-## Tradeoffs
-
-| Aspect                  | Prometheus + Loki             | VictoriaMetrics + VictoriaLogs              |
-| ----------------------- | ----------------------------- | ------------------------------------------- |
-| **Maturity**            | Battle-tested, huge community | Newer (since 2018), smaller community       |
-| **Ecosystem**           | First-class in Grafana        | First-class in Grafana (PromQL/Loki compat) |
-| **HA story**            | Federated / Thanos            | vmagent replication + vmstorage cluster     |
-| **Logs query language** | LogQL                         | LogsQL (different syntax)                   |
-| **Memory footprint**    | Higher                        | Lower (claim)                               |
-| **Disk footprint**      | Higher                        | Lower (claim — better compression)          |
-| **Single binary**       | No (Java + Go)                | Yes (Go)                                    |
-
-## Decision
-
-Run both for at least 2 weeks. If VM stack uses <70% of the resources of the
-Prometheus+Loki stack AND the dashboards work, plan migration. Otherwise
-keep the existing stack and remove this one.
+- `hl-node-exporter:9100` — host-level metrics
+- `hl-cadvisor:8080` — container-level metrics
+- `hl-victoria-metrics:8428` — VM self-metrics
 
 ## References
 

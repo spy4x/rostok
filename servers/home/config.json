@@ -39,7 +39,6 @@
     { "name": "akaunting" },
     { "name": "gitea" },
     { "name": "traggo" },
-    { "name": "monitoring" },
     { "name": "docker-registry" },
     { "name": "authelia" },
     { "name": "paperless-ngx" },
