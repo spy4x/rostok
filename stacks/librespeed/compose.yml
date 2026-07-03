@@ -14,6 +14,12 @@ services:
   librespeed:
     container_name: hl-librespeed
     image: linuxserver/librespeed:latest
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "http://localhost:80/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
     environment:
       - PUID=${PUID:-1000}
       - PGID=${PGID:-1000}

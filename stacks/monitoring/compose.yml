@@ -50,6 +50,12 @@ services:
   node-exporter:
     container_name: hl-node-exporter
     image: prom/node-exporter:latest
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "http://localhost:9100/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
     volumes:
       - /proc:/host/proc:ro,z
       - /sys:/host/sys:ro,z
@@ -71,6 +77,12 @@ services:
   prometheus:
     container_name: hl-prometheus
     image: prom/prometheus:latest
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "http://localhost:9090/-/ready"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
     volumes:
       - ${VOLUMES_PATH}/monitoring/prometheus:/prometheus:z
       - ${PATH_APPS}/configs/monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro,z
