@@ -48,12 +48,14 @@ services:
       # - "--certificatesresolvers.myresolver.acme.caserver=https://acme-staging-v02.api.letsencrypt.org/directory" # Use staging server for testing
       - "--certificatesresolvers.myresolver.acme.email=${CONTACT_EMAIL}"
       - "--certificatesresolvers.myresolver.acme.storage=/letsencrypt/acme.json"
+      - "--accesslog.filepath=/traefik/logs/access.log"
     ports:
       - 443:443
       - 80:80
       - 443:443/udp
     volumes:
       - ${VOLUMES_PATH}/traefik/letsencrypt:/letsencrypt:z
+      - ${VOLUMES_PATH}/traefik/logs:/traefik/logs:z
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - ./dynamic/:/etc/traefik/dynamic/:ro
     networks:
