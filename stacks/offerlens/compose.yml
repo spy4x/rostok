@@ -13,6 +13,9 @@ services:
   offerlens:
     container_name: hl-offerlens
     image: hl-offerlens:latest
+    build:
+      context: ../../../offer-lens
+      dockerfile: Dockerfile
     environment:
       - PORT=8000
       - DEMO_OPENAI_API_KEY=${OFFERLENS_DEMO_API_KEY}
@@ -57,6 +60,9 @@ services:
   offerlens-mcp:
     container_name: hl-offerlens-mcp
     image: hl-offerlens-mcp:latest
+    build:
+      context: ../../../offer-lens
+      dockerfile: Dockerfile.mcp
     environment:
       - OFFERLENS_BACKEND_URL=http://hl-offerlens:8000
       - OFFERLENS_API_KEY=${OFFERLENS_DEMO_API_KEY}
