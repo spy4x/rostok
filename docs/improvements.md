@@ -105,15 +105,17 @@ document why.
 Each should follow the pattern in [adding-services.md](adding-services.md):
 service description, setup, configuration notes, troubleshooting.
 
-### 2.2 Write disaster recovery documentation
+### 2.2 Write disaster recovery documentation ✅
 
-`docs/` lacks a dedicated disaster recovery runbook covering:
+`docs/` lacked a dedicated disaster recovery runbook covering:
 - Full restore from offsite backup (etcd backup, volume restore)
 - Single-service data restore from backup tarball
 - Server replacement procedure (new Hetzner node → fully operational)
 - Database-specific restore commands (PostgreSQL, SQLite, etc.)
 
-### 2.3 Document the monitoring stack
+**Done:** See [disaster-recovery.md](disaster-recovery.md).
+
+### 2.3 Document the monitoring stack ✅
 
 Two monitoring stacks exist:
 - `stacks/monitoring/` — Loki, Promtail, Prometheus, cAdvisor, Grafana
@@ -122,6 +124,8 @@ Two monitoring stacks exist:
 **Purpose:** Both run concurrently for comparison. If VictoriaMetrics proves
 superior in performance, resource usage, and query speed, it will replace the
 Grafana stack entirely. Document this rationale and track the decision.
+
+**Done:** See [monitoring.md](monitoring.md).
 
 ### 2.4 Ansible playbooks walkthrough
 
@@ -226,8 +230,8 @@ exists yet. Consider periodic manual review or a Woodpecker cron job.
 | `backup.ts` for Victoria Metrics | high | low (1 file) | 🔴 1.4 |
 | Traefik middlewares | high | low (2 files) | 🔴 1.5 |
 | Stack READMEs | medium | high (22 files) | 🟡 2.1 |
-| DR runbook | high | medium | 🟡 2.2 |
-| Monitoring stack docs | medium | low | 🟡 2.3 |
+| DR runbook | high | medium | 🟡 2.2 ✅ |
+| Monitoring stack docs | medium | low | 🟡 2.3 ✅ |
 | Ansible walkthrough | medium | low | 🟡 2.4 |
 | Gatus audit | medium | medium | 🟡 2.5 |
 | Test coverage | medium | high | 🔵 3.1 |

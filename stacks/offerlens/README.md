@@ -24,24 +24,24 @@ Images are cached locally. On remote deploy, push to a Docker registry or build 
 
 3 services:
 
-| Service | Image | Purpose |
-|---------|-------|---------|
-| `offerlens` | `hl-offerlens:latest` | API + Web UI, port 8000 |
-| `offerlens-mcp` | `hl-offerlens-mcp:latest` | MCP server, port 3000 |
-| `offerlens-db` | `postgres:16-alpine` | Usage tracking |
+| Service         | Image                     | Purpose                 |
+| --------------- | ------------------------- | ----------------------- |
+| `offerlens`     | `hl-offerlens:latest`     | API + Web UI, port 8000 |
+| `offerlens-mcp` | `hl-offerlens-mcp:latest` | MCP server, port 3000   |
+| `offerlens-db`  | `postgres:16-alpine`      | Usage tracking          |
 
 ## Env Vars
 
-| Var | Required | Default | Description |
-|-----|----------|---------|-------------|
-| `OFFERLENS_DEMO_API_KEY` | Yes | — | DeepSeek API key for analysis |
-| `OFFERLENS_API_BASE` | No | `https://api.deepseek.com` | OpenAI-compatible base URL |
-| `OFFERLENS_MODEL` | No | `deepseek-chat` | LLM model |
-| `OFFERLENS_BATCH_CONCURRENCY` | No | `5` | Batch concurrency |
-| `OFFERLENS_DB_NAME` | No | `offerlens` | DB name |
-| `OFFERLENS_DB_USER` | No | `offerlens` | DB user |
-| `OFFERLENS_DB_PASSWORD` | Yes | — | DB password |
-| `OFFERLENS_MCP_SESSION_ID` | No | `offerlens-mcp` | MCP session ID (auto-generated) |
+| Var                           | Required | Default                    | Description                     |
+| ----------------------------- | -------- | -------------------------- | ------------------------------- |
+| `OFFERLENS_DEMO_API_KEY`      | Yes      | —                          | DeepSeek API key for analysis   |
+| `OFFERLENS_API_BASE`          | No       | `https://api.deepseek.com` | OpenAI-compatible base URL      |
+| `OFFERLENS_MODEL`             | No       | `deepseek-chat`            | LLM model                       |
+| `OFFERLENS_BATCH_CONCURRENCY` | No       | `5`                        | Batch concurrency               |
+| `OFFERLENS_DB_NAME`           | No       | `offerlens`                | DB name                         |
+| `OFFERLENS_DB_USER`           | No       | `offerlens`                | DB user                         |
+| `OFFERLENS_DB_PASSWORD`       | Yes      | —                          | DB password                     |
+| `OFFERLENS_MCP_SESSION_ID`    | No       | `offerlens-mcp`            | MCP session ID (auto-generated) |
 
 ## Monitoring
 
