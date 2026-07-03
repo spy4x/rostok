@@ -47,7 +47,7 @@ services:
           cpus: "0.5"
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:8000/api/health || exit 1"]
+      test: ["CMD-SHELL", "deno eval 'const r = await fetch(\"http://localhost:8000/api/health\"); Deno.exit(r.ok ? 0 : 1)' || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
