@@ -117,15 +117,16 @@ service description, setup, configuration notes, troubleshooting.
 
 ### 2.3 Document the monitoring stack ✅
 
-Two monitoring stacks exist:
+Two monitoring stacks ran concurrently for comparison:
 - `stacks/monitoring/` — Loki, Promtail, Prometheus, cAdvisor, Grafana
 - `stacks/victoria-metrics/` — VictoriaMetrics, VictoriaLogs, Grafana
 
-**Purpose:** Both run concurrently for comparison. If VictoriaMetrics proves
-superior in performance, resource usage, and query speed, it will replace the
-Grafana stack entirely. Document this rationale and track the decision.
+**Result:** VictoriaMetrics won (~35% less memory, ~80% less CPU). The old
+`stacks/monitoring/` is removed. node-exporter and cAdvisor moved into the
+victoria-metrics stack. Grafana UI is served by the separate `stacks/grafana/`
+stack with datasources pointing to VM.
 
-**Done:** See [monitoring.md](monitoring.md).
+**Docs:** [monitoring.md](monitoring.md) describes the final architecture.
 
 ### 2.4 Ansible playbooks walkthrough
 

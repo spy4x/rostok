@@ -2,68 +2,53 @@
 
 ## Overview
 
-Two monitoring stacks run concurrently on the home server for comparison:
+VictoriaMetrics won the bake-off against Prometheus + Loki. The old monitoring
+stack (`stacks/monitoring/`) is removed. The victoria-metrics stack is primary,
+with Grafana UI provided by the separate `stacks/grafana/` stack.
 
-| Stack | Components | Domain | URL |
+**Saving:** ~35% less memory and ~80% less CPU vs the previous Prometheus+Loki stack.
+
+## Architecture
+
+```
+┌─────────────────────────────────────────────────────┐
+│  victoria-metrics stack    │  grafana stack (separate)│
+│                             │                          │
+│  vmagent ──► victoria-metrics ──► Grafana (metrics.*) │
+│  promtail ──► victoria-logs  ──► Grafana (logs)     │
+│  node-exporter (host metrics)                        │
+│  cadvisor (container metrics)                        │
+└─────────────────────────────────────────────────────┘
+```
+
+All components are single-binary Go services (no JVM).
+
+### Components
+
+| Service | Role | Memory limit | CPU limit |
 |---|---|---|---|
-| `stacks/monitoring/` | Prometheus + Loki + Grafana | metrics.* | [https://metrics.${DOMAIN}](https://metrics.${DOMAIN}) |
-| `stacks/victoria-metrics/` | VictoriaMetrics + VictoriaLogs + Grafana | metrics-vm.* | [https://metrics-vm.${DOMAIN}](https://metrics-vm.${DOMAIN}) |
+| `victoria-metrics` | Prometheus-compatible TSDB | 256M | 0.3 |
+| `vmagent` | Metrics scraper | 128M | 0.2 |
+| `victoria-logs` | Log database (LogsQL) | 256M | 0.3 |
+| `promtail` | Log collector from Docker | 128M | 0.2 |
+| `node-exporter` | Host-level metrics (CPU, mem, disk) | 64M | 0.1 |
+| `cadvisor` | Per-container resource metrics | 128M | 0.3 |
+| **Total** | | **960M** | **1.4** |
 
-**Both** serve the same scrape targets. Goal: measure resource consumption delta and
-decide which stack to keep.
+### Grafana (`stacks/grafana/`)
 
-## Stack Comparison
-
-### Prometheus + Loki (`stacks/monitoring/`)
-
-```
-loki (log storage) ← promtail (log collector) ← Docker containers
-prometheus (metrics) ← node-exporter (host metrics), cadvisor (container metrics)
-grafana (dashboard, metrics.* domain)
-```
-
-| Service | Memory limit | CPU limit | Purpose |
+| Service | Role | Memory limit | CPU limit |
 |---|---|---|---|
-| prometheus | 512M | 0.5 | Metrics TSDB, PromQL |
-| loki | 256M | 0.3 | Log storage, LogQL |
-| promtail | 128M | 0.1 | Log collector from Docker |
-| node-exporter | 64M | 0.1 | Host-level metrics |
-| cadvisor | 128M | 0.3 | Per-container resource metrics |
-| **Total** | **1.09G** | **1.3** | |
+| `grafana` | Dashboards at metrics.* | 512M | 0.5 |
 
-### VictoriaMetrics + VictoriaLogs (`stacks/victoria-metrics/`)
+Datasources point to VictoriaMetrics (`hl-victoria-metrics:8428`) and
+VictoriaLogs (`hl-victoria-logs:9428`) internally.
 
-```
-victoria-logs (log storage) ← promtail-vm (log collector) ← Docker containers
-victoria-metrics (metrics TSDB) ← vmagent (scraper)
-grafana-vm (dashboard, metrics-vm.* domain)
-```
+## URLs
 
-| Service | Memory limit | CPU limit | Replaces |
-|---|---|---|---|
-| victoria-metrics | 256M | 0.3 | Prometheus |
-| vmagent | 128M | 0.2 | Prometheus scraper |
-| victoria-logs | 256M | 0.3 | Loki |
-| promtail-vm | 128M | 0.2 | Promtail |
-| grafana-vm | 256M | 0.3 | Separate Grafana instance |
-| **Total** | **1.02G** | **1.3** | |
-
-### Comparison
-
-| Aspect | Prometheus + Loki | VictoriaMetrics + VictoriaLogs |
-|---|---|---|
-| Maturity | Battle-tested, huge community | Newer (since 2018) |
-| Query language | PromQL, LogQL | PromQL-compatible, LogsQL |
-| Memory | Higher (~1.09G) | Lower (~1.02G claimed) |
-| Disk | Higher | Lower (better compression) |
-| Single binary | No (Java + Go) | Yes (Go) |
-| HA story | Federated / Thanos | vmagent replication + vmstorage |
-
-**Decision:** Run both for at least 2 weeks, compare docker stats. If VM stack
-uses <70% resources AND dashboards work, migrate. Otherwise keep Prometheus+Loki.
-
-See [victoria-metrics README](../stacks/victoria-metrics/README.md) for detailed
-comparison methodology.
+- **Grafana dashboards**: [https://metrics.${DOMAIN}](https://metrics.${DOMAIN}) — Authelia auth
+- **Uptime (Home Gatus)**: [https://uptime-home.${DOMAIN}](https://uptime-home.${DOMAIN}) — public
+- **Uptime (Cloud Gatus)**: [https://uptime-cloud.${DOMAIN}](https://uptime-cloud.${DOMAIN}) — public
 
 ## Cross-Server Monitoring (Gatus)
 
@@ -96,18 +81,14 @@ servers' services — no single point of failure.
 
 ### Cloud Gatus (`servers/cloud/configs/gatus.yml`)
 
-- **Group: home** — dash, vaultwarden, jellyfin, immich, adguard, transmission,
-  open-webui, opencode-web, audiobookshelf, librespeed, metube, filebrowser,
-  searxng, woodpecker, piped, syncthing, ntfy, gatus, traefik, monica, akaunting,
-  grafana, ollama, traggo, usememos, reitti, mirotalk, gitea, authelia,
-  grafana-vm, paperless, docker-registry, plausible, umami, caldiy, omni-tools
+- **Group: home** — all deployed home services via probe bridge
 - **Group: offsite** — traefik, librespeed, syncthing
 - **Group: external** — michaeldistel.com, controlforge.dev, kickingmiles.com,
   antonshubin.com, neatsoft.dev
 
 ### Health Probe Bridge
 
-Services use a health probe endpoint pattern via `stacks/zond/`:
+Services use health probe endpoints via `stacks/zond/`:
 
 ```
 https://probe-home.${DOMAIN}/health/<service>
@@ -148,28 +129,29 @@ at TCP level. A 502/503 would indicate the actual container is down.
 Long-term: use `/api/verify?auth=basic` with a dedicated monitoring user for
 true end-to-end checks. See [auth.md](auth.md) §Gatus Monitoring Problem.
 
+## Scrape Targets
+
+The VM stack scrapes itself:
+
+- `hl-node-exporter:9100` — host-level metrics  
+- `hl-cadvisor:8080` — container-level metrics
+- `hl-victoria-metrics:8428` — VM self-metrics
+
 ## Missing Coverage
 
 Per [improvements.md](improvements.md) §2.3, gaps include:
 
-- Some stacks lack healthcheck endpoints
+- Some stacks still lack compose-level healthchecks
 - Gatus coverage audit incomplete for all deployed services
 - Offsite services have higher failure thresholds (9 vs 3) — may hide issues
 - No Grafana alerting configured (only Gatus endpoint-level alerts)
 
-## Dashboard
-
-Dashboards available at:
-- **Metrics (Prometheus+Loki)**: [https://metrics.${DOMAIN}](https://metrics.${DOMAIN}) — Authelia auth
-- **Metrics (VictoriaMetrics)**: [https://metrics-vm.${DOMAIN}](https://metrics-vm.${DOMAIN}) — Authelia auth
-- **Uptime (Home Gatus)**: [https://uptime-home.${DOMAIN}](https://uptime-home.${DOMAIN}) — public
-- **Uptime (Cloud Gatus)**: [https://uptime-cloud.${DOMAIN}](https://uptime-cloud.${DOMAIN}) — public
-
 ## References
 
+- [VictoriaMetrics docs](https://docs.victoriametrics.com/)
+- [VictoriaLogs docs](https://docs.victoriametrics.com/victorialogs/)
 - [Gatus documentation](https://github.com/TwiN/gatus)
 - [ntfy documentation](https://docs.ntfy.sh/)
-- [VictoriaMetrics docs](https://docs.victoriametrics.com/)
-- [Prometheus docs](https://prometheus.io/docs/)
+- [VM stack README](../stacks/victoria-metrics/README.md)
+- [Grafana stack](../stacks/grafana/)
 - [Architecture overview](architecture.md)
-- [VictoraMetrics stack README](../stacks/victoria-metrics/README.md)

@@ -13,7 +13,7 @@ Domain → access → auth method → robots-deny — audited per deployed stack
 | Internal | No Traefik exposure — accessed only via Docker DNS |
 | Public | No proxy auth, no own auth, intentionally accessible |
 
-## Home Server (47 stacks)
+## Home Server (46 stacks)
 
 ### Exposed via Traefik
 
@@ -28,7 +28,7 @@ Domain → access → auth method → robots-deny — audited per deployed stack
 | filebrowser | files.* | Own auth | Yes | File management |
 | gatus | uptime-home.* | **Public** | Yes | Health status page |
 | gitea | git.* | Own auth | Yes | Git hosting, registration disabled |
-| grafana | metrics.* | Authelia SSO | Yes | Grafana (Prometheus+Loki) |
+| grafana | metrics.* | Authelia SSO | Yes | Grafana (VM datasources) |
 | immich | photos.* | Own auth | No | Photo management, own login |
 | immich (kiosk) | kiosk.* | Own auth | No | Slideshow mode |
 | immich (thumb) | photos.* | API key middleware | Yes | Thumbnail proxy |
@@ -47,7 +47,6 @@ Domain → access → auth method → robots-deny — audited per deployed stack
 | opencode-web | code.* | Authelia SSO | Yes | OpenCode web (systemd service) |
 | paperless-ngx | docs.* | Own auth | No | Document management |
 | piped | piped.* | **Public** | Yes | YouTube frontend |
-| plausible | analytics.* | Own auth | Yes | Web analytics, registration disabled |
 | reitti | loc.* | **Public** | Yes | Public transit routing |
 | searxng | search.* | **Public** | Yes | Meta-search engine |
 | syncthing | sync-home.* | Own auth | Yes | File sync |
@@ -57,7 +56,6 @@ Domain → access → auth method → robots-deny — audited per deployed stack
 | umami | stats.* | Own auth | Yes | Web analytics |
 | usememos | notes.* | Own auth | Yes | Lightweight notes |
 | vaultwarden | passwords.* | Own auth | Yes | Password manager |
-| victoria-metrics (grafana-vm) | metrics-vm.* | Authelia SSO | Yes | Grafana (VM stack) |
 | woodpecker | ci.* | Own auth (GitHub OAuth) | Yes | CI/CD |
 | zond | probe-home.* | **Public** | No | Health probe bridge |
 
@@ -71,13 +69,12 @@ Domain → access → auth method → robots-deny — audited per deployed stack
 | github-mcp | MCP server — GitHub API | Internal Docker DNS |
 | google-maps-mcp | MCP server — Maps API | Internal Docker DNS |
 | monica-mcp | MCP server — Monica CRM | Internal Docker DNS |
-| monitoring | Prometheus, Loki, Promtail, cAdvisor, Node Exporter | All internal |
 | playwright | Playwright browser automation | Internal |
-| victoria-metrics (vm, vmagent, vmlogs) | VM backend services | Internal, only grafana-vm exposed |
+| victoria-metrics | VM, vmagent, vmlogs, node-exporter, cadvisor, promtail | All internal, no Traefik |
 | watchtower | Auto-updater | No web UI |
 | wireguard | VPN server | Port-based (UDP 51820), no web UI |
 
-## Cloud Server (12 stacks)
+## Cloud Server (11 stacks)
 
 | Stack | Domain | Auth method | robots-deny | Notes |
 |---|---|---|---|---|
@@ -113,12 +110,12 @@ Domain → access → auth method → robots-deny — audited per deployed stack
 
 | Category | Count | Details |
 |---|---|---|
-| Authelia SSO (2FA) | 10 | akaunting, grafana, metube, monica, ollama, transmission, traggo, victoria-metrics/grafana-vm, opencode-web, traefik (planned) |
+| Authelia SSO (2FA) | 8 | akaunting, grafana, metube, monica, ollama, opencode-web, transmission, traggo |
 | Basic auth (proxy) | 2 | traefik (dashboard-auth@file) |
-| Own auth (no proxy) | 20 | adguard, audiobookshelf, bulwark, caldiy, docker-registry, filebrowser, gitea, healthchecks, immich, jellyfin, ntfy, offerlens, open-webui, paperless-ngx, plausible, stalwart, syncthing, umami, usememos, vaultwarden, woodpecker |
+| Own auth (no proxy) | 19 | adguard, audiobookshelf, bulwark, caldiy, docker-registry, filebrowser, gitea, healthchecks, immich, jellyfin, ntfy, offerlens, open-webui, paperless-ngx, stalwart, syncthing, umami, usememos, vaultwarden, woodpecker |
 | Public (no auth) | 10 | gatus (both), librespeed (all), mirotalk, omni-tools, piped, reitti, searxng, usememos (GUI), zond |
 | Public + SEO | 2 | dash landing page, neatsoft landing page |
-| Internal (no Traefik) | 11 | caldav-mcp, docker-sock-proxy, email-mcp, github-mcp, google-maps-mcp, monica-mcp, monitoring, playwright, victoria-metrics internals, watchtower, wireguard |
+| Internal (no Traefik) | 10 | caldav-mcp, docker-sock-proxy, email-mcp, github-mcp, google-maps-mcp, monica-mcp, playwright, victoria-metrics, watchtower, wireguard |
 
 ### Key risks
 

@@ -73,8 +73,8 @@ Solutions for common issues:
 ## Specialized Guides
 
 ### 📊 [Monitoring Stack](monitoring.md)
-**Covers** both monitoring stacks:
-- VictoriaMetrics vs Prometheus comparison
+**Covers** the VictoriaMetrics stack:
+- Components and architecture (VM, VLogs, node-exporter, cadvisor)
 - Gatus cross-server monitoring coverage
 - Ntfy alerting setup
 - Dashboard URLs and auth
