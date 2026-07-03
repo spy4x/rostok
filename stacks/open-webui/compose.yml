@@ -8,7 +8,7 @@ networks:
 services:
   open-webui:
     container_name: hl-open-webui
-    image: ghcr.io/open-webui/open-webui:latest
+    image: ghcr.io/open-webui/open-webui:v0.10.2
     restart: unless-stopped
     environment:
       # --- Existing: Web loader via Playwright ---

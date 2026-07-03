@@ -35,7 +35,7 @@ services:
   # https://umami.is
   umami:
     container_name: hl-umami
-    image: ghcr.io/umami-software/umami:latest
+    image: ghcr.io/umami-software/umami:v3.2.0
     environment:
       - DATABASE_TYPE=postgresql
       - DATABASE_URL=postgresql://umami:${UMAMI_DB_PASSWORD}@umami-db:5432/umami

@@ -34,7 +34,7 @@ services:
   # https://github.com/monicahq/monica
   monica:
     container_name: hl-monica
-    image: monica:latest
+    image: monica:4.1.2
     restart: unless-stopped
     depends_on:
       monica-db:

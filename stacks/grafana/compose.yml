@@ -10,7 +10,7 @@ services:
   # https://github.com/grafana/grafana
   grafana:
     container_name: hl-grafana
-    image: grafana/grafana:latest
+    image: grafana/grafana:13.1.0
     user: "${PUID:-1000}:${PGID:-1000}"
     environment:
       - GF_SERVER_ROOT_URL=https://metrics.${DOMAIN}

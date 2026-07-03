@@ -10,7 +10,7 @@ services:
   # No auth needed — no sensitive data exposed.
   zond:
     container_name: hl-zond
-    image: ghcr.io/spy4x/zond:latest
+    image: ghcr.io/spy4x/zond:v1.0.0
     restart: unless-stopped
     volumes:
       - ./zond.yaml:/app/zond.yaml:ro

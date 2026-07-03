@@ -13,7 +13,7 @@ services:
   # https://github.com/iib0011/omni-tools
   omni-tools:
     container_name: hl-omni-tools
-    image: iib0011/omni-tools:latest
+    image: iib0011/omni-tools:0.6.0
     restart: unless-stopped
     deploy:
       resources:

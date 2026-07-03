@@ -11,7 +11,7 @@ services:
   # Access the web interface to configure DNS settings, filters, and view statistics.
   adguard:
     container_name: hl-adguard
-    image: adguard/adguardhome:latest
+    image: adguard/adguardhome:v0.107.77
     volumes:
       - ${VOLUMES_PATH}/adguard/work:/opt/adguardhome/work:z
       - ${VOLUMES_PATH}/adguard/conf:/opt/adguardhome/conf:z

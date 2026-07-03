@@ -7,7 +7,7 @@ networks:
 services:
   authelia:
     container_name: hl-authelia
-    image: authelia/authelia:latest
+    image: authelia/authelia:4.39.20
     volumes:
       - ${PATH_APPS}/configs/authelia/configuration.yml:/config/configuration.yml:ro
       - ${PATH_APPS}/configs/authelia/users.yml:/config/users.yml:ro

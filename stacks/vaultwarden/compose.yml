@@ -9,7 +9,7 @@ services:
   # Vaultwarden is a password manager which is compatible with Bitwarden clients.
   vaultwarden:
     container_name: hl-vaultwarden
-    image: vaultwarden/server:latest
+    image: vaultwarden/server:1.36.0
     user: "${PUID:-1000}:${PGID:-1000}"
     environment:
       - DOMAIN=https://passwords.${DOMAIN}

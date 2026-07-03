@@ -132,7 +132,7 @@ services:
 
   kiosk:
     container_name: hl-immich-kiosk
-    image: ghcr.io/damongolding/immich-kiosk:latest
+    image: ghcr.io/damongolding/immich-kiosk:v0.40.1
     environment:
       - KIOSK_IMMICH_URL=http://server:2283
       - KIOSK_IMMICH_EXTERNAL_URL=https://photos.${DOMAIN}

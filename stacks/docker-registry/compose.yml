@@ -23,7 +23,7 @@ services:
 
   registry-ui:
     container_name: hl-registry-ui
-    image: joxit/docker-registry-ui:latest
+    image: joxit/docker-registry-ui:2.6.0
     environment:
       - REGISTRY_TITLE=Homelab Registry
       - REGISTRY_URL=https://registry.${DOMAIN}

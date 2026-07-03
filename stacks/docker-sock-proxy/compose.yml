@@ -5,7 +5,7 @@ networks:
 services:
   docker-sock-proxy:
     container_name: hl-docker-sock-proxy
-    image: tecnativa/docker-socket-proxy:latest
+    image: tecnativa/docker-socket-proxy:v0.4.2
     restart: unless-stopped
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro

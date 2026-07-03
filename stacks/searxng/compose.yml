@@ -22,7 +22,7 @@ services:
 
   searxng:
     container_name: hl-searxng
-    image: searxng/searxng:latest
+    image: searxng/searxng:2026.7.3-747cec4c2
     restart: unless-stopped
     volumes:
       - ${PATH_APPS}/stacks/searxng/settings.yml:/etc/searxng/settings.yml:ro,z

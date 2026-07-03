@@ -28,7 +28,7 @@ services:
 
   gitea:
     container_name: hl-gitea
-    image: gitea/gitea:latest
+    image: gitea/gitea:1.26.4
     environment:
       - USER_UID=${PUID:-1000}
       - USER_GID=${PGID:-1000}

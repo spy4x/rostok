@@ -31,7 +31,7 @@ services:
 
   akaunting:
     container_name: hl-akaunting
-    image: akaunting/akaunting:latest
+    image: akaunting/akaunting:3.1.21
     restart: unless-stopped
     depends_on:
       akaunting-db:

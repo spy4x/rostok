@@ -4,7 +4,7 @@ services:
   # Watchtower is a process for automating Docker container base image updates.
   watchtower:
     container_name: hl-watchtower
-    image: nickfedor/watchtower:latest
+    image: nickfedor/watchtower:1.19.0
     user: "${PUID:-1000}:${PGID:-1000}"
     group_add:
       - "${DOCKER_GROUP_ID:-990}" # Allow access to docker.sock

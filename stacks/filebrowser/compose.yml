@@ -8,7 +8,7 @@ networks:
 services:
   filebrowser:
     container_name: hl-filebrowser
-    image: filebrowser/filebrowser:latest
+    image: filebrowser/filebrowser:v2.63.17
     user: "${PUID:-1000}:${PGID:-1000}"
     environment:
       - PUID=${PUID:-1000}

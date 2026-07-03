@@ -13,7 +13,7 @@ services:
   # https://github.com/librespeed/speedtest
   librespeed:
     container_name: hl-librespeed
-    image: linuxserver/librespeed:latest
+    image: linuxserver/librespeed:6.1.0
     environment:
       - PUID=${PUID:-1000}
       - PGID=${PGID:-1000}

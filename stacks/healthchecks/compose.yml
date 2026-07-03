@@ -11,7 +11,7 @@ services:
   # https://github.com/healthchecks/healthchecks
   healthchecks:
     container_name: hl-healthchecks
-    image: healthchecks/healthchecks:latest
+    image: healthchecks/healthchecks:v4.1.1
     user: "999:999" # Run as hc user (UID/GID 999)
     environment:
       - TZ=${TIMEZONE}

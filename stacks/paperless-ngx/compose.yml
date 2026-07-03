@@ -44,7 +44,7 @@ services:
 
   paperless:
     container_name: hl-paperless
-    image: ghcr.io/paperless-ngx/paperless-ngx:latest
+    image: ghcr.io/paperless-ngx/paperless-ngx:v2.20.15
     restart: unless-stopped
     depends_on:
       paperless-db:
@@ -95,7 +95,7 @@ services:
 
   paperless-worker:
     container_name: hl-paperless-worker
-    image: ghcr.io/paperless-ngx/paperless-ngx:latest
+    image: ghcr.io/paperless-ngx/paperless-ngx:v2.20.15
     command: ["svc-consumer"]
     restart: unless-stopped
     depends_on:

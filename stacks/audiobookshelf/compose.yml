@@ -9,7 +9,7 @@ services:
   # Audiobookshelf is a self-hosted audio & epub/pdf book server.
   audiobookshelf:
     container_name: hl-audiobookshelf
-    image: ghcr.io/advplyr/audiobookshelf:latest
+    image: ghcr.io/advplyr/audiobookshelf:v2.35.1
     environment:
       - PUID=${PUID:-1000}
       - PGID=${PGID:-1000}

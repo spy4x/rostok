@@ -10,7 +10,7 @@ services:
   # Works with Traefik to route traffic through Cloudflare Tunnel.
   cloudflared:
     container_name: hl-cloudflared
-    image: cloudflare/cloudflared:latest
+    image: cloudflare/cloudflared:2026.6.1
     restart: unless-stopped
     command: tunnel run
     environment:

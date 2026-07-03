@@ -12,7 +12,7 @@ services:
   # It synchronizes files between two or more computers in real time, safely protected from prying eyes.
   syncthing:
     container_name: hl-syncthing
-    image: syncthing/syncthing:latest
+    image: syncthing/syncthing:2.1.1
     environment:
       - PUID=${PUID:-1000}
       - PGID=${PGID:-1000}

@@ -10,7 +10,7 @@ services:
   # Loki - Log aggregation (receives from Promtail, serves to Grafana)
   loki:
     container_name: hl-loki
-    image: grafana/loki:latest
+    image: grafana/loki:3.7.3
     user: "${PUID:-1000}:${PGID:-1000}"
     volumes:
       - ${VOLUMES_PATH}/monitoring/loki:/loki:z
@@ -27,7 +27,7 @@ services:
   # Promtail - Log collector (reads container logs, ships to Loki)
   promtail:
     container_name: hl-promtail
-    image: grafana/promtail:latest
+    image: grafana/promtail:3.6.11
     volumes:
       - ${PATH_APPS}/configs/monitoring/promtail.yml:/etc/promtail/config.yml:ro,z
       - /var/log:/var/log:ro,z
@@ -49,7 +49,7 @@ services:
   # Node Exporter - Host-level metrics (CPU, memory, disk, network)
   node-exporter:
     container_name: hl-node-exporter
-    image: prom/node-exporter:latest
+    image: prom/node-exporter:v1.11.1
     volumes:
       - /proc:/host/proc:ro,z
       - /sys:/host/sys:ro,z
@@ -70,7 +70,7 @@ services:
   # Prometheus - Metrics storage & query engine
   prometheus:
     container_name: hl-prometheus
-    image: prom/prometheus:latest
+    image: prom/prometheus:v3.13.0
     volumes:
       - ${VOLUMES_PATH}/monitoring/prometheus:/prometheus:z
       - ${PATH_APPS}/configs/monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro,z
