@@ -170,11 +170,9 @@ access_control:
       policy: two_factor
     - domain: "metube.antonshubin.com"
       policy: two_factor
-      policy: two_factor
     - domain: "ollama.antonshubin.com"
       policy: two_factor
     - domain: "time.antonshubin.com"
-      policy: two_factor
       policy: two_factor
     - domain: "rspamd.antonshubin.com"
       policy: two_factor
