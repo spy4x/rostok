@@ -3,7 +3,7 @@ name: ${PROJECT}
 services:
   # Watchtower is a process for automating Docker container base image updates.
   watchtower:
-    container_name: watchtower
+    container_name: hl-watchtower
     image: nickfedor/watchtower:latest
     user: "${PUID:-1000}:${PGID:-1000}"
     group_add:
