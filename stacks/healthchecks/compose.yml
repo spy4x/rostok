@@ -12,6 +12,8 @@ services:
   healthchecks:
     container_name: hl-healthchecks
     image: healthchecks/healthchecks:latest
+    expose:
+      - "8000"
     user: "999:999" # Run as hc user (UID/GID 999)
     environment:
       - TZ=${TIMEZONE}

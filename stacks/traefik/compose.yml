@@ -16,6 +16,8 @@ services:
   traefik:
     container_name: "hl-traefik"
     image: "traefik:3.7.6"
+    expose:
+      - "8080"
     restart: unless-stopped
     user: "${PUID:-1000}:${PGID:-1000}"
     group_add:
