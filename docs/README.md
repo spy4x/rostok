@@ -72,6 +72,27 @@ Solutions for common issues:
 
 ## Specialized Guides
 
+### 📊 [Monitoring Stack](monitoring.md)
+**Covers** the VictoriaMetrics stack:
+- Components and architecture (VM, VLogs, node-exporter, cadvisor)
+- Gatus cross-server monitoring coverage
+- Ntfy alerting setup
+- Dashboard URLs and auth
+
+### 🛡️ [Disaster Recovery](disaster-recovery.md)
+**Full recovery procedures:**
+- Full server recovery (new Hetzner node → operational)
+- Single-service data restore from Restic
+- Database-specific restore (PostgreSQL, SQLite, VM)
+- DNS failover across servers
+
+### 🔐 [Security Matrix](security-matrix.md)
+**Audit every stack against:**
+- Domain exposure
+- Auth method (Authelia, basic, own, none)
+- robots-deny middleware
+- Key risks and gaps
+
 ### 💾 [Backup System](../scripts/backup/README.md)
 **Technical documentation** for the backup implementation:
 - Restic integration
