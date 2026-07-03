@@ -16,7 +16,7 @@ host = "mail.${EMAIL_MCP_DOMAIN}"
 port = 993
 use_ssl = true
 start_ssl = false
-verify_ssl = true
+verify_ssl = false
 
 [emails.outgoing]
 user_name = "${EMAIL_MCP_PRIMARY_USER}"
@@ -25,7 +25,7 @@ host = "mail.${EMAIL_MCP_DOMAIN}"
 port = 587
 use_ssl = false
 start_ssl = true
-verify_ssl = true
+verify_ssl = false
 
 # --- Account: neatsoft (anton@neatsoft.dev) ---
 [[emails]]
@@ -40,7 +40,7 @@ host = "mail.${EMAIL_MCP_DOMAIN}"
 port = 993
 use_ssl = true
 start_ssl = false
-verify_ssl = true
+verify_ssl = false
 
 [emails.outgoing]
 user_name = "${EMAIL_MCP_NEATSOFT_USER}"
@@ -49,7 +49,7 @@ host = "mail.${EMAIL_MCP_DOMAIN}"
 port = 587
 use_ssl = false
 start_ssl = true
-verify_ssl = true
+verify_ssl = false
 
 # --- Behaviour (top-level scalars) ---
 # Attachments disabled — enable explicitly if a tool needs them.

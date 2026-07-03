@@ -11,7 +11,7 @@ services:
   # Stalwart Mail Server - Modern mail server with JMAP support
   stalwart:
     container_name: hl-stalwart
-    image: stalwartlabs/stalwart:latest
+    image: stalwartlabs/stalwart:v0.16.11
     ports:
       - "25:25"
       - "465:465"
@@ -43,14 +43,10 @@ services:
         aliases:
           - hl-stalwart
     labels:
-      # Traefik routes via Python sidecar, not direct labels here.
-      # Labels below feed Traefik's automatic discovery:
+      # Traefik routes directly to Stalwart (proxy removed with Traefik 3.7.6 update)
       - "traefik.enable=true"
       - "traefik.docker.network=proxy"
-      # All traffic goes through hl-stalwart-proxy (Python sidecar)
-      - "traefik.http.services.hl-stalwart.loadbalancer.server.url=http://hl-stalwart-proxy:8080"
-      - "traefik.http.services.hl-stalwart.loadbalancer.healthCheck.path=/healthz/live"
-      - "traefik.http.services.hl-stalwart.loadbalancer.healthCheck.interval=30s"
+      - "traefik.http.services.hl-stalwart.loadbalancer.server.port=8080"
       # Web UI + JMAP on mail.DOMAIN (exclude /dav/ which has its own router)
       - "traefik.http.routers.hl-stalwart.rule=Host(`mail.${DOMAIN}`) && !PathPrefix(`/dav/`)"
       - "traefik.http.routers.hl-stalwart.entrypoints=websecure"
@@ -64,37 +60,6 @@ services:
       - "traefik.http.routers.hl-stalwart-dav.tls.certresolver=myresolver"
       - "traefik.http.routers.hl-stalwart-dav.middlewares=robots-deny@file"
       - "traefik.http.routers.hl-stalwart-dav.service=hl-stalwart"
-
-  # Python HTTP proxy sidecar: Traefik (Alpine 3.23) cannot reliably connect to
-  # Stalwart's Rust HTTP server. Python urllib (Alpine 3.24) can.
-  # Bridges all HTTP traffic from Traefik to Stalwart on the proxy network.
-  stalwart-proxy:
-    container_name: hl-stalwart-proxy
-    image: python:3-alpine
-    command: ["python3", "/proxy/stalwart-proxy.py", "8080"]
-    volumes:
-      - ${PATH_APPS}/stacks/stalwart/stalwart-proxy.py:/proxy/stalwart-proxy.py:ro,z
-    restart: unless-stopped
-    networks:
-      proxy:
-        ipv4_address: 172.18.0.20
-    security_opt:
-      - no-new-privileges:true
-    deploy:
-      resources:
-        limits:
-          memory: 32M
-          cpus: "0.1"
-    healthcheck:
-      test: [
-        "CMD",
-        "python3",
-        "-c",
-        "import urllib.request; urllib.request.urlopen('http://hl-stalwart:8080/.well-known/jmap', timeout=3)",
-      ]
-      interval: 30s
-      timeout: 5s
-      retries: 3
 
   # MTA-STS policy server — serves .well-known/mta-sts.txt for TLS enforcement
   # Covers mta-sts.${DOMAIN} and mta-sts.${NEATSOFT_DOMAIN} (same MX)
