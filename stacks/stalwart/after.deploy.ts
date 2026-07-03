@@ -113,6 +113,50 @@ async function ensureAllowedIp(): Promise<boolean> {
   return true
 }
 
+/** Ensure SMTP submission port 587 listener exists */
+async function ensureSmtp587(): Promise<boolean> {
+  const query = await jmap({
+    using: ["urn:ietf:params:jmap:core"],
+    methodCalls: [
+      ["x:NetworkListener/query", { accountId: ACCOUNT, limit: 50, position: 0 }, "0"],
+      ["x:NetworkListener/get", {
+        accountId: ACCOUNT,
+        "#ids": { resultOf: "0", name: "x:NetworkListener/query", path: "/ids" },
+        properties: ["id", "protocol", "bind"],
+      }, "1"],
+    ],
+  })
+
+  const getResp = query.methodResponses.find(([m]) => m === "x:NetworkListener/get")
+  const list = (getResp?.[1] as Record<string, unknown>)?.list as Array<{ id: string; protocol: string; bind: Record<string, boolean> }> | undefined
+
+  if ((list ?? []).some((e) => e.protocol === "smtp" && Object.keys(e.bind).some((b) => b.endsWith(":587")))) {
+    return false // port 587 listener already exists
+  }
+
+  await jmap({
+    using: ["urn:ietf:params:jmap:core"],
+    methodCalls: [
+      ["x:NetworkListener/set", {
+        accountId: ACCOUNT,
+        create: {
+          "submission": {
+            protocol: "smtp",
+            name: "submission",
+            bind: { "0.0.0.0:587": true, "[::]:587": true },
+            useTls: true,
+            tlsImplicit: false,
+            maxConnections: 8192,
+            socketBacklog: 1024,
+          },
+        },
+      }, "0"],
+    ],
+  })
+
+  return true
+}
+
 /** Poll until Stalwart responds to health check (up to 60s) */
 async function waitHealthy(): Promise<void> {
   for (let i = 0; i < 30; i++) {
@@ -141,6 +185,13 @@ async function main() {
     console.log(`✓ Added ${SUBNET} to Allowed IPs (anti-lockout)`)
   } else {
     console.log(`✓ ${SUBNET} already in Allowed IPs`)
+  }
+
+  const smtp587 = await ensureSmtp587()
+  if (smtp587) {
+    console.log("✓ Added SMTP port 587 listener (submission)")
+  } else {
+    console.log("✓ SMTP port 587 listener already exists")
   }
 }
 
