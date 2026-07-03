@@ -340,15 +340,6 @@ endpoints:
     alerts:
       - type: ntfy
 
-  - name: Plausible
-    group: home
-    url: "https://probe-home.${DOMAIN}/health/plausible"
-    interval: 1m
-    conditions:
-      - "[STATUS] == 200"
-    alerts:
-      - type: ntfy
-
   - name: Umami
     group: home
     url: "https://probe-home.${DOMAIN}/health/umami"
