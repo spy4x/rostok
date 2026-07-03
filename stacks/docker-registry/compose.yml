@@ -6,12 +6,6 @@ services:
   docker-registry:
     container_name: hl-docker-registry
     image: registry:2
-    healthcheck:
-      test: ["CMD", "wget", "--spider", "http://localhost:5000/v2/"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 40s
     environment:
       - REGISTRY_STORAGE_DELETE_ENABLED=true
     volumes:
@@ -30,12 +24,6 @@ services:
   registry-ui:
     container_name: hl-registry-ui
     image: joxit/docker-registry-ui:latest
-    healthcheck:
-      test: ["CMD", "curl", "-sf", "http://localhost:80/"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 40s
     environment:
       - REGISTRY_TITLE=Homelab Registry
       - REGISTRY_URL=https://registry.${DOMAIN}

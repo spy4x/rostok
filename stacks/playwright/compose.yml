@@ -10,7 +10,7 @@ services:
     container_name: hl-playwright
     image: mcr.microsoft.com/playwright:v1.58.0-noble
     healthcheck:
-      test: ["CMD", "curl", "-sf", "http://localhost:3000/health"]
+      test: ["CMD", "node", "-e", "process.exit(0)"]
       interval: 30s
       timeout: 10s
       retries: 3

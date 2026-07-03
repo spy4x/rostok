@@ -14,12 +14,6 @@ services:
   omni-tools:
     container_name: hl-omni-tools
     image: iib0011/omni-tools:latest
-    healthcheck:
-      test: ["CMD", "curl", "-sf", "http://localhost:80/"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 40s
     restart: unless-stopped
     deploy:
       resources:

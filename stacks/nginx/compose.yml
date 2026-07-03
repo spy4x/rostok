@@ -15,7 +15,7 @@ services:
     container_name: ${NGINX_CONTAINER_NAME}
     image: nginx:alpine
     healthcheck:
-      test: ["CMD", "curl", "-sf", "http://localhost:80/"]
+      test: ["CMD", "wget", "--spider", "http://localhost:80/"]
       interval: 30s
       timeout: 10s
       retries: 3

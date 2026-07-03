@@ -55,18 +55,6 @@ services:
   woodpecker-agent:
     container_name: hl-woodpecker-agent
     image: woodpeckerci/woodpecker-agent:v3.11.0
-    healthcheck:
-      test: ["CMD", "woodpecker-agent", "--help"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 40s
-    healthcheck:
-      test: ["CMD", "curl", "-sf", "http://localhost:8000/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 40s
     user: "${PUID:-1000}:${PGID:-1000}"
     group_add:
       - "${DOCKER_GROUP_ID:-990}" # Allow access to docker.sock

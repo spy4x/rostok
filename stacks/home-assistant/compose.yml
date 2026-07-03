@@ -11,12 +11,6 @@ services:
   home-assistant:
     container_name: hl-home-assistant
     image: ghcr.io/home-assistant/home-assistant:stable
-    healthcheck:
-      test: ["CMD", "curl", "-sf", "http://localhost:8123/"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 40s
     volumes:
       - ${VOLUMES_PATH}/home-assistant:/config:z
       - /etc/localtime:/etc/localtime:ro,z

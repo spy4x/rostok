@@ -12,7 +12,7 @@ services:
     container_name: hl-grafana
     image: grafana/grafana:latest
     healthcheck:
-      test: ["CMD", "curl", "-sf", "http://localhost:3000/api/health"]
+      test: ["CMD", "wget", "--spider", "http://localhost:3000/api/health"]
       interval: 30s
       timeout: 10s
       retries: 3
