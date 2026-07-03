@@ -24,8 +24,6 @@ targets:
     url: http://hl-gitea:3000/
   - name: grafana
     url: http://hl-grafana:3000/
-  - name: grafana-vm
-    url: http://hl-grafana-vm:3000/
   - name: immich
     url: http://hl-immich-server:2283/
   - name: jellyfin

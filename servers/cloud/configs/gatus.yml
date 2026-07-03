@@ -313,15 +313,6 @@ endpoints:
     alerts:
       - type: ntfy
 
-  - name: Grafana (VM)
-    group: home
-    url: "https://probe-home.${DOMAIN}/health/grafana-vm"
-    interval: 1m
-    conditions:
-      - "[STATUS] == 200"
-    alerts:
-      - type: ntfy
-
   - name: Paperless-ngx
     group: home
     url: "https://probe-home.${DOMAIN}/health/paperless"
