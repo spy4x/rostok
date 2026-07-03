@@ -5,6 +5,8 @@ networks:
   default:
     external: true
     name: proxy
+  home_internal:
+    external: true
 
 services:
   # OfferLens — combined API+Web server (Hono, Preact SSR) on port 8000
@@ -20,6 +22,7 @@ services:
       - OPENAI_API_BASE=${OFFERLENS_API_BASE:-https://api.deepseek.com}
       - LLM_MODEL=${OFFERLENS_MODEL:-deepseek-chat}
       - BATCH_CONCURRENCY=${OFFERLENS_BATCH_CONCURRENCY:-5}
+      - ENCRYPTION_KEY=${ENCRYPTION_KEY}
       - DB_HOST=offerlens-db
       - DB_PORT=5432
       - DB_NAME=${OFFERLENS_DB_NAME:-offerlens}
@@ -28,6 +31,7 @@ services:
     networks:
       - proxy
       - default
+      - home_internal
     labels:
       - "traefik.enable=true"
       - "traefik.docker.network=proxy"
