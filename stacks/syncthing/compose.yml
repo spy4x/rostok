@@ -13,6 +13,12 @@ services:
   syncthing:
     container_name: hl-syncthing
     image: syncthing/syncthing:latest
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "http://localhost:8384/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
     environment:
       - PUID=${PUID:-1000}
       - PGID=${PGID:-1000}

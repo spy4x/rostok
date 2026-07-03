@@ -9,7 +9,7 @@ services:
   # Home Assistant is a home automation platform that focuses on privacy and local control.
   # It allows you to control all your devices from a single, mobile-friendly interface.
   home-assistant:
-    container_name: home-assistant
+    container_name: hl-home-assistant
     image: ghcr.io/home-assistant/home-assistant:stable
     volumes:
       - ${VOLUMES_PATH}/home-assistant:/config:z
@@ -31,8 +31,8 @@ services:
     labels:
       - "traefik.enable=true"
       - "traefik.docker.network=proxy"
-      - "traefik.http.services.home-assistant.loadbalancer.server.port=8123"
-      - "traefik.http.routers.home-assistant.rule=Host(`home.${DOMAIN}`)"
-      - "traefik.http.routers.home-assistant.entrypoints=websecure"
-      - "traefik.http.routers.home-assistant.tls=true"
-      - "traefik.http.routers.home-assistant.tls.certresolver=myresolver"
+      - "traefik.http.services.hl-home-assistant.loadbalancer.server.port=8123"
+      - "traefik.http.routers.hl-home-assistant.rule=Host(`home.${DOMAIN}`)"
+      - "traefik.http.routers.hl-home-assistant.entrypoints=websecure"
+      - "traefik.http.routers.hl-home-assistant.tls=true"
+      - "traefik.http.routers.hl-home-assistant.tls.certresolver=myresolver"

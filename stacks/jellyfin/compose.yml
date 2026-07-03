@@ -9,6 +9,12 @@ services:
   jellyfin:
     container_name: hl-jellyfin
     image: jellyfin/jellyfin
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8096/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
     volumes:
       - ${VOLUMES_PATH}/jellyfin:/config:z
       - ${VOLUMES_PATH}/jellyfin-cache:/cache:z

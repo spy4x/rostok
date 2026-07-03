@@ -1,7 +1,7 @@
 import { BackupConfig } from "@scripts/backup"
 
 const backupConfig: BackupConfig = {
-  name: "monitoring",
+  name: "victoria-metrics",
   sourcePaths: "default",
   containers: {
     stop: "default",

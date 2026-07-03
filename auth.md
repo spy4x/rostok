@@ -45,16 +45,16 @@ Every HTTP service works, no exceptions.
 
 Change `middlewares=auth,...` → `middlewares=authelia@file,...`
 
-| Stack            | Domain               | Notes                                      |
-| ---------------- | -------------------- | ------------------------------------------ |
-| metube           | metube.${DOMAIN}     | No own auth                                |
-| ollama           | ollama.${DOMAIN}     | No own auth                                |
-| traggo           | time.${DOMAIN}       | Has own auth (weak)                        |
-| grafana          | metrics.${DOMAIN}    | Has own auth, can trust Remote-User header |
-| victoria-metrics | metrics-vm.${DOMAIN} | Same as grafana                            |
-| mailserver       | rspamd.${DOMAIN}     | No own web auth                            |
-| opencode-web     | code.${DOMAIN}       | Has API key auth, UI needs protection      |
-| traefik          | proxy-home.${DOMAIN} | Admin panel                                |
+| Stack   | Domain            | Notes                                      |
+| ------- | ----------------- | ------------------------------------------ |
+| metube  | metube.${DOMAIN}  | No own auth                                |
+| ollama  | ollama.${DOMAIN}  | No own auth                                |
+| traggo  | time.${DOMAIN}    | Has own auth (weak)                        |
+| grafana | metrics.${DOMAIN} | Has own auth, can trust Remote-User header |
+
+| mailserver | rspamd.${DOMAIN}     | No own web auth                            |
+| opencode-web     | code.${DOMAIN} | Has API key auth, UI needs protection |
+| traefik | proxy-home.${DOMAIN} | Admin panel |
 
 **Complex middleware chains — edit carefully:**
 
@@ -62,7 +62,7 @@ Change `middlewares=auth,...` → `middlewares=authelia@file,...`
 # opencode-web:
   middlewares=authelia@file,robots-deny@file
 
-# grafana / victoria-metrics:
+# grafana:
   middlewares=auth,robots-deny@file
 # → middlewares=authelia@file,robots-deny@file
 
@@ -170,11 +170,9 @@ access_control:
       policy: two_factor
     - domain: "metube.antonshubin.com"
       policy: two_factor
-      policy: two_factor
     - domain: "ollama.antonshubin.com"
       policy: two_factor
     - domain: "time.antonshubin.com"
-      policy: two_factor
       policy: two_factor
     - domain: "rspamd.antonshubin.com"
       policy: two_factor

@@ -17,7 +17,7 @@ The pre-commit hook auto-encrypts `.env` → `.env.age` using SOPS/age. Decrypti
 
 | Server  | Role                                | Stacks                                                      |
 | ------- | ----------------------------------- | ----------------------------------------------------------- |
-| Home    | Main server (GPU, media, storage)   | 40 stacks: auth, media, AI, git, CRM, analytics, monitoring |
+| Home    | Main server (GPU, media, storage)   | 47 stacks: auth, media, AI, git, CRM, analytics, monitoring |
 | Cloud   | Public-facing (mail, edge services) | 10 stacks: mailserver, gatus, healthchecks, ntfy            |
 | Offsite | Backup/DR                           | Syncthing, Traefik                                          |
 
@@ -27,13 +27,13 @@ The pre-commit hook auto-encrypts `.env` → `.env.age` using SOPS/age. Decrypti
 | -------------- | ---------------------------- | ------------------- |
 | Dashboard      | dash.antonshubin.com         | None                |
 | Uptime (cloud) | uptime-cloud.antonshubin.com | None                |
-| Authentik SSO  | auth.antonshubin.com         | SSO provider        |
+| Authelia SSO   | auth.antonshubin.com         | SSO provider        |
 | Grafana        | metrics.antonshubin.com      | Basic auth          |
 | Passwords      | passwords.antonshubin.com    | Vaultwarden account |
 | Email          | (IMAP/SMTP)                  | Mailserver account  |
 | AI Chat        | ai.antonshubin.com           | OpenWebUI account   |
 
-Full service list: see `docs/todos.md` (without passwords) or `servers/*/config.json`.
+Full service list: see `docs/improvements.md` or `servers/*/config.json`.
 
 ## Quick Start
 
@@ -60,7 +60,7 @@ deno task ansible ...     # Run Ansible playbooks
 ```bash
 deno task check           # Lint, format, type-check
 deno task deploy <server> # Deploy stacks to server
-deno task ssh <server>    # SSH into server
+deno task ssh <server> [cmd]  # SSH into server or run remote command
 deno task backup          # Run backup system
 deno task env:encrypt     # Encrypt .env files before commit
 ```
@@ -95,6 +95,6 @@ Auth decision:
 ✅ Daily automated backups with Restic\
 ✅ Cross-server health monitoring (Gatus + ntfy alerts)\
 ✅ GPU passthrough for local LLMs (Ollama + OpenWebUI)\
-✅ SSO provider deployed (Authentik — UI setup pending)
+✅ Authelia SSO operational
 
-See `docs/todos.md` for detailed status and roadmap.
+See `docs/improvements.md` for detailed status and roadmap.
