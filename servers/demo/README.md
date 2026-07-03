@@ -51,7 +51,7 @@ deno task deploy demo
 ### 4. Verify
 
 ```bash
-# Check services are running
+# Check services are running (deno task ssh demo docker ps for non-interactive)
 deno task ssh demo
 docker ps
 

@@ -167,7 +167,7 @@ See [backup README](../scripts/backup/README.md) for full options.
 ```bash
 deno task deploy <server>
 
-# Verify
+# Verify (deno task ssh <server> docker ps to skip interactive)
 deno task ssh <server>
 cd /opt/apps
 docker compose ps

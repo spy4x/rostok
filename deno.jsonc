@@ -14,7 +14,7 @@
     },
     "ssh": {
       "command": "deno run -A ./scripts/ssh/+main.ts",
-      "description": "🔐 SSH into server by name"
+      "description": "🔐 SSH into server (interactive) or run remote command: ssh <server> [cmd...]"
     },
     // #endregion Deploy
 

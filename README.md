@@ -60,7 +60,7 @@ deno task ansible ...     # Run Ansible playbooks
 ```bash
 deno task check           # Lint, format, type-check
 deno task deploy <server> # Deploy stacks to server
-deno task ssh <server>    # SSH into server
+deno task ssh <server> [cmd]  # SSH into server or run remote command
 deno task backup          # Run backup system
 deno task env:encrypt     # Encrypt .env files before commit
 ```

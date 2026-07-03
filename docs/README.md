@@ -128,7 +128,7 @@ Solutions for common issues:
 # Deploy services
 deno task deploy <server>
 
-# SSH to server
+# SSH to server (or run remote command: deno task ssh <server> <cmd>)
 deno task ssh <server>
 
 # Run backup
