@@ -60,6 +60,7 @@ services:
     volumes:
       - ${VOLUMES_PATH}/gitea/data:/data:z
       - /etc/localtime:/etc/localtime:ro,z
+      - ./public:/data/gitea/public:ro,z
     networks:
       - proxy
       - default

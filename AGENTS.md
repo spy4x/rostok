@@ -542,6 +542,7 @@ export default backupConfig
 - Offsite: `213.21.10.17`
 
 **Proxied (orange cloud) recommendation:**
+
 - Home records: proxied by default (wildcard `*.antonshubin.com` is proxied)
 - Cloud records: `sync-cloud`, `uptime-cloud` are proxied; others are DNS-only
 - **Offsite records: use `proxied: true`** — routes monitoring traffic through Cloudflare,

@@ -108,6 +108,49 @@ curl -s https://neatsoft.dev/robots.txt
 # Expected: User-agent: *\nDisallow: /
 ```
 
+## Per-service robots.txt
+
+Some services serve their own `/robots.txt` to prevent crawling entirely
+(belt-and-suspenders on top of X-Robots-Tag):
+
+- **git.antonshubin.com** (Gitea): Custom `Disallow: /` via
+  `stacks/gitea/public/robots.txt`, mounted into the container at
+  `/data/gitea/public/` (Gitea's custom public directory). Gitea serves
+  this file as `/robots.txt` instead of its default (which allows all).
+
+To add a custom robots.txt to a service:
+
+1. Create `stacks/<service>/public/robots.txt` with the desired rules
+2. Add a volume mount in `compose.yml`:
+   ```yaml
+   volumes:
+     - ./public:/data/gitea/public:ro,z
+   ```
+3. The path inside the container depends on where the service reads
+   robots.txt from. For non-Gitea services, use Traefik's `robots-deny`
+   middleware instead (headers approach, no filesystem needed).
+
+## Coverage audit
+
+As of July 2026, all Traefik-exposed routers in this repo have been
+audited for search-engine blocking. The following services use
+`robots-deny@file` middleware:
+
+- adguard, akaunting, audiobookshelf, authelia, bulwark, caldiy,
+  docker-registry, filebrowser, gatus, gitea, grafana, healthchecks,
+  immich, jellyfin, librespeed, metube, mirotalk, monica, ntfy,
+  offerlens, ollama, omni-tools, open-webui, paperless-ngx, piped,
+  plausible, reitti, searxng, stalwart, syncthing, traggo, transmission,
+  umami, usememos, vaultwarden, victoria-metrics, woodpecker
+
+Services intentionally NOT blocked (public-facing):
+
+- **antonshubin.com** (root domain) — uses `allow-index@file` override
+- **dash.antonshubin.com** — dashboard uses `allow-index@file`
+- **neatsoft.dev** — landing page uses `allow-index@file`
+- **zond** — health probes, returns only 200/503, no content exposed
+- **traefik dashboard** — behind `dashboard-auth@file` only (internal tool)
+
 ## References
 
 - [Google: Robots meta tag and X-Robots-Tag HTTP header specifications](https://developers.google.com/search/docs/crawling-indexing/robots-meta-tag)

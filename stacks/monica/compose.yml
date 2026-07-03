@@ -94,4 +94,5 @@ services:
       - "traefik.http.routers.hl-monica-api.tls.certresolver=myresolver"
       - "traefik.http.routers.hl-monica-api.priority=100"
       - "traefik.http.routers.hl-monica-api.service=hl-monica"
-      # No middlewares for the API router — Authelia bypassed, token auth handled by Monica
+      # No authelia for the API router — token auth handled by Monica. But still block indexing.
+      - "traefik.http.routers.hl-monica-api.middlewares=robots-deny@file"

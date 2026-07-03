@@ -33,6 +33,7 @@ services:
       - "traefik.docker.network=proxy"
       - "traefik.http.services.hl-offerlens.loadbalancer.server.port=8000"
       - "traefik.http.routers.hl-offerlens.rule=Host(`offer-lens.${DOMAIN}`)"
+      - "traefik.http.routers.hl-offerlens.middlewares=robots-deny@file"
       - "traefik.http.routers.hl-offerlens.entrypoints=websecure"
       - "traefik.http.routers.hl-offerlens.tls=true"
       - "traefik.http.routers.hl-offerlens.tls.certresolver=myresolver"
@@ -47,7 +48,10 @@ services:
           cpus: "0.5"
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "deno eval 'const r = await fetch(\"http://localhost:8000/api/health\"); Deno.exit(r.ok ? 0 : 1)' || exit 1"]
+      test: [
+        "CMD-SHELL",
+        "deno eval 'const r = await fetch(\"http://localhost:8000/api/health\"); Deno.exit(r.ok ? 0 : 1)' || exit 1",
+      ]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -76,7 +80,10 @@ services:
           cpus: "0.2"
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "deno eval 'const r = await fetch(\"http://localhost:3000/health\"); Deno.exit(r.ok ? 0 : 1)' || exit 1"]
+      test: [
+        "CMD-SHELL",
+        "deno eval 'const r = await fetch(\"http://localhost:3000/health\"); Deno.exit(r.ok ? 0 : 1)' || exit 1",
+      ]
       interval: 30s
       timeout: 10s
       retries: 3
