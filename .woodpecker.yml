@@ -1,0 +1,5 @@
+steps:
+  check:
+    image: denoland/deno:2
+    commands:
+      - deno task check
