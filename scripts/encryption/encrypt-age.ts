@@ -14,11 +14,8 @@ import {
   findEnvFiles,
   getEnvAgePath,
   getRelativePath,
-  isAge64,
   parseEnvDict,
   parseEnvFile,
-  serializeEnv,
-  type EnvEntry,
 } from "./age-lib.ts"
 import { exists } from "@std/fs"
 
@@ -52,8 +49,8 @@ async function main() {
 
       // Build old plaintext dict + old raw lines if .env.age exists
       let oldPlain: Record<string, string> = {}
-      let oldLines: Record<string, string> = {}  // key → raw line from .env.age
-      let oldComments: string[] = []              // non-key lines to preserve
+      const oldLines: Record<string, string> = {} // key → raw line from .env.age
+      const oldComments: string[] = [] // non-key lines to preserve
 
       if (await exists(agePath)) {
         const oldContent = Deno.readTextFileSync(agePath)
@@ -111,14 +108,17 @@ async function main() {
       Deno.writeTextFileSync(agePath, output)
       console.log(`      -> ${getRelativePath(agePath)}`)
       ok++
-
     } catch (err) {
       console.error(`      FAILED: ${err instanceof Error ? err.message : String(err)}`)
       fail++
     }
   }
 
-  console.log(`\n${fail > 0 ? "" : ""} ${ok}/${envFiles.length} file(s) encrypted${fail > 0 ? ` (${fail} failed)` : ""}`)
+  console.log(
+    `\n${fail > 0 ? "" : ""} ${ok}/${envFiles.length} file(s) encrypted${
+      fail > 0 ? ` (${fail} failed)` : ""
+    }`,
+  )
   if (fail > 0) Deno.exit(1)
 }
 

@@ -1,4 +1,4 @@
-import { join, dirname } from "@std/path"
+import { dirname, join } from "@std/path"
 import { exists } from "@std/fs"
 
 /**
@@ -50,8 +50,10 @@ async function decryptAge64File(agePath: string, outPath: string): Promise<boole
       let value = line.slice(eqIdx + 1)
 
       // Strip quotes
-      if ((value.startsWith('"') && value.endsWith('"')) ||
-          (value.startsWith("'") && value.endsWith("'"))) {
+      if (
+        (value.startsWith('"') && value.endsWith('"')) ||
+        (value.startsWith("'") && value.endsWith("'"))
+      ) {
         value = value.slice(1, -1)
       }
 

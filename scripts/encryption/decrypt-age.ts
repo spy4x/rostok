@@ -13,7 +13,6 @@ import {
   findEnvFiles,
   getEnvAgePath,
   getRelativePath,
-  isAge64,
   parseEnvFile,
   serializeEnv,
 } from "./age-lib.ts"
@@ -73,7 +72,6 @@ async function main() {
       Deno.writeTextFileSync(envPath, output)
       console.log(`      -> ${envRelPath}`)
       ok++
-
     } catch (err) {
       console.error(`      FAILED: ${err instanceof Error ? err.message : String(err)}`)
       fail++

@@ -10,9 +10,7 @@
  * Key file: .age/key.txt in repo root (same as SOPS used)
  * Public key: extracted from .age/key.txt comment
  */
-
-import { join, dirname, resolve } from "@std/path"
-import { exists } from "@std/fs"
+import { dirname, join } from "@std/path"
 
 /** Resolve main repo root (not worktree root — .age/ lives there) */
 function resolveMainRepoRoot(): string {
@@ -50,10 +48,10 @@ export interface EncryptionResult {
 }
 
 export interface EnvEntry {
-  raw: string           // original line (preserves comments/blanks)
-  key?: string          // env var key (undefined for comment/blank)
-  value?: string        // plaintext value (undefined if encrypted)
-  encrypted?: string    // age64 ciphertext (undefined if plaintext)
+  raw: string // original line (preserves comments/blanks)
+  key?: string // env var key (undefined for comment/blank)
+  value?: string // plaintext value (undefined if encrypted)
+  encrypted?: string // age64 ciphertext (undefined if plaintext)
 }
 
 /**
@@ -155,8 +153,10 @@ export function parseEnvFile(content: string): EnvEntry[] {
     const key = line.slice(0, eqIdx).trim()
     let value = line.slice(eqIdx + 1)
     // Strip quotes if present
-    if ((value.startsWith('"') && value.endsWith('"')) ||
-        (value.startsWith("'") && value.endsWith("'"))) {
+    if (
+      (value.startsWith('"') && value.endsWith('"')) ||
+      (value.startsWith("'") && value.endsWith("'"))
+    ) {
       value = value.slice(1, -1)
     }
     const encrypted = isAge64(value) ? value : undefined
