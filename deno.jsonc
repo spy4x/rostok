@@ -47,14 +47,9 @@
     // #endregion Encryption
 
     // #region Git Hooks
-    "hooks:install": "deno run -R=deno.json,deno.jsonc,.git/hooks/ -W=.git/hooks/ jsr:@hongminhee/deno-task-hooks",
-    "hooks:pre-commit": "deno task check && deno task env:encrypt",
-    "hooks:post-checkout": "deno task env:decrypt",
-    "hooks:post-merge": "deno task env:decrypt",
-    // #endregion Git Hooks
-
-    // #region Git Hooks
-    "hooks:install": "deno run -R=deno.json,deno.jsonc,.git/hooks/ -W=.git/hooks/ jsr:@hongminhee/deno-task-hooks",
+    // Installs pre-commit, post-checkout, post-merge hooks in shared .git/hooks/
+    // Works with worktrees (resolves via git rev-parse --git-common-dir).
+    "hooks:install": "deno run -A scripts/hooks/install.ts",
     "hooks:pre-commit": "deno task check && deno task env:encrypt",
     "hooks:post-checkout": "deno task env:decrypt",
     "hooks:post-merge": "deno task env:decrypt",
