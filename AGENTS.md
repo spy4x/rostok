@@ -397,8 +397,7 @@ Only changed values show in `git diff` — no more 200-line re-encryption noise.
    ```bash
    # macOS
    brew install age
-
-   # Linux 
+   # Linux
    sudo apt install age    # Debian/Ubuntu
    sudo dnf install age    # Fedora/RHEL
    ```

@@ -119,36 +119,12 @@ the current scripts use a single key. For multi-key setups, extend
 - **No file-level MAC** (vs SOPS) — intentional tradeoff for stable diffs
 - **Key rotation**: re-encrypt all values with new key (one-time script)
 
-## Migration from SOPS
-
-1. Backup existing `.env.age` files:
-   ```bash
-   cp servers/home/.env.age servers/home/.env.age.sops-backup
-   ```
-
-2. Decrypt SOPS files with the legacy command:
-   ```bash
-   deno task env:decrypt-sops
-   ```
-
-3. Re-encrypt with age64:
-   ```bash
-   deno task env:encrypt
-   ```
-
-4. Remove SOPS backups when verified:
-   ```bash
-   rm *.age.sops-backup
-   ```
-
 ## Commands Reference
 
 | Command | Description |
 |---------|-------------|
 | `deno task env:encrypt` | `.env` → `.env.age` (diff-based, only changed values) |
 | `deno task env:decrypt` | `.env.age` → `.env` (decrypts age64) |
-| `deno task env:encrypt-sops` | Legacy SOPS encrypt (migration only) |
-| `deno task env:decrypt-sops` | Legacy SOPS decrypt (migration only) |
 
 ## Troubleshooting
 
@@ -163,16 +139,15 @@ chmod 600 .age/key.txt
 Ensure the age key matches what was used to encrypt. Keys are at
 `<repo-root>/.age/key.txt`.
 
-## Why age64 instead of SOPS?
+## Why age64?
 
-| Property | SOPS | age64 |
-|----------|------|-------|
-| Per-value diff | Re-encrypts ALL values → 200+ line changes | Only changed values differ |
-| Merge conflicts | Guaranteed on any branch merge | Only on conflicting keys |
-| File-level MAC | Yes | No (per-value AEAD only) |
-| Key rotation | `sops updatekeys` — values untouched | Re-encrypt all values |
-| Dependencies | SOPS + age | age only |
-| Format | `ENC[AES256_GCM,...]` | `age64:base64...` |
+age64 encrypts each value independently with age. Compared to the previous
+SOPS-based approach:
+
+- **Stable diffs**: only changed values show in `git diff`
+- **No merge conflicts**: branches editing different vars don't conflict
+- **Fewer deps**: age only, no SOPS needed
+- **Tradeoff**: per-value AEAD instead of file-level MAC; key rotation requires re-encrypting all values
 
 ## Resources
 

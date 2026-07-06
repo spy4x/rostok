@@ -44,8 +44,6 @@
       "description": "🔓 Decrypt .env.age → .env (decrypts age64 values)"
     },
     // Legacy SOPS (kept for migration, remove after all files converted)
-    "env:encrypt-sops": "deno run -A scripts/encryption/encrypt.ts",
-    "env:decrypt-sops": "deno run -A scripts/encryption/decrypt.ts",
     // #endregion Encryption
 
     // #region Git Hooks
