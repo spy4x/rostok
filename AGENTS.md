@@ -448,9 +448,6 @@ line you changed differs in the commit.
 ```bash
 deno task env:encrypt      # .env → .env.age (diff-based, only changed values)
 deno task env:decrypt      # .env.age → .env (decrypts age64 values)
-# Legacy SOPS (kept for migration reference):
-deno task env:encrypt-sops
-deno task env:decrypt-sops
 ```
 
 ### .env.example Format

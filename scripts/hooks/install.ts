@@ -1,5 +1,3 @@
-#!/usr/bin/env deno run -A
-
 /**
  * Install git hooks for automatic env encryption/decryption.
  *

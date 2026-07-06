@@ -1,7 +1,5 @@
-#!/usr/bin/env deno run --allow-read --allow-write --allow-run
-
 /**
- * age64 encrypt: .env → .env.age (diff-based, only re-encrypt changed values)
+ * env:encrypt — .env → .env.age (diff-based, only re-encrypt changed values)
  *
  * Reads each .env file, compares with existing .env.age, and produces
  * updated .env.age where only changed/new values get re-encrypted.

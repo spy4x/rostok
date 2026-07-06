@@ -1,5 +1,3 @@
-#!/usr/bin/env deno run --allow-read --allow-write --allow-run
-
 /**
  * age64: per-value encryption with age
  * Format: KEY=age64:<base64-encoded-age-ciphertext>
@@ -7,10 +5,11 @@
  * Each value encrypted independently. Only changed values show in git diff.
  * Unchanged values keep their original ciphertext byte-for-byte.
  *
- * Key file: .age/key.txt in repo root (same as SOPS used)
+ * Key file: .age/key.txt in repo root
  * Public key: extracted from .age/key.txt comment
  */
 import { dirname, join } from "@std/path"
+import { decodeBase64, encodeBase64 } from "@std/encoding"
 
 /** Resolve main repo root (not worktree root — .age/ lives there) */
 function resolveMainRepoRoot(): string {
@@ -96,8 +95,7 @@ export async function ageEncrypt(value: string, recipient?: string): Promise<str
   if (!output.success) {
     throw new Error("age encrypt failed: " + new TextDecoder().decode(output.stderr))
   }
-  const base64 = btoa(String.fromCharCode(...new Uint8Array(output.stdout)))
-  return AGE64_PREFIX + base64
+  return AGE64_PREFIX + encodeBase64(new Uint8Array(output.stdout))
 }
 
 /**
@@ -107,8 +105,7 @@ export async function ageDecrypt(age64Value: string): Promise<string> {
   if (!age64Value.startsWith(AGE64_PREFIX)) {
     throw new Error("Not an age64 value: " + age64Value.slice(0, 20))
   }
-  const base64 = age64Value.slice(AGE64_PREFIX.length)
-  const ciphertext = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0))
+  const ciphertext = decodeBase64(age64Value.slice(AGE64_PREFIX.length))
 
   const cmd = new Deno.Command("age", {
     args: ["-d", "-i", AGE_KEY_FILE, "-o", "-"],

@@ -1,7 +1,5 @@
-#!/usr/bin/env deno run --allow-read --allow-write --allow-run
-
 /**
- * age64 decrypt: .env.age → .env
+ * env:decrypt — .env.age → .env (decrypts age64 values)
  *
  * Reads each .env.age file, decrypts age64 values, writes .env with
  * all values in plaintext. Non-secret values pass through unchanged.

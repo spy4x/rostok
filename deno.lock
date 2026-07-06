@@ -7,6 +7,7 @@
     "jsr:@std/assert@~0.222.1": "0.222.1",
     "jsr:@std/cli@~0.222.1": "0.222.1",
     "jsr:@std/dotenv@*": "0.225.5",
+    "jsr:@std/encoding@^1.0.9": "1.0.10",
     "jsr:@std/fmt@~0.222.1": "0.222.1",
     "jsr:@std/fs@^1.0.21": "1.0.21",
     "jsr:@std/fs@~0.222.1": "0.222.1",
@@ -52,6 +53,9 @@
     },
     "@std/dotenv@0.225.5": {
       "integrity": "9ce6f9d0ec3311f74a32535aa1b8c62ed88b1ab91b7f0815797d77a6f60c922f"
+    },
+    "@std/encoding@1.0.10": {
+      "integrity": "8783c6384a2d13abd5e9e87a7ae0520a30e9f56aeeaa3bdf910a3eaaf5c811a1"
     },
     "@std/fmt@0.222.1": {
       "integrity": "ec3382f9b0261c1ab1a5c804aa355d816515fa984cdd827ed32edfb187c0a722"
@@ -369,6 +373,7 @@
     "dependencies": [
       "jsr:@std/assert@^1.0.17",
       "jsr:@std/dotenv@*",
+      "jsr:@std/encoding@^1.0.9",
       "jsr:@std/fs@^1.0.21",
       "jsr:@std/path@^1.1.4"
     ]
