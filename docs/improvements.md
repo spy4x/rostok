@@ -154,7 +154,7 @@ Currently only `scripts.test.ts` exists (2 utility functions). Priority targets:
 |---|---|
 | `scripts/backup/` | Config parsing, command execution, SSH/SCP workflows |
 | `scripts/deploy/` | Stack selection, config generation, SSH deployment |
-| `scripts/encryption/` | SOPS/age integration, env round-trip |
+| `scripts/encryption/` | age64 per-value encryption, env round-trip |
 | `scripts/+lib.ts` | Utility functions (currently 2 tests exist) |
 | `scripts/offline-backup/` | Complex multi-step backup logic |
 

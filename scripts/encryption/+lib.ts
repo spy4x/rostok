@@ -2,7 +2,8 @@
 
 /**
  * Shared encryption utilities using sops and age
- * Single .age/key.txt and .sops.yml in root for ALL .env* files
+ * LEGACY — kept for migration. New encryption uses age64 (see age-lib.ts).
+ * Single .age/key.txt in root for ALL .env* files
  */
 
 import { join } from "@std/path"

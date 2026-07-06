@@ -2,7 +2,8 @@
 
 /**
  * Encrypt all .env* files to .env*.age
- * Uses single .age/key.txt and .sops.yml in root
+ * LEGACY SOPS — kept for migration. Use `deno task env:encrypt` for age64.
+ * Uses single .age/key.txt in root for ALL .env* files
  */
 
 import { checkDependencies, encryptFile, findEnvFiles, getRelativePath } from "./+lib.ts"
