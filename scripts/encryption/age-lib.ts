@@ -8,7 +8,7 @@
  * Unchanged values keep their original ciphertext byte-for-byte.
  *
  * Key file: .age/key.txt in repo root (same as SOPS used)
- * Public key: .sops.yaml or extracted from key file
+ * Public key: extracted from .age/key.txt comment
  */
 
 import { join, dirname, resolve } from "@std/path"
