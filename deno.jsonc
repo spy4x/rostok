@@ -34,15 +34,26 @@
     // #endregion Backup
 
     // #region Encryption
+    // age64 — diff-stable per-value encryption with age
     "env:encrypt": {
-      "command": "deno run -A scripts/encryption/encrypt.ts",
-      "description": "🔐 Encrypt all .env files to .env.age"
+      "command": "deno run -A scripts/encryption/encrypt-age.ts",
+      "description": "🔐 Encrypt .env → .env.age (only changed values re-encrypted)"
     },
     "env:decrypt": {
-      "command": "deno run -A scripts/encryption/decrypt.ts",
-      "description": "🔓 Decrypt all .env.age files to .env"
+      "command": "deno run -A scripts/encryption/decrypt-age.ts",
+      "description": "🔓 Decrypt .env.age → .env (decrypts age64 values)"
     },
+    // Legacy SOPS (kept for migration, remove after all files converted)
+    "env:encrypt-sops": "deno run -A scripts/encryption/encrypt.ts",
+    "env:decrypt-sops": "deno run -A scripts/encryption/decrypt.ts",
     // #endregion Encryption
+
+    // #region Git Hooks
+    "hooks:install": "deno run -R=deno.json,deno.jsonc,.git/hooks/ -W=.git/hooks/ jsr:@hongminhee/deno-task-hooks",
+    "hooks:pre-commit": "deno task check && deno task env:encrypt",
+    "hooks:post-checkout": "deno task env:decrypt",
+    "hooks:post-merge": "deno task env:decrypt",
+    // #endregion Git Hooks
 
     // #region Git Hooks
     "hooks:install": "deno run -R=deno.json,deno.jsonc,.git/hooks/ -W=.git/hooks/ jsr:@hongminhee/deno-task-hooks",
