@@ -34,18 +34,21 @@
     // #endregion Backup
 
     // #region Encryption
+    // age64 — per-value age encryption. Each value independent — only changed lines diff.
     "env:encrypt": {
-      "command": "deno run -A scripts/encryption/encrypt.ts",
-      "description": "🔐 Encrypt all .env files to .env.age"
+      "command": "deno run -R -W=. --allow-run=age,git scripts/encryption/encrypt.ts",
+      "description": "🔐 Encrypt .env → .env.age (only changed values re-encrypted)"
     },
     "env:decrypt": {
-      "command": "deno run -A scripts/encryption/decrypt.ts",
-      "description": "🔓 Decrypt all .env.age files to .env"
+      "command": "deno run -R -W=. --allow-run=age,git scripts/encryption/decrypt.ts",
+      "description": "🔓 Decrypt .env.age → .env (decrypts age64 values)"
     },
     // #endregion Encryption
 
     // #region Git Hooks
-    "hooks:install": "deno run -R=deno.json,deno.jsonc,.git/hooks/ -W=.git/hooks/ jsr:@hongminhee/deno-task-hooks",
+    // Installs pre-commit, post-checkout, post-merge hooks in shared .git/hooks/
+    // Works with worktrees (resolves via git rev-parse --git-common-dir).
+    "hooks:install": "deno run -R -W --allow-run=git scripts/hooks/install.ts",
     "hooks:pre-commit": "deno task check && deno task env:encrypt",
     "hooks:post-checkout": "deno task env:decrypt",
     "hooks:post-merge": "deno task env:decrypt",
@@ -99,6 +102,7 @@
     "@scripts/backup": "./scripts/backup/src/+lib.ts",
     "@std/assert": "jsr:@std/assert@^1.0.17",
     "@std/dotenv": "jsr:@std/dotenv",
+    "@std/encoding": "jsr:@std/encoding@^1.0.9",
     "@std/fs": "jsr:@std/fs@^1.0.21",
     "@std/path": "jsr:@std/path@^1.1.4"
   },

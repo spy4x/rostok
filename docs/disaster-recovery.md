@@ -62,7 +62,7 @@ This configures:
 
 ```bash
 # Decrypt .env.age (stored in git)
-sops --decrypt servers/<server>/.env.age > servers/<server>/.env
+deno task env:decrypt
 
 # Or restore from Syncthing backup:
 restic -r ~/sync/backups/env-<server> restore latest --target ~/

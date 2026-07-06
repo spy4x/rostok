@@ -3,7 +3,8 @@
 Infrastructure-as-code for self-hosted services across 3 servers (home, cloud, offsite).
 
 **WARNING**: This repo is **public**. Never commit plaintext passwords, secrets, or .env files.
-The pre-commit hook auto-encrypts `.env` → `.env.age` using SOPS/age. Decryption key is local-only.
+Secrets stored in `.env.age` using **age64** per-value encryption. Only changed values show in diff.
+Decryption key is local-only.
 
 ## Architecture
 
@@ -68,7 +69,7 @@ deno task env:encrypt     # Encrypt .env files before commit
 ## Secrets Management
 
 - `.env` files are **gitignored** — never committed
-- Pre-commit hook auto-encrypts `.env` → `.env.age` via SOPS/age
+- Pre-commit hook auto-encrypts `.env` → `.env.age` via age64 (per-value, only changed lines)
 - Post-checkout hook auto-decrypts `.env.age` → `.env`
 - **CREDENTIALS IN THIS README OR DOCS**: Always use "see .env" instead of writing passwords
 - If you expose a password: rotate it immediately (update .env + DB + deploy)
