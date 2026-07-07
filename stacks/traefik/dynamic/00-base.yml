@@ -4,8 +4,7 @@ http:
     # Works on all servers (unlike authelia which only runs on home).
     dashboard-auth:
       basicAuth:
-        users:
-          - "${BASIC_AUTH_USER}:${BASIC_AUTH_PASSWORD}"
+        usersFile: /etc/traefik/dynamic/.htpasswd
     compression:
       compress:
         excludedContentTypes:

@@ -1,8 +1,11 @@
-import { BackupConfig } from "@scripts/backup"
+import { BackupConfig, VOLUMES_PATH } from "@scripts/backup"
 
 const backupConfig: BackupConfig = {
   name: "victoria-metrics",
-  sourcePaths: "default",
+  sourcePaths: [
+    `${VOLUMES_PATH}/victoria-metrics`,
+    `${VOLUMES_PATH}/victoria-logs`,
+  ],
   containers: {
     stop: "default",
   },
