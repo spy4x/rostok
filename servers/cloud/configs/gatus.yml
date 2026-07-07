@@ -212,6 +212,7 @@ endpoints:
       - "[STATUS] == 200"
     alerts:
       - type: ntfy
+        failure-threshold: 9
 
   - name: Syncthing
     group: offsite
