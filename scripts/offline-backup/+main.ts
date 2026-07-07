@@ -45,6 +45,15 @@ Examples:
 
 const command = args[0].toLowerCase()
 
+// Validate required env vars before dispatching
+const requiredVars = ["BACKUP_PATHS", "BACKUPS_PASSWORD"]
+const missing = requiredVars.filter((k) => !envVars[k])
+if (missing.length > 0) {
+  console.error(`❌ Missing required environment variables: ${missing.join(", ")}`)
+  console.error("   Ensure .env and .env.root are properly configured.")
+  Deno.exit(1)
+}
+
 switch (command) {
   case "create":
     await create(envVars)

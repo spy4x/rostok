@@ -1,4 +1,5 @@
 // Deploy utility functions — extracted for testability
+import { runCommand } from "../../+lib.ts"
 
 export interface StackConfig {
   name: string
@@ -193,19 +194,4 @@ export async function getRemoteChecksums(
   return checksums
 }
 
-// Minimal runCommand for remote checksums (avoids circular dep with +lib.ts)
-async function runCommand(
-  cmd: string[],
-): Promise<{ success: boolean; output: string; error: string }> {
-  const proc = new Deno.Command(cmd[0], {
-    args: cmd.slice(1),
-    stdout: "piped",
-    stderr: "piped",
-  })
-  const output = await proc.output()
-  return {
-    success: output.code === 0,
-    output: new TextDecoder().decode(output.stdout),
-    error: new TextDecoder().decode(output.stderr),
-  }
-}
+// runCommand imported from ../../+lib.ts

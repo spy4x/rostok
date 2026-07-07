@@ -95,20 +95,23 @@ export async function verifyBackups(
       console.log(`     Checking: ${name}...`)
 
       const originalPassword = Deno.env.get("RESTIC_PASSWORD")
-      Deno.env.set("RESTIC_PASSWORD", resticPassword)
 
-      const result = await runCommand([
-        "restic",
-        "-r",
-        repo,
-        "check",
-        ...(fullVerification ? ["--read-data"] : []),
-      ])
-
-      if (originalPassword) {
-        Deno.env.set("RESTIC_PASSWORD", originalPassword)
-      } else {
-        Deno.env.delete("RESTIC_PASSWORD")
+      let result
+      try {
+        Deno.env.set("RESTIC_PASSWORD", resticPassword)
+        result = await runCommand([
+          "restic",
+          "-r",
+          repo,
+          "check",
+          ...(fullVerification ? ["--read-data"] : []),
+        ])
+      } finally {
+        if (originalPassword) {
+          Deno.env.set("RESTIC_PASSWORD", originalPassword)
+        } else {
+          Deno.env.delete("RESTIC_PASSWORD")
+        }
       }
 
       if (result.success) {

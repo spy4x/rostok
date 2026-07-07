@@ -9,6 +9,7 @@ import {
   mountDrive,
   unmountDrive,
 } from "./drive.ts"
+import { parseBackupPaths } from "./helpers.ts"
 import { verifyBackups } from "./verify.ts"
 
 export async function restore(envVars: Record<string, string>): Promise<void> {
@@ -17,17 +18,9 @@ export async function restore(envVars: Record<string, string>): Promise<void> {
 
   let backupPaths: BackupPath[]
   try {
-    backupPaths = JSON.parse(backupPathsJson)
-    if (!Array.isArray(backupPaths) || backupPaths.length === 0) {
-      throw new Error("BACKUP_PATHS must be a non-empty array")
-    }
-    for (const bp of backupPaths) {
-      if (!bp.source || !bp.target) {
-        throw new Error("Each backup path must have 'source' and 'target' properties")
-      }
-    }
+    backupPaths = parseBackupPaths(backupPathsJson)
   } catch (error) {
-    console.error(`❌ Error: Invalid BACKUP_PATHS format: ${error}`)
+    console.error(`❌ Error: ${error}`)
     console.error(`   Expected JSON array: [{"source":"~/path","target":"folder-name"}]`)
     Deno.exit(1)
   }

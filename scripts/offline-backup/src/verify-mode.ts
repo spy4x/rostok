@@ -8,6 +8,7 @@ import {
   mountDrive,
   unmountDrive,
 } from "./drive.ts"
+import { formatBytes, parseBackupPaths } from "./helpers.ts"
 import { getBackupSize, runSmartCheck, verifyBackups } from "./verify.ts"
 
 export async function verify(envVars: Record<string, string>): Promise<void> {
@@ -16,17 +17,9 @@ export async function verify(envVars: Record<string, string>): Promise<void> {
 
   let backupPaths: BackupPath[]
   try {
-    backupPaths = JSON.parse(backupPathsJson)
-    if (!Array.isArray(backupPaths) || backupPaths.length === 0) {
-      throw new Error("BACKUP_PATHS must be a non-empty array")
-    }
-    for (const bp of backupPaths) {
-      if (!bp.source || !bp.target) {
-        throw new Error("Each backup path must have 'source' and 'target' properties")
-      }
-    }
+    backupPaths = parseBackupPaths(backupPathsJson)
   } catch (error) {
-    console.error(`❌ Error: Invalid BACKUP_PATHS format: ${error}`)
+    console.error(`❌ Error: ${error}`)
     console.error(`   Expected JSON array: [{"source":"~/path","target":"folder-name"}]`)
     Deno.exit(1)
   }
@@ -123,14 +116,7 @@ export async function verify(envVars: Record<string, string>): Promise<void> {
       console.log(`   ${bp.target}: ${sizeInfo.human}`)
     }
 
-    const units = ["B", "KB", "MB", "GB", "TB"]
-    let size = totalBytes
-    let unitIndex = 0
-    while (size >= 1024 && unitIndex < units.length - 1) {
-      size /= 1024
-      unitIndex++
-    }
-    const totalHuman = `${size.toFixed(2)} ${units[unitIndex]}`
+    const totalHuman = formatBytes(totalBytes)
     console.log(`💾 Total Backup Size: ${totalHuman}\n`)
 
     console.log("🔍 Starting full verification (this may take a while)...\n")

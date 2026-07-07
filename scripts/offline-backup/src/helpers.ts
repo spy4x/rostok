@@ -62,6 +62,17 @@ export async function saveBackupLog(
   }
 }
 
+export function formatBytes(bytes: number): string {
+  const units = ["B", "KB", "MB", "GB", "TB"]
+  let size = bytes
+  let unitIndex = 0
+  while (size >= 1024 && unitIndex < units.length - 1) {
+    size /= 1024
+    unitIndex++
+  }
+  return `${size.toFixed(2)} ${units[unitIndex]}`
+}
+
 export async function writeReadme(
   mountPoint: string,
   backupPaths: BackupPath[],
@@ -81,16 +92,7 @@ export async function writeReadme(
     pathSizes.push({ path: backupPath, size: backupSize.human })
   }
 
-  const units = ["B", "KB", "MB", "GB", "TB"]
-  let size = totalBytes
-  let unitIndex = 0
-
-  while (size >= 1024 && unitIndex < units.length - 1) {
-    size /= 1024
-    unitIndex++
-  }
-
-  const totalHuman = `${size.toFixed(2)} ${units[unitIndex]}`
+  const totalHuman = formatBytes(totalBytes)
 
   const pathsInfo = pathSizes.map((ps) => `  - ${ps.path.source} → ${ps.path.target} (${ps.size})`)
     .join("\n")
@@ -168,9 +170,7 @@ export function parseBackupPaths(backupPathsJson: string): BackupPath[] {
       }
     }
   } catch (error) {
-    console.error(`❌ Error: Invalid BACKUP_PATHS format: ${error}`)
-    console.error(`   Expected JSON array: [{"source":"~/path","target":"folder-name"}]`)
-    Deno.exit(1)
+    throw new Error(`Invalid BACKUP_PATHS format: ${error}`)
   }
   return backupPaths
 }

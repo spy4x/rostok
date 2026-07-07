@@ -27,7 +27,7 @@ async function generateHtpasswd(): Promise<void> {
 
   const htpasswdPath = `${DYNAMIC_DIR}/.htpasswd`
   const content = `${user}:${password}\n`
-  await Deno.writeTextFile(htpasswdPath, content)
+  await Deno.writeTextFile(htpasswdPath, content, { mode: 0o600 })
   console.log(`Generated ${htpasswdPath}`)
 }
 

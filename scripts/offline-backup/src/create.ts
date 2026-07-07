@@ -1,5 +1,5 @@
 import { runCommand } from "../../+lib.ts"
-import type { BackupPath } from "./types.ts"
+import type { BackupPath, VerifyResults } from "./types.ts"
 import {
   checkDriveExists,
   createBackupStructure,
@@ -13,7 +13,7 @@ import {
 } from "./drive.ts"
 import { checkDeletedRepos, syncBackups } from "./sync.ts"
 import { getBackupSize, runSmartCheck, verifyBackups } from "./verify.ts"
-import { ConsoleLogger, saveBackupLog, writeReadme } from "./helpers.ts"
+import { ConsoleLogger, parseBackupPaths, saveBackupLog, writeReadme } from "./helpers.ts"
 
 export async function create(envVars: Record<string, string>): Promise<void> {
   const backupPathsJson = envVars.BACKUP_PATHS
@@ -21,17 +21,9 @@ export async function create(envVars: Record<string, string>): Promise<void> {
 
   let backupPaths: BackupPath[]
   try {
-    backupPaths = JSON.parse(backupPathsJson)
-    if (!Array.isArray(backupPaths) || backupPaths.length === 0) {
-      throw new Error("BACKUP_PATHS must be a non-empty array")
-    }
-    for (const bp of backupPaths) {
-      if (!bp.source || !bp.target) {
-        throw new Error("Each backup path must have 'source' and 'target' properties")
-      }
-    }
+    backupPaths = parseBackupPaths(backupPathsJson)
   } catch (error) {
-    console.error(`❌ Error: Invalid BACKUP_PATHS format: ${error}`)
+    console.error(`❌ Error: ${error}`)
     console.error(`   Expected JSON array: [{"source":"~/path","target":"folder-name"}]`)
     Deno.exit(1)
   }
@@ -47,12 +39,7 @@ export async function create(envVars: Record<string, string>): Promise<void> {
   let MOUNT_POINT = ""
   let partition = ""
   let device = ""
-  let verifyResults: {
-    passed: number
-    failed: number
-    skipped: number
-    details: Array<{ name: string; status: "passed" | "failed" | "skipped"; error?: string }>
-  } = {
+  let verifyResults: VerifyResults = {
     passed: 0,
     failed: 0,
     skipped: 0,
