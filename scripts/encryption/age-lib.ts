@@ -37,10 +37,24 @@ function resolveMainRepoRoot(): string {
   return Deno.cwd()
 }
 
-const GIT_ROOT = resolveMainRepoRoot()
-const ROOT_DIR = Deno.cwd()
-const AGE_KEY_FILE = join(GIT_ROOT, ".age", "key.txt")
 const AGE64_PREFIX = "age64:"
+
+let _gitRoot: string | undefined
+let _ageKeyFile: string | undefined
+
+function getGitRoot(): string {
+  if (_gitRoot === undefined) _gitRoot = resolveMainRepoRoot()
+  return _gitRoot
+}
+
+function getAgeKeyFile(): string {
+  if (_ageKeyFile === undefined) _ageKeyFile = join(getGitRoot(), ".age", "key.txt")
+  return _ageKeyFile
+}
+
+function getRootDir(): string {
+  return Deno.cwd()
+}
 
 export interface EncryptionResult {
   success: boolean
@@ -59,9 +73,10 @@ export interface EnvEntry {
  * Get age public key from key file
  */
 export function getAgePublicKey(): string {
-  const content = Deno.readTextFileSync(AGE_KEY_FILE)
+  const keyFile = getAgeKeyFile()
+  const content = Deno.readTextFileSync(keyFile)
   const match = content.match(/# public key: (.+)/)
-  if (!match) throw new Error("Age public key not found in " + AGE_KEY_FILE)
+  if (!match) throw new Error("Age public key not found in " + keyFile)
   return match[1].trim()
 }
 
@@ -110,7 +125,7 @@ export async function ageDecrypt(age64Value: string): Promise<string> {
   const ciphertext = decodeBase64(age64Value.slice(AGE64_PREFIX.length))
 
   const cmd = new Deno.Command("age", {
-    args: ["-d", "-i", AGE_KEY_FILE, "-o", "-"],
+    args: ["-d", "-i", getAgeKeyFile(), "-o", "-"],
     stdin: "piped",
     stdout: "piped",
     stderr: "piped",
@@ -186,8 +201,8 @@ export async function parseEnvDict(entries: EnvEntry[]): Promise<Record<string, 
  */
 export async function findEnvFiles(): Promise<string[]> {
   const envFiles: string[] = []
-  for await (const entry of Deno.readDir(ROOT_DIR)) {
-    const path = join(ROOT_DIR, entry.name)
+  for await (const entry of Deno.readDir(getRootDir())) {
+    const path = join(getRootDir(), entry.name)
     if (entry.isDirectory) {
       if (entry.name.startsWith(".") || entry.name === "node_modules") continue
       await walkEnvDir(path, envFiles)
@@ -240,5 +255,5 @@ export function serializeEnv(entries: EnvEntry[]): string {
  * Get relative path from repo root
  */
 export function getRelativePath(fullPath: string): string {
-  return fullPath.replace(ROOT_DIR + "/", "")
+  return fullPath.replace(getRootDir() + "/", "")
 }

@@ -85,7 +85,7 @@
       "description": "📘 Type-check TypeScript files"
     },
     "test": {
-      "command": "deno test --allow-run --allow-env --allow-read",
+      "command": "deno test --allow-env",
       "description": "🧪 Run tests"
     },
     "fix": {
