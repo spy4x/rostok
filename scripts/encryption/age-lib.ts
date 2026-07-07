@@ -14,16 +14,18 @@ import { decodeBase64, encodeBase64 } from "@std/encoding"
 /** Resolve main repo root (not worktree root — .age/ lives there) */
 function resolveMainRepoRoot(): string {
   // git rev-parse --git-common-dir returns .git path (shared across worktrees)
-  const cmd = new Deno.Command("git", {
-    args: ["rev-parse", "--git-common-dir"],
-    stdout: "piped",
-    stderr: "piped",
-  })
-  const { code, stdout } = cmd.outputSync()
-  if (code === 0) {
-    const gitDir = new TextDecoder().decode(stdout).trim()
-    if (gitDir) return dirname(gitDir)
-  }
+  try {
+    const cmd = new Deno.Command("git", {
+      args: ["rev-parse", "--git-common-dir"],
+      stdout: "piped",
+      stderr: "piped",
+    })
+    const { code, stdout } = cmd.outputSync()
+    if (code === 0) {
+      const gitDir = new TextDecoder().decode(stdout).trim()
+      if (gitDir) return dirname(gitDir)
+    }
+  } catch { /* git not available or failed */ }
   // Fallback: try to read .git file (worktree pointer)
   try {
     const gitFile = Deno.readTextFileSync(join(Deno.cwd(), ".git")).trim()
