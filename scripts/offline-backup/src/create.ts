@@ -1,18 +1,18 @@
 import { runCommand } from "../../+lib.ts"
 import type { BackupPath } from "./types.ts"
 import {
-  listDrives,
   checkDriveExists,
-  isMounted,
-  getMountPoint,
-  mountDrive,
-  unmountDrive,
+  createBackupStructure,
   ejectDrive,
   formatDrive,
-  createBackupStructure,
+  getMountPoint,
+  isMounted,
+  listDrives,
+  mountDrive,
+  unmountDrive,
 } from "./drive.ts"
 import { checkDeletedRepos, syncBackups } from "./sync.ts"
-import { verifyBackups, getBackupSize, runSmartCheck } from "./verify.ts"
+import { getBackupSize, runSmartCheck, verifyBackups } from "./verify.ts"
 import { ConsoleLogger, saveBackupLog, writeReadme } from "./helpers.ts"
 
 export async function create(envVars: Record<string, string>): Promise<void> {

@@ -1,72 +1,83 @@
-#!/usr/bin/env deno run --allow-read --allow-write --allow-run
-
 /**
- * Decrypt all .env*.age files to .env*
- * Uses single .age/key.txt and .sops.yml in root
+ * env:decrypt — .env.age → .env (decrypts age64 values)
+ *
+ * Reads each .env.age file, decrypts age64 values, writes .env with
+ * all values in plaintext. Non-secret values pass through unchanged.
  */
 
-import { checkDependencies, decryptFile, findEncryptedFiles, getRelativePath } from "./+lib.ts"
+import {
+  ageDecrypt,
+  checkAgeInstalled,
+  findEnvFiles,
+  getEnvAgePath,
+  getRelativePath,
+  parseEnvFile,
+  serializeEnv,
+} from "./age-lib.ts"
+import { exists } from "@std/fs"
 
 async function main() {
-  console.log("🔓 Decrypting environment files...")
+  console.log(" decrypting env files (age64)...")
 
-  // Check dependencies
-  const deps = await checkDependencies()
-  if (!deps.sops || !deps.age) {
-    console.error("❌ Missing required dependencies:")
-    if (!deps.sops) {
-      console.error("   - sops: Install with 'sudo apt install sops' or 'brew install sops'")
-    }
-    if (!deps.age) {
-      console.error("   - age: Install with 'sudo apt install age' or 'brew install age'")
-    }
+  const ageOk = await checkAgeInstalled()
+  if (!ageOk) {
+    console.error(" age not found. Install: sudo apt install age")
     Deno.exit(1)
   }
 
-  // Find all .env.age files
-  const encryptedFiles = await findEncryptedFiles()
+  // Find .env.age files (look for .env, then check if .env.age exists)
+  const envFiles = await findEnvFiles()
+  const ageFiles: string[] = []
 
-  if (encryptedFiles.length === 0) {
-    console.log("ℹ️  No .env.age files found to decrypt")
+  for (const envPath of envFiles) {
+    const agePath = getEnvAgePath(envPath)
+    if (await exists(agePath)) {
+      ageFiles.push(agePath)
+    }
+  }
+
+  if (ageFiles.length === 0) {
+    console.log(" No .env.age files found")
     Deno.exit(0)
   }
 
-  console.log(`Found ${encryptedFiles.length} file(s) to decrypt:\n`)
+  console.log(`Found ${ageFiles.length} file(s):\n`)
 
-  let successCount = 0
-  let failCount = 0
+  let ok = 0, fail = 0
 
-  // Decrypt each file
-  for (const filePath of encryptedFiles) {
-    const relativePath = getRelativePath(filePath)
-    const decryptedRelativePath = relativePath.replace(/\.age$/, "")
+  for (const agePath of ageFiles) {
+    const relPath = getRelativePath(agePath)
+    const envPath = agePath.replace(/\.age$/, "")
+    const envRelPath = getRelativePath(envPath)
 
-    console.log(`   📄 ${relativePath}`)
+    console.log(`   ${relPath}`)
 
-    const result = await decryptFile(filePath)
+    try {
+      const content = Deno.readTextFileSync(agePath)
+      const entries = parseEnvFile(content)
 
-    if (result.success) {
-      console.log(`      ✅ Decrypted to ${decryptedRelativePath}`)
-      successCount++
-    } else {
-      console.error(`      ❌ Failed: ${result.error}`)
-      failCount++
+      // Decrypt age64 values in-place
+      for (const entry of entries) {
+        if (entry.encrypted) {
+          entry.value = await ageDecrypt(entry.encrypted)
+          // Rebuild raw line with plaintext value
+          entry.raw = `${entry.key}=${entry.value}`
+          entry.encrypted = undefined
+        }
+      }
+
+      const output = serializeEnv(entries)
+      Deno.writeTextFileSync(envPath, output)
+      console.log(`      -> ${envRelPath}`)
+      ok++
+    } catch (err) {
+      console.error(`      FAILED: ${err instanceof Error ? err.message : String(err)}`)
+      fail++
     }
   }
 
-  console.log(
-    `\n${
-      successCount > 0 ? "✅" : "❌"
-    } Decrypted ${successCount}/${encryptedFiles.length} file(s)${
-      failCount > 0 ? ` (${failCount} failed)` : ""
-    }`,
-  )
-
-  if (failCount > 0) {
-    Deno.exit(1)
-  }
+  console.log(`\n${ok}/${ageFiles.length} file(s) decrypted${fail > 0 ? ` (${fail} failed)` : ""}`)
+  if (fail > 0) Deno.exit(1)
 }
 
-if (import.meta.main) {
-  await main()
-}
+if (import.meta.main) await main()

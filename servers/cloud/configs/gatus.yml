@@ -241,15 +241,6 @@ endpoints:
     alerts:
       - type: ntfy
 
-  - name: Grafana
-    group: home
-    url: "https://probe-home.${DOMAIN}/health/grafana"
-    interval: 1m
-    conditions:
-      - "[STATUS] == 200"
-    alerts:
-      - type: ntfy
-
   - name: Ollama
     group: home
     url: "https://probe-home.${DOMAIN}/health/ollama"
@@ -313,15 +304,6 @@ endpoints:
     alerts:
       - type: ntfy
 
-  - name: Grafana (VM)
-    group: home
-    url: "https://probe-home.${DOMAIN}/health/grafana-vm"
-    interval: 1m
-    conditions:
-      - "[STATUS] == 200"
-    alerts:
-      - type: ntfy
-
   - name: Paperless-ngx
     group: home
     url: "https://probe-home.${DOMAIN}/health/paperless"
@@ -334,15 +316,6 @@ endpoints:
   - name: Docker Registry
     group: home
     url: "https://probe-home.${DOMAIN}/health/docker-registry"
-    interval: 1m
-    conditions:
-      - "[STATUS] == 200"
-    alerts:
-      - type: ntfy
-
-  - name: Plausible
-    group: home
-    url: "https://probe-home.${DOMAIN}/health/plausible"
     interval: 1m
     conditions:
       - "[STATUS] == 200"

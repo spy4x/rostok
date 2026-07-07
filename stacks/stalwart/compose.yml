@@ -85,11 +85,13 @@ services:
       - "traefik.http.services.hl-mta-sts.loadbalancer.server.port=8081"
       # MTA-STS for primary domain
       - "traefik.http.routers.hl-mta-sts-primary.rule=Host(`mta-sts.${DOMAIN}`)"
+      - "traefik.http.routers.hl-mta-sts-primary.middlewares=robots-deny@file"
       - "traefik.http.routers.hl-mta-sts-primary.entrypoints=websecure"
       - "traefik.http.routers.hl-mta-sts-primary.tls=true"
       - "traefik.http.routers.hl-mta-sts-primary.tls.certresolver=myresolver"
       # MTA-STS for secondary domain (same MX)
       - "traefik.http.routers.hl-mta-sts-secondary.rule=Host(`mta-sts.${NEATSOFT_DOMAIN}`)"
+      - "traefik.http.routers.hl-mta-sts-secondary.middlewares=robots-deny@file"
       - "traefik.http.routers.hl-mta-sts-secondary.entrypoints=websecure"
       - "traefik.http.routers.hl-mta-sts-secondary.tls=true"
       - "traefik.http.routers.hl-mta-sts-secondary.tls.certresolver=myresolver"

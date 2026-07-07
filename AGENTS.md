@@ -282,7 +282,7 @@ deno task deploy <server>     # Deploy all services to server
 deno task deploy <server> <stack>  # Deploy single stack (e.g. `deno task deploy home plausible`)
 deno task ansible <playbook>  # Run Ansible playbooks
 deno task backup              # Run backup system
-deno task ssh <server>        # SSH into server
+deno task ssh <server> [cmd...]  # SSH into server or run remote command
 ```
 
 ## 📋 Code Style Guidelines
@@ -386,25 +386,27 @@ export default backupConfig
 
 ## 🛠️ Environment Variable Management
 
+Uses **age64** — per-value encryption with age. Each secret encrypted independently.
+Only changed values show in `git diff` — no more 200-line re-encryption noise.
+
 ### Encryption Setup (Required)
 
 **Before working with .env files, you MUST set up encryption:**
 
-1. **Install dependencies** (requires sudo on Linux):
+1. **Install age** (requires sudo on Linux):
    ```bash
    # macOS
-   brew install sops age
-
-   # Linux 
-   sudo apt install sops age    # Debian/Ubuntu
-   sudo dnf install sops age    # Fedora/RHEL
+   brew install age
+   # Linux
+   sudo apt install age    # Debian/Ubuntu
+   sudo dnf install age    # Fedora/RHEL
    ```
 
-2. **Initialize encryption**:
+2. **Generate age key** (one-time):
    ```bash
-   deno task encrypt:root:init          # For root .env.root
-   deno task encrypt:init <server-name> # For each server
+   mkdir -p .age && age-keygen -o .age/key.txt
    ```
+   The public key in `.age/key.txt` comment is your recipient.
 
 3. **Install git hooks for automation**:
    ```bash
@@ -413,18 +415,39 @@ export default backupConfig
 
 ### Working with Environment Files
 
-**CRITICAL: Always add environment variables to BOTH files:**
+**Two files per server:**
 
-1. **`servers/{name}/.env`** - Actual values (encrypted to .env.age)
-2. **`servers/{name}/.env.example`** - Placeholders (committed)
+1. **`servers/{name}/.env.age`** — committed, has `KEY=age64:base64...` for secrets
+2. **`servers/{name}/.env.example`** — committed, placeholders for documentation
+3. **`servers/{name}/.env`** — **gitignored**, decrypted plaintext for deploy
 
-**ALWAYS encrypt .env files before committing.** The pre-commit hook auto-encrypts `.env` → `.env.age` and stages the `.env.age` file. Never commit plaintext `.env` files. If you manually edit `.env`, run `deno task env:encrypt` before committing to ensure the encrypted `.env.age` stays in sync.
+**Workflow:**
+
+```bash
+# Decrypt .env.age → .env (for editing or deploy)
+deno task env:decrypt
+
+# Edit env vars
+vim servers/home/.env
+
+# Re-encrypt (only changed values get new ciphertext)
+deno task env:encrypt
+
+# Commit
+git add servers/home/.env.age
+git commit -m "fix(env): update CALDAV_PASSWORD"
+```
+
+**Why not SOPS anymore?** SOPS re-encrypts every value on every run → every `.env.age`
+line changes, even for untouched values. This made PRs unreadable and caused merge
+conflicts on unrelated keys. age64 encrypts each value independently — only the
+line you changed differs in the commit.
 
 ### Core Operations
 
 ```bash
-deno task env:encrypt      # Encrypt all .env files to .env.age
-deno task env:decrypt      # Decrypt all .env.age files to .env
+deno task env:encrypt      # .env → .env.age (diff-based, only changed values)
+deno task env:decrypt      # .env.age → .env (decrypts age64 values)
 ```
 
 ### .env.example Format
@@ -449,16 +472,16 @@ SERVICE_DB_PASSWORD=abC123...32charSecureString
 
 ### Git Hooks Automation
 
-The git hooks provide automatic encryption/decryption:
+The git hooks provide automatic encryption/decryption per worktree:
 
-- **pre-commit**: Auto-encrypts .env files before commit
-- **post-checkout**: Auto-decrypts .env.age files after branch switch
-- **pre-push**: Blocks pushes containing plaintext .env files
+- **pre-commit**: Auto-encrypts .env → .env.age before commit
+- **post-checkout**: Auto-decrypts .env.age → .env after branch switch
+- **post-merge**: Auto-decrypts .env.age → .env after merge
 
 **Hook Management:**
 
 ```bash
-deno task hooks:install          # Install hooks using JSR package
+deno task hooks:install          # Install hooks (run from main repo, not worktree)
 ```
 
 ## 🏗️ Service Addition Guidelines
@@ -542,6 +565,7 @@ export default backupConfig
 - Offsite: `213.21.10.17`
 
 **Proxied (orange cloud) recommendation:**
+
 - Home records: proxied by default (wildcard `*.antonshubin.com` is proxied)
 - Cloud records: `sync-cloud`, `uptime-cloud` are proxied; others are DNS-only
 - **Offsite records: use `proxied: true`** — routes monitoring traffic through Cloudflare,
@@ -660,6 +684,6 @@ session and causes deploy commands to fail with "SSH_ADDRESS must be set".
 | Deploy      | `deno task deploy <server>`         | Deploy all services              |
 | Deploy one  | `deno task deploy <server> <stack>` | Deploy single stack              |
 | Backup      | `deno task backup`                  | Run backup system                |
-| SSH         | `deno task ssh <server>`            | SSH into server                  |
+| SSH         | `deno task ssh <server> [cmd]`      | SSH into server / run remote cmd |
 | Ansible     | `deno task ansible <playbook>`      | Run Ansible playbooks            |
 | Test single | `deno test path/to/file.test.ts`    | Run specific test                |

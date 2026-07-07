@@ -24,8 +24,6 @@ targets:
     url: http://hl-gitea:3000/
   - name: grafana
     url: http://hl-grafana:3000/
-  - name: grafana-vm
-    url: http://hl-grafana-vm:3000/
   - name: immich
     url: http://hl-immich-server:2283/
   - name: jellyfin
@@ -52,8 +50,6 @@ targets:
     url: http://hl-paperless:8000/
   - name: piped
     url: http://hl-piped-frontend:80/
-  - name: plausible
-    url: http://hl-plausible:8000/
   - name: reitti
     url: http://hl-reitti:8080/
   - name: searxng

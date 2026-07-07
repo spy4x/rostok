@@ -135,7 +135,7 @@ For personal/agentic use (a few hundred queries/month), expect **$0/month**.
 
 ## Security
 
-- API key stored only in `servers/home/.env` (encrypted via SOPS to `.env.age`)
+- API key stored only in `servers/home/.env` (encrypted via age64 to `.env.age`)
 - No Traefik labels — MCP only reachable from `proxy` Docker network
 - Container has `no-new-privileges:true` and 192M memory limit
 - Restrict the key in Google Cloud Console to only the APIs we use

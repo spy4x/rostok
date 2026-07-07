@@ -154,7 +154,10 @@ export async function formatDrive(device: string): Promise<void> {
   console.log("✅ Drive formatted successfully")
 }
 
-export async function createBackupStructure(mountPoint: string, backupPaths: BackupPath[]): Promise<void> {
+export async function createBackupStructure(
+  mountPoint: string,
+  backupPaths: BackupPath[],
+): Promise<void> {
   console.log("📁 Ensuring backup directory structure...")
 
   const username = Deno.env.get("USER") || "user"

@@ -53,7 +53,7 @@ const command = new Deno.Command("ansible-playbook", {
   args: [
     playbookPath,
     "-i",
-    "./scripts/ansible/inventory.sh",
+    "./scripts/ansible/inventory.ts",
     "--limit",
     target,
     "--ask-become-pass", // Always ask for sudo password since all playbooks need it

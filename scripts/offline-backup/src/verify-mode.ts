@@ -1,14 +1,14 @@
 import type { BackupPath } from "./types.ts"
 import {
-  listDrives,
   checkDriveExists,
-  isMounted,
+  ejectDrive,
   getMountPoint,
+  isMounted,
+  listDrives,
   mountDrive,
   unmountDrive,
-  ejectDrive,
 } from "./drive.ts"
-import { verifyBackups, getBackupSize, runSmartCheck } from "./verify.ts"
+import { getBackupSize, runSmartCheck, verifyBackups } from "./verify.ts"
 
 export async function verify(envVars: Record<string, string>): Promise<void> {
   const backupPathsJson = envVars.BACKUP_PATHS

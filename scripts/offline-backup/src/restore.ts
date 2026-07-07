@@ -1,13 +1,13 @@
 import { runCommand } from "../../+lib.ts"
 import type { BackupPath } from "./types.ts"
 import {
-  listDrives,
   checkDriveExists,
-  isMounted,
+  ejectDrive,
   getMountPoint,
+  isMounted,
+  listDrives,
   mountDrive,
   unmountDrive,
-  ejectDrive,
 } from "./drive.ts"
 import { verifyBackups } from "./verify.ts"
 

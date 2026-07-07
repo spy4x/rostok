@@ -42,12 +42,14 @@ services:
     labels:
       # Internal MCP — no Traefik exposure. OpenWebUI reaches it via Docker DNS.
       - "traefik.enable=false"
+    # MCP server exposes only /mcp endpoints — no /health route.
+    # Use TCP port connect instead of HTTP check.
     healthcheck:
       test: [
         "CMD",
         "node",
         "-e",
-        "fetch('http://localhost:3000/health').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))",
+        "require('net').createConnection(3000, 'localhost').on('connect', () => process.exit(0)).on('error', () => process.exit(1))",
       ]
       interval: 30s
       timeout: 5s

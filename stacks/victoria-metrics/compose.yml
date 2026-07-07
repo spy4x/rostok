@@ -7,14 +7,14 @@ networks:
 
 services:
   # ========================================================================
-  # VictoriaMetrics Stack — comparison deployment alongside existing
-  # Prometheus + Loki + Grafana (see stacks/monitoring + stacks/grafana).
-  # Same scrape targets. Same dashboards (where possible). Side-by-side run.
+  # VictoriaMetrics Stack — primary observability pipeline.
+  # Provides metrics (VictoriaMetrics), logs (VictoriaLogs), and
+  # host/container-level exporters (node-exporter, cadvisor).
+  # Grafana UI is provided by the separate stacks/grafana stack.
   # ========================================================================
 
   # VictoriaMetrics — single-binary Prometheus-compatible TSDB.
-  # Replaces Prometheus. Drop-in for PromQL queries.
-  # Listens on 8428 (Prometheus remote write) and 8429 (Prometheus scrape).
+  # Drop-in for PromQL queries. Listens on 8428.
   victoria-metrics:
     container_name: hl-victoria-metrics
     image: victoriametrics/victoria-metrics:v1.146.0
@@ -42,8 +42,6 @@ services:
 
   # VMAgent — Prometheus-compatible scraper.
   # Pushes scraped metrics to VictoriaMetrics via remote write.
-  # Runs alongside VM rather than as the scraper inside VM.
-  # (VictoriaMetrics can self-scrape, but vmagent is the canonical option.)
   vmagent:
     container_name: hl-vmagent
     image: victoriametrics/vmagent:v1.146.0
@@ -65,8 +63,7 @@ services:
       - default
 
   # VictoriaLogs — single-binary log database.
-  # Replaces Loki. Compatible with LogsQL (similar to LogQL).
-  # Listens on 9428 for ingestion.
+  # Replaces Loki. Compatible with LogsQL.
   victoria-logs:
     container_name: hl-victoria-logs
     image: victoriametrics/victoria-logs:v1.51.0
@@ -88,14 +85,12 @@ services:
       - default
       - proxy
 
-  # Promtail (VictoriaLogs variant) — ships container logs to VictoriaLogs.
-  # Same scrape config as the Loki-targeted promtail, different push target.
-  # Runs as a separate instance so the existing Loki stack is unaffected.
-  promtail-vm:
-    container_name: hl-promtail-vm
+  # Promtail — ships container logs to VictoriaLogs.
+  promtail:
+    container_name: hl-promtail
     image: grafana/promtail:3.2.1
     volumes:
-      - ${PATH_APPS}/configs/victoria-metrics/promtail-vm.yml:/etc/promtail/config.yml:ro,z
+      - ${PATH_APPS}/configs/victoria-metrics/promtail.yml:/etc/promtail/config.yml:ro,z
       - /var/log:/var/log:ro,z
       - /var/lib/docker/containers:/var/lib/docker/containers:ro,z
       - /var/run/docker.sock:/var/run/docker.sock:ro,z
@@ -110,42 +105,47 @@ services:
     networks:
       - default
 
-  # Grafana (VictoriaMetrics variant) — separate instance for side-by-side
-  # comparison with the existing metrics.${DOMAIN} (Loki + Prometheus).
-  grafana-vm:
-    container_name: hl-grafana-vm
-    image: grafana/grafana:11.3.0
-    user: "0:0"
-    environment:
-      - GF_SERVER_ROOT_URL=https://metrics-vm.${DOMAIN}
-      - GF_SECURITY_ADMIN_USER=admin
-      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_VM_ADMIN_PASSWORD}
-      - GF_INSTALL_PLUGINS=
-      - GF_AUTH_PROXY_ENABLED=true
-      - GF_AUTH_PROXY_HEADER_NAME=X-Forwarded-User
-      - GF_AUTH_PROXY_HEADER_PROPERTY=username
-      - GF_AUTH_PROXY_AUTO_SIGN_UP=true
-      - GF_AUTH_PROXY_WHITELIST=*
+  # Node Exporter — host-level metrics (CPU, memory, disk, network)
+  node-exporter:
+    container_name: hl-node-exporter
+    image: prom/node-exporter:latest
     volumes:
-      - ${VOLUMES_PATH}/victoria-metrics/grafana:/var/lib/grafana:z
-      - ${PATH_APPS}/configs/victoria-metrics/datasources:/etc/grafana/provisioning/datasources:ro,z
-      - ${PATH_APPS}/configs/victoria-metrics/dashboards:/etc/grafana/provisioning/dashboards:ro,z
+      - /proc:/host/proc:ro,z
+      - /sys:/host/sys:ro,z
+      - /:/rootfs:ro,z
+    command:
+      - "--path.procfs=/host/proc"
+      - "--path.sysfs=/host/sys"
+      - "--path.rootfs=/rootfs"
     restart: unless-stopped
     deploy:
       resources:
         limits:
-          memory: 256M
-          cpus: "0.3"
-    security_opt:
-      - no-new-privileges:true
+          memory: 64M
+          cpus: "0.1"
     networks:
-      - proxy
-    labels:
-      - "traefik.enable=true"
-      - "traefik.docker.network=proxy"
-      - "traefik.http.services.hl-grafana-vm.loadbalancer.server.port=3000"
-      - "traefik.http.routers.hl-grafana-vm.rule=Host(`metrics-vm.${DOMAIN}`)"
-      - "traefik.http.routers.hl-grafana-vm.entrypoints=websecure"
-      - "traefik.http.routers.hl-grafana-vm.tls=true"
-      - "traefik.http.routers.hl-grafana-vm.tls.certresolver=myresolver"
-      - "traefik.http.routers.hl-grafana-vm.middlewares=authelia@file,robots-deny@file"
+      - default
+
+  # cAdvisor — container-level metrics (resource usage per container)
+  # NOTE: requires seccomp=unconfined for syscalls needed to read container stats
+  cadvisor:
+    container_name: hl-cadvisor
+    image: gcr.io/cadvisor/cadvisor:v0.49.2
+    volumes:
+      - /:/rootfs:ro,z
+      - /var/run:/var/run:ro,z
+      - /sys:/sys:ro,z
+      - /var/lib/docker:/var/lib/docker:ro,z
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+          cpus: "0.3"
+    group_add:
+      - "${DOCKER_GROUP_ID:-990}"
+    security_opt:
+      - seccomp=unconfined
+      - label=type:container_runtime_t
+    networks:
+      - default

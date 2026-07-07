@@ -7,13 +7,7 @@ const backupConfig: BackupConfig = {
     `${VOLUMES_PATH}/victoria-logs`,
   ],
   containers: {
-    stop: [
-      "hl-victoria-metrics",
-      "hl-vmagent",
-      "hl-victoria-logs",
-      "hl-promtail-vm",
-      "hl-grafana-vm",
-    ],
+    stop: "default",
   },
 }
 

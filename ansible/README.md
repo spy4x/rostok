@@ -194,6 +194,8 @@ Variables using `{{ lookup('env', 'VAR') }}` are resolved from the environment a
 chmod +x scripts/ansible/inventory.ts
 ```
 
+(The `.sh` wrapper was removed — `inventory.ts` is used directly.)
+
 ### Variables not loaded
 
 ```bash

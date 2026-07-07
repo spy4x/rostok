@@ -4,7 +4,7 @@ Backup replication and monitoring on Raspberry Pi 4.
 
 ## Services
 
-**Infrastructure** - [Syncthing](../../sharedStacks/syncthing/), [Gatus](../../sharedStacks/gatus/), [WireGuard](../../sharedStacks/wireguard/), [Traefik](../../sharedStacks/traefik/), [Watchtower](../../sharedStacks/watchtower/)
+**Infrastructure** - [Syncthing](../../stacks/syncthing/), [Gatus](../../stacks/gatus/), [WireGuard](../../stacks/wireguard/), [Traefik](../../stacks/traefik/), [Watchtower](../../stacks/watchtower/)
 
 ## Hardware
 
@@ -52,8 +52,8 @@ OFFSITE_NTFY_AUTH_TOKEN=tk_<your-token>
 If apt/dnf fails with read-only filesystem errors:
 
 ```bash
-# Automated fix
-ansible-playbook ansible/playbooks/fix-raspberry-pi.yml -K --limit offsite
+# Automated fix (via initial-setup base playbook)
+ansible-playbook ansible/playbooks/initial-setup/base.yml -K --limit offsite
 
 # Manual fix
 sudo mount -o remount,rw /boot/firmware
@@ -95,6 +95,6 @@ du -sh <sync-path>/*
 
 - Raspberry Pi OS (Debian-based) or Ubuntu Server recommended
 - Keep firmware/packages updated:
-  `ansible-playbook ansible/playbooks/maintenance.yml -K --limit offsite`
+  `ansible-playbook ansible/playbooks/initial-setup/maintenance.yml -K --limit offsite`
 - Monitor temperature in hot environments (adjust thresholds in `.env`)
 - Consider UPS for power redundancy in critical setups

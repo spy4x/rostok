@@ -20,7 +20,7 @@ cp servers/demo/.env.example servers/demo/.env
 # 2. Deploy
 deno task deploy demo
 
-# 3. Start services
+# 3. Start services (or: deno task ssh demo docker compose up -d)
 deno task ssh demo
 cd ~/homelab/apps && docker compose up -d
 ```

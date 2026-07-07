@@ -1,5 +1,0 @@
-creation_rules:
-  # Match all .env files (except .example and .age)
-  # Supports: .env, .env.root, .env.prod, .env.stag, .env.backup, .env.json, servers/*/.env, etc.
-  - path_regex: \.env
-    age: age17umrk0gmcnlttkf568dpqp24clrnq0vwtgpnl35vurgsvn6ajqlsu3fu62

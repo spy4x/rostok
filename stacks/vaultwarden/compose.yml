@@ -10,6 +10,12 @@ services:
   vaultwarden:
     container_name: hl-vaultwarden
     image: vaultwarden/server:latest
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:80/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
     user: "${PUID:-1000}:${PGID:-1000}"
     environment:
       - DOMAIN=https://passwords.${DOMAIN}
