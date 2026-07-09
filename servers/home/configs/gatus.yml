@@ -125,6 +125,15 @@ endpoints:
       - type: ntfy
         failure-threshold: 9
 
+  - name: LibreSpeed
+    group: offsite
+    url: "https://speed-offsite.${DOMAIN}"
+    interval: 1m
+    conditions:
+      - "[STATUS] == 200"
+    alerts:
+      - type: ntfy
+
   - name: NeatSoft Landing
     group: cloud
     url: "https://neatsoft.dev"
