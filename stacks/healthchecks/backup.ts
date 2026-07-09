@@ -5,7 +5,7 @@ const backupConfig: BackupConfig = {
   destName: `healthchecks-${SERVER_NAME}`, // Suffix added because healthchecks is shared across servers
   sourcePaths: "default",
   containers: {
-    stop: "default",
+    stop: ["hl-healthchecks"],
   },
 }
 
