@@ -19,6 +19,7 @@
 - import_playbook: initial-setup/ssh-hardening.yml
 - import_playbook: initial-setup/smart-monitoring.yml
 - import_playbook: initial-setup/maintenance.yml
+- import_playbook: initial-setup/nvidia.yml  # Conditional: HAS_NVIDIA_GPU=true
 
 - name: Initial Setup Complete
   hosts: homelab_servers
@@ -33,7 +34,7 @@
           - "  ✓ Deno runtime"
           - "  ✓ SSH hardening (key-only auth)"
           - "  ✓ SMART monitoring (SSD/NVMe health)"
-          - "  ✓ System maintenance (updates, cleanup, log rotation)"
+          - "  ✓ NVIDIA driver + Container Toolkit (if GPU present)"
           - ""
           - "🎯 Server is ready for service deployment!"
           - ""

@@ -190,6 +190,15 @@
         regexp: ".*swap.*"
         state: absent
 
+    # ===== Redis / Memory Overcommit =====
+    # Required by Redis containers for background saves under memory pressure
+    - name: Configure vm.overcommit_memory for Redis
+      ansible.posix.sysctl:
+        name: vm.overcommit_memory
+        value: "1"
+        state: present
+        reload: true
+
     - name: Set timezone to UTC
       community.general.timezone:
         name: UTC

@@ -1,0 +1,75 @@
+---
+# Playbook: NVIDIA Driver + Container Toolkit Setup
+# Conditional — only runs when HAS_NVIDIA_GPU env var is "true"
+# Prerequisites: RPM Fusion repos (free + nonfree)
+# After this playbook, reboot is required for kernel module to load
+
+- name: NVIDIA GPU Setup
+  hosts: homelab_servers
+  become: true
+
+  vars:
+    has_gpu: "{{ lookup('env', 'HAS_NVIDIA_GPU') | default('false', true) }}"
+
+  tasks:
+    - name: Skip if no NVIDIA GPU
+      ansible.builtin.debug:
+        msg: "HAS_NVIDIA_GPU is '{{ has_gpu }}' — skipping NVIDIA setup"
+      when: has_gpu != "true"
+
+    - name: Enable RPM Fusion repos
+      when: has_gpu == "true"
+      block:
+        - name: Install RPM Fusion free
+          ansible.builtin.dnf:
+            name: "https://download1.rpmfusion.org/free/fedora/rpmfusion-free-release-{{ ansible_distribution_major_version }}.noarch.rpm"
+            state: present
+            disable_gpg_check: true
+
+        - name: Install RPM Fusion nonfree
+          ansible.builtin.dnf:
+            name: "https://download1.rpmfusion.org/nonfree/fedora/rpmfusion-nonfree-release-{{ ansible_distribution_major_version }}.noarch.rpm"
+            state: present
+            disable_gpg_check: true
+
+    - name: Install NVIDIA driver
+      when: has_gpu == "true"
+      ansible.builtin.dnf:
+        name:
+          - kernel-devel
+          - akmod-nvidia
+          - xorg-x11-drv-nvidia-cuda
+        state: present
+
+    - name: Add NVIDIA Container Toolkit repo
+      when: has_gpu == "true"
+      ansible.builtin.get_url:
+        url: https://nvidia.github.io/libnvidia-container/stable/rpm/nvidia-container-toolkit.repo
+        dest: /etc/yum.repos.d/nvidia-container-toolkit.repo
+
+    - name: Install NVIDIA Container Toolkit
+      when: has_gpu == "true"
+      ansible.builtin.dnf:
+        name: nvidia-container-toolkit
+        state: present
+
+    - name: Configure Docker for NVIDIA runtime
+      when: has_gpu == "true"
+      ansible.builtin.command:
+        cmd: nvidia-ctk runtime configure --runtime=docker
+      register: nvidia_configure
+      changed_when: "'Wrote updated config' in nvidia_configure.stderr"
+
+    - name: Restart Docker
+      when: has_gpu == "true"
+      ansible.builtin.systemd:
+        name: docker
+        state: restarted
+
+    - name: Reboot notification
+      when: has_gpu == "true"
+      ansible.builtin.debug:
+        msg:
+          - "✅ NVIDIA driver + Container Toolkit installed"
+          - "⚠️  REBOOT REQUIRED for akmod kernel module to build"
+          - "After reboot, verify with: nvidia-smi"
