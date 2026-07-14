@@ -19,7 +19,7 @@
 - import_playbook: initial-setup/ssh-hardening.yml
 - import_playbook: initial-setup/smart-monitoring.yml
 - import_playbook: initial-setup/maintenance.yml
-- import_playbook: initial-setup/nvidia.yml  # Conditional: HAS_NVIDIA_GPU=true
+- import_playbook: initial-setup/nvidia.yml # Conditional: HAS_NVIDIA_GPU=true
 
 - name: Initial Setup Complete
   hosts: homelab_servers

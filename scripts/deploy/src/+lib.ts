@@ -68,7 +68,7 @@ export function generateDeployScript(
 
     stackCommands.push(`
 echo "DEPLOY_START:${stackName}:${deployAs}"
-cd ${pathApps} && docker compose ${projectFlag} --env-file=.env.root --env-file=.env -f stacks/${stackName}/compose.yml up -d --build 2>&1
+cd ${pathApps} && docker compose ${projectFlag} --env-file=.env.root --env-file=.env -f stacks/${stackName}/compose.yml up -d --build --force-recreate 2>&1
 if [ $? -eq 0 ]; then
   echo "DEPLOY_SUCCESS:${stackName}:${deployAs}"
 else
