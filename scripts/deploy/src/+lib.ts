@@ -68,6 +68,20 @@ export function generateDeployScript(
 
     stackCommands.push(`
 echo "DEPLOY_START:${stackName}:${deployAs}"
+# Belt-and-braces: drop any existing container with the stack's container_name
+# that doesn't belong to the current compose project. Happens when a stack
+# was previously deployed with a different project name (e.g. manual
+# \`docker compose up\` that picked up \`name: \${PROJECT}\` from compose.yml,
+# producing project=hl, vs the deploy script's -p ${deployAs} producing
+# project=${deployAs}). Same container_name under two different projects
+# → "name already in use" conflict on every redeploy.
+# Data lives in volumes, not in the container, so this is safe.
+cd ${pathApps} && docker ps -a --filter "name=hl-${stackName}" --format '{{.ID}} {{.Label "com.docker.compose.project"}}' 2>/dev/null | while read id proj; do
+  if [ "\$proj" != "${deployAs}" ] && [ -n "\$id" ]; then
+    echo "  removing stale container \$id (project=\$proj, expected=${deployAs})"
+    docker rm -f \$id >/dev/null 2>&1 || true
+  fi
+done
 cd ${pathApps} && docker compose ${projectFlag} --env-file=.env.root --env-file=.env -f stacks/${stackName}/compose.yml up -d --build 2>&1
 if [ $? -eq 0 ]; then
   echo "DEPLOY_SUCCESS:${stackName}:${deployAs}"

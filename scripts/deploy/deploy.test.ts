@@ -68,6 +68,25 @@ Deno.test({
 })
 
 Deno.test({
+  name: "generateDeployScript includes stale-container cleanup before up -d",
+  fn() {
+    // Prevents "name already in use" when a previous deployment used a
+    // different compose project name (e.g. manual `docker compose up` that
+    // picked up `name: ${PROJECT}` from compose.yml, producing project=hl,
+    // vs deploy's -p ${stack} producing project=${stack}).
+    const stacks: StackConfig[] = [{ name: "healthchecks" }]
+    const script = generateDeployScript(stacks, "/apps", new Set())
+    assertStringIncludes(
+      script,
+      'docker ps -a --filter "name=hl-healthchecks"',
+    )
+    assertStringIncludes(script, "com.docker.compose.project")
+    assertStringIncludes(script, "docker rm -f")
+    assertStringIncludes(script, '"$proj" != "healthchecks"')
+  },
+})
+
+Deno.test({
   name: "generateDeployScript adds restart when stack needs restart",
   fn() {
     const stacks: StackConfig[] = [{ name: "traefik" }]

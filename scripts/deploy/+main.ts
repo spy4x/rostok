@@ -173,6 +173,7 @@ try {
       const proc = new Deno.Command(Deno.execPath(), {
         args: [
           "run",
+          "--allow-run=htpasswd",
           "-R",
           "-W",
           "-E",
@@ -202,6 +203,7 @@ try {
       const proc = new Deno.Command(Deno.execPath(), {
         args: [
           "run",
+          "--allow-run=htpasswd",
           "-R",
           "-W",
           "-E",
