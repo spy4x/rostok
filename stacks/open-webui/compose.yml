@@ -64,7 +64,7 @@ services:
       - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://ollama:11434}
 
       # --- Default Model Settings ---
-      - DEFAULT_MODELS=deepseek-v4-flash,deepseek-v4-pro,MiniMax-M3,gemma4:e4b,gpt-5.4-mini
+      - DEFAULT_MODELS=MiniMax-M3,deepseek-v4-flash,deepseek-v4-pro,gemma4:e4b,gpt-5.4-mini
       - "DEFAULT_MODEL_METADATA={\"capabilities\":{\"vision\":true,\"file_upload\":true,\"file_context\":true,\"web_search\":true,\"image_generation\":true,\"code_interpreter\":true},\"defaultFeatureIds\":[\"image_generation\"]}"
       - DEFAULT_USER_ROLE=${DEFAULT_USER_ROLE:-user}
       - ENABLE_SIGNUP=${ENABLE_SIGNUP:-false}

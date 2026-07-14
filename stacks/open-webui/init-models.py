@@ -17,6 +17,7 @@ DB = "/app/backend/data/webui.db"
 
 # Models that appear in the model selector
 WHITELIST = [
+    "MiniMax-M3",
     "deepseek-v4-flash",
     "deepseek-v4-pro",
     "gemma4:e4b",
@@ -59,6 +60,7 @@ def main():
         api_configs = config.get("openai", {}).get("api_configs", {})
         api_configs["0"] = {"enable": True, "model_ids": ["deepseek-v4-flash", "deepseek-v4-pro"]}
         api_configs["1"] = {"enable": True, "model_ids": ["gpt-5.4-mini"]}
+        api_configs["2"] = {"enable": True, "model_ids": ["MiniMax-M3"]}
         config["openai"]["api_configs"] = api_configs
         print(f"  FILTER   set api_configs per provider")
 
