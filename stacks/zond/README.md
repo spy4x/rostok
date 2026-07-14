@@ -28,4 +28,7 @@ targets:
 
 ## Resources
 
+- ~50MB RAM baseline (Deno runtime) + probe buffer
+- Memory limit: 128M (was 32M — caused OOM-kill cycles in production)
+- CPU limit: 0.25
 - [Zond GitHub](https://github.com/spy4x/zond)
