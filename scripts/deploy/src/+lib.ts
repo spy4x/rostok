@@ -82,7 +82,10 @@ cd ${pathApps} && docker ps -a --filter "name=hl-${stackName}" --format '{{.ID}}
     docker rm -f \$id >/dev/null 2>&1 || true
   fi
 done
-cd ${pathApps} && docker compose ${projectFlag} --env-file=.env.root --env-file=.env -f stacks/${stackName}/compose.yml up -d --build 2>&1
+# Pick up docker-compose.override.yml if a stack's before.deploy generated one.
+COMPOSE_FILES="-f stacks/${stackName}/compose.yml"
+[ -f "stacks/${stackName}/docker-compose.override.yml" ] && COMPOSE_FILES="\$COMPOSE_FILES -f stacks/${stackName}/docker-compose.override.yml"
+cd ${pathApps} && docker compose ${projectFlag} --env-file=.env.root --env-file=.env \$COMPOSE_FILES up -d --build 2>&1
 if [ $? -eq 0 ]; then
   echo "DEPLOY_SUCCESS:${stackName}:${deployAs}"
 else
@@ -92,7 +95,7 @@ ${
       needsRestart
         ? `
 echo "RESTARTING:${stackName}:${deployAs}"
-cd ${pathApps} && docker compose ${projectFlag} -f stacks/${stackName}/compose.yml restart 2>&1
+cd ${pathApps} && docker compose ${projectFlag} \$COMPOSE_FILES restart 2>&1
 echo "RESTART_DONE:${stackName}:${deployAs}"
 `
         : ""
