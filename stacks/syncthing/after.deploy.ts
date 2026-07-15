@@ -55,19 +55,32 @@ if (!SERVER) {
   Deno.exit(1)
 }
 
-const configPath = `servers/${SERVER}/syncthing.yml`
+// Config path: prefer `configs/syncthing.yml` (deploy tempDir layout).
+// Fall back to `servers/<server>/configs/syncthing.yml` for local dev.
+const configPaths = [
+  "configs/syncthing.yml",
+  `servers/${SERVER}/configs/syncthing.yml`,
+]
 
-let config: SyncthingConfig
-try {
-  const text = await Deno.readTextFile(configPath)
-  config = parseYaml(text) as SyncthingConfig
-} catch (err) {
-  if (err instanceof Deno.errors.NotFound) {
-    console.log(`No ${configPath} — skipping syncthing after-deploy`)
-    Deno.exit(0)
+let configPath: string | null = null
+for (const p of configPaths) {
+  try {
+    await Deno.stat(p)
+    configPath = p
+    break
+  } catch {
+    // try next
   }
-  throw err
 }
+
+if (!configPath) {
+  console.log(`No syncthing.yml found in ${configPaths.join(", ")} — skipping`)
+  Deno.exit(0)
+}
+
+const text = await Deno.readTextFile(configPath)
+const config = parseYaml(text) as SyncthingConfig
+console.log(`Loaded ${configPath}`)
 
 if (!API_KEY) {
   console.error(

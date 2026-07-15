@@ -77,7 +77,7 @@ log(`Created temp dir: ${tempDir}`)
 
 try {
   // Copy server folder contents to temp directory
-  const whitelist = [".env", "configs/", "syncthing.yml"]
+  const whitelist = [".env", "configs/"]
   log("Copying files to temp dir...")
   for (const item of whitelist) {
     const srcPath = `${targetPath}/${item}`

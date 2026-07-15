@@ -46,19 +46,34 @@ if (!SERVER) {
   Deno.exit(1)
 }
 
-const configPath = `servers/${SERVER}/syncthing.yml`
+// Config path: prefer `configs/syncthing.yml` (matches the deploy tempDir
+// layout where `configs/` is copied to the tempDir root). Fall back to
+// `servers/<server>/configs/syncthing.yml` for local development from the
+// repo root.
+const configPaths = [
+  "configs/syncthing.yml",
+  `servers/${SERVER}/configs/syncthing.yml`,
+]
 
-let config: SyncthingConfig
-try {
-  const text = await Deno.readTextFile(configPath)
-  config = parseYaml(text) as SyncthingConfig
-} catch (err) {
-  if (err instanceof Deno.errors.NotFound) {
-    console.log(`No ${configPath} — skipping syncthing before-deploy`)
-    Deno.exit(0)
+let configPath: string | null = null
+for (const p of configPaths) {
+  try {
+    await Deno.stat(p)
+    configPath = p
+    break
+  } catch {
+    // try next
   }
-  throw err
 }
+
+if (!configPath) {
+  console.log(`No syncthing.yml found in ${configPaths.join(", ")} — skipping`)
+  Deno.exit(0)
+}
+
+const text = await Deno.readTextFile(configPath)
+const config = parseYaml(text) as SyncthingConfig
+console.log(`Loaded ${configPath}`)
 
 if (!config.data_dir) {
   console.error(`${configPath}: data_dir is required`)
