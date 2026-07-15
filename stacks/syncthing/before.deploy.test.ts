@@ -21,7 +21,7 @@ Deno.test("validateConfig: minimal valid config", () => {
   assertEquals(cfg.data_dir, "~/appdata/syncthing")
 })
 
-Deno.test("validateConfig: full valid config", () => {
+Deno.test("validateConfig: full valid config (with versioning, paused, addresses)", () => {
   const cfg = validateConfig({
     data_dir: "~/ssd/syncthing",
     mounts: [
@@ -32,6 +32,12 @@ Deno.test("validateConfig: full valid config", () => {
       {
         id: "archive",
         path: "/sync/archive",
+        type: "sendreceive",
+        paused: false,
+        versioning: {
+          type: "trashcan",
+          params: { cleanoutDays: "180", keep: "5" },
+        },
         devices: ["spy4x-home", "spy4x-offsite"],
       },
       {
@@ -42,10 +48,11 @@ Deno.test("validateConfig: full valid config", () => {
     ],
     devices: [
       { id: "AAA-BBB", name: "spy4x-home" },
-      { id: "CCC-DDD", name: "spy4x-offsite" },
+      { id: "CCC-DDD", name: "spy4x-offsite", addresses: ["tcp://1.2.3.4:22000"], untrusted: true },
     ],
   })
   assertEquals(cfg.folders?.length, 2)
+  assertEquals((cfg.folders![0] as { paused?: boolean }).paused, false)
 })
 
 Deno.test("validateConfig: missing data_dir", () => {

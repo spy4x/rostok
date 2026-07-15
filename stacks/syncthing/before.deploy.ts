@@ -23,16 +23,33 @@ export interface Mount {
   container: string
 }
 
+export interface VersioningConfig {
+  type: string
+  params?: Record<string, string>
+}
+
 export interface FolderRef {
   id: string
   path: string
   type?: string
+  paused?: boolean
   devices?: string[]
+  versioning?: VersioningConfig
+  rescanIntervalS?: number
+  fsWatcherEnabled?: boolean
+  fsWatcherDelayS?: boolean
+  ignorePerms?: boolean
+  ignoreDelete?: boolean
 }
 
 export interface Device {
   id: string
   name?: string
+  addresses?: string[]
+  untrusted?: boolean
+  compression?: string
+  paused?: boolean
+  introducer?: boolean
 }
 
 export interface SyncthingConfig {
@@ -93,6 +110,20 @@ export function validateConfig(raw: unknown): SyncthingConfig {
       if (!Array.isArray(f.devices)) {
         errors.push(`folders[${i}].devices must be a list`)
       }
+      if (f.versioning !== undefined) {
+        if (
+          typeof f.versioning !== "object" || f.versioning === null ||
+          typeof f.versioning.type !== "string"
+        ) {
+          errors.push(`folders[${i}].versioning.type is required when versioning is set`)
+        }
+      }
+      if (f.rescanIntervalS !== undefined && typeof f.rescanIntervalS !== "number") {
+        errors.push(`folders[${i}].rescanIntervalS must be a number`)
+      }
+      if (f.paused !== undefined && typeof f.paused !== "boolean") {
+        errors.push(`folders[${i}].paused must be a boolean`)
+      }
     }
   }
 
@@ -113,6 +144,19 @@ export function validateConfig(raw: unknown): SyncthingConfig {
       }
       seenIds.add(typeof d?.id === "string" ? d.id : "")
       seenNames.add(typeof d?.name === "string" ? d.name : "")
+      if (d.addresses !== undefined) {
+        if (!Array.isArray(d.addresses)) {
+          errors.push(`devices[${i}].addresses must be a list`)
+        } else if (!d.addresses.every((a) => typeof a === "string")) {
+          errors.push(`devices[${i}].addresses must all be strings`)
+        }
+      }
+      if (d.untrusted !== undefined && typeof d.untrusted !== "boolean") {
+        errors.push(`devices[${i}].untrusted must be a boolean`)
+      }
+      if (d.paused !== undefined && typeof d.paused !== "boolean") {
+        errors.push(`devices[${i}].paused must be a boolean`)
+      }
     }
   }
 

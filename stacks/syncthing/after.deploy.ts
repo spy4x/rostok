@@ -1,85 +1,60 @@
 // after.deploy.ts — Syncthing idempotent reconciler.
 //
-// Reads configs/syncthing.yml and ensures the running Syncthing instance
-// matches via REST API:
-//   - Adds missing devices (preserving encryption passwords)
-//   - Renames devices whose name differs
-//   - Adds missing folders (device names resolved to full IDs)
-//   - Updates folders whose path or device list changed (preserves passwords)
-//   - Re-reads each resource after writing to verify the desired state
+// Reads configs/syncthing.yml and reconciles the running Syncthing via
+// REST API. For each declared folder and device:
+//   - Adds missing entries (devices only — folder encrypt-passwords are
+//     always preserved from the current API state, never declared in YAML)
+//   - Applies any declared field overrides (path, versioning, paused,
+//     addresses, untrusted, ...). Fields not declared in YAML keep their
+//     current value (incremental changes — adding a new YAML field
+//     doesn't blast away other settings).
+//   - Re-reads every entry after writing to verify the desired state.
 //
-// Skips silently if configs/syncthing.yml is missing.
-// Requires SYNCTHING_API_KEY env var (set via STGUIAPIKEY in compose).
+// Required:
+//   SYNCTHING_API_KEY must be set in .env (encrypted). If it's missing
+//     or still the placeholder, after.deploy exits non-zero, marking the
+//     syncthing stack as failed in the deploy summary. Auto-bootstrap
+//     from the container's config.xml was removed — IaC always provides
+//     the key explicitly so the deploy's contract is enforceable.
 //
 // Deletion policy: removing a folder or device from syncthing.yml does
-// NOT remove it from the running Syncthing. Reconcile-only.
-//
-// First-deploy bootstrap: if SYNCTHING_API_KEY is unset, captures the
-// currently-running syncthing's API key from its container config.xml and
-// uses it for this run. Saves it to .env if missing.
+//   NOT remove it from the running Syncthing. Reconcile-only.
 //
 // API errors include response body for diagnosis. JSON parse failures are
-// wrapped with endpoint + context.
+// wrapped with endpoint + 200-byte snippet.
 
 import { parse as parseYaml } from "yaml"
-import { type FolderRef, type SyncthingConfig, validateConfig } from "./before.deploy.ts"
+import { type FolderRef, validateConfig } from "./before.deploy.ts"
 
-// ── Pure reconciliation logic (exported for tests) ─────────────────────
+// ── API types ─────────────────────────────────────────────────────────
 
 export interface ApiFolder {
   id: string
+  label: string
   path: string
   type: string
-  devices: { deviceID: string; encryptionPassword?: string }[]
+  paused?: boolean
+  versioning?: { type: string; params?: Record<string, string>; [k: string]: unknown }
+  devices: { deviceID: string; encryptionPassword?: string; introducedBy?: string }[]
   [key: string]: unknown
 }
 
 export interface ApiDevice {
   deviceID: string
   name: string
+  addresses?: string[]
+  compression?: string
+  paused?: boolean
+  introducer?: boolean
+  skipIntroductionRemovals?: boolean
+  introducedBy?: string
+  untrusted?: boolean
   [key: string]: unknown
 }
 
-export type DeviceChange =
-  | { kind: "add"; name: string; id: string }
-  | { kind: "rename"; id: string; from: string; to: string }
-  | { kind: "skip"; name: string; id: string }
+// ── Pure reconciliation (exported for tests) ──────────────────────────
 
-export type FolderChange =
-  | { kind: "add"; id: string; folder: FolderRef; resolvedDeviceIds: string[] }
-  | { kind: "update-path"; id: string; oldPath: string; newPath: string }
-  | {
-    kind: "update-devices"
-    id: string
-    mergedDevices: { deviceID: string; encryptionPassword: string }[]
-  }
-  | {
-    kind: "update-both"
-    id: string
-    oldPath: string
-    newPath: string
-    mergedDevices: { deviceID: string; encryptionPassword: string }[]
-  }
-  | { kind: "skip"; id: string }
-
-/** Build name → id lookup from the top-level devices[] block. */
-export function buildDeviceNameMap(
-  config: SyncthingConfig,
-): Map<string, string> {
-  const map = new Map<string, string>()
-  for (const d of config.devices ?? []) {
-    if (typeof d?.name === "string" && typeof d?.id === "string") {
-      map.set(d.name, d.id)
-    }
-  }
-  return map
-}
-
-/**
- * Resolve folder.devices (a list of names) to full device IDs using the
- * top-level devices list. Throws if any name is missing — the YAML
- * validator should have caught this already.
- */
+/** Resolve folder.devices (names) → full device IDs using the name map. */
 export function resolveFolderDeviceIds(
   folder: FolderRef,
   nameMap: Map<string, string>,
@@ -95,99 +70,97 @@ export function resolveFolderDeviceIds(
   return out
 }
 
-/** Compute the device changes needed to reconcile YAML → running. */
-export function computeDeviceChanges(
-  config: SyncthingConfig,
-  currentDevices: ApiDevice[],
-): DeviceChange[] {
-  const out: DeviceChange[] = []
-  const currentById = new Map(currentDevices.map((d) => [d.deviceID, d]))
-  for (const dev of config.devices ?? []) {
-    const id = dev.id
-    const name = dev.name ?? id
-    const existing = currentById.get(id)
-    if (!existing) {
-      out.push({ kind: "add", name, id })
-    } else if (dev.name && existing.name !== dev.name) {
-      out.push({ kind: "rename", id, from: existing.name, to: dev.name })
-    } else {
-      out.push({ kind: "skip", name, id })
+/**
+ * Compute desired folder state by overlaying YAML over current API state.
+ * Encryption passwords are always preserved from current (secrets — never
+ * declared in YAML).
+ */
+export function desiredFolder(
+  yaml: FolderRef,
+  current: ApiFolder,
+  nameMap: Map<string, string>,
+): ApiFolder {
+  // Deep copy of current state — preserves every field we don't declare,
+  // including encryptionPasswords and any future GUI-managed knobs.
+  const out: ApiFolder = JSON.parse(JSON.stringify(current))
+
+  // Declared fields override
+  out.path = yaml.path
+  if (yaml.type !== undefined) out.type = yaml.type
+  if (yaml.paused !== undefined) out.paused = yaml.paused
+
+  if (yaml.versioning !== undefined) {
+    out.versioning = {
+      ...(current.versioning ?? {}),
+      type: yaml.versioning.type,
+      params: yaml.versioning.params ?? {},
     }
   }
+
+  // Devices: rebuild from declared names, preserve encryptionPasswords and
+  // introducedBy (any other field syncthing tracks per device).
+  const desiredIds = resolveFolderDeviceIds(yaml, nameMap)
+  out.devices = desiredIds.map((deviceID) => {
+    const cur = current.devices.find((d) => d.deviceID === deviceID)
+    return {
+      deviceID,
+      encryptionPassword: cur?.encryptionPassword ?? "",
+      ...(cur?.introducedBy !== undefined ? { introducedBy: cur.introducedBy } : {}),
+    }
+  })
+
   return out
 }
 
-/**
- * Compute folder changes with encryption-password preservation. The merged
- * devices list pairs YAML's desired device IDs with the existing
- * encryptionPassword values for those devices — passwords aren't in the
- * YAML (sensitive), so we read them out of the current API state and put
- * them back when PUTing.
- */
-export function computeFolderChanges(
-  config: SyncthingConfig,
-  currentFolders: ApiFolder[],
-  myDeviceId: string,
-  nameMap: Map<string, string>,
-): FolderChange[] {
-  const out: FolderChange[] = []
-  const currentById = new Map(currentFolders.map((f) => [f.id, f]))
-  for (const folder of config.folders ?? []) {
-    const desiredIds = resolveFolderDeviceIds(folder, nameMap)
-    const existing = currentById.get(folder.id)
-
-    if (!existing) {
-      out.push({
-        kind: "add",
-        id: folder.id,
-        folder,
-        resolvedDeviceIds: desiredIds,
-      })
-      continue
-    }
-
-    // Local device is auto-added by syncthing but synced with us too in
-    // the YAML — keep it in the resolved list to match the existing
-    // config.xml representation.
-    const desiredSet = new Set(desiredIds)
-    const existingIds = new Set(existing.devices.map((d) => d.deviceID))
-    const pathMatches = existing.path === folder.path
-    const devicesMatch = existingIds.size === desiredSet.size &&
-      [...desiredSet].every((id) => existingIds.has(id))
-
-    if (pathMatches && devicesMatch) {
-      out.push({ kind: "skip", id: folder.id })
-      continue
-    }
-
-    // Preserve existing encryptionPasswords
-    const mergedDevices = desiredIds.map((deviceID) => {
-      const cur = existing.devices.find((d) => d.deviceID === deviceID)
-      return { deviceID, encryptionPassword: cur?.encryptionPassword ?? "" }
-    })
-
-    if (!pathMatches && devicesMatch) {
-      out.push({ kind: "update-path", id: folder.id, oldPath: existing.path, newPath: folder.path })
-    } else if (pathMatches && !devicesMatch) {
-      out.push({ kind: "update-devices", id: folder.id, mergedDevices })
-    } else {
-      out.push({
-        kind: "update-both",
-        id: folder.id,
-        oldPath: existing.path,
-        newPath: folder.path,
-        mergedDevices,
-      })
-    }
-    void myDeviceId // referenced for clarity in caller; reserved for future filtering
-  }
+/** Compute desired device state — overlay YAML over current. */
+export function desiredDevice(
+  yaml: {
+    id: string
+    name?: string
+    addresses?: string[]
+    untrusted?: boolean
+    compression?: string
+    paused?: boolean
+    introducer?: boolean
+  },
+  current: ApiDevice,
+): ApiDevice {
+  const out: ApiDevice = JSON.parse(JSON.stringify(current))
+  out.deviceID = yaml.id
+  if (yaml.name !== undefined) out.name = yaml.name
+  if (yaml.addresses !== undefined) out.addresses = yaml.addresses
+  if (yaml.untrusted !== undefined) out.untrusted = yaml.untrusted
+  if (yaml.compression !== undefined) out.compression = yaml.compression
+  if (yaml.paused !== undefined) out.paused = yaml.paused
+  if (yaml.introducer !== undefined) out.introducer = yaml.introducer
   return out
+}
+
+/** True iff two values differ (deep). `null` and `undefined` equal absent. */
+export function deepEqual(a: unknown, b: unknown): boolean {
+  if (a === b) return true
+  if (a === undefined || a === null) return b === undefined || b === null
+  if (b === undefined || b === null) return false
+  if (typeof a !== typeof b) return false
+  if (typeof a !== "object") return a === b
+  if (Array.isArray(a) !== Array.isArray(b)) return false
+  if (Array.isArray(a)) {
+    const ba = b as unknown[]
+    if (a.length !== ba.length) return false
+    for (let i = 0; i < a.length; i++) if (!deepEqual(a[i], ba[i])) return false
+    return true
+  }
+  const ao = a as Record<string, unknown>
+  const bo = b as Record<string, unknown>
+  const keys = new Set([...Object.keys(ao), ...Object.keys(bo)])
+  for (const k of keys) if (!deepEqual(ao[k], bo[k])) return false
+  return true
 }
 
 // ── I/O (curl + ssh) ──────────────────────────────────────────────────
 
 const SSH = Deno.env.get("SSH_ADDRESS") ?? ""
-let API_KEY = Deno.env.get("SYNCTHING_API_KEY") ?? ""
+const API_KEY = Deno.env.get("SYNCTHING_API_KEY") ?? ""
 
 async function runOnRemote(cmd: string): Promise<string> {
   const argv = SSH ? ["ssh", SSH, cmd] : ["bash", "-c", cmd]
@@ -201,22 +174,6 @@ async function runOnRemote(cmd: string): Promise<string> {
     throw new Error(new TextDecoder().decode(out.stderr).trim())
   }
   return new TextDecoder().decode(out.stdout)
-}
-
-/** Capture the API key from the running container's config.xml. */
-async function captureApiKeyFromContainer(): Promise<string | null> {
-  const grep = Deno.env.get("SSH_ADDRESS")
-    ? `ssh ${
-      Deno.env.get("SSH_ADDRESS")
-    } grep -oE '<apikey>[^<]+' /home/spy4x/ssd-2tb/apps/.volumes/syncthing/config/config.xml | head -1 | sed 's/<apikey>//'`
-    : `grep -oE '<apikey>[^<]+' /home/spy4x/ssd-2tb/apps/.volumes/syncthing/config/config.xml | head -1 | sed 's/<apikey>//'`
-  try {
-    const out = await runOnRemote(grep)
-    const key = out.trim()
-    return key.length === 32 ? key : null
-  } catch {
-    return null
-  }
 }
 
 async function apiGet<T>(path: string): Promise<T> {
@@ -234,17 +191,12 @@ async function apiGet<T>(path: string): Promise<T> {
   }
 }
 
-async function apiSend(method: string, path: string, body?: unknown): Promise<string> {
-  // -w '%{http_code}' prints the HTTP code on stdout; -o /dev/null discards
-  // the response body. Pass JSON via --data-binary @-, which reads the
-  // payload from stdin and avoids any shell-escaping worries.
-  let bodyStr = ""
+async function apiSend(method: string, path: string, body?: unknown): Promise<void> {
+  // Send body via stdin to avoid any shell-escaping trouble.
   let stdinPayload: Uint8Array | undefined
-  if (body !== undefined) {
-    bodyStr = JSON.stringify(body)
-    stdinPayload = new TextEncoder().encode(bodyStr)
-  }
-  const cmd = [
+  if (body !== undefined) stdinPayload = new TextEncoder().encode(JSON.stringify(body))
+
+  const statusCmd = [
     `curl -sS -o /dev/null -w '%{http_code}'`,
     `-H 'X-API-Key: ${API_KEY}'`,
     `-X ${method}`,
@@ -253,7 +205,7 @@ async function apiSend(method: string, path: string, body?: unknown): Promise<st
     `'http://localhost:8384${path}'`,
   ].filter(Boolean).join(" ")
 
-  const argv = SSH ? ["ssh", SSH, cmd] : ["bash", "-c", cmd]
+  const argv = SSH ? ["ssh", SSH, statusCmd] : ["bash", "-c", statusCmd]
   const proc = new Deno.Command(argv[0], {
     args: argv.slice(1),
     stdin: stdinPayload ? "piped" : "null",
@@ -267,36 +219,29 @@ async function apiSend(method: string, path: string, body?: unknown): Promise<st
     await writer.close()
   }
   const out = await subprocess.output()
-  const stdout = new TextDecoder().decode(out.stdout)
-  const stderr = new TextDecoder().decode(out.stderr)
-  const code = out.code
+  const stdout = new TextDecoder().decode(out.stdout).trim()
+  const stderr = new TextDecoder().decode(out.stderr).trim()
 
-  // Pull response body separately so we can include it in error messages.
-  let bodySnippet = ""
-  if (code !== 0 && code !== 200) {
+  if (code(out) !== 0 || stdout !== "200") {
+    let bodySnippet = ""
     try {
       const bodyOut = await runOnRemote(
-        `curl -s -H 'X-API-Key: ${API_KEY}' -X ${method} ${
+        `curl -sS -X ${method} -H 'X-API-Key: ${API_KEY}' ${
           body !== undefined ? `-H 'Content-Type: application/json' --data-binary @-` : ""
         } 'http://localhost:8384${path}'`,
       )
-      bodySnippet = bodyOut.trim().slice(0, 500)
-    } catch {
-      // ignore — best-effort diagnostics
-    }
-  }
-
-  if (code !== 0) {
+      bodySnippet = ` — response: ${bodyOut.trim().slice(0, 500)}`
+    } catch { /* best-effort diagnostics */ }
     throw new Error(
-      `${method} ${path} failed (exit ${code})${stderr.trim() ? `: ${stderr.trim()}` : ""}${
-        bodySnippet ? ` — response: ${bodySnippet}` : ""
-      }`,
+      `${method} ${path} failed (process exit ${code(out)}, HTTP ${stdout})${
+        stderr ? `: ${stderr}` : ""
+      }${bodySnippet}`,
     )
   }
-  if (stdout.trim() !== "200") {
-    throw new Error(`${method} ${path} returned HTTP ${stdout.trim()}`)
-  }
-  return stdout.trim()
+}
+
+function code(out: { code: number }): number {
+  return out.code
 }
 
 async function waitForApi(): Promise<void> {
@@ -316,6 +261,20 @@ async function waitForApi(): Promise<void> {
 // ── Entry point ───────────────────────────────────────────────────────
 
 async function main() {
+  // Loud, no-hidden-errors gate: SYNCTHING_API_KEY is mandatory.
+  if (!API_KEY) {
+    throw new Error(
+      "SYNCTHING_API_KEY is not set. Add it to this server's .env (encrypt, then commit the .env.age).",
+    )
+  }
+  if (API_KEY.startsWith("REPLACE_WITH_")) {
+    throw new Error(
+      `SYNCTHING_API_KEY is still the placeholder ("${
+        API_KEY.slice(0, 40)
+      }…"). Generate a real key and update .env.`,
+    )
+  }
+
   let text: string
   try {
     text = await Deno.readTextFile("configs/syncthing.yml")
@@ -326,7 +285,6 @@ async function main() {
     }
     throw err
   }
-
   let parsed: unknown
   try {
     parsed = parseYaml(text)
@@ -334,24 +292,6 @@ async function main() {
     throw new Error(`configs/syncthing.yml is not valid YAML: ${(err as Error).message}`)
   }
   const config = validateConfig(parsed)
-
-  if (!API_KEY || API_KEY.startsWith("REPLACE_WITH_")) {
-    const captured = await captureApiKeyFromContainer()
-    if (captured) {
-      console.log(
-        `SYNCTHING_API_KEY not set in .env — captured from container config.xml: ${
-          captured.slice(0, 7)
-        }…`,
-      )
-      console.log("→ Save it as SYNCTHING_API_KEY in this server's .env, then re-encrypt.")
-      API_KEY = captured
-    } else {
-      throw new Error(
-        "SYNCTHING_API_KEY is not set in .env and could not be captured from the container.\n" +
-          "Either set SYNCTHING_API_KEY in .env, or wait for Syncthing to start (it generates a key on first boot).",
-      )
-    }
-  }
 
   console.log("Waiting for Syncthing API…")
   await waitForApi()
@@ -363,115 +303,113 @@ async function main() {
   const currentFolders = await apiGet<ApiFolder[]>("/rest/config/folders")
   const currentDevices = await apiGet<ApiDevice[]>("/rest/config/devices")
 
-  const nameMap = buildDeviceNameMap(config)
-  const deviceChanges = computeDeviceChanges(config, currentDevices)
-  const folderChanges = computeFolderChanges(config, currentFolders, myId, nameMap)
-
-  // ── Apply device changes + verify ─────────────────────────────────
-  console.log("\nDevices:")
-  for (const change of deviceChanges) {
-    if (change.kind === "add") {
-      console.log(`  + add ${change.name} (${change.id.slice(0, 7)}…)`)
-      await apiSend("POST", "/rest/config/devices", {
-        deviceID: change.id,
-        name: change.name,
-        addresses: [],
-        compression: "metadata",
-      })
-    } else if (change.kind === "rename") {
-      console.log(`  ~ rename ${change.from} → ${change.to}`)
-      const existing = currentDevices.find((d) => d.deviceID === change.id)!
-      await apiSend("PUT", `/rest/config/devices/${encodeURIComponent(change.id)}`, {
-        ...existing,
-        name: change.to,
-      })
-    } else {
-      console.log(`  ✓ ${change.name}`)
+  const nameMap = new Map<string, string>()
+  for (const d of config.devices ?? []) {
+    if (typeof d?.name === "string" && typeof d?.id === "string") {
+      nameMap.set(d.name, d.id)
     }
   }
 
-  // ── Apply folder changes + verify ─────────────────────────────────
+  // ── Devices: add missing, then overlay desired state for existing ──
+  console.log("\nDevices:")
+  const foldersById = new Map(currentFolders.map((f) => [f.id, f]))
+  const devicesById = new Map(currentDevices.map((d) => [d.deviceID, d]))
+
+  for (const dev of config.devices ?? []) {
+    const existing = devicesById.get(dev.id)
+    if (!existing) {
+      console.log(`  + add ${dev.name ?? dev.id.slice(0, 7)} (${dev.id.slice(0, 7)}…)`)
+      await apiSend("POST", "/rest/config/devices", {
+        deviceID: dev.id,
+        name: dev.name ?? dev.id.slice(0, 7),
+        addresses: dev.addresses ?? ["dynamic"],
+        compression: dev.compression ?? "metadata",
+        ...(dev.untrusted !== undefined ? { untrusted: dev.untrusted } : {}),
+        ...(dev.paused !== undefined ? { paused: dev.paused } : {}),
+        ...(dev.introducer !== undefined ? { introducer: dev.introducer } : {}),
+      })
+      continue
+    }
+    const desired = desiredDevice(dev, existing)
+    if (deepEqual(existing, desired)) {
+      console.log(`  ✓ ${dev.name ?? dev.id.slice(0, 7)}`)
+      continue
+    }
+    console.log(`  ~ update ${dev.name ?? dev.id.slice(0, 7)}`)
+    await apiSend("PUT", `/rest/config/devices/${encodeURIComponent(dev.id)}`, desired)
+  }
+
+  // ── Folders: add missing, then overlay desired state for existing ──
   console.log("\nFolders:")
-  for (const change of folderChanges) {
-    if (change.kind === "add") {
-      console.log(`  + add ${change.folder.id} → ${change.folder.path}`)
+  for (const folder of config.folders ?? []) {
+    const existing = foldersById.get(folder.id)
+    if (!existing) {
+      console.log(`  + add ${folder.id} → ${folder.path}`)
       await apiSend("POST", "/rest/config/folders", {
-        id: change.folder.id,
-        label: change.folder.id,
-        path: change.folder.path,
-        type: change.folder.type ?? "sendreceive",
-        devices: change.resolvedDeviceIds.map((deviceID) => ({
+        id: folder.id,
+        label: folder.id,
+        path: folder.path,
+        type: folder.type ?? "sendreceive",
+        paused: folder.paused,
+        versioning: folder.versioning
+          ? {
+            type: folder.versioning.type,
+            params: folder.versioning.params ?? {},
+          }
+          : undefined,
+        devices: resolveFolderDeviceIds(folder, nameMap).map((deviceID) => ({
           deviceID,
           encryptionPassword: "",
         })),
       })
-    } else if (change.kind === "update-path") {
-      console.log(`  ~ path  ${change.id} ${change.oldPath} → ${change.newPath}`)
-      const existing = currentFolders.find((f) => f.id === change.id)!
-      await apiSend("PUT", `/rest/config/folders/${encodeURIComponent(change.id)}`, {
-        ...existing,
-        path: change.newPath,
-      })
-    } else if (change.kind === "update-devices") {
-      console.log(`  ~ devs ${change.id}`)
-      const existing = currentFolders.find((f) => f.id === change.id)!
-      await apiSend("PUT", `/rest/config/folders/${encodeURIComponent(change.id)}`, {
-        ...existing,
-        devices: change.mergedDevices,
-      })
-    } else if (change.kind === "update-both") {
-      console.log(
-        `  ~ both ${change.id} (path ${change.oldPath} → ${change.newPath}, ${change.mergedDevices.length} devices)`,
-      )
-      const existing = currentFolders.find((f) => f.id === change.id)!
-      await apiSend("PUT", `/rest/config/folders/${encodeURIComponent(change.id)}`, {
-        ...existing,
-        path: change.newPath,
-        devices: change.mergedDevices,
-      })
-    } else {
-      console.log(`  ✓ ${change.id}`)
+      continue
     }
+    const desired = desiredFolder(folder, existing, nameMap)
+    if (deepEqual(existing, desired)) {
+      console.log(`  ✓ ${folder.id}`)
+      continue
+    }
+    const diffs: string[] = []
+    if (!deepEqual(existing.path, desired.path)) diffs.push(`path`)
+    if (!deepEqual(existing.versioning, desired.versioning)) diffs.push(`versioning`)
+    if (!deepEqual(existing.devices, desired.devices)) diffs.push(`devices`)
+    if (!deepEqual(existing.paused, desired.paused)) diffs.push(`paused`)
+    console.log(`  ~ update ${folder.id} (${diffs.join(", ") || "minor fields"})`)
+    await apiSend("PUT", `/rest/config/folders/${encodeURIComponent(folder.id)}`, desired)
   }
 
-  // ── Re-read & verify (catch silent failures) ──────────────────────
+  // ── Re-read and verify desired state ───────────────────────────────
   console.log("\nVerifying desired state…")
   const finalDevices = await apiGet<ApiDevice[]>("/rest/config/devices")
   const finalFolders = await apiGet<ApiFolder[]>("/rest/config/folders")
+  const finalDevicesById = new Map(finalDevices.map((d) => [d.deviceID, d]))
+  const finalFoldersById = new Map(finalFolders.map((f) => [f.id, f]))
 
   const errors: string[] = []
   for (const dev of config.devices ?? []) {
-    const name = dev.name ?? dev.id.slice(0, 7)
-    const found = finalDevices.find((d) => d.deviceID === dev.id)
+    const found = finalDevicesById.get(dev.id)
     if (!found) {
-      errors.push(`device missing after write: ${name}`)
-    } else if (dev.name && found.name !== dev.name) {
-      errors.push(`device name drift: ${name} (${found.name})`)
+      errors.push(`device missing after write: ${dev.name ?? dev.id}`)
+      continue
+    }
+    const desired = desiredDevice(dev, found)
+    if (!deepEqual(found, desired)) {
+      errors.push(`device drift after write: ${dev.name ?? dev.id}`)
     }
   }
   for (const folder of config.folders ?? []) {
-    const desiredIds = new Set(resolveFolderDeviceIds(folder, nameMap))
-    const found = finalFolders.find((f) => f.id === folder.id)
+    const found = finalFoldersById.get(folder.id)
     if (!found) {
       errors.push(`folder missing after write: ${folder.id}`)
       continue
     }
-    if (found.path !== folder.path) {
-      errors.push(`folder path drift: ${folder.id} (${found.path})`)
-    }
-    const foundIds = new Set(found.devices.map((d) => d.deviceID))
-    if (
-      foundIds.size !== desiredIds.size ||
-      ![...desiredIds].every((id) => foundIds.has(id))
-    ) {
-      errors.push(`folder devices drift: ${folder.id}`)
+    const desired = desiredFolder(folder, found, nameMap)
+    if (!deepEqual(found, desired)) {
+      errors.push(`folder drift after write: ${folder.id}`)
     }
   }
-
   if (errors.length > 0) {
-    throw new Error(
-      `Syncthing verification failed:\n  - ${errors.join("\n  - ")}`,
-    )
+    throw new Error(`Syncthing verification failed:\n  - ${errors.join("\n  - ")}`)
   }
   console.log("✓ verified")
   console.log("\n✓ Syncthing config reconciled")
@@ -480,8 +418,6 @@ async function main() {
 if (import.meta.main) {
   main().catch((err) => {
     console.error("after.deploy.ts FAILED:", err instanceof Error ? err.message : String(err))
-    if (err instanceof Error && err.stack) console.error(err.stack)
-    // Non-fatal — syncthing still works with whatever's currently configured.
-    Deno.exit(0)
+    Deno.exit(1) // marker for the deploy script — syncthing deploy fails
   })
 }

@@ -1,332 +1,280 @@
 // Tests for stacks/syncthing/after.deploy.ts pure reconciliation logic.
 
-import { assertEquals, assertObjectMatch } from "@std/assert"
+import { assertEquals } from "@std/assert"
 
-import type { SyncthingConfig } from "./before.deploy.ts"
+import { type Device, type FolderRef, validateConfig } from "./before.deploy.ts"
 import {
   type ApiDevice,
   type ApiFolder,
-  buildDeviceNameMap,
-  computeDeviceChanges,
-  computeFolderChanges,
+  deepEqual,
+  desiredDevice,
+  desiredFolder,
+  resolveFolderDeviceIds,
 } from "./after.deploy.ts"
 
-const OFFSITE_ID = "SXYX5HB-OFFSITE-PLACEHOLDER-IDENTIFIER-DUMMY0"
 const HOME_ID = "HOME-LOCAL-DEVICE-IDENTIFIER-PLACEHOLDER-DUMMY0"
+const OFFSITE_ID = "SXYX5HB-OFFSITE-PLACEHOLDER-IDENTIFIER-DUMMY0"
 const LAPTOP_ID = "LAPTOP-PLACEHOLDER-IDENTIFIER-DUMMY0"
-const MINI_PC_ID = "MINIPC-PLACEHOLDER-IDENTIFIER-DUMMY0"
-const PHONE_ID = "PHONE-PLACEHOLDER-IDENTIFIER-DUMMY0"
 
-function makeConfig(
-  overrides: Partial<SyncthingConfig> = {},
-): SyncthingConfig {
-  return {
-    data_dir: "~/appdata",
-    mounts: [
-      { host: "~/ssd/sync", container: "/sync" },
-      { host: "~/hdd", container: "/hdd" },
-    ],
-    folders: [
-      {
-        id: "archive",
-        path: "/sync/archive",
-        type: "sendreceive",
-        devices: ["spy4x-home", "spy4x-offsite", "spy4x-laptop"],
-      },
-      {
-        id: "backups",
-        path: "/hdd/sync/backups",
-        type: "sendreceive",
-        devices: ["spy4x-home", "spy4x-offsite"],
-      },
-    ],
-    devices: [
-      { id: HOME_ID, name: "spy4x-home" },
-      { id: OFFSITE_ID, name: "spy4x-offsite" },
-      { id: LAPTOP_ID, name: "spy4x-laptop" },
-      { id: MINI_PC_ID, name: "spy4x-mini-pc" },
-      { id: PHONE_ID, name: "spy4x-phone" },
-    ],
-    ...overrides,
-  }
+const nameMap = new Map<string, string>([
+  ["spy4x-home", HOME_ID],
+  ["spy4x-offsite", OFFSITE_ID],
+  ["spy4x-laptop", LAPTOP_ID],
+])
+
+const currentFolder: ApiFolder = {
+  id: "archive",
+  label: "archive",
+  path: "/OLD/path",
+  type: "sendreceive",
+  paused: false,
+  versioning: {
+    type: "",
+    params: {},
+    cleanupIntervalS: 3600,
+    fsPath: "",
+    fsType: "basic",
+  },
+  devices: [
+    { deviceID: HOME_ID, encryptionPassword: "home-secret" },
+    { deviceID: OFFSITE_ID, encryptionPassword: "offsite-secret" },
+  ],
 }
 
-const myDeviceId = HOME_ID
+// ── deepEqual ─────────────────────────────────────────────────────────
 
-Deno.test("buildDeviceNameMap: indexes by name", () => {
-  const map = buildDeviceNameMap(makeConfig())
-  assertEquals(map.get("spy4x-home"), HOME_ID)
-  assertEquals(map.get("spy4x-offsite"), OFFSITE_ID)
-  assertEquals(map.size, 5)
+Deno.test("deepEqual: primitives", () => {
+  assertEquals(deepEqual(1, 1), true)
+  assertEquals(deepEqual("a", "a"), true)
+  assertEquals(deepEqual(null, undefined), true)
+  assertEquals(deepEqual(undefined, undefined), true)
+  assertEquals(deepEqual(1, "1"), false)
 })
 
-Deno.test("buildDeviceNameMap: empty devices", () => {
-  const map = buildDeviceNameMap(makeConfig({ devices: [] }))
-  assertEquals(map.size, 0)
+Deno.test("deepEqual: arrays", () => {
+  assertEquals(deepEqual([1, 2, 3], [1, 2, 3]), true)
+  assertEquals(deepEqual([1, 2], [1, 2, 3]), false)
+  assertEquals(deepEqual([1, 2, 3], [1, 3, 2]), false)
 })
 
-Deno.test("computeDeviceChanges: all new → adds", () => {
-  const cfg = makeConfig({
-    devices: [
-      { id: HOME_ID, name: "spy4x-home" },
-      { id: OFFSITE_ID, name: "spy4x-offsite" },
-    ],
-  })
-  const changes = computeDeviceChanges(cfg, [])
-  assertEquals(changes.length, 2)
-  assertEquals(changes[0].kind, "add")
-  assertEquals(changes[1].kind, "add")
-})
-
-Deno.test("computeDeviceChanges: existing matches → skip; name drift → rename", () => {
-  const currentDevices: ApiDevice[] = [
-    { deviceID: HOME_ID, name: "old-home-name" },
-    { deviceID: OFFSITE_ID, name: "spy4x-offsite" },
-  ]
-  const changes = computeDeviceChanges(makeConfig(), currentDevices)
-  const homeChange = changes.find((c) => c.id === HOME_ID)!
-  const offsiteChange = changes.find((c) => c.id === OFFSITE_ID)!
-
-  assertEquals(homeChange.kind, "rename")
-  assertEquals(homeChange.kind === "rename" && homeChange.from, "old-home-name")
-  assertEquals(homeChange.kind === "rename" && homeChange.to, "spy4x-home")
-
-  assertEquals(offsiteChange.kind, "skip")
-})
-
-Deno.test("computeFolderChanges: brand-new folder → add with resolved IDs", () => {
-  const cfg = makeConfig()
-  const nameMap = buildDeviceNameMap(cfg)
-  const changes = computeFolderChanges(cfg, [], myDeviceId, nameMap)
-  assertEquals(changes.length, 2)
-  assertEquals(changes[0].kind, "add")
-  assertEquals(changes[1].kind, "add")
-  // First folder (archive) should have 3 devices (home, offsite, laptop)
+Deno.test("deepEqual: nested objects", () => {
   assertEquals(
-    changes[0].kind === "add" && changes[0].resolvedDeviceIds.length,
-    3,
+    deepEqual({ a: 1, b: { c: 2 } }, { a: 1, b: { c: 2 } }),
+    true,
   )
-  // Second folder (backups) should have 2 devices (home, offsite)
   assertEquals(
-    changes[1].kind === "add" && changes[1].resolvedDeviceIds.length,
-    2,
+    deepEqual({ a: 1, b: { c: 2 } }, { a: 1, b: { c: 3 } }),
+    false,
   )
+  // Absent key is treated as undefined: same as explicit undefined
+  assertEquals(deepEqual({ a: 1 }, { a: 1, b: undefined }), true)
+  // Absent key is NOT same as a defined value
+  assertEquals(deepEqual({ a: 1 }, { a: 1, b: 2 }), false)
 })
 
-Deno.test("computeFolderChanges: existing with same path and devices → skip", () => {
-  const cfg = makeConfig()
-  const currentFolders: ApiFolder[] = [
-    {
-      id: "archive",
-      path: "/sync/archive",
-      type: "sendreceive",
-      devices: [
-        { deviceID: HOME_ID },
-        { deviceID: OFFSITE_ID },
-        { deviceID: LAPTOP_ID },
-      ],
-    },
-    {
-      id: "backups",
-      path: "/hdd/sync/backups",
-      type: "sendreceive",
-      devices: [
-        { deviceID: HOME_ID },
-        { deviceID: OFFSITE_ID },
-      ],
-    },
-  ]
-  const changes = computeFolderChanges(
-    cfg,
-    currentFolders,
-    myDeviceId,
-    buildDeviceNameMap(cfg),
-  )
-  assertEquals(changes.every((c) => c.kind === "skip"), true)
+Deno.test("deepEqual: treats null and undefined equivalently", () => {
+  assertEquals(deepEqual({ a: null }, { a: undefined }), true)
+  assertEquals(deepEqual({ a: null }, { b: undefined }), true)
+  assertEquals(deepEqual({ a: null }, {}), true)
 })
 
-Deno.test("computeFolderChanges: path-only change → update-path", () => {
-  const cfg = makeConfig()
-  const currentFolders: ApiFolder[] = [
-    {
-      id: "archive",
-      path: "/sync/OLD-archive", // different from config
-      type: "sendreceive",
-      devices: [
-        { deviceID: HOME_ID },
-        { deviceID: OFFSITE_ID },
-        { deviceID: LAPTOP_ID },
-      ],
-    },
-    {
-      id: "backups",
-      path: "/hdd/sync/backups",
-      type: "sendreceive",
-      devices: [
-        { deviceID: HOME_ID },
-        { deviceID: OFFSITE_ID },
-      ],
-    },
-  ]
-  const changes = computeFolderChanges(
-    cfg,
-    currentFolders,
-    myDeviceId,
-    buildDeviceNameMap(cfg),
-  )
-  const archiveChange = changes.find((c) => c.id === "archive")!
-  assertEquals(archiveChange.kind, "update-path")
-  if (archiveChange.kind === "update-path") {
-    assertEquals(archiveChange.oldPath, "/sync/OLD-archive")
-    assertEquals(archiveChange.newPath, "/sync/archive")
+// ── resolveFolderDeviceIds ────────────────────────────────────────────
+
+Deno.test("resolveFolderDeviceIds: maps names to IDs", () => {
+  const folder: FolderRef = {
+    id: "f",
+    path: "/sync/f",
+    devices: ["spy4x-home", "spy4x-offsite"],
   }
+  assertEquals(resolveFolderDeviceIds(folder, nameMap), [
+    HOME_ID,
+    OFFSITE_ID,
+  ])
 })
 
-Deno.test("computeFolderChanges: device-list-only change → update-devices with preserved passwords", () => {
-  const cfg = makeConfig()
-  // backups folder in YAML has [home, offsite]; current has [home, offsite, laptop]
-  const currentFolders: ApiFolder[] = [
-    {
-      id: "archive",
-      path: "/sync/archive",
-      type: "sendreceive",
-      devices: [
-        { deviceID: HOME_ID },
-        { deviceID: OFFSITE_ID },
-        { deviceID: LAPTOP_ID },
-      ],
-    },
-    {
-      id: "backups",
-      path: "/hdd/sync/backups",
-      type: "sendreceive",
-      devices: [
-        { deviceID: HOME_ID, encryptionPassword: "home-pass" },
-        { deviceID: OFFSITE_ID, encryptionPassword: "secret-offsite-pwd" },
-        { deviceID: LAPTOP_ID, encryptionPassword: "laptop-pass" },
-      ],
-    },
-  ]
-  const changes = computeFolderChanges(
-    cfg,
-    currentFolders,
-    myDeviceId,
-    buildDeviceNameMap(cfg),
-  )
-  // archive matches → skip, backups drifts in devices → update-devices
-  assertEquals(changes.length, 2)
-  const backupsChange = changes.find((c) => c.id === "backups")!
-  assertEquals(backupsChange.kind, "update-devices")
-  if (backupsChange.kind === "update-devices") {
-    // Two devices in YAML: home + offsite. Their passwords preserved.
-    assertEquals(backupsChange.mergedDevices.length, 2)
-    const home = backupsChange.mergedDevices.find((d) => d.deviceID === HOME_ID)
-    const offsite = backupsChange.mergedDevices.find((d) => d.deviceID === OFFSITE_ID)
-    assertEquals(home?.encryptionPassword, "home-pass")
-    assertEquals(offsite?.encryptionPassword, "secret-offsite-pwd")
+Deno.test("resolveFolderDeviceIds: throws on unknown name", () => {
+  const folder: FolderRef = {
+    id: "f",
+    path: "/sync/f",
+    devices: ["does-not-exist"],
   }
-})
-
-Deno.test("computeFolderChanges: both path and devices change → update-both", () => {
-  const cfg = makeConfig()
-  const currentFolders: ApiFolder[] = [
-    {
-      id: "archive",
-      path: "/OLD/sync/archive",
-      type: "sendreceive",
-      devices: [
-        { deviceID: HOME_ID, encryptionPassword: "home-pass" },
-      ], // only home, YAML wants 3
-    },
-    {
-      id: "backups",
-      path: "/hdd/sync/backups",
-      type: "sendreceive",
-      devices: [
-        { deviceID: HOME_ID },
-        { deviceID: OFFSITE_ID },
-      ],
-    },
-  ]
-  const changes = computeFolderChanges(
-    cfg,
-    currentFolders,
-    myDeviceId,
-    buildDeviceNameMap(cfg),
-  )
-  const archiveChange = changes.find((c) => c.id === "archive")!
-  assertEquals(archiveChange.kind, "update-both")
-  if (archiveChange.kind === "update-both") {
-    assertEquals(archiveChange.oldPath, "/OLD/sync/archive")
-    assertEquals(archiveChange.newPath, "/sync/archive")
-    assertEquals(archiveChange.mergedDevices.length, 3)
-  }
-})
-
-Deno.test("computeFolderChanges: folder references unknown device name → throws", () => {
-  const cfg = makeConfig({
-    folders: [{
-      id: "broken",
-      path: "/sync/broken",
-      devices: ["not-a-real-device"],
-    }],
-  })
   let threw = false
   try {
-    computeFolderChanges(cfg, [], myDeviceId, buildDeviceNameMap(cfg))
+    resolveFolderDeviceIds(folder, nameMap)
   } catch (err) {
     threw = true
-    assertEquals(
-      (err as Error).message.includes("not-a-real-device"),
-      true,
-    )
+    assertEquals((err as Error).message.includes("does-not-exist"), true)
   }
   assertEquals(threw, true)
 })
 
-Deno.test("computeFolderChanges: local device in folder.devices preserved when computing diff", () => {
-  // The local device appears in BOTH the YAML folder list AND the running
-  // config. The diff must not flag this as a device mismatch.
-  const cfg = makeConfig()
-  const currentFolders: ApiFolder[] = [
-    {
-      id: "archive",
-      path: "/sync/archive",
-      type: "sendreceive",
-      devices: [
-        { deviceID: HOME_ID },
-        { deviceID: OFFSITE_ID },
-        { deviceID: LAPTOP_ID },
-      ],
+// ── desiredFolder ─────────────────────────────────────────────────────
+
+Deno.test("desiredFolder: applies YAML overrides on top of current", () => {
+  const yaml: FolderRef = {
+    id: "archive",
+    path: "/sync/archive",
+    type: "sendreceive",
+    devices: ["spy4x-home", "spy4x-laptop"],
+  }
+  const desired = desiredFolder(yaml, currentFolder, nameMap)
+  assertEquals(desired.path, "/sync/archive")
+  assertEquals(desired.devices.length, 2)
+  // Encryption passwords preserved
+  const home = desired.devices.find((d) => d.deviceID === HOME_ID)
+  assertEquals(home?.encryptionPassword, "home-secret")
+  // Laptop is new in YAML, gets empty password
+  const laptop = desired.devices.find((d) => d.deviceID === LAPTOP_ID)
+  assertEquals(laptop?.encryptionPassword, "")
+  // Offsite dropped from YAML → not in desired.devices
+  assertEquals(desired.devices.some((d) => d.deviceID === OFFSITE_ID), false)
+})
+
+Deno.test("desiredFolder: applies versioning override", () => {
+  const yaml: FolderRef = {
+    id: "archive",
+    path: "/sync/archive",
+    versioning: {
+      type: "trashcan",
+      params: { cleanoutDays: "180", keep: "5" },
     },
-  ]
-  const changes = computeFolderChanges(
-    cfg,
-    currentFolders,
-    myDeviceId,
-    buildDeviceNameMap(cfg),
-  )
-  // Should skip — both the YAML and current include the local device
-  assertEquals(changes[0].kind, "skip")
+    devices: ["spy4x-home"],
+  }
+  const desired = desiredFolder(yaml, currentFolder, nameMap)
+  assertEquals(desired.versioning?.type, "trashcan")
+  assertEquals(desired.versioning?.params?.cleanoutDays, "180")
+  assertEquals(desired.versioning?.params?.keep, "5")
+  // Other versioning fields preserved
+  assertEquals(desired.versioning?.cleanupIntervalS, 3600)
 })
 
-Deno.test("end-to-end: device add + folder add", () => {
-  const cfg = makeConfig()
-  const currentDevices: ApiDevice[] = []
-  const currentFolders: ApiFolder[] = []
-  const nameMap = buildDeviceNameMap(cfg)
-
-  const deviceChanges = computeDeviceChanges(cfg, currentDevices)
-  assertEquals(deviceChanges.filter((c) => c.kind === "add").length, 5)
-
-  const folderChanges = computeFolderChanges(cfg, currentFolders, myDeviceId, nameMap)
-  // archive has 3 devices (home, offsite, laptop), backups has 2 (home, offsite)
-  const archiveAdd = folderChanges.find(
-    (c) => c.kind === "add" && c.folder.id === "archive",
-  )
-  const backupsAdd = folderChanges.find(
-    (c) => c.kind === "add" && c.folder.id === "backups",
-  )
-  assertObjectMatch(archiveAdd?.kind === "add" ? archiveAdd : {}, { kind: "add" })
-  assertObjectMatch(backupsAdd?.kind === "add" ? backupsAdd : {}, { kind: "add" })
+Deno.test("desiredFolder: preserves undeclared fields (deep snapshot)", () => {
+  const yaml: FolderRef = {
+    id: "archive",
+    path: "/sync/archive",
+    devices: ["spy4x-home"],
+  }
+  const desired = desiredFolder(yaml, currentFolder, nameMap)
+  // current has paused:false — preserved
+  assertEquals(desired.paused, false)
 })
+
+Deno.test("desiredFolder: applies paused override", () => {
+  const yaml: FolderRef = {
+    id: "archive",
+    path: "/sync/archive",
+    paused: true,
+    devices: ["spy4x-home"],
+  }
+  const desired = desiredFolder(yaml, currentFolder, nameMap)
+  assertEquals(desired.paused, true)
+})
+
+// ── desiredDevice ─────────────────────────────────────────────────────
+
+Deno.test("desiredDevice: applies addresses override", () => {
+  const current: ApiDevice = {
+    deviceID: OFFSITE_ID,
+    name: "spy4x-offsite",
+    addresses: ["dynamic"],
+    compression: "metadata",
+  }
+  const desired = desiredDevice(
+    { id: OFFSITE_ID, name: "spy4x-offsite", addresses: ["tcp://1.2.3.4:22000"] },
+    current,
+  )
+  assertEquals(desired.addresses, ["tcp://1.2.3.4:22000"])
+})
+
+Deno.test("desiredDevice: applies untrusted override", () => {
+  const current: ApiDevice = {
+    deviceID: OFFSITE_ID,
+    name: "spy4x-offsite",
+    addresses: ["dynamic"],
+    untrusted: false,
+  }
+  const desired = desiredDevice(
+    { id: OFFSITE_ID, name: "spy4x-offsite", untrusted: true },
+    current,
+  )
+  assertEquals(desired.untrusted, true)
+})
+
+Deno.test("desiredDevice: preserves undeclared fields", () => {
+  const current: ApiDevice = {
+    deviceID: OFFSITE_ID,
+    name: "spy4x-offsite",
+    addresses: ["dynamic"],
+    compression: "metadata",
+    paused: true,
+    introducer: true,
+  }
+  const desired = desiredDevice(
+    { id: OFFSITE_ID, name: "spy4x-offsite" },
+    current,
+  )
+  assertEquals(desired.compression, "metadata")
+  assertEquals(desired.paused, true)
+  assertEquals(desired.introducer, true)
+})
+
+// ── validation rejects new fields with wrong types ───────────────────
+
+Deno.test("validateConfig: rejects non-string addresses", () => {
+  try {
+    validateConfig({
+      data_dir: "~/x",
+      devices: [{ id: "A-A-A", name: "n", addresses: [123] }],
+    })
+    throw new Error("should have thrown")
+  } catch (err) {
+    assertEquals(
+      (err as { errors: string[] }).errors.some((e) => e.includes("addresses")),
+      true,
+    )
+  }
+})
+
+Deno.test("validateConfig: rejects versioning without type", () => {
+  try {
+    validateConfig({
+      data_dir: "~/x",
+      folders: [{
+        id: "f",
+        path: "/sync/f",
+        versioning: { params: {} } as never, // missing type
+        devices: [],
+      }],
+      devices: [],
+    })
+    throw new Error("should have thrown")
+  } catch (err) {
+    assertEquals(
+      (err as { errors: string[] }).errors.some((e) => e.includes("versioning.type")),
+      true,
+    )
+  }
+})
+
+Deno.test("validateConfig: accepts full folder + device options", () => {
+  validateConfig({
+    data_dir: "~/x",
+    mounts: [{ host: "~/x", container: "/x" }],
+    folders: [{
+      id: "f",
+      path: "/x/f",
+      type: "sendreceive",
+      paused: true,
+      versioning: { type: "trashcan", params: { cleanoutDays: "180" } },
+      devices: ["a"],
+    }],
+    devices: [{ id: "A-A", name: "a", addresses: ["tcp://1.1.1.1:22000"], untrusted: true }],
+  })
+})
+
+void validateConfig as never // suppress unused warning when test file imports for type only
+
+void (function devTypeCheck(): Device {
+  // Ensure Device exported type stays valid against current usage
+  return { id: "x", name: "y" }
+})()

@@ -82,14 +82,10 @@ cd ${pathApps} && docker ps -a --filter "name=hl-${stackName}" --format '{{.ID}}
     docker rm -f \$id >/dev/null 2>&1 || true
   fi
 done
-# Pick up per-server overrides from the canonical committed path:
-#   servers/<server>/compose-override/<stack>.yml
-# Falls back to the legacy (no longer recommended) path a stack's
-# before.deploy.ts might still generate:
-#   stacks/<stack>/docker-compose.override.yml
+# Per-server compose override (if present). Only this path is supported —
+# we don't generate override fragments in before.deploy.ts anymore.
 COMPOSE_FILES="-f stacks/${stackName}/compose.yml"
 [ -f "servers/${deployAs}/compose-override/${stackName}.yml" ] && COMPOSE_FILES="\$COMPOSE_FILES -f servers/${deployAs}/compose-override/${stackName}.yml"
-[ -f "stacks/${stackName}/docker-compose.override.yml" ] && COMPOSE_FILES="\$COMPOSE_FILES -f stacks/${stackName}/docker-compose.override.yml"
 cd ${pathApps} && docker compose ${projectFlag} --env-file=.env.root --env-file=.env \$COMPOSE_FILES up -d --build 2>&1
 if [ $? -eq 0 ]; then
   echo "DEPLOY_SUCCESS:${stackName}:${deployAs}"
