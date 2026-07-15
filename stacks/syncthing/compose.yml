@@ -1,13 +1,32 @@
 # Syncthing — reusable compose, no server-specific paths.
-# All host paths, the API key, and folder/device config live in
-# servers/<server>/syncthing.yml. before.deploy.ts generates a
-# docker-compose.override.yml from that file at deploy time.
+# Per-server host paths come from servers/<server>/compose-override/syncthing.yml
+# (committed), merged at deploy time. Folders + devices come from
+# servers/<server>/configs/syncthing.yml and are reconciled via the REST API
+# by stacks/syncthing/after.deploy.ts.
 #
 # Required env (in server .env):
 #   SYNCTHING_API_KEY     — STGUIAPIKEY; same value persisted in
 #                           /var/syncthing/config/config.xml
 #   SYNCTHING_SUBDOMAIN   — Traefik host rule
 #   DOMAIN                — base domain
+#
+# ── First-deploy bootstrap ──────────────────────────────────────────
+# On a fresh install the operator does NOT know SYNCTHING_API_KEY yet.
+# Syncthing generates a random key on first boot and stores it in
+# /var/syncthing/config/config.xml. The flow:
+#
+#   1. Leave SYNCTHING_API_KEY=REPLACE_WITH_RANDOM_32_CHAR_BASE64 in .env.
+#   2. Run `deno task deploy <server> syncthing`. compose up starts the
+#      container with a generated key (syncthing ignores STGUIAPIKEY if it's
+#      the literal placeholder, or generates one if env unset).
+#   3. after.deploy.ts detects SYNCTHING_API_KEY is unset/placeholder,
+#      SSHes to the server, greps `apikey` out of the container's
+#      config.xml, and uses it for this run.
+#   4. after.deploy prints: "Save it as SYNCTHING_API_KEY in this
+#      server's .env, then re-encrypt."
+#   5. Operator runs `deno task env:decrypt`, edits .env, runs
+#      `deno task env:encrypt`, commits .env.age. Future deploys use the
+#      persisted key.
 name: ${PROJECT}
 
 networks:
