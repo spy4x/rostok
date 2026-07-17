@@ -1,19 +1,25 @@
-// after.deploy.ts — Configure Stalwart anti-lockout IaC.
-// Adds Docker proxy subnet (172.18.0.0/16) to Allowed IPs so fail2ban never
-// blocks reverse proxy. Removes any blocked IPs from same subnet.
+// after.deploy.ts — Configure Stalwart anti-lockout + outbound HELO IaC.
+// 1. Adds Docker proxy subnet (172.18.0.0/16) to Allowed IPs so fail2ban never
+//    blocks reverse proxy. Removes any blocked IPs from same subnet.
+// 2. Sets SystemSettings.defaultHostname to mail.${DOMAIN} so outbound EHLO is
+//    a valid FQDN (RFC 2821 4.1.1.1). Without this, Stalwart falls back to the
+//    container hostname (e.g. "55458b1fafce") and remote MTAs reject with
+//    "Access denied - Invalid HELO name".
 // Uses JMAP management API via admin credentials from .env.
 
 const SSH = Deno.env.get("SSH_ADDRESS") ?? ""
 const PASSWORD = Deno.env.get("STALWART_ADMIN_PASSWORD") ?? ""
+const DOMAIN = Deno.env.get("DOMAIN") ?? ""
 
-if (!SSH || !PASSWORD) {
-  console.error("after.deploy.ts: SSH_ADDRESS and STALWART_ADMIN_PASSWORD must be set")
+if (!SSH || !PASSWORD || !DOMAIN) {
+  console.error("after.deploy.ts: SSH_ADDRESS, STALWART_ADMIN_PASSWORD and DOMAIN must be set")
   Deno.exit(1)
 }
 
 const STALWART = "172.18.0.8:8080" // Docker bridge IP — always reachable from host
 const SUBNET = "172.18.0.0/16"
 const ACCOUNT = "d333333" // system principal account ID
+const DEFAULT_HOSTNAME = `mail.${DOMAIN}`
 
 interface JmapCall {
   using: string[]
@@ -181,6 +187,76 @@ async function ensureSmtp587(): Promise<boolean> {
   return true
 }
 
+/** Ensure SystemSettings.defaultHostname is set to a valid FQDN.
+ *  Required so outbound SMTP EHLO advertises a real hostname instead of the
+ *  docker container ID (which remote MTAs reject per RFC 2821 4.1.1.1). */
+async function ensureDefaultHostname(): Promise<"created" | "updated" | "unchanged"> {
+  // Look up primary domain id (the one matching DOMAIN).
+  const query = await jmap({
+    using: ["urn:ietf:params:jmap:core"],
+    methodCalls: [
+      ["x:Domain/query", { accountId: ACCOUNT, limit: 50 }, "0"],
+      ["x:Domain/get", {
+        accountId: ACCOUNT,
+        "#ids": { resultOf: "0", name: "x:Domain/query", path: "/ids" },
+        properties: ["id", "name"],
+      }, "1"],
+    ],
+  })
+  const list = (query.methodResponses.find(([m]) => m === "x:Domain/get")?.[1] as {
+    list?: Array<{ id: string; name: string }>
+  })?.list ?? []
+  const primary = list.find((d) => d.name === DOMAIN) ?? list[0]
+  if (!primary) throw new Error("no domain configured in Stalwart")
+
+  // Read current settings (singleton may not exist yet).
+  const get = await jmap({
+    using: ["urn:ietf:params:jmap:core"],
+    methodCalls: [
+      ["x:SystemSettings/get", {
+        accountId: ACCOUNT,
+        ids: ["singleton"],
+      }, "0"],
+    ],
+  })
+  const settings = (get.methodResponses[0][1] as { list?: Array<Record<string, unknown>> }).list
+    ?.[0]
+
+  if (!settings) {
+    // Create singleton with the minimum required fields.
+    await jmap({
+      using: ["urn:ietf:params:jmap:core"],
+      methodCalls: [
+        ["x:SystemSettings/set", {
+          accountId: ACCOUNT,
+          create: {
+            singleton: {
+              defaultHostname: DEFAULT_HOSTNAME,
+              defaultDomainId: primary.id,
+              maxConnections: 8192,
+              threadPoolSize: 8,
+            },
+          },
+        }, "0"],
+      ],
+    })
+    return "created"
+  }
+
+  if (settings.defaultHostname === DEFAULT_HOSTNAME) return "unchanged"
+
+  await jmap({
+    using: ["urn:ietf:params:jmap:core"],
+    methodCalls: [
+      ["x:SystemSettings/set", {
+        accountId: ACCOUNT,
+        update: { singleton: { defaultHostname: DEFAULT_HOSTNAME } },
+      }, "0"],
+    ],
+  })
+  return "updated"
+}
+
 /** Poll until Stalwart responds to health check (up to 60s) */
 async function waitHealthy(): Promise<void> {
   for (let i = 0; i < 30; i++) {
@@ -217,6 +293,11 @@ async function main() {
   } else {
     console.log("✓ SMTP port 587 listener already exists")
   }
+
+  const hostname = await ensureDefaultHostname()
+  if (hostname === "created") console.log(`✓ Set defaultHostname to ${DEFAULT_HOSTNAME}`)
+  else if (hostname === "updated") console.log(`✓ Updated defaultHostname to ${DEFAULT_HOSTNAME}`)
+  else console.log(`✓ defaultHostname already ${DEFAULT_HOSTNAME}`)
 }
 
 try {

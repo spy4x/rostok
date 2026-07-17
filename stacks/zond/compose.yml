@@ -23,8 +23,10 @@ services:
     deploy:
       resources:
         limits:
-          memory: 32M
-          cpus: "0.1"
+          # Deno baseline ~48MB; +probes buffer. 32MB triggered OOM-kill cycles
+          # every ~15min in production. Bumped to 128M after Jul 2026 incident.
+          memory: 128M
+          cpus: "0.25"
     security_opt:
       - no-new-privileges:true
     networks:
