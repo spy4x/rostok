@@ -53,8 +53,10 @@ services:
       # Syncthing overrides whatever is in config.xml.
       - STGUIAPIKEY=${SYNCTHING_API_KEY:?}
       - STHOMEDIR=/var/syncthing/config
-    # Volumes are NOT defined here — generated in docker-compose.override.yml
-    # by stacks/syncthing/before.deploy.ts from servers/<server>/syncthing.yml.
+    # Volumes are NOT defined here — bind mounts live in the committed
+    # per-server override at:
+    #   servers/<server>/compose-override/syncthing.yml
+    # The deploy script (scripts/deploy/src/+lib.ts) merges it automatically.
     ports:
       - 22000:22000/tcp # BEP
       - 22000:22000/udp # QUIC

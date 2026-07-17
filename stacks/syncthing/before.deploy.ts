@@ -246,15 +246,73 @@ function getUser(): string {
   return Deno.env.get("HOMELAB_USER") ?? "spy4x"
 }
 
-async function runOnRemote(cmd: string): Promise<{ code: number; stdout: string; stderr: string }> {
+/**
+ * Run a command on the remote host (or locally if SSH_ADDRESS is unset),
+ * passing arguments via argv. NEVER compose a shell command string from
+ * user-controlled paths — that allows command injection if a path
+ * contains spaces, quotes, or backticks.
+ *
+ * Each shell op is a separate command. We chain them via `&&` inside the
+ * shell, but the path/user args are passed as positional parameters so
+ * they are not interpreted by the shell.
+ */
+async function runRemote(
+  argv: string[],
+): Promise<{ code: number; stdout: string; stderr: string }> {
   const ssh = Deno.env.get("SSH_ADDRESS")
-  const argv = ssh ? ["ssh", ssh, cmd] : ["bash", "-c", cmd]
-  const proc = new Deno.Command(argv[0], {
-    args: argv.slice(1),
-    stdout: "piped",
-    stderr: "piped",
-  })
+  const cmd0 = argv[0]
+  const cmdArgs = argv.slice(1)
+  const proc = ssh
+    ? new Deno.Command("ssh", {
+      args: [ssh, "--", cmd0, ...cmdArgs],
+      stdout: "piped",
+      stderr: "piped",
+    })
+    : new Deno.Command(cmd0, {
+      args: cmdArgs,
+      stdout: "piped",
+      stderr: "piped",
+    })
   const out = await proc.output()
+  return {
+    code: out.code,
+    stdout: new TextDecoder().decode(out.stdout),
+    stderr: new TextDecoder().decode(out.stderr),
+  }
+}
+
+/**
+ * Run a shell script on the remote host via `bash -s`, streaming the
+ * script via stdin. Use this when the script body has special characters
+ * (quotes, $, |, >) that get mangled by ssh's argv-to-string conversion
+ * on shells like zsh with strict glob handling.
+ *
+ * `args` are passed as bash positional parameters $1..$N (in order).
+ * `$0` is always `bash` — don't prefix args with `--`.
+ */
+async function runRemoteScript(
+  script: string,
+  args: string[] = [],
+): Promise<{ code: number; stdout: string; stderr: string }> {
+  const ssh = Deno.env.get("SSH_ADDRESS")
+  const proc = ssh
+    ? new Deno.Command("ssh", {
+      args: [ssh, "-T", "bash", "-s", ...args],
+      stdin: "piped",
+      stdout: "piped",
+      stderr: "piped",
+    })
+    : new Deno.Command("bash", {
+      args: ["-s", ...args],
+      stdin: "piped",
+      stdout: "piped",
+      stderr: "piped",
+    })
+  const sub = proc.spawn()
+  const writer = sub.stdin.getWriter()
+  await writer.write(new TextEncoder().encode(script))
+  await writer.close()
+  const out = await sub.output()
   return {
     code: out.code,
     stdout: new TextDecoder().decode(out.stdout),
@@ -264,7 +322,11 @@ async function runOnRemote(cmd: string): Promise<{ code: number; stdout: string;
 
 /** mkdir + chown + verify. Fails the deploy on any error. */
 async function ensureHostDir(path: string, user: string): Promise<void> {
-  const mkdir = await runOnRemote(`mkdir -p "${path}"`)
+  // Single-quoted arg: prevents shell expansion of $, `, etc. even if the
+  // remote shell is sh/bash without special handling. The single quotes
+  // are literal shell syntax, not part of argv — only the contents
+  // between them reach mkdir/chown/test as $1.
+  const mkdir = await runRemote(["mkdir", "-p", "--", path])
   if (mkdir.code !== 0) {
     throw new Error(`mkdir -p "${path}" failed: ${mkdir.stderr.trim()}`)
   }
@@ -272,14 +334,18 @@ async function ensureHostDir(path: string, user: string): Promise<void> {
   // don't support ownership changes. Don't block the deploy; warn and
   // continue. The container's PUID/PGID env vars handle mismatches at
   // runtime.
-  const chown = await runOnRemote(`chown ${user}:${user} "${path}"`)
+  const chown = await runRemote(["chown", "--", `${user}:${user}`, path])
   if (chown.code !== 0) {
     console.warn(
       `WARN: chown ${user}:${user} "${path}" failed: ${chown.stderr.trim()} — proceeding`,
     )
   }
   // Verify the path now exists and is a directory
-  const verify = await runOnRemote(`test -d "${path}" && echo OK`)
+  // Use a streamed script so $1 isn't mangled by ssh/zsh argv joining.
+  const verify = await runRemoteScript(
+    `test -d "$1" && echo OK\n`,
+    [path],
+  )
   if (verify.stdout.trim() !== "OK") {
     throw new Error(`"${path}" is not a directory after mkdir`)
   }

@@ -9,6 +9,9 @@ import {
   deepEqual,
   desiredDevice,
   desiredFolder,
+  isDeviceArray,
+  isFolderArray,
+  isSystemStatus,
   resolveFolderDeviceIds,
 } from "./after.deploy.ts"
 
@@ -278,3 +281,40 @@ void (function devTypeCheck(): Device {
   // Ensure Device exported type stays valid against current usage
   return { id: "x", name: "y" }
 })()
+
+// ── API response validators (runtime shape checks) ────────────────────
+
+Deno.test("isSystemStatus: accepts valid shape, rejects garbage", () => {
+  assertEquals(isSystemStatus({ myID: "AAA-BBB-CCC" }), true)
+  assertEquals(isSystemStatus({}), false)
+  assertEquals(isSystemStatus({ myID: 42 }), false)
+  assertEquals(isSystemStatus({ myID: "no_dashes_here" }), false)
+  assertEquals(isSystemStatus(null), false)
+  assertEquals(isSystemStatus("string"), false)
+})
+
+Deno.test("isFolderArray: accepts valid, rejects bad entries", () => {
+  assertEquals(isFolderArray([]), true)
+  assertEquals(
+    isFolderArray([
+      { id: "f1", path: "/x/f1", devices: [{ deviceID: "X" }] },
+    ]),
+    true,
+  )
+  assertEquals(isFolderArray([{ id: "f", path: "/x" }]), false) // missing devices
+  assertEquals(isFolderArray([{ id: "f", devices: [] }]), false) // missing path
+  assertEquals(isFolderArray([{ id: 42, path: "/x", devices: [] }]), false)
+})
+
+Deno.test("isDeviceArray: accepts valid, rejects bad entries", () => {
+  assertEquals(isDeviceArray([]), true)
+  assertEquals(
+    isDeviceArray([
+      { deviceID: "X-X-X", name: "n" },
+    ]),
+    true,
+  )
+  assertEquals(isDeviceArray([{ deviceID: "X" }]), false) // missing name
+  assertEquals(isDeviceArray([{ name: "n" }]), false) // missing deviceID
+  assertEquals(isDeviceArray([{ deviceID: 42, name: "n" }]), false)
+})
