@@ -33,7 +33,7 @@
     { "name": "mirotalk" },
     { "name": "reitti" },
     { "name": "usememos" },
-    { "name": "ollama" },
+
     { "name": "grafana" },
     { "name": "victoria-metrics" },
     { "name": "akaunting" },

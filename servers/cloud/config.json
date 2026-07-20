@@ -9,6 +9,9 @@
     { "name": "healthchecks" },
     { "name": "stalwart" },
     { "name": "bulwark" },
+    { "name": "vaultwarden" },
+    { "name": "umami" },
+    { "name": "caldiy" },
     {
       "name": "nginx",
       "deployAs": "neatsoft-landing",
