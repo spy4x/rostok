@@ -6,9 +6,12 @@
 ## 0. Context
 
 The Singapore (SG) home server — an old gaming PC running Fedora 40 with a
-dying SATA SSD — has been offline for a week. The friend who lives in that
-apartment cannot fix it. This plan retires the SG server and stands up the
-home server role on a portable GMKTec K11 mini PC that travels with you.
+dead SATA SSD — has been offline for a week. The friend who lives in that
+apartment cannot recover it, and the box is unreachable. This plan retires
+the SG server and stands up the home server role on a portable GMKTec K11
+mini PC that travels with you. **All SG data is restored from existing
+Restic snapshots already replicated to `cloud` and `offsite` via Syncthing.**
+There is nothing left to image off the SG host — that path is closed.
 
 | Item | SG server (today, dead) | GMKTec K11 (target) |
 |---|---|---|
@@ -28,7 +31,7 @@ home server role on a portable GMKTec K11 mini PC that travels with you.
   dependency on a remote pair of hands is the actual blocker today, not the
   hardware specs.
 - 96 GB DDR5 + 8C/16T Zen4 + 4 TB NVMe beats the SG box on every metric that
-  matters for these stacks: RAM (plenty of headroom for Immich ML, Ollama,
+  matters for these stacks: RAM (plenty of headroom for Immich ML,
   Paperless), storage speed (NVMe vs dying SATA), and idle power (~35–54W CPU
   TDP, vs full gaming-PC PSU spinning).
 - Offsite backup replication (Syncthing) already exists — if the GMKTec dies,
@@ -36,32 +39,33 @@ home server role on a portable GMKTec K11 mini PC that travels with you.
 
 ## 2. Why GMKTec K11 is *good enough* (capability check)
 
-Workload sizing for the 47 home stacks. Memory ceiling per resource limits in
+Workload sizing for the 46 home stacks (Ollama already removed from
+`servers/home/config.json`). Memory ceiling per resource limits in
 `servers/home/config.json` + compose `deploy.resources.limits`:
 
 | Bucket | Stacks | Worst-case RAM |
 |---|---|---|
 | Immich (server + ML + Postgres + Valkey) | 1 stack, 4 services | 8 + 4 + 8 + 2 = 22 GB |
-| Ollama + Open WebUI | 2 stacks | 8 + 2 = 10 GB (Ollama bounded by model size) |
 | Jellyfin | 1 | 8 GB |
 | Paperless-ngx (+ Postgres + Redis + Gotenberg + Tika) | 1 stack, multi-service | ~6 GB |
 | VictoriaMetrics + VictoriaLogs + Grafana + Prometheus exporters | 5 services | ~1 GB |
-| Everything else (Vaultwarden, Gitea, Authelia, Immich Kiosk, Cal.com, Monica, AdGuard, Syncthing, Traefik, WireGuard, …) | ~35 stacks | ~6–10 GB |
+| Everything else (Vaultwarden, Gitea, Authelia, Open WebUI, Immich Kiosk, Cal.com, Monica, AdGuard, Syncthing, Traefik, WireGuard, …) | ~35 stacks | ~6–10 GB |
 | OS + Docker + filesystem caches | — | 2–4 GB |
 
-**Estimate:** comfortable headroom around 50–60 GB used out of 96 GB. Even if
-Ollama loads a 30B-class quantized model (~20 GB), we stay under 80 GB.
+**Estimate:** comfortable headroom around 40–50 GB used out of 96 GB. With
+Ollama gone, the big memory consumer left is Immich ML (~4 GB) and Jellyfin
+(~8 GB only when actively transcoding). RAM is no longer a constraint.
 
 CPU: 8C/16T Zen4 at 5.2 GHz boost is fine for the actual workloads (most
 containers are memory-bound, not CPU-bound). CPU contention only matters if
-Jellyfin transcodes 4K + Ollama serves a model + Immich ML runs CLIP/face
-recognition simultaneously. Power profile is laptop-class — the box will run
-24/7 without roasting.
+Jellyfin transcodes 4K + Immich ML runs CLIP/face recognition concurrently.
+Power profile is laptop-class — the box will run 24/7 without roasting.
 
-GPU: **Radeon 780M only, no CUDA.** This breaks the NVIDIA-dependent stacks:
+GPU: **Radeon 780M only, no CUDA.** This breaks the NVIDIA-dependent stacks.
+Stacks needing rework (Ollama already removed from config, so drop from
+this list too):
 
-- `stacks/ollama/compose.yml` lines 27–30: `driver: nvidia` — must drop,
-  Ollama runs CPU mode (slower but works; ROCm support on RDNA 3 is patchy)
+- ~~`stacks/ollama/compose.yml` lines 27–30~~ — gone, no action needed
 - `stacks/jellyfin/compose.yml` lines 31–35: `driver: nvidia` — must switch
   to VAAPI (`/dev/dri/renderD128`) or CPU-only
 - `stacks/paperless-ngx/compose.yml` lines 75, 127: `driver: nvidia`
@@ -181,6 +185,59 @@ Pangolin's resources let you define per-domain targets:
    `SSH_ADDRESS` updated. If you rename, every reference (inventory,
    gatus, dash, ntfy topic names) changes.
 
+### Cloud server RAM check
+
+The `cloud` Hetzner VPS already runs 11 stacks. Will Pangolin fit alongside?
+
+Current cloud footprint from compose limits (`servers/cloud/config.json` + per-stack `deploy.resources.limits`):
+
+| Stack | Default mem limit | Worst case |
+|---|---|---|
+| stalwart | 512M | 512M |
+| stalwart (aux containers) | 32M | 32M |
+| bulwark | 512M | 512M |
+| traefik | 512M | 512M |
+| syncthing | 1024M | 1024M |
+| ntfy | 128M | 128M |
+| gatus | 128M | 128M |
+| healthchecks | 512M | 512M |
+| umami (app + db) | 512M + 512M | 1024M |
+| caldiy (5 services) | 2G + 512M + 128M + 16M + ? | ~2.7 GB |
+| nginx (neatsoft-landing) | 128M | 128M |
+| librespeed, watchtower | not pinned | ~200M |
+| **Current cloud total** | | **~7.5 GB** |
+
+Pangolin footprint (from `compose.example.yaml` + docs):
+
+| Component | Memory |
+|---|---|
+| pangolin (app) | 1 GB limit / 256 MB reservation |
+| gerbil (WireGuard tunnel broker) | ~150 MB (Go binary, no published limit) |
+| traefik (Pangolin's own, network_mode: gerbil) | ~150 MB |
+| Postgres (Pangolin OSS uses SQLite or Postgres — Postgres if multi-site) | ~200 MB |
+| **Pangolin total** | **~1.5 GB** |
+
+Reference: https://docs.pangolin.net/self-host/choosing-a-vps recommends
+"2 vCPU, 2 GB RAM, 20 GB SSD" as a baseline Pangolin VPS. Adding Pangolin
+to an existing 8 GB+ cloud box is well within the published headroom.
+
+**Action:** confirm the actual Hetzner plan in
+`servers/cloud/README.md` (none of the docs show this explicitly — looks
+like an oversight). Hetzner's smallest CX-line shared-CPU plans are 2 GB
+(CX21) / 4 GB (CX22) / 8 GB (CX32). Anything 8 GB and up is safe; 4 GB
+works but gets tight once backups or Immich restore scripts run. If you
+discover the plan is ≤ 4 GB, either upgrade the VPS or move Pangolin to
+the offsite RPi 4 (it has WireGuard + Traefik already, so it's the
+closest thing to a Pangolin-ready box in the fleet — except it's only
+4 GB RAM too and already runs Syncthing + LibreSpeed + Watchtower).
+
+**Latent risk:** none of the current cloud stacks have `cpus: limits`
+sums under the host — they share. After Pangolin + Gerbil + Pangolin's
+own Traefik land, total CPU reservations are roughly: 0.5 + 0.5 + 1.0 +
+1.0 + 0.2 + 0.2 + 0.5 + 0.5 + 1.0 + 2.0 + 0.1 + ~1.5 (Pangolin) ≈
+9 vCPU of reservations. As long as the Hetzner plan has ≥ 4 vCPU, this
+is fine; CPU is burstable on shared plans.
+
 ### Recommendation
 
 **Yes, run Pangolin.** It's the right answer for the no-static-IP problem.
@@ -208,28 +265,43 @@ to `165.173.1.38`. After cutover:
 
 ## 4. Migration plan
 
-### Phase 0 — Save what's left on the SG server (urgent, do first)
+### Phase 0 — Verify backup integrity (SG is unreachable)
 
-The SG SSD is dying. Every day you wait is a coin flip on whether it spins
-up again. This phase happens **on the SG host** while you still have
-physical or friend access.
+The SG box is dead and unreachable. **No data can be pulled off the SG
+host** — that path is closed. All recovery comes from existing Restic
+snapshots already replicated to `cloud` and `offsite` via Syncthing
+(`~/sync/backups/*` is the standard layout per `docs/disaster-recovery.md`
+§Backup Locations). Per the daily-cron pattern, snapshots exist for every
+day the SG host was up until the last successful backup before it died.
 
-1. **Pull the trigger now.** Ask your friend to:
-   - Plug in a monitor + keyboard, attempt boot, capture any error.
-   - If the OS boots (even degraded): plug in an external USB drive ≥ 1 TB
-     and run `restic -r /media/usb/restic-sg init` then back up:
-     - `${BASE_PATH}/apps/.volumes/` (all Docker volumes)
-     - `${BASE_PATH}/media/` (Jellyfin + Immich data — biggest set)
-     - `${BASE_PATH}/sync/` (Syncthing shared, includes backups already)
-   - If the OS won't boot: pull the SATA SSD, image it with `dd` or
-     `photorec` from another machine, then recover volumes by hand.
-2. **Pull Restic snapshots to cloud + offsite** (already happens via
-   Syncthing if the host is up). If the host is gone, you still have all
-   snapshots from previous days — see `docs/disaster-recovery.md`.
-3. **Inventory data** by Restic snapshot size. Most important:
-   `immich` (photos), `vaultwarden`, `gitea`, `paperless`, `jellyfin` cache.
-4. **Document what's missing.** If a service's last backup is > 7 days old,
-   note it. Plan accordingly during restore.
+1. **SSH into `cloud` and inventory the latest snapshots:**
+   ```bash
+   deno task ssh cloud ls ~/sync/backups/
+   ```
+   You should see one repo per service: `vaultwarden`, `immich`, `gitea`,
+   `paperless`, `jellyfin`, `syncthing`, `gatus-home`, etc.
+2. **For each repo, check the date of the latest snapshot:**
+   ```bash
+   RESTIC_PASSWORD="$BACKUPS_PASSWORD" restic -r ~/sync/backups/<service> snapshots
+   ```
+   The newest snapshot for each service tells you the recovery point.
+3. **Accept data loss window.** Any data written after the last successful
+   SG snapshot is gone. The gap is "1 day" in the best case (last backup
+   was the night before the SSD died), "up to ~7 days" in the worst case
+   (last successful backup was a week ago and the SSD died the day after).
+   Immich is the highest-impact loss surface because every photo upload
+   since the last snapshot is unrecoverable.
+4. **Smoke-test a small restore** to confirm the repos are not corrupt:
+   ```bash
+   RESTIC_PASSWORD="$BACKUPS_PASSWORD" restic -r ~/sync/backups/vaultwarden \
+     restore latest --target /tmp/test-restore
+   ```
+   Inspect `/tmp/test-restore` — if Vaultwarden's data dir is intact, the
+   rest of the repos are likely fine (same Restic version, same password,
+   same remote).
+5. **Document the recovery point** per service before moving to Phase 1.
+   You'll need this when restoring on GMKTec to know which services are
+   safe to roll forward vs which need a hard "use last snapshot" cutoff.
 
 ### Phase 1 — Provision GMKTec K11 (Fedora KDE)
 
@@ -331,8 +403,6 @@ difference is what `SSH_ADDRESS` is.
    Watch for first-boot issues: ACME cert issuance (DNS-01), Authelia
    session persistence, Immich ML warmup (CPU/VAAPI first run is slow).
 6. **NVIDIA → CPU/VAAPI conversions** (required, the SG box had CUDA):
-   - `stacks/ollama/compose.yml`: drop `reservations.devices` block, set
-     `OLLAMA_CPU_LIMIT` higher (e.g., 8 cores).
    - `stacks/jellyfin/compose.yml`: change `driver: nvidia` to
      `driver: vaapi` and add `/dev/dri:/dev/dri` devices. Or drop GPU
      entirely and let CPU transcode.
@@ -389,10 +459,10 @@ Per the repo's `AGENTS.md` "Deploy & Verify" rule:
 | Let's Encrypt HTTP-01 fails through Pangolin | medium | medium | Use DNS-01 with Cloudflare API instead |
 | K11 hardware failure during travel | medium | high | Syncthing replicates to cloud + offsite daily; offsite RPi is backup-of-backup |
 | GPU/CPU mismatch on Immich ML | medium | medium | OpenVINO image tag, accept slower inference vs CUDA |
-| Single 4 TB NVMe = no local RAID | medium | high | Restic to external drive monthly (`deno task offline-backup`); cloud + offsite replication |
+| Single 4 TB NVMe, no redundancy | medium | high | Restic to external drive monthly (`deno task offline-backup`); cloud + offsite replication covers total loss |
 | Power loss on travel | high | low | UPS recommended at fixed locations; Syncthing catches up on next boot |
 | Hotel Wi-Fi blocks WireGuard UDP | low | high | Verify Pangolin's TCP fallback; carry USB-Ethernet adapter as backup |
-| Friend loses access to SG before Phase 0 completes | medium | high | Phase 0 is the first thing you do — don't delay |
+| Cloud Hetzner VPS plan too small for Pangolin | low | medium | Check plan size before deploying Pangolin; upgrade if needed |
 
 ## 6. What this doc does NOT cover (open questions for you)
 
@@ -408,6 +478,8 @@ Per the repo's `AGENTS.md` "Deploy & Verify" rule:
   UPS if you'll keep it plugged in long-term in one place.
 - **Do you keep `servers/home/` as the directory name?** Recommended: yes,
   it's a role not a host. Only `.env` changes.
+- **Exact Hetzner cloud plan** — needs verification. RAM analysis assumes
+  ≥ 8 GB; below 4 GB needs a plan upgrade.
 
 ## 7. References
 
