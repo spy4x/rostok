@@ -120,8 +120,9 @@ def sync_ui_model_order(cur: sqlite3.Cursor) -> None:
     row = cur.fetchone()
     if not row:
         return
+    raw = row[0] if row else None
     try:
-        current = json.loads(row[1]) if row[1] else ""
+        current = json.loads(raw) if raw else ""
     except (json.JSONDecodeError, TypeError):
         current = ""
     desired = ",".join(WHITELIST)
