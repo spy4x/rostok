@@ -14,7 +14,7 @@ servers, and config.
 │  │ opencode-web (systemd --user)            │            │
 │  │ User: spy4x  Port: 0.0.0.0:8002         │            │
 │  │ Config: ~/.config/opencode/              │            │
-│  │ State: ~/.local/share/opencode/          │            │
+│  │ State: ~/.local/share/opencode/ (LOCAL)  │            │
 │  │ Binary: ~/.opencode/bin/opencode         │            │
 │  └──────────────┬──────────────────────────┘            │
 │                 │                                       │
@@ -146,6 +146,37 @@ manager to outlive sessions).
    systemctl --user daemon-reload
    systemctl --user start opencode-web
    ```
+
+### Service loop-restarting with "unable to open database file" (Aug 2026 incident)
+
+**Symptom:** `journalctl --user -u opencode-web` shows
+`Error: Unexpected error / unable to open database file` followed by exit
+status 1. `systemctl --user status` shows `Active: activating` in a tight
+restart loop (counter climbing). Traefik returns "Bad Request" because the
+upstream is dead.
+
+**Root cause:** Dangling symlinks under `~/.local/share/opencode/`
+(`opencode.db`, `auth.json`, `snapshot`, `storage`, `tool-output`) pointing
+at a sync dir that no longer exists. Previously this dir was synced from the
+laptop via a one-off bootstrap script; the script and sync target have been
+removed (Aug 2026) and the data now lives **locally only**.
+
+**Fix:** Delete the dangling symlinks so opencode-web can recreate the files
+locally on next start.
+
+```bash
+systemctl --user stop opencode-web
+rm -f ~/.local/share/opencode/opencode.db \
+      ~/.local/share/opencode/auth.json \
+      ~/.local/share/opencode/snapshot \
+      ~/.local/share/opencode/storage \
+      ~/.local/share/opencode/tool-output
+systemctl --user start opencode-web
+systemctl --user status opencode-web
+```
+
+OpenCode will create a fresh empty DB, snapshot, storage, and tool-output
+dir on startup. Existing local data (if any) is lost — this is expected.
 
 ### Zond `/health` returns 503 intermittently
 
