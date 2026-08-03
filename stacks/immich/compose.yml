@@ -157,6 +157,7 @@ services:
       - KIOSK_SHOW_IMAGE_LOCATION=true
       - KIOSK_LIKE_BUTTON_ACTION=favorite
       - KIOSK_HIDE_BUTTON_ACTION=tag
+      - KIOSK_EXCLUDED_PEOPLE=37182c81-9a18-4b0b-ba3f-1ba371c66cbb
     deploy:
       resources:
         limits:
