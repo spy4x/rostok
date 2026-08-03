@@ -39,33 +39,18 @@ if (!OPENAI_API_KEYS || !OPENAI_API_BASE_URLS) {
 }
 
 const SCRIPT_NAME = "init-models.py"
-const SCRIPT_PATH = `stacks/open-webui/${SCRIPT_NAME}`
+// After rsync, the script lives on the remote under PATH_APPS/stacks/open-webui/.
+// Use the absolute path on the remote so `docker cp` finds it (the remote
+// user's cwd is $HOME, not the deploy target root).
+const REMOTE_SCRIPT_SRC = `${PATH_APPS}/stacks/open-webui/${SCRIPT_NAME}`
+const REMOTE_SCRIPT_TMP = `/tmp/${SCRIPT_NAME}`
 const CONTAINER = "hl-open-webui"
-const REMOTE_SCRIPT_PATH = `/tmp/${SCRIPT_NAME}`
 
-// Verify the script is present in the staged tempDir (deploy script
-// copies the stack here before rsyncing). The path is relative to
-// Deno.cwd() which the deploy script sets to the tempDir.
-try {
-  const stat = await Deno.stat(SCRIPT_PATH)
-  if (!stat.isFile) {
-    error(`after.deploy.ts: ${SCRIPT_PATH} is not a file`)
-    Deno.exit(1)
-  }
-} catch (err) {
-  if (err instanceof Deno.errors.NotFound) {
-    error(`after.deploy.ts: ${SCRIPT_PATH} not found in tempDir (cwd=${Deno.cwd()})`)
-  } else {
-    error(`after.deploy.ts: stat failed: ${err}`)
-  }
-  Deno.exit(1)
-}
-
-log(`Copying ${SCRIPT_PATH} → ${CONTAINER}:${REMOTE_SCRIPT_PATH}...`)
+log(`Copying ${REMOTE_SCRIPT_SRC} → ${CONTAINER}:${REMOTE_SCRIPT_TMP}...`)
 const cpResult = await runCommand([
   "ssh",
   SSH,
-  `docker cp ${SCRIPT_PATH} ${CONTAINER}:${REMOTE_SCRIPT_PATH}`,
+  `docker cp ${REMOTE_SCRIPT_SRC} ${CONTAINER}:${REMOTE_SCRIPT_TMP}`,
 ])
 if (!cpResult.success) {
   error(`docker cp failed: ${cpResult.error || cpResult.output}`)
@@ -89,7 +74,7 @@ const dockerArgs = [
   ` -e OPENAI_API_KEYS=${shellQuote(OPENAI_API_KEYS)}` +
   ` -e OPENAI_API_BASE_URLS=${shellQuote(OPENAI_API_BASE_URLS)}` +
   ` -e OPENAI_API_CONFIGS=${shellQuote(cfgs)}` +
-  ` ${CONTAINER} python3 ${REMOTE_SCRIPT_PATH}`,
+  ` ${CONTAINER} python3 ${REMOTE_SCRIPT_TMP}`,
 ]
 const runResult = await runCommand(dockerArgs)
 if (!runResult.success) {
