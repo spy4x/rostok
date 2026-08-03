@@ -116,7 +116,7 @@ def sync_provider_config(cur: sqlite3.Cursor) -> None:
 
 def sync_ui_model_order(cur: sqlite3.Cursor) -> None:
     """Trim model_order_list to the WHITELIST."""
-    cur.execute("SELECT id, value FROM config WHERE key = 'ui.default_models'")
+    cur.execute("SELECT value FROM config WHERE key = 'ui.default_models'")
     row = cur.fetchone()
     if not row:
         return
