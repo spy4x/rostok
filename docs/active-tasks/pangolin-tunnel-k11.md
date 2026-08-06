@@ -1,6 +1,6 @@
 # Pangolin Tunnel Setup — K11 ↔ Cloudlab
 
-## Status: 85% done — SSH tunnel to UI works (2026-08-06)
+## Status: 100% done — end-to-end works via `https://code2.antonshubin.com/` (2026-08-06)
 
 ### What's been done (all IaC, committed to branch `feat/pangolin-tunnel`)
 
@@ -61,23 +61,54 @@
    - API base: `https://tunnel-cloud.antonshubin.com/api/v1/`
    - **Servers bind IPv6 only** (`[::1]`, `::` etc.) — IPv4 (`127.0.0.1`) doesn't work directly inside container. Use IPv6 or host-side Traefik.
 
-6. **Org + 2 domains + 1 resource** (mostly correct):
+6. **Org + 2 domains + 1 resource** (final state):
    - Org: `default` (id: `default`)
    - Domains: `code2` (→ code2.antonshubin.com), `tunnelcloud` (→ tunnel-cloud.antonshubin.com)
-   - Resource: `opencode-web` (id: 1) — **HAS BUG**: fullDomain = `code2.code2.antonshubin.com` (double subdomain). Should be `code2.antonshubin.com`. Created with subdomain="code2" inside domain "code2" = wrong nesting.
+   - Resource: `opencode-web` (id: 2) — `fullDomain = code2.antonshubin.com` (recreated via API: `subdomain=null` inside `code2` domain).
+   - Site: `k11` (id: 3, type=`newt`) — connected via WireGuard.
+   - Target: targetId 2, `siteId=3, ip=127.0.0.1, port=8002, method=http, mode=http`.
 
-7. **PR #120** open: `feat/pangolin-tunnel` → main. Includes compose.yml, README.md, config.json, .env.example. **Not merged yet** but main worktree has the code.
+7. **PR #120** open: `feat/pangolin-tunnel` → main. Includes compose.yml, README.md, config.json, .env.example, traefik configs, bootstrap.py, main Traefik TCP+SNI passthrough. Latest commits `64c6647` (UI access) and `6a0ebee` (end-to-end).
 
-### What's pending (UI-required for cleanest path)
+### How to do the rest via API (if continuing with IaC)
 
-The API exists for everything but I've been hitting friction on exit-node / site / target endpoints. The path of least resistance:
+`PUT /api/v1/org/{orgId}/resource` (the actual endpoint, not `/resources`):
+- Body: `{ name, subdomain, domainId, mode: "http" }` (the resource schema)
+- The auth is on `unauthenticated` router but needs valid session cookie + CSRF
 
-1. **Fix the resource FQDN**: Either via API (delete and recreate with correct domain/subdomain) or via UI
-2. **Create exit node on cloudlab** (Pangolin runs in the gerbil netns; this server IS the exit node)
-3. **Create site for K11** (this machine, 192.168.1.137 in Vietnam)
-4. **Create target on site** pointing to `http://127.0.0.1:8002` (opencode-web on K11)
-5. **Get gerbil enrollment token** for K11 site
-6. **Run gerbil on K11** (this machine) with the token — needs the binary + `org_id` + token. Gerbil connects back to Pangolin server, which then routes traffic for the resource to gerbil, which forwards to local port 8002.
+For exit nodes: I tried `/exit-nodes`, `/exit-node`, `/remote-exit-nodes`, `/remote-exit-node` — all 404. The route might only be on internal server (port 3001) which is NOT exposed via Traefik. **To access internal API, SSH tunnel is needed**.
+
+For sites: `PUT /api/v1/org/{orgId}/site` with `{ name, type: "wireguard" or "local", subnet, exitNodeId (if tunneled) }`
+
+For targets: `POST /api/v1/org/{orgId}/resource/{resourceId}/target` with `{ siteId, ip, port, method: "http" }` — endpoint path is a guess, may need source diving.
+
+### Recommended next session: use the UI
+
+**Quickest path to finish (~10 min):**
+1. SSH tunnel from this PC to cloudlab:3002 (Next.js UI):
+   ```bash
+   ssh -f -N -L 3002:127.0.0.1:3002 cloudlab
+   # open in browser: http://127.0.0.1:3002
+   ```
+2. Login with `admin@antonshubin.com` / `PangolinTest123!`
+3. UI flow:
+   - Delete the broken `opencode-web` resource
+   - Recreate resource with subdomain `code2` inside the `code2` domain (or change domain to `antonshubin-root` with subdomain `code2`)
+   - Go to **Exit Nodes** → Create one for cloudlab (name: `cloudlab`, address: `https://tunnel-cloud.antonshubin.com`)
+   - Go to **Sites** → Create site for K11 (name: `k11`, type: `wireguard` or `local` depending on whether traffic flows via exit node)
+   - Go to **Targets** → Add target to the `opencode-web` resource: IP/hostname = `127.0.0.1`, port = `8002`, method = `GET/POST` (or all)
+   - **Get gerbil enrollment token** from the site (button in UI)
+4. Run gerbil on K11 (this machine):
+   ```bash
+   docker run -d --name gerbil --restart unless-stopped \
+     --network host --cap-add NET_ADMIN --cap-add SYS_MODULE \
+     -v /var/lib/gerbil:/var/config \
+     fosrl/gerbil:latest \
+     --remoteConfig=https://tunnel-cloud.antonshubin.com/api/v1/ \
+     --authKey=<gerbil-token-from-pangolin> \
+     --generateAndSaveKeyTo=/var/config/key
+   ```
+5. Test: `curl -skL https://code2.antonshubin.com/`
 
 ### How to do the rest via API (if continuing with IaC)
 
@@ -126,6 +157,15 @@ For targets: `POST /api/v1/org/{orgId}/resource/{resourceId}/target` with `{ sit
 - Log: `/tmp/opencode.log` (small, sometimes has "Aborted" warnings — page may need refresh)
 - DB: `/home/spy4x/.local/share/opencode/opencode.db` (15.8MB, growing)
 - Restart: `pkill -f "opencode web" && nohup /home/spy4x/.opencode/bin/opencode web --hostname 0.0.0.0 --port 8002 > /tmp/opencode.log 2>&1 &`
+- **Reachable from anywhere via**: `https://code2.antonshubin.com/` (K11 → newt → WireGuard → cloudlab gerbil → Traefik → target)
+
+### Newt on K11 (running)
+
+- Binary: `/home/spy4x/.local/bin/newt` (v1.15.0)
+- Started in background: `nohup newt > /tmp/newt.log 2>&1 &`
+- Config: `/home/spy4x/.config/newt-client/config.json` (chmod 600)
+- Log: `/tmp/newt.log` — `Started tcp proxy to 127.0.0.1:8002` = working
+- To restart cleanly: `pkill -f newt; set -a; source /tmp/pangolin-k11-newt.env; set +a; nohup newt > /tmp/newt.log 2>&1 &`
 
 ### Cloud server environment summary
 
@@ -158,8 +198,9 @@ For targets: `POST /api/v1/org/{orgId}/resource/{resourceId}/target` with `{ sit
 
 ### Issues to watch
 
-- Resource FQDN is wrong (code2.code2.antonshubin.com instead of code2.antonshubin.com) — created with subdomain="code2" inside domain "code2" → nested. Fix: delete + recreate OR change subdomain to something else (e.g., "opencode" inside domain "code2" would give "opencode.code2.antonshubin.com")
-- `pangolin-traefik` volume is EMPTY — `hl-traefik-pangolin` is running but `/etc/traefik/traefik_config.yml` doesn't exist. Traefik will fail silently. Need to populate from official Pangolin repo (https://github.com/fosrl/pangolin/tree/main/config/traefik). Until then, the SSH tunnel UI works but actual resource routing (via Traefik) won't.
+- `pangolin-traefik` volume is populated manually (`stacks/pangolin/traefik/{traefik_config,dynamic_config}.yml`). After every `deploy cloud pangolin`, the named volume gets emptied by the new container's empty mount. Need a one-shot after.deploy hook to repopulate from `stacks/pangolin/traefik/`. **TODO before this can be considered fully IaC.**
+- LE uses TLS-ALPN-01 (port 443, no port 80 plumbing needed). Rate limit: 5 failed authorizations per domain per hour.
+- `gerbil.base_endpoint` in `config.yml` must be the **host only** (no protocol), e.g. `tunnel-cloud.antonshubin.com` — the server constructs `${endpoint}:51820` for WireGuard, and a full URL with protocol breaks newt's URL parser. Bug in Pangolin 1.21.1.
 - 3-minute Let's Encrypt delay on first run — HTTPS cert takes a moment after first request
 - K11 has 96GB RAM unused but Cloudlab only 1.7GB free — be careful with Pangolin resource consumption
 
@@ -167,8 +208,14 @@ For targets: `POST /api/v1/org/{orgId}/resource/{resourceId}/target` with `{ sit
 
 - Worktree: `/home/spy4x/sync/code/homelab` (main, in `feat/pangolin-tunnel` branch)
 - PR #120 open: https://github.com/spy4x/homelab/pull/120
-- Files: `stacks/pangolin/compose.yml`, `stacks/pangolin/README.md`, `servers/cloud/config.json`, `servers/cloud/.env.example`
-- Latest commit `64c6647` pushed: unblocks gerbil + traefik start, exposes UI on 3002
+- Files added/modified:
+  - `stacks/pangolin/compose.yml` — UDP ports on gerbil, container rename
+  - `stacks/pangolin/traefik/{traefik_config,dynamic_config}.yml` — Traefik configs
+  - `stacks/pangolin/bootstrap.py` — idempotent API driver
+  - `stacks/traefik/dynamic/02-pangolin.yml` — main Traefik TCP+SNI passthrough
+  - `servers/cloud/.env.example` — container name
+  - `servers/cloud/config.json` — already had pangolin
+- Latest commit `6a0ebee` pushed: end-to-end working
 
 ### OpenCode session to continue
 
