@@ -1,0 +1,75 @@
+http:
+  middlewares:
+    badger:
+      plugin:
+        badger:
+          disableForwardAuth: true
+    redirect-to-https:
+      redirectScheme:
+        scheme: https
+  routers:
+    main-app-router-redirect:
+      rule: "Host(`tunnel-cloud.antonshubin.com`)"
+      service: next-service
+      entryPoints:
+        - web
+      middlewares:
+        - redirect-to-https
+        - badger
+    next-router:
+      rule: "Host(`tunnel-cloud.antonshubin.com`) && !PathPrefix(`/api/v1`)"
+      service: next-service
+      entryPoints:
+        - websecure
+      middlewares:
+        - badger
+      tls:
+        certResolver: letsencrypt
+    api-router:
+      rule: "Host(`tunnel-cloud.antonshubin.com`) && PathPrefix(`/api/v1`)"
+      service: api-service
+      entryPoints:
+        - websecure
+      middlewares:
+        - badger
+      tls:
+        certResolver: letsencrypt
+    ws-router:
+      rule: "Host(`tunnel-cloud.antonshubin.com`)"
+      service: api-service
+      entryPoints:
+        - websecure
+      middlewares:
+        - badger
+      tls:
+        certResolver: letsencrypt
+    code2-router:
+      rule: "Host(`code2.antonshubin.com`)"
+      service: next-service
+      entryPoints:
+        - websecure
+      middlewares:
+        - badger
+      tls:
+        certResolver: letsencrypt
+  services:
+    next-service:
+      loadBalancer:
+        servers:
+          - url: "http://pangolin:3002"
+    # The REST API (auth/login, newt/get-token, /org/*, /resource/* etc.)
+    # runs on the "dashboard API" listener on port 443 inside the pangolin
+    # container. Port 3001 is the INTERNAL API used by Traefik's
+    # /traefik-config provider; it's not for external clients.
+    api-service:
+      loadBalancer:
+        servers:
+          - url: "http://pangolin:443"
+tcp:
+  serversTransports:
+    pp-transport-v1:
+      proxyProtocol:
+        version: 1
+    pp-transport-v2:
+      proxyProtocol:
+        version: 2

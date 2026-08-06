@@ -58,14 +58,23 @@ services:
     cap_add:
       - NET_ADMIN
       - SYS_MODULE
+    # Expose WireGuard ports to host so remote sites (newt) can dial back.
+    # 80/443 are NOT published here — hl-traefik (main) on the host already
+    # owns 80/443, so it routes Pangolin hosts to gerbil via the proxy network.
+    ports:
+      - "51820:51820/udp"
+      - "21820:21820/udp"
     networks:
       - proxy
 
   # Traefik terminates HTTPS for resources routed through Pangolin.
   # Uses the gerbil network namespace so published ports appear on the tunnel endpoint.
+  # NOTE: container name is `hl-pangolin-traefik` (not `hl-traefik-pangolin`) so
+  # the global deploy filter `name=hl-traefik` doesn't accidentally match and
+  # remove it when deploying the main traefik stack.
   traefik:
     image: traefik:v3.7
-    container_name: ${TRAEFIK_PANGOLIN_CONTAINER_NAME:-hl-traefik-pangolin}
+    container_name: ${TRAEFIK_PANGOLIN_CONTAINER_NAME:-hl-pangolin-traefik}
     restart: unless-stopped
     network_mode: service:gerbil
     depends_on:
