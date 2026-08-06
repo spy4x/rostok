@@ -3,14 +3,15 @@ name: ${PROJECT:-pangolin}
 services:
   # Pangolin server + UI (Next.js) + SQLite DB.
   # Self-hosted identity-aware reverse proxy + WireGuard tunnel broker.
-  # Backend uses outbound WireGuard tunnels (no open inbound ports needed on agents).
   # Reference: https://github.com/fosrl/pangolin
+  # NOTE: uses named volumes (not bind mount) to avoid userns-remap permission issues
   pangolin:
     image: fosrl/pangolin:latest
     container_name: ${PANGOLIN_CONTAINER_NAME:-hl-pangolin}
     restart: unless-stopped
+    user: "0:0"
     volumes:
-      - ${VOLUMES_PATH:-${PATH_APPS}/.volumes}/pangolin/config:/app/config
+      - pangolin-config:/app/config
     environment:
       - PANGOLIN_APP_URL=${PANGOLIN_APP_URL}
     deploy:
@@ -19,11 +20,20 @@ services:
           memory: ${PANGOLIN_MEM_LIMIT:-1024M}
           cpus: ${PANGOLIN_CPU_LIMIT:-1}
     healthcheck:
-      test: ["CMD", "wget", "--spider", "-q", "http://localhost:3001/api/v1/"]
+      test: [
+        "CMD",
+        "node",
+        "-e",
+        "fetch('http://localhost:3001/api/v1/').then(r=>process.exit(r.status<500?0:1)).catch(()=>process.exit(1))",
+      ]
       interval: 30s
       timeout: 5s
       retries: 5
       start_period: 60s
+    # Expose the Next.js UI on host loopback so SSH tunnel can reach it.
+    # UI listens on 3002 inside container; bind to 127.0.0.1 only (not public).
+    ports:
+      - "127.0.0.1:3002:3002"
     networks:
       - proxy
 
@@ -34,15 +44,17 @@ services:
     image: fosrl/gerbil:latest
     container_name: ${GERBIL_CONTAINER_NAME:-hl-gerbil}
     restart: unless-stopped
+    # Don't use service_healthy: pangolin healthcheck uses `wget` (not in image)
+    # and will block forever. Wait only for container start.
     depends_on:
       pangolin:
-        condition: service_healthy
+        condition: service_started
     command:
       - --reachableAt=http://gerbil:3004
       - --generateAndSaveKeyTo=/var/config/key
       - --remoteConfig=http://pangolin:3001/api/v1/
     volumes:
-      - ${VOLUMES_PATH:-${PATH_APPS}/.volumes}/pangolin/config:/var/config
+      - pangolin-config:/var/config
     cap_add:
       - NET_ADMIN
       - SYS_MODULE
@@ -58,14 +70,17 @@ services:
     network_mode: service:gerbil
     depends_on:
       pangolin:
-        condition: service_healthy
+        condition: service_started
     command:
       - --configFile=/etc/traefik/traefik_config.yml
     volumes:
-      - ${VOLUMES_PATH:-${PATH_APPS}/.volumes}/pangolin/config/traefik:/etc/traefik:ro
-      - ${VOLUMES_PATH:-${PATH_APPS}/.volumes}/pangolin/config/letsencrypt:/letsencrypt
-    networks:
-      - proxy
+      - pangolin-traefik:/etc/traefik:ro
+      - pangolin-letsencrypt:/letsencrypt
+
+volumes:
+  pangolin-config:
+  pangolin-traefik:
+  pangolin-letsencrypt:
 
 networks:
   proxy:
