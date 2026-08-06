@@ -1,6 +1,6 @@
 # Pangolin Tunnel Setup — K11 ↔ Cloudlab
 
-## Status: 70% done, stuck on UI-required steps
+## Status: 85% done — SSH tunnel to UI works (2026-08-06)
 
 ### What's been done (all IaC, committed to branch `feat/pangolin-tunnel`)
 
@@ -13,7 +13,9 @@
    - Stack at `stacks/pangolin/compose.yml` (uses **named volumes** `pangolin-config`, `pangolin-traefik`, `pangolin-letsencrypt` — NOT bind mounts, due to userns-remap on cloudlab)
    - Runs: pangolin server + gerbil tunnel client + traefik (in gerbil's netns for SSL)
    - Memory: ~500MB. Cloudlab 4GB total, 1.9GB free after deploy.
-   - Healthcheck is BROKEN (uses `wget` not in image). Container shows "unhealthy" but servers actually work.
+   - **Healthcheck fixed** (2026-08-06): was `wget` (not in image) → switched to `node -e` one-liner that `fetch`es `/api/v1/` on 3001. Now actually passes.
+   - **`depends_on` fixed** (2026-08-06): all dependents now use `service_started` instead of `service_healthy`. The broken healthcheck had left `hl-gerbil` and `hl-traefik-pangolin` stuck in `Created` state forever.
+   - **Port 3002 published** (2026-08-06): `127.0.0.1:3002:3002` on `hl-pangolin`. SSH tunnel now has a target.
    - Deployed via `deno task deploy cloud pangolin` from local main worktree.
 
 3. **Pangolin config** (in `pangolin_pangolin-config` volume at `/app/config/config.yml` on cloudlab):
@@ -136,10 +138,11 @@ For targets: `POST /api/v1/org/{orgId}/resource/{resourceId}/target` with `{ sit
 
 ### Pangolin container behavior notes
 
-- Healthcheck uses `wget` which is NOT in the image → container always shows "unhealthy" but services work
+- Healthcheck now uses `node -e` fetch (fixed 2026-08-06); should report healthy when API up
 - To restart cleanly: `cd ~/cloudlab/apps && docker compose -p pangolin restart pangolin`
 - To view logs: `docker logs hl-pangolin` (most recent events)
 - To check API health: `curl -k -H "x-csrf-token: x-csrf-protection" https://tunnel-cloud.antonshubin.com/api/v1/auth/initial-setup-complete`
+- To SSH tunnel UI: `ssh -f -N -L 3002:127.0.0.1:3002 cloudlab` → open http://127.0.0.1:3002
 
 ### Pangolin API quirks learned
 
@@ -156,7 +159,7 @@ For targets: `POST /api/v1/org/{orgId}/resource/{resourceId}/target` with `{ sit
 ### Issues to watch
 
 - Resource FQDN is wrong (code2.code2.antonshubin.com instead of code2.antonshubin.com) — created with subdomain="code2" inside domain "code2" → nested. Fix: delete + recreate OR change subdomain to something else (e.g., "opencode" inside domain "code2" would give "opencode.code2.antonshubin.com")
-- Healthcheck broken (cosmetic) — could fix by changing test to use node or curl, but container works
+- `pangolin-traefik` volume is EMPTY — `hl-traefik-pangolin` is running but `/etc/traefik/traefik_config.yml` doesn't exist. Traefik will fail silently. Need to populate from official Pangolin repo (https://github.com/fosrl/pangolin/tree/main/config/traefik). Until then, the SSH tunnel UI works but actual resource routing (via Traefik) won't.
 - 3-minute Let's Encrypt delay on first run — HTTPS cert takes a moment after first request
 - K11 has 96GB RAM unused but Cloudlab only 1.7GB free — be careful with Pangolin resource consumption
 
@@ -165,7 +168,7 @@ For targets: `POST /api/v1/org/{orgId}/resource/{resourceId}/target` with `{ sit
 - Worktree: `/home/spy4x/sync/code/homelab` (main, in `feat/pangolin-tunnel` branch)
 - PR #120 open: https://github.com/spy4x/homelab/pull/120
 - Files: `stacks/pangolin/compose.yml`, `stacks/pangolin/README.md`, `servers/cloud/config.json`, `servers/cloud/.env.example`
-- `stacks/pangolin/compose.yml` has uncommitted fix (use named volumes, `user: "0:0"`, removed Traefik `networks:`)
+- Latest commit `64c6647` pushed: unblocks gerbil + traefik start, exposes UI on 3002
 
 ### OpenCode session to continue
 
