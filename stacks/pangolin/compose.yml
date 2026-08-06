@@ -30,10 +30,6 @@ services:
       timeout: 5s
       retries: 5
       start_period: 60s
-    # Expose the Next.js UI on host loopback so SSH tunnel can reach it.
-    # UI listens on 3002 inside container; bind to 127.0.0.1 only (not public).
-    ports:
-      - "127.0.0.1:3002:3002"
     networks:
       - proxy
 
