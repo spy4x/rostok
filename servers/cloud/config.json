@@ -1,17 +1,47 @@
 {
   "stacks": [
-    { "name": "traefik" },
-    { "name": "watchtower" },
-    { "name": "syncthing" },
-    { "name": "gatus", "watchFilesAndRestartIfChanged": ["configs/gatus.yml"] },
-    { "name": "ntfy" },
-    { "name": "librespeed" },
-    { "name": "healthchecks" },
-    { "name": "stalwart" },
-    { "name": "bulwark" },
-    { "name": "vaultwarden" },
-    { "name": "umami" },
-    { "name": "caldiy" },
+    {
+      "name": "traefik"
+    },
+    {
+      "name": "watchtower"
+    },
+    {
+      "name": "syncthing"
+    },
+    {
+      "name": "gatus",
+      "watchFilesAndRestartIfChanged": [
+        "configs/gatus.yml"
+      ]
+    },
+    {
+      "name": "ntfy"
+    },
+    {
+      "name": "pangolin"
+    },
+    {
+      "name": "librespeed"
+    },
+    {
+      "name": "healthchecks"
+    },
+    {
+      "name": "stalwart"
+    },
+    {
+      "name": "bulwark"
+    },
+    {
+      "name": "vaultwarden"
+    },
+    {
+      "name": "umami"
+    },
+    {
+      "name": "caldiy"
+    },
     {
       "name": "nginx",
       "deployAs": "neatsoft-landing",
@@ -20,6 +50,9 @@
         "NGINX_CONTAINER_NAME": "neatsoft-landing",
         "NGINX_ROUTER_RULE": "Host(`neatsoft.dev`) || Host(`www.neatsoft.dev`)"
       }
+    },
+    {
+      "name": "pangolin"
     }
   ]
 }

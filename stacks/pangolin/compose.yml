@@ -1,0 +1,76 @@
+name: ${PROJECT:-pangolin}
+
+services:
+  # Pangolin server + UI (Next.js) + SQLite DB.
+  # Self-hosted identity-aware reverse proxy + WireGuard tunnel broker.
+  # Backend uses outbound WireGuard tunnels (no open inbound ports needed on agents).
+  # Reference: https://github.com/fosrl/pangolin
+  pangolin:
+    image: fosrl/pangolin:latest
+    container_name: ${PANGOLIN_CONTAINER_NAME:-hl-pangolin}
+    restart: unless-stopped
+    volumes:
+      - ${VOLUMES_PATH:-${PATH_APPS}/.volumes}/pangolin/config:/app/config
+    environment:
+      - PANGOLIN_APP_URL=${PANGOLIN_APP_URL}
+    deploy:
+      resources:
+        limits:
+          memory: ${PANGOLIN_MEM_LIMIT:-1024M}
+          cpus: ${PANGOLIN_CPU_LIMIT:-1}
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:3001/api/v1/"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
+    networks:
+      - proxy
+
+  # Gerbil = WireGuard tunnel client that connects back to Pangolin server.
+  # Required on every device that wants to expose a service via Pangolin.
+  # Runs alongside Pangolin server for admin/UI access; on remote devices for service exposure.
+  gerbil:
+    image: fosrl/gerbil:latest
+    container_name: ${GERBIL_CONTAINER_NAME:-hl-gerbil}
+    restart: unless-stopped
+    depends_on:
+      pangolin:
+        condition: service_healthy
+    command:
+      - --reachableAt=http://gerbil:3004
+      - --generateAndSaveKeyTo=/var/config/key
+      - --remoteConfig=http://pangolin:3001/api/v1/
+    volumes:
+      - ${VOLUMES_PATH:-${PATH_APPS}/.volumes}/pangolin/config:/var/config
+    cap_add:
+      - NET_ADMIN
+      - SYS_MODULE
+    networks:
+      - proxy
+
+  # Traefik terminates HTTPS for resources routed through Pangolin.
+  # Uses the gerbil network namespace so published ports appear on the tunnel endpoint.
+  traefik:
+    image: traefik:v3.7
+    container_name: ${TRAEFIK_PANGOLIN_CONTAINER_NAME:-hl-traefik-pangolin}
+    restart: unless-stopped
+    network_mode: service:gerbil
+    depends_on:
+      pangolin:
+        condition: service_healthy
+    command:
+      - --configFile=/etc/traefik/traefik_config.yml
+    volumes:
+      - ${VOLUMES_PATH:-${PATH_APPS}/.volumes}/pangolin/config/traefik:/etc/traefik:ro
+      - ${VOLUMES_PATH:-${PATH_APPS}/.volumes}/pangolin/config/letsencrypt:/letsencrypt
+    networks:
+      - proxy
+
+networks:
+  proxy:
+    external: true
+    name: ${NETWORK:-proxy}
+  default:
+    driver: bridge
+    name: ${NETWORK:-proxy}
