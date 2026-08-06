@@ -43,15 +43,10 @@ http:
         - badger
       tls:
         certResolver: letsencrypt
-    code2-router:
-      rule: "Host(`code2.antonshubin.com`)"
-      service: next-service
-      entryPoints:
-        - websecure
-      middlewares:
-        - badger
-      tls:
-        certResolver: letsencrypt
+    # code2-router is intentionally omitted here: Pangolin's HTTP provider
+    # adds "2-opencode-web-router" dynamically (priority 100) with the correct
+    # badger middleware and the target URL via the WireGuard tunnel.
+    # Defining it here too would cause a router conflict (500).
   services:
     next-service:
       loadBalancer:
