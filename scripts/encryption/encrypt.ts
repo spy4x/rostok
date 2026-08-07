@@ -48,13 +48,15 @@ async function main() {
       // Build old plaintext dict + old raw lines if .env.age exists
       let oldPlain: Record<string, string> = {}
       const oldLines: Record<string, string> = {} // key → raw line from .env.age
-      const oldComments: string[] = [] // non-key lines to preserve
+      const oldRawLines: string[] = [] // ALL lines (key + comment + blank) for orphan-comment detection
+      const oldComments: string[] = [] // non-key lines for orphan-comment detection
 
       if (await exists(agePath)) {
         const oldContent = Deno.readTextFileSync(agePath)
         const oldEntries = parseEnvFile(oldContent)
         oldPlain = await parseEnvDict(oldEntries)
         for (const e of oldEntries) {
+          oldRawLines.push(e.raw)
           if (e.key) {
             oldLines[e.key] = e.raw
           } else {
@@ -92,13 +94,35 @@ async function main() {
 
       // Keys removed from .env but present in .env.age → drop (not included)
 
-      // Add any remaining comments from old .env.age that weren't in new .env
-      // Only if they reference keys we've kept
+      // Add remaining comments from old .env.age — only if their keys still exist.
+      // Drop orphan region comments from deleted regions (e.g. removed #region/#endregion pairs).
       for (const comment of oldComments) {
-        // Don't duplicate comments already in output
-        if (!outputLines.includes(comment)) {
-          outputLines.push(comment)
+        if (outputLines.includes(comment)) continue
+        // Find this comment's position in the full old-line sequence
+        const idx = oldRawLines.indexOf(comment)
+        if (idx === -1) continue
+        // Look for the next KEY line after this comment in the old file
+        let nextKey: string | undefined
+        for (let j = idx + 1; j < oldRawLines.length; j++) {
+          const next = oldRawLines[j]
+          const trimmed = next.trim()
+          if (!trimmed || trimmed.startsWith("#")) continue
+          const eqIdx = next.indexOf("=")
+          if (eqIdx > 0) {
+            nextKey = next.slice(0, eqIdx).trim()
+            break
+          }
         }
+        // If no following key, this is a trailing orphan — skip unless it's blank (preserve spacing)
+        if (!nextKey) {
+          if (comment.trim() === "") {
+            outputLines.push(comment)
+          }
+          continue
+        }
+        // If following key was removed, drop this orphan comment
+        if (!seen.has(nextKey)) continue
+        outputLines.push(comment)
       }
 
       // Write

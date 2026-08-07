@@ -642,7 +642,7 @@ pipelines*. Document it. Add `seccomp`/`apparmor` profiles if you're paranoid.
 
 `stacks/caldav-mcp/Dockerfile` (19 lines), `stacks/upwork-triage/Dockerfile`
 (17 lines), `stacks/google-maps-mcp/Dockerfile` (29 lines),
-`stacks/monica-mcp/Dockerfile` (42 lines), `stacks/playwright/Dockerfile.mcp-proxy`
+`stacks/playwright/Dockerfile.mcp-proxy`
 (not checked yet). Add `HEALTHCHECK NONE` if you really don't want one, or a
 real check (curl/wget to `/health`).
 
