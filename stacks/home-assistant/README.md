@@ -110,6 +110,60 @@ Two integration options inside Home Assistant:
   Common cause: wrong device path (always use the `/dev/serial/by-id/...`
   symlink, never the raw `/dev/ttyUSB*` node).
 
+### Restore from Restic backup
+
+The `home-assistant` Restic repo lives at
+`~/sync/backups/home-assistant/` (per `.env.root` `BACKUP_PATHS`). Snapshots
+are taken on the production `home` server; this restores them onto the local
+mini-pc instance.
+
+```bash
+# From the repo root, with .env.root decrypted (deno task env:decrypt):
+BACKUPS_PASSWORD=$(grep ^BACKUPS_PASSWORD= .env.root | cut -d= -f2)
+TMPDIR=/tmp/ha-restore-$$
+mkdir -p "$TMPDIR"
+RESTIC_PASSWORD="$BACKUPS_PASSWORD" restic -r ~/sync/backups/home-assistant snapshots --json \
+  | python3 -c "import json,sys; [print(f\"{s['short_id']}  {s['time']}\") for s in sorted(json.load(sys.stdin), key=lambda x:x['time'], reverse=True)]"
+
+# Pick a snapshot id (e.g. 05dc0372), then:
+RESTIC_PASSWORD="$BACKUPS_PASSWORD" restic -r ~/sync/backups/home-assistant restore <SNAP> --target "$TMPDIR"
+
+# Stop the container, wipe the volume, flatten the snapshot into it.
+docker compose -f stacks/home-assistant/compose.local.yml stop
+docker run --rm -v "$TMPDIR:/src:ro" -v "$(pwd)/stacks/home-assistant/.volumes:/dst" \
+  --user root --privileged alpine:latest sh -c "
+    rm -rf /dst/home-assistant
+    mkdir -p /dst/home-assistant
+    cp -a /src/home/spy4x/ssd-2tb/apps/.volumes/home-assistant/. /dst/home-assistant/
+    chmod -R a+rX /dst/home-assistant
+    rm -f /dst/home-assistant/.ha_run.lock
+  "
+rm -rf "$TMPDIR"
+
+docker compose -f stacks/home-assistant/compose.local.yml up -d
+open http://localhost:8123
+```
+
+Why the `--privileged` alpine and not a plain `cp`: on Fedora the bind-mount
+SELinux context on `.volumes/` denies rootless-container root from writing
+into pre-existing dirs. `--privileged` lifts that. The container is
+short-lived and only mounts the two paths above — no host exposure beyond
+what the `cp` does.
+
+Things to expect on first boot after a restore:
+
+- A `Recorder` warning: `sqlite3 database ... was shutdown cleanly` — normal,
+  the DB was copied mid-flight. HA will repair on first write.
+- Integrations that point at external hosts from the old network (e.g.
+  `aqs.antonshubin.com`) will log 404s until you fix or remove them.
+- Bluetooth adapter logs `Missing NET_ADMIN/NET_RAW capabilities` — cosmetic,
+  only affects BT recovery. Add `cap_add: [NET_ADMIN, NET_RAW]` to
+  `compose.local.yml` if you actually need BT.
+- Zigbee device list will appear once ZHA finishes initialising (≈30 s).
+  If the previous dongle was different hardware, devices will show as
+  unreachable and need re-pairing — ZHA's `zigbee.db` stores per-radio
+  network keys.
+
 ## Resources
 
 - [Home Assistant Documentation](https://www.home-assistant.io/docs/)
