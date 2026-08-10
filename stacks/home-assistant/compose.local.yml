@@ -1,0 +1,43 @@
+# Local-only Home Assistant on a mini PC / dev machine.
+#
+# Drop-in alternative to ../compose.yml — no Traefik, no proxy network, no
+# Authelia. Bound to http://localhost:8123 only. Intended for spinning up
+# Home Assistant on a laptop / mini PC that has a Zigbee USB dongle
+# physically attached, so you can pair and test Zigbee devices before
+# migrating the stack to the production "home" server.
+#
+# Usage:
+#   docker compose -f compose.local.yml up -d
+#   open http://localhost:8123
+#
+# Storage:
+#   ./.volumes/home-assistant (gitignored) — HA config + state.
+
+services:
+  home-assistant:
+    container_name: hl-home-assistant-local
+    image: ghcr.io/home-assistant/home-assistant:stable
+    # host network is recommended for local-only HA — mDNS / SSDP / DHCP
+    # discovery of IoT devices breaks inside bridge networks.
+    network_mode: host
+    volumes:
+      - ./.volumes/home-assistant:/config:z
+      - /etc/localtime:/etc/localtime:ro,z
+    devices:
+      # Sonoff Zigbee 3.0 USB Dongle Plus V2 (TI CC2652P).
+      # /dev/serial/by-id symlink survives reboots and USB re-enumeration,
+      # unlike /dev/ttyUSB0 which can shift to ttyUSB1 when other serial
+      # devices are plugged in (we have a CH340 on ttyUSB1 as well).
+      # If your device path differs, run `ls -l /dev/serial/by-id/` and
+      # update the path below.
+      - /dev/serial/by-id/usb-Itead_Sonoff_Zigbee_3.0_USB_Dongle_Plus_V2_beaf822a4a4fef11955648b3174bec31-if00-port0:/dev/ttyUSB0
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 2048M
+          cpus: "2"
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      - TZ=${TZ:-Europe/Berlin}
