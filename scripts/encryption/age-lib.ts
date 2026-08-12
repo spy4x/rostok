@@ -238,10 +238,66 @@ async function walkEnvDir(dir: string, results: string[]) {
 }
 
 /**
+ * Find all *.age files matching the env naming pattern.
+ * Matches .env.age, .env.prod.age, .env.root.age, servers/subdir/.env.age, etc.
+ * Skips .example, .sops-backup, and other non-env .age files.
+ */
+export async function findAgeFiles(): Promise<string[]> {
+  const ageFiles: string[] = []
+  for await (const entry of Deno.readDir(getRootDir())) {
+    const path = join(getRootDir(), entry.name)
+    if (entry.isDirectory) {
+      if (entry.name.startsWith(".") || entry.name === "node_modules") continue
+      await walkAgeDir(path, ageFiles)
+    } else if (isEnvAgeFile(entry.name)) {
+      ageFiles.push(path)
+    }
+  }
+  return ageFiles.sort()
+}
+
+async function walkAgeDir(dir: string, results: string[]) {
+  for await (const entry of Deno.readDir(dir)) {
+    const path = join(dir, entry.name)
+    if (entry.isDirectory) {
+      if (entry.name.startsWith(".") || entry.name === "node_modules") continue
+      await walkAgeDir(path, results)
+    } else if (
+      isEnvAgeFile(entry.name) &&
+      !path.includes(".git") &&
+      !path.includes("node_modules")
+    ) {
+      results.push(path)
+    }
+  }
+}
+
+/**
+ * Check if a filename is an env .age file.
+ * Matches .env.age, .env.prod.age, .env.root.age, etc.
+ * Skips .env.age.example, .env.sops-backup.age, etc.
+ */
+function isEnvAgeFile(name: string): boolean {
+  if (!name.endsWith(".age")) return false
+  if (name.endsWith(".sops-backup.age")) return false
+  if (name.includes(".example")) return false
+  // Must contain .env (or start with .env) — covers .env.age, .env.prod.age, .env.root.age
+  return name.includes(".env")
+}
+
+/**
  * Find corresponding .env.age file for a .env file
  */
 export function getEnvAgePath(envPath: string): string {
   return envPath + ".age"
+}
+
+/**
+ * Strip .age suffix to get plaintext path from age path.
+ * .env.age -> .env, .env.prod.age -> .env.prod
+ */
+export function getEnvPathFromAge(agePath: string): string {
+  return agePath.replace(/\.age$/, "")
 }
 
 /**
