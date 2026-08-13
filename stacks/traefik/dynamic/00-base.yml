@@ -23,11 +23,13 @@ http:
           interest-cohort=(), browsing-topics=(), accelerometer=(),
           gyroscope=(), magnetometer=()
         customResponseHeaders:
-          Cross-Origin-Opener-Policy: same-origin
-          Cross-Origin-Resource-Policy: same-site
+          Access-Control-Allow-Origin: "*"
           # Cross-Origin-Embedder-Policy is NOT in security-headers —
           # it breaks cross-origin JMAP (Bulwark → Stalwart on different
           # subdomains). Add to individual router middlewares if needed.
+          # Cross-Origin-Opener-Policy / Cross-Origin-Resource-Policy are
+          # intentionally NOT in security-headers — they block cross-origin
+          # image/iframe loads (e.g. HomeAssistant embedding kiosk photos).
           # X-Robots-Tag is intentionally NOT in security-headers. It lives in
           # its own middleware (robots-deny) so public sites (antonshubin,
           # neatsoft) can opt out by not including it in their router labels.
