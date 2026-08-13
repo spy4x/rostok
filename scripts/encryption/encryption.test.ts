@@ -1,5 +1,5 @@
 import { assertEquals } from "@std/assert"
-import { getRelativePath } from "./age-lib.ts"
+import { getEnvPathFromAge, getRelativePath } from "./age-lib.ts"
 
 Deno.test({
   name: "getRelativePath removes cwd prefix from paths",
@@ -10,5 +10,15 @@ Deno.test({
     const result = getRelativePath(testPath)
     // Should strip cwd prefix
     assertEquals(result, "some/file.txt")
+  },
+})
+
+Deno.test({
+  name: "getEnvPathFromAge strips .age suffix",
+  fn() {
+    assertEquals(getEnvPathFromAge("/x/.env.age"), "/x/.env")
+    assertEquals(getEnvPathFromAge("/x/.env.prod.age"), "/x/.env.prod")
+    assertEquals(getEnvPathFromAge("/x/.env.root.age"), "/x/.env.root")
+    assertEquals(getEnvPathFromAge("/x/servers/home/.env.age"), "/x/servers/home/.env")
   },
 })
