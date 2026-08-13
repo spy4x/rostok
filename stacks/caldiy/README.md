@@ -15,11 +15,15 @@
 
 ## Environment Variables
 
-| Variable                 | Description                                               |
-| ------------------------ | --------------------------------------------------------- |
-| `CALDIY_DB_PASSWORD`     | PostgreSQL password                                       |
-| `CALDIY_NEXTAUTH_SECRET` | NextAuth secret (generate with `openssl rand -base64 32`) |
-| `CALDIY_VERSION`         | Image tag (default: `latest`)                             |
+| Variable                 | Description                                                                                                                         |
+| ------------------------ | ----------------------------------------------------------------------------------------------------------------------------------- |
+| `CALDIY_DB_PASSWORD`     | PostgreSQL password. **URL-safe only** (A-Z a-z 0-9) — embedded in `DATABASE_URL`. `tr -dc 'A-Za-z0-9' </dev/urandom \| head -c 40` |
+| `CALDIY_NEXTAUTH_SECRET` | NextAuth session secret. `openssl rand -hex 32`                                                                                     |
+| `CALDIY_ENCRYPTION_KEY`  | Cal.com credential encryption key. `openssl rand -hex 32`                                                                           |
+| `CALDIY_CRON_API_KEY`    | Shared secret for cron endpoints (`scheduleEmailReminders`, etc.). `openssl rand -hex 24`                                           |
+| `CALDIY_VERSION`         | Image tag (default: `latest`)                                                                                                       |
+
+**All five keys are required.** Container exits with `Please set NEXTAUTH_SECRET` if any is empty.
 
 ## Notes
 
