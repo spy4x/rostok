@@ -40,7 +40,6 @@ Domain → access → auth method → robots-deny — audited per deployed stack
 | monica (API) | crm.* | None (Bearer token) | — | API router bypasses Authelia |
 | nginx (dash) | dash.* | **Public**, SEO-allowed | No | Dashboard landing page |
 | ntfy | ntfy-home.* | Own auth | Yes | Notifications, deny-all default |
-| offerlens | offer-lens.* | Own auth | No | Job offer analyzer |
 | ollama | ollama.* | Authelia SSO | Yes | LLM inference |
 | omni-tools | tools.* | **Public** | Yes | Client-side browser tools |
 | open-webui | ai.* | Own auth | Yes | AI chat, signup disabled |
@@ -68,7 +67,6 @@ Domain → access → auth method → robots-deny — audited per deployed stack
 | email-mcp | MCP server — email access | Internal Docker DNS |
 | github-mcp | MCP server — GitHub API | Internal Docker DNS |
 | google-maps-mcp | MCP server — Maps API | Internal Docker DNS |
-| monica-mcp | MCP server — Monica CRM | Internal Docker DNS |
 | playwright | Playwright browser automation | Internal |
 | victoria-metrics | VM, vmagent, vmlogs, node-exporter, cadvisor, promtail | All internal, no Traefik |
 | watchtower | Auto-updater | No web UI |
@@ -112,14 +110,14 @@ Domain → access → auth method → robots-deny — audited per deployed stack
 |---|---|---|
 | Authelia SSO (2FA) | 8 | akaunting, grafana, metube, monica, ollama, opencode-web, transmission, traggo |
 | Basic auth (proxy) | 2 | traefik (dashboard-auth@file) |
-| Own auth (no proxy) | 19 | adguard, audiobookshelf, bulwark, caldiy, docker-registry, filebrowser, gitea, healthchecks, immich, jellyfin, ntfy, offerlens, open-webui, paperless-ngx, stalwart, syncthing, umami, usememos, vaultwarden, woodpecker |
+| Own auth (no proxy) | 18 | adguard, audiobookshelf, bulwark, caldiy, docker-registry, filebrowser, gitea, healthchecks, immich, jellyfin, ntfy, open-webui, stalwart, syncthing, umami, usememos, vaultwarden, woodpecker |
 | Public (no auth) | 10 | gatus (both), librespeed (all), mirotalk, omni-tools, piped, reitti, searxng, usememos (GUI), zond |
 | Public + SEO | 2 | dash landing page, neatsoft landing page |
-| Internal (no Traefik) | 10 | caldav-mcp, docker-sock-proxy, email-mcp, github-mcp, google-maps-mcp, monica-mcp, playwright, victoria-metrics, watchtower, wireguard |
+| Internal (no Traefik) | 9 | caldav-mcp, docker-sock-proxy, email-mcp, github-mcp, google-maps-mcp, playwright, victoria-metrics, watchtower, wireguard |
 
 ### Key risks
 
-1. **robot-deny missing** on immich (main), offerlens, paperless-ngx, traefik, zond
+1. **robot-deny missing** on immich (main), paperless-ngx, traefik, zond
 2. **No proxy auth** on docker-registry (should be behind at least basic auth)
 3. **Public services** piped, searxng, mirotalk, omni-tools are accessible worldwide
 4. **Authelia migration incomplete** per [auth.md](auth.md) — metube, ollama, traggo,

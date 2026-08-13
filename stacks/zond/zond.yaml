@@ -22,8 +22,6 @@ targets:
     url: http://hl-gatus:8080/
   - name: gitea
     url: http://hl-gitea:3000/
-  - name: grafana
-    url: http://hl-grafana:3000/
   - name: immich
     url: http://hl-immich-server:2283/
   - name: jellyfin
@@ -36,8 +34,6 @@ targets:
     url: http://hl-metube:8081/
   - name: mirotalk
     url: http://hl-mirotalk:3000/
-  - name: monica
-    url: http://hl-monica:80/
   - name: ntfy
     url: http://hl-ntfy:80/
   - name: ollama
@@ -46,12 +42,8 @@ targets:
     url: http://hl-open-webui:8080/
   - name: opencode-web
     url: http://172.23.0.1:8002/
-  - name: paperless
-    url: http://hl-paperless:8000/
   - name: piped
     url: http://hl-piped-frontend:80/
-  - name: reitti
-    url: http://hl-reitti:8080/
   - name: searxng
     url: http://hl-searxng:8080/
   - name: syncthing
