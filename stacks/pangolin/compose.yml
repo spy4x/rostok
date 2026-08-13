@@ -30,6 +30,11 @@ services:
       timeout: 5s
       retries: 5
       start_period: 60s
+    # Expose the Next.js UI on host loopback for SSH-tunnel access.
+    # SSH: `ssh -f -N -L 3002:172.18.0.18:3002 cloudlab` (or just use this 127.0.0.1:3002).
+    # Public reachability is via main hl-traefik TCP+SNI passthrough (stacks/traefik/dynamic/02-pangolin.yml).
+    ports:
+      - "127.0.0.1:3002:3002"
     networks:
       - proxy
 
