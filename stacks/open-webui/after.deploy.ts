@@ -63,17 +63,19 @@ success("✓ script copied")
 // -e so the script reads the freshly-deployed values, not whatever
 // stale values OWUI might have in its own env block.
 log(`Running ${SCRIPT_NAME} inside ${CONTAINER}...`)
-const cfgs = Deno.env.get("OPENAI_API_CONFIGS") ?? ""
 
+// Pass OPENAI_API_KEYS and OPENAI_API_BASE_URLS via -e (so the .env
+// value wins, not any stale env from a prior container image). Do NOT
+// pass OPENAI_API_CONFIGS: that var is hardcoded in compose.yml
+// (servers/home/.env keeps it empty as a placeholder). The script will
+// inherit OPENAI_API_CONFIGS from the container's own env, where the
+// compose value lives.
 const dockerArgs = [
   "ssh",
   SSH,
-  // Chain docker exec -e to forward env, then run the script. The
-  // script reads its own env, no shell expansion needed.
   `docker exec -i` +
   ` -e OPENAI_API_KEYS=${shellQuote(OPENAI_API_KEYS)}` +
   ` -e OPENAI_API_BASE_URLS=${shellQuote(OPENAI_API_BASE_URLS)}` +
-  ` -e OPENAI_API_CONFIGS=${shellQuote(cfgs)}` +
   ` ${CONTAINER} python3 ${REMOTE_SCRIPT_TMP}`,
 ]
 const runResult = await runCommand(dockerArgs)
