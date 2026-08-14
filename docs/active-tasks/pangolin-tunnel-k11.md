@@ -1,13 +1,15 @@
 # Pangolin Tunnel Setup — K11 ↔ Cloudlab
 
-## Status: FRESH START — UI path from here (2026-08-06)
+## Status: DONE (2026-08-14)
 
-The IaC-driven path hit version-skew (newt v1.15.0 ↔ Pangolin 1.21.1 protocol
-mismatch) + kernel-WG handshake debugging that the UI would have surfaced
-immediately. Reverted to a clean Pangolin deployment — the user is finishing
-manually via the dashboard.
+Deployed on cloudlab (`hl-pangolin`, `hl-gerbil`, `hl-pangolin-traefik`); UI at
+`https://tunnel-cloud.antonshubin.com`; `code2` and `home` routed through Newt
+on K11. IaC lives in `stacks/pangolin/` + `stacks/traefik/dynamic/02-pangolin.yml`.
 
-### IaC cleaned up
+The "FRESH START" notes below are historical (2026-08-06) — they describe an
+intermediate state that was reverted before this PR landed.
+
+### IaC cleaned up (historical, 2026-08-06)
 
 Removed from the repo:
 - `stacks/pangolin/bootstrap.py` (API driver; UI does this in 4 clicks)

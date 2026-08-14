@@ -1,7 +1,7 @@
 # servers/portable
 
-The mini-PC. Travels with the user. Spore = ?
+The mini-PC (K11) that travels with the user.
 
-**SSH target:** to be configured (ask user for IP/hostname).
+**SSH target:** not yet in any `servers/*/.env` — ask user for hostname/IP before deploy.
 
 **Hosts currently using this server's records:** `home.antonshubin.com` (via Pangolin tunnel).
