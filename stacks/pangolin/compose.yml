@@ -6,7 +6,7 @@ services:
   # Reference: https://github.com/fosrl/pangolin
   # NOTE: uses named volumes (not bind mount) to avoid userns-remap permission issues
   pangolin:
-    image: fosrl/pangolin:latest
+    image: fosrl/pangolin:1.21.1
     container_name: ${PANGOLIN_CONTAINER_NAME:-hl-pangolin}
     restart: unless-stopped
     user: "0:0"
@@ -39,14 +39,12 @@ services:
       - proxy
 
   # Gerbil = WireGuard tunnel client that connects back to Pangolin server.
-  # Required on every device that wants to expose a service via Pangolin.
-  # Runs alongside Pangolin server for admin/UI access; on remote devices for service exposure.
+  # Runs beside Pangolin as its server-side tunnel and relay endpoint.
   gerbil:
-    image: fosrl/gerbil:latest
+    image: fosrl/gerbil:1.4.3
     container_name: ${GERBIL_CONTAINER_NAME:-hl-gerbil}
     restart: unless-stopped
-    # Don't use service_healthy: pangolin healthcheck uses `wget` (not in image)
-    # and will block forever. Wait only for container start.
+    # Wait only for container start; API readiness is checked independently.
     depends_on:
       pangolin:
         condition: service_started
@@ -58,7 +56,6 @@ services:
       - pangolin-config:/var/config
     cap_add:
       - NET_ADMIN
-      - SYS_MODULE
     # Expose WireGuard ports to host so remote sites (newt) can dial back.
     # 80/443 are NOT published here — hl-traefik (main) on the host already
     # owns 80/443, so it routes Pangolin hosts to gerbil via the proxy network.
@@ -74,7 +71,7 @@ services:
   # the global deploy filter `name=hl-traefik` doesn't accidentally match and
   # remove it when deploying the main traefik stack.
   traefik:
-    image: traefik:v3.7
+    image: traefik:v3.7.6
     container_name: ${TRAEFIK_PANGOLIN_CONTAINER_NAME:-hl-pangolin-traefik}
     restart: unless-stopped
     network_mode: service:gerbil
@@ -84,18 +81,14 @@ services:
     command:
       - --configFile=/etc/traefik/traefik_config.yml
     volumes:
-      - pangolin-traefik:/etc/traefik:ro
+      - ./traefik:/etc/traefik:ro,z
       - pangolin-letsencrypt:/letsencrypt
 
 volumes:
   pangolin-config:
-  pangolin-traefik:
   pangolin-letsencrypt:
 
 networks:
   proxy:
     external: true
-    name: ${NETWORK:-proxy}
-  default:
-    driver: bridge
     name: ${NETWORK:-proxy}

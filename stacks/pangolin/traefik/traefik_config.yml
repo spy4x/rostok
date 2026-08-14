@@ -1,6 +1,6 @@
 api:
-  insecure: true
-  dashboard: true
+  insecure: false
+  dashboard: false
 providers:
   http:
     endpoint: "http://pangolin:3001/api/v1/traefik-config"

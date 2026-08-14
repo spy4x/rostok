@@ -15,7 +15,7 @@ Traefik (HTTPS termination, ACME)
    ↓
 Pangolin server (resource lookup)
    ↓ WireGuard tunnel
-Gerbil client (on target device)
+Newt client (on target device)
    ↓ localhost
 Service (e.g., opencode-web:8002)
 ```
@@ -23,7 +23,8 @@ Service (e.g., opencode-web:8002)
 ## Components
 
 - **pangolin** — server + UI (Next.js) + SQLite DB
-- **gerbil** — WireGuard tunnel client (runs locally + on every target device)
+- **gerbil** — server-side WireGuard tunnel and relay
+- **newt** — remote-site client that exposes target services
 - **traefik** — HTTPS termination + ACME (runs in gerbil's network namespace)
 
 ## Resource cost (cloudlab, 4GB server)
@@ -37,22 +38,16 @@ Service (e.g., opencode-web:8002)
 
 1. Deploy: `deno task deploy cloud pangolin`
 2. Wait for container healthcheck (~60s)
-3. Access UI: `http://<server-ip>:3001` (or via Traefik at `https://code2.antonshubin.com` after Pangolin routes it)
-4. Initial setup via UI:
+3. Access UI through an SSH tunnel to `127.0.0.1:3002` or at
+   `https://tunnel-cloud.antonshubin.com`.
+4. Complete setup via UI:
    - Create admin user
    - Create a Resource (e.g., `code2.antonshubin.com` → protocol HTTP, target `http://localhost:8002`)
-   - Pangolin generates a Gerbil config (org_id, node_id, secret)
-5. On the target device (e.g., K11), run Gerbil with the config:
-   ```bash
-   docker run -d --name gerbil \
-     --network host --cap-add NET_ADMIN --cap-add SYS_MODULE \
-     -v /var/lib/gerbil:/var/config \
-     fosrl/gerbil:latest \
-     --remoteConfig=https://code2.antonshubin.com/api/v1/ \
-     --authKey=<secret-from-pangolin-ui> \
-     --generateAndSaveKeyTo=/var/config/key
-   ```
-6. Open `https://code2.antonshubin.com` from any browser → connects via tunnel to target service.
+   - Create a Newt site and copy its ID and secret.
+5. Install pinned Newt binary and service on target device. Follow
+   [`docs/active-tasks/pangolin-tunnel-k11.md`](../../docs/active-tasks/pangolin-tunnel-k11.md).
+6. Open `https://code2.antonshubin.com` from any browser. Traffic reaches target
+   service through Newt and WireGuard.
 
 ## Memory budget for cloud (4GB server)
 
@@ -60,13 +55,12 @@ This stack consumes ~500MB. After deployment + other services (~1.8GB used), exp
 
 ## Notes
 
-- Pangolin uses outbound WireGuard tunnels — no inbound ports needed on agents
+- Newt initiates outbound tunnel; no inbound ports needed on remote sites
 - ACME/Let's Encrypt for HTTPS (automatic via Traefik)
 - Identity-aware: supports OIDC, email/password, etc.
-- For this initial deploy, only Pangolin server + gerbil-on-server are enabled. Agent gerbils on remote devices (K11) are configured separately with auth keys.
+- Pangolin and server-side Gerbil run on cloudlab. Newt runs separately on remote sites.
 
 ## TODO
 
-- [ ] Add `servers/cloud/config.json` entry
-- [ ] Add `servers/cloud/.env.example` entries (PANGOLIN_APP_URL, etc.)
-- [ ] Gerbil agent stack for K11 / home server deployment
+- [ ] Add a reproducible Newt service definition for portable hosts.
+- [ ] Add backup and restore support for the `pangolin-config` named volume.
