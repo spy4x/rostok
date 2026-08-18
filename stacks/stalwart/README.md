@@ -46,8 +46,10 @@ Configured via `STALWART_RECOVERY_ADMIN` env var. First login at `/admin` uses t
 | `_dmarc.antonshubin.com` TXT                         | `v=DMARC1; p=reject; rua=mailto:postmaster@antonshubin.com` |
 | `_mta-sts.antonshubin.com` TXT                       | `v=STSv1; id=20260702`                                      |
 | `_smtp._tls.antonshubin.com` TXT                     | `v=TLSRPTv1; rua=mailto:postmaster@antonshubin.com`         |
-| `v1-ed25519-20260629._domainkey.antonshubin.com` TXT | DKIM Ed25519 key                                            |
-| `v1-rsa-20260629._domainkey.antonshubin.com` TXT     | DKIM RSA key                                                |
+| `v1-ed25519-20260702._domainkey.antonshubin.com` TXT | DKIM Ed25519 key                                            |
+| `v1-rsa-20260702._domainkey.antonshubin.com` TXT     | DKIM RSA key                                                |
+| `v1-ed25519-20260702._domainkey.neatsoft.dev` TXT    | DKIM Ed25519 key                                            |
+| `v1-rsa-20260702._domainkey.neatsoft.dev` TXT        | DKIM RSA key                                                |
 
 ## Ports
 
