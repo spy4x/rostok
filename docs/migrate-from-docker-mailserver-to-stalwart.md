@@ -391,42 +391,14 @@ Becomes a Stalwart `authenticate-as` rule:
 
 ### 8.3 DKIM
 
-DMS generates `rsa-2048-mail-<domain>.private.txt` keys with selector `mail`.
-Stalwart expects PEM PKCS#8 keys at `/opt/stalwart-mail/etc/dkim/`. The DMS
-Rspamd key file is already PEM, so we can drop it in directly:
+Stalwart manages dual Ed25519/RSA keys with selectors generated from
+`v{version}-{algorithm}-{date-%Y%m%d}`. Publish generated `dnsZoneFile` records
+for both domains before selector rotation. Old DMS `mail._domainkey` records
+are obsolete.
 
-```bash
-ssh cloudlab 'mkdir -p $PATH_APPS/.volumes/stalwart/config/etc/dkim
-  cp $PATH_APPS/.volumes/mailserver/config/rspamd/dkim/rsa-2048-mail-antonshubin.com.private.txt \
-     $PATH_APPS/.volumes/stalwart/config/etc/dkim/antonshubin.com.key
-  cp $PATH_APPS/.volumes/mailserver/config/rspamd/dkim/rsa-2048-mail-neatsoft.dev.private.txt \
-     $PATH_APPS/.volumes/stalwart/config/etc/dkim/neatsoft.dev.key'
-```
-
-Then in `directory.toml`:
-
-```toml
-[queue.dkim]
-sign = ["antonshubin.com", "neatsoft.dev"]
-
-[[queue.dkim.signers]]
-id = "antonshubin.com"
-domain = "antonshubin.com"
-selector = "mail"            # SAME selector as DMS — DNS records unchanged
-private-key = "file://etc/dkim/antonshubin.com.key"
-# algorithm is RSA-SHA256 by default (matches DMS)
-
-[[queue.dkim.signers]]
-id = "neatsoft.dev"
-domain = "neatsoft.dev"
-selector = "mail"
-private-key = "file://etc/dkim/neatsoft.dev.key"
-```
-
-**Do NOT regenerate the DKIM keys.** The published `mail._domainkey.*` TXT
-records at the DNS provider reference the public key. If we change the
-private key, every mail we send will fail DMARC until the DNS record is
-updated and TTL expires (often 1 hour; could be 24 hours).
+Retrieve records through admin JMAP `x:DkimSignature/get` or each domain's
+generated `dnsZoneFile`. If keys are regenerated, publish new TXT records
+before sending mail with new selectors and allow DNS TTL to expire.
 
 ### 8.4 Maildir import
 
@@ -674,7 +646,7 @@ the plan is approved.
 | 2 | Stalwart store: SQLite or FoundationDB? | SQLite. We're at 1 user, <1 GB mailbox total. FoundationDB is overkill. |
 | 3 | Stalwart webmail: enable built-in, or run a separate SPA? | Built-in. Lighter, no extra container. |
 | 4 | When to actually retire DMS? | 30 days after Phase 4 cutover with no rollback. |
-| 5 | Do we keep DMS keys for trust continuity? | Yes — do **not** rotate DKIM. Keep the selector `mail`. |
+| 5 | Do we keep DMS keys for trust continuity? | No — Stalwart uses active dual keys with date-based `v1-*` selectors. |
 | 6 | Do we re-train Bayes from scratch? | Yes. Rspamd's DB is non-portable. 2 weeks of normal traffic retrains it. |
 | 7 | SnappyMail backup of already-imported identities? | Wipe on Phase 4 cutover; Stalwart admin takes over. |
 | 8 | Should we message Hetzner about port 25 / abuse prevention? | See [§ 14](#14-should-you-message-hetzner). |

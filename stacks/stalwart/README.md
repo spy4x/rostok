@@ -39,7 +39,7 @@ Configured via `STALWART_RECOVERY_ADMIN` env var. First login at `/admin` uses t
 | Record                                               | Value                                                       |
 | ---------------------------------------------------- | ----------------------------------------------------------- |
 | `antonshubin.com` A                                  | `165.173.1.38` (cloud)                                      |
-| `mail.antonshubin.com` A                             | `165.173.1.38` (cloud)                                      |
+| `mail.antonshubin.com` A                             | `23.88.101.28` (cloud)                                      |
 | `cal.antonshubin.com` A                              | `23.88.101.28` (cloud)                                      |
 | `antonshubin.com` MX                                 | `mail.antonshubin.com`                                      |
 | `antonshubin.com` SPF                                | `v=spf1 mx ip4:23.88.101.28 -all`                           |

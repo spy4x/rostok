@@ -74,7 +74,8 @@ telnet mail.yourdomain.com 587
 # Check DNS
 dig mail.yourdomain.com +short
 dig yourdomain.com MX +short
-dig mail._domainkey.yourdomain.com TXT +short
+dig v1-ed25519-YYYYMMDD._domainkey.yourdomain.com TXT +short
+dig v1-rsa-YYYYMMDD._domainkey.yourdomain.com TXT +short
 ```
 
 ## Troubleshooting
