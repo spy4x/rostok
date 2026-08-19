@@ -21,3 +21,20 @@ services:
       # paths (`/sync`, `/hdd`) are the roots used by folder.path.
       - /home/spy4x/ssd-2tb/sync:/sync:z
       - /home/spy4x/hdd-4tb:/hdd:z
+
+    # Home-only: put Authelia in front of the Syncthing GUI.
+    #
+    # This cannot live in stacks/syncthing/compose.yml, because that compose
+    # is shared with cloud and offsite, neither of which runs Authelia — an
+    # unresolvable middleware reference would break the router there.
+    #
+    # Compose merges `labels` by key, so this replaces the base
+    # `middlewares=robots-deny@file` on this server only.
+    #
+    # Syncthing keeps its own GUI password; this is a second factor in front
+    # of it, not a replacement. It does not affect device sync (BEP is a
+    # direct TCP connection on 22000, not proxied by Traefik) nor
+    # after.deploy.ts, which reaches the REST API through
+    # `docker exec ... http://localhost:8384`, bypassing Traefik entirely.
+    labels:
+      - "traefik.http.routers.hl-syncthing.middlewares=authelia@file,robots-deny@file"
