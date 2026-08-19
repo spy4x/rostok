@@ -92,7 +92,7 @@ Deno.test({
     const stacks: StackConfig[] = [{ name: "traefik" }]
     const script = generateDeployScript(stacks, "/apps", new Set(["traefik"]))
     assertStringIncludes(script, "RESTARTING:traefik:traefik")
-    assertStringIncludes(script, "docker compose -p traefik $COMPOSE_FILES restart")
+    assertStringIncludes(script, 'docker compose -p traefik "$@" restart')
   },
 })
 
@@ -148,5 +148,30 @@ Deno.test({
     ]
     // Just verify it runs without throwing
     printDeploySummary(results as Parameters<typeof printDeploySummary>[0])
+  },
+})
+
+Deno.test({
+  name: "generateDeployScript passes compose files as quoted positional args",
+  fn() {
+    // The remote login shell is zsh, which does not word-split unquoted
+    // parameter expansions. A bare $COMPOSE_FILES therefore reached docker
+    // compose as a single argument and it read the filename as
+    // " stacks/<stack>/compose.yml", leading space included.
+    const script = generateDeployScript([{ name: "umami" }], "/apps", new Set())
+    assertEquals(script.includes("--env-file=.env $COMPOSE_FILES"), false)
+    assertEquals(script.includes("set -- -f stacks/umami/compose.yml"), true)
+    assertEquals(script.includes('--env-file=.env "$@" up -d --build'), true)
+  },
+})
+
+Deno.test({
+  name: "generateDeployScript looks for compose overrides where the deploy puts them",
+  fn() {
+    // servers/<server>/compose-override/ is rsynced to <pathApps>/compose-override/,
+    // so servers/ does not exist on the remote and that lookup never matched.
+    const script = generateDeployScript([{ name: "syncthing" }], "/apps", new Set())
+    assertEquals(script.includes('[ -f "/apps/compose-override/syncthing.yml" ]'), true)
+    assertEquals(script.includes("servers/syncthing/compose-override"), false)
   },
 })

@@ -82,11 +82,18 @@ cd ${pathApps} && docker ps -a --filter "name=hl-${stackName}" --format '{{.ID}}
     docker rm -f \$id >/dev/null 2>&1 || true
   fi
 done
-# Per-server compose override (if present). Only this path is supported —
-# we don't generate override fragments in before.deploy.ts anymore.
-COMPOSE_FILES="-f stacks/${stackName}/compose.yml"
-[ -f "servers/${deployAs}/compose-override/${stackName}.yml" ] && COMPOSE_FILES="\$COMPOSE_FILES -f servers/${deployAs}/compose-override/${stackName}.yml"
-cd ${pathApps} && docker compose ${projectFlag} --env-file=.env.root --env-file=.env \$COMPOSE_FILES up -d --build 2>&1
+# Per-server compose override (if present). The deploy rsyncs
+# servers/<server>/compose-override/ to <pathApps>/compose-override/, so that
+# is the path to test here — not servers/<server>/, which does not exist on
+# the remote.
+#
+# Args are built with set --/"\$@" rather than a plain string. The remote
+# login shell is zsh, which does NOT word-split unquoted parameter
+# expansions, so \$COMPOSE_FILES arrived as ONE argument and docker compose
+# read the filename as " stacks/<stack>/compose.yml" — leading space and all.
+set -- -f stacks/${stackName}/compose.yml
+[ -f "${pathApps}/compose-override/${stackName}.yml" ] && set -- "\$@" -f "compose-override/${stackName}.yml"
+cd ${pathApps} && docker compose ${projectFlag} --env-file=.env.root --env-file=.env "\$@" up -d --build 2>&1
 if [ $? -eq 0 ]; then
   echo "DEPLOY_SUCCESS:${stackName}:${deployAs}"
 else
@@ -96,7 +103,7 @@ ${
       needsRestart
         ? `
 echo "RESTARTING:${stackName}:${deployAs}"
-cd ${pathApps} && docker compose ${projectFlag} \$COMPOSE_FILES restart 2>&1
+cd ${pathApps} && docker compose ${projectFlag} "\$@" restart 2>&1
 echo "RESTART_DONE:${stackName}:${deployAs}"
 `
         : ""
