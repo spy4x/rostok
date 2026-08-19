@@ -9,8 +9,8 @@ This document describes how to move the personal mail server currently running
 `23.88.101.28`) to [Stalwart Mail](https://stalw.art/), a single-binary Rust
 mail server with native **JMAP** ([RFC 8620](https://datatracker.ietf.org/doc/html/rfc8620)/[RFC 8621](https://datatracker.ietf.org/doc/html/rfc8621)),
 IMAP4, ManageSieve, CalDAV/CardDAV-via-JMAP, SMTP, DKIM/ARC/DMARC/SPF, and
-built-in anti-spam — without losing a single message, alias, DKIM key, or
-client config that we can avoid changing.
+built-in anti-spam — without losing a single message or alias and while
+minimizing client config changes.
 
 ---
 
@@ -23,11 +23,11 @@ client config that we can avoid changing.
 5. [Migration phases](#5-migration-phases)
 6. [Phase 0 — Backup everything (no change)](#6-phase-0--backup-everything-no-change)
 7. [Phase 1 — Deploy Stalwart alongside DMS (parallel run)](#7-phase-1--deploy-stalwart-alongside-dms-parallel-run)
-8. [Phase 2 — Import accounts, aliases, DKIM keys, Maildir](#8-phase-2--import-accounts-aliases-dkim-keys-maildir)
+8. [Phase 2 — Import accounts, aliases, Maildir](#8-phase-2--import-accounts-aliases-maildir)
 9. [Phase 3 — Validate IMAP/SMTP from Thunderbird](#9-phase-3--validate-imapsmtp-from-thunderbird)
 10. [Phase 4 — Cutover](#10-phase-4--cutover)
 11. [Phase 5 — Decommission DMS](#11-phase-5--decommission-dms)
-12. [PR checklist](#12-pr-checklist)
+12. [Operational checklist](#12-operational-checklist)
 13. [Open questions / decisions](#13-open-questions--decisions)
 14. [Should you message Hetzner?](#14-should-you-message-hetzner)
 15. [Appendix A — Side-by-side feature matrix](#appendix-a--side-by-side-feature-matrix)
@@ -41,9 +41,8 @@ client config that we can avoid changing.
   `X-Original-To` headers preserved.
 - **Zero password reset for users.** SHA512-CRYPT hashes in
   `postfix-accounts.cf` must migrate transparently. (See [§ 8.1](#81-accounts).)
-- **Zero DKIM reconfiguration.** The two `rsa-2048-mail-<domain>.private.txt`
-  keys must continue signing the same domains with the same `d=`, `s=`, `k=`,
-  and `h=` tags so published DNS records stay valid. (See [§ 8.3](#83-dkim).)
+- **Continuous DKIM validity.** Publish Stalwart's dual Ed25519/RSA records
+  before cutover so every active selector resolves. (See [§ 8.3](#83-dkim).)
 - **Reversible.** Every step has a documented rollback. We do not delete DMS
   data until 30 days of clean operation on Stalwart.
 - **Same public surface during cutover.** `mail.antonshubin.com` and
@@ -159,7 +158,7 @@ $VOLUMES_PATH/mailserver/config/postfix-virtual.cf        # 7 aliases + 2 catch-
 $VOLUMES_PATH/mailserver/config/postfix-send-access.cf    # sender ACL
 $VOLUMES_PATH/mailserver/config/dovecot-quotas.cf         # empty in our case
 
-# DKIM key material (signed DNS records depend on these byte-for-byte)
+# Legacy DKIM key material (archive for rollback only)
 $VOLUMES_PATH/mailserver/config/rspamd/dkim/
   rsa-2048-mail-antonshubin.com.private.txt               # 1704 bytes, RSA 2048
   rsa-2048-mail-antonshubin.com.public.dns.txt            # published TXT record
@@ -181,8 +180,8 @@ $VOLUMES_PATH/mailserver/config/ssl/
 $VOLUMES_PATH/mailserver/config/fail2ban/jail.local
 ```
 
-Total to migrate: **3 accounts, 7 aliases, 2 catch-alls, 1 sender-login ACL,
-2 DKIM keypairs, ~165 MB Maildir data**.
+Total inventory: **3 accounts, 7 aliases, 2 catch-alls, 1 sender-login ACL,
+2 archived legacy DKIM keypairs, ~165 MB Maildir data**.
 
 ## 5. Migration phases
 
@@ -197,7 +196,7 @@ Total to migrate: **3 accounts, 7 aliases, 2 catch-alls, 1 sender-login ACL,
        └──────┬────────┘
               ▼
        ┌───────────────┐
-       │  Phase 2      │  Import accounts, aliases, DKIM, Maildir
+       │  Phase 2      │  Import accounts, aliases, Maildir; publish DKIM DNS
        │               │  Stalwart answers on its own ports; DMS still primary
        └──────┬────────┘
               ▼
@@ -294,7 +293,7 @@ services:
       retries: 3
 ```
 
-## 8. Phase 2 — Import accounts, aliases, DKIM keys, Maildir
+## 8. Phase 2 — Import accounts, aliases, Maildir
 
 ### 8.1 Accounts
 
@@ -391,42 +390,18 @@ Becomes a Stalwart `authenticate-as` rule:
 
 ### 8.3 DKIM
 
-DMS generates `rsa-2048-mail-<domain>.private.txt` keys with selector `mail`.
-Stalwart expects PEM PKCS#8 keys at `/opt/stalwart-mail/etc/dkim/`. The DMS
-Rspamd key file is already PEM, so we can drop it in directly:
+Stalwart manages dual Ed25519/RSA keys with selectors generated from
+`v{version}-{algorithm}-{date-%Y%m%d}`. Publish generated `dnsZoneFile` records
+for both domains before selector rotation. Old DMS `mail._domainkey` records
+are obsolete.
 
-```bash
-ssh cloudlab 'mkdir -p $PATH_APPS/.volumes/stalwart/config/etc/dkim
-  cp $PATH_APPS/.volumes/mailserver/config/rspamd/dkim/rsa-2048-mail-antonshubin.com.private.txt \
-     $PATH_APPS/.volumes/stalwart/config/etc/dkim/antonshubin.com.key
-  cp $PATH_APPS/.volumes/mailserver/config/rspamd/dkim/rsa-2048-mail-neatsoft.dev.private.txt \
-     $PATH_APPS/.volumes/stalwart/config/etc/dkim/neatsoft.dev.key'
-```
-
-Then in `directory.toml`:
-
-```toml
-[queue.dkim]
-sign = ["antonshubin.com", "neatsoft.dev"]
-
-[[queue.dkim.signers]]
-id = "antonshubin.com"
-domain = "antonshubin.com"
-selector = "mail"            # SAME selector as DMS — DNS records unchanged
-private-key = "file://etc/dkim/antonshubin.com.key"
-# algorithm is RSA-SHA256 by default (matches DMS)
-
-[[queue.dkim.signers]]
-id = "neatsoft.dev"
-domain = "neatsoft.dev"
-selector = "mail"
-private-key = "file://etc/dkim/neatsoft.dev.key"
-```
-
-**Do NOT regenerate the DKIM keys.** The published `mail._domainkey.*` TXT
-records at the DNS provider reference the public key. If we change the
-private key, every mail we send will fail DMARC until the DNS record is
-updated and TTL expires (often 1 hour; could be 24 hours).
+Retrieve publishable records from each domain's generated `dnsZoneFile` through
+admin JMAP `x:Domain/get`. Keep DKIM management manual while Cloudflare DNS
+publication is manual. For each rotation: generate keys, publish both new TXT
+records, verify public DNS, then activate new selectors. Keep old selectors
+active for a seven-day overlap, deactivate old keys, then retain old TXT records
+for another seven-day mail transit window and at least one DNS TTL before
+removal. Revoke compromised selectors immediately.
 
 ### 8.4 Maildir import
 
@@ -482,7 +457,7 @@ After 2 weeks of production use, retrain manually by:
    # Verify DKIM signature on outbound
    docker exec hl-stalwart grep "DKIM-Signature" \
      /opt/stalwart-mail/data/queue/sent/$(ls -t ...) | head -1
-   # d=antonshubin.com s=mail (same as before)
+   # d=antonshubin.com; both active v1-ed25519-* and v1-rsa-* selectors
    ```
 4. Receive a test message (from another account you control) and check
    headers for `ARC-Authentication-Results: ... dkim=pass`.
@@ -624,47 +599,16 @@ After 30 days of clean Stalwart operation:
 9. Cancel the Hetzner firewall rule changes we made for DMS if no other
    service uses them. (See [§ 14](#14-should-you-message-hetzner).)
 
-## 12. PR checklist
+## 12. Operational checklist
 
-This PR (current `feat/stalwart-migration` branch) ships **only the
-planning document**. Nothing is deployed yet. The PR body should be:
+- [x] Stalwart deployed and healthy on `cloudlab`.
+- [x] Both domains use manual DKIM management.
+- [x] Active Ed25519 and RSA selectors resolve publicly for both domains.
+- [x] Outbound self-tests contain both DKIM signatures.
+- [ ] Confirm new aggregate DMARC reports show DKIM pass.
+- [ ] Remove legacy DMS after the rollback window closes.
 
-```
-## What
-
-Planning document for migrating the personal mail server from
-docker-mailserver (DMS) to Stalwart Mail. Zero code changes in this PR.
-
-## Why
-
-- DMS is a 7-process stack with a known fail2ban landmine (see commit 57cf70e).
-- Stalwart is a single Rust binary with native JMAP — better mobile UX,
-  lower RAM, no fail2ban surface.
-- SnappyMail (current webmail) does not support JMAP. Stalwart's built-in
-  webmail does.
-
-## What this PR contains
-
-- docs/migrate-from-docker-mailserver-to-stalwart.md — full plan, 14 sections
-- (nothing else — no new stacks, no live changes)
-
-## What this PR does NOT contain
-
-- New stack file (stacks/stalwart/) — proposed for a follow-up PR after
-  the plan is reviewed and signed off
-- Any live deployment
-- DNS changes
-- DKIM rotation (we keep DMS keys to avoid DNS TTL pain)
-
-## Risks
-
-- Low risk — documentation only.
-- Open question: do we want to remove DMS in this PR cycle or a separate one?
-  (Tracked in § 13.)
-```
-
-A separate `feat/stalwart-deploy` PR will add the actual stack file once
-the plan is approved.
+Owner: homelab operator. Tracking: [PR 131](https://github.com/spy4x/homelab/pull/131).
 
 ## 13. Open questions / decisions
 
@@ -674,7 +618,7 @@ the plan is approved.
 | 2 | Stalwart store: SQLite or FoundationDB? | SQLite. We're at 1 user, <1 GB mailbox total. FoundationDB is overkill. |
 | 3 | Stalwart webmail: enable built-in, or run a separate SPA? | Built-in. Lighter, no extra container. |
 | 4 | When to actually retire DMS? | 30 days after Phase 4 cutover with no rollback. |
-| 5 | Do we keep DMS keys for trust continuity? | Yes — do **not** rotate DKIM. Keep the selector `mail`. |
+| 5 | Do we keep DMS keys for trust continuity? | No — Stalwart uses active dual keys with date-based `v1-*` selectors. |
 | 6 | Do we re-train Bayes from scratch? | Yes. Rspamd's DB is non-portable. 2 weeks of normal traffic retrains it. |
 | 7 | SnappyMail backup of already-imported identities? | Wipe on Phase 4 cutover; Stalwart admin takes over. |
 | 8 | Should we message Hetzner about port 25 / abuse prevention? | See [§ 14](#14-should-you-message-hetzner). |
@@ -731,9 +675,3 @@ usually legacy scripts), then we open a ticket. Until then: no action.
 | RAM usage idle                      | ~500 MB                        | ~40-80 MB                      |
 | Disk (current observed)             | ~950 MB                        | ~170 MB                        |
 | Mobile-friendly                     | ⚠️ IMAP only                   | ✅ JMAP native                 |
-
----
-
-*Drafted as part of the `feat/stalwart-migration` worktree, based on
-commit `57cf70e` (fail2ban whitelist fix). See commit log for the
-unban + rename history.*
