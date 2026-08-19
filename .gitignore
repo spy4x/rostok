@@ -29,3 +29,6 @@ stacks/*/config.toml
 stacks/*/*.rendered
 stacks/*/mta-sts/html/.well-known/mta-sts.txt
 *.sops-backup
+
+# Claude Code local settings (machine-specific, do not commit)
+.claude/settings.local.json
