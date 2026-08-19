@@ -58,27 +58,51 @@ if (!cpResult.success) {
 }
 success("✓ script copied")
 
-// Run the script inside the container with the deploy-time env vars.
-// Pass OPENAI_API_KEYS / OPENAI_API_BASE_URLS / OPENAI_API_CONFIGS via
-// -e so the script reads the freshly-deployed values, not whatever
-// stale values OWUI might have in its own env block.
+// Run the script inside the container with the deploy-time env vars, so the
+// freshly-deployed .env values win over whatever stale values OWUI might
+// still hold in its own env block.
+//
+// The keys are fed over stdin, NOT via `docker exec -e KEY=value`. An -e
+// argument is part of the command line, so the API keys would be visible in
+// `ps` on the remote host for the lifetime of the exec, and in the argv of
+// the local ssh process. `read` in the container shell keeps them off both.
+//
+// OPENAI_API_CONFIGS is deliberately not passed: it is hardcoded in
+// compose.yml (servers/home/.env keeps it empty as a placeholder), so the
+// script inherits the compose value from the container's own env.
 log(`Running ${SCRIPT_NAME} inside ${CONTAINER}...`)
 
-// Pass OPENAI_API_KEYS and OPENAI_API_BASE_URLS via -e (so the .env
-// value wins, not any stale env from a prior container image). Do NOT
-// pass OPENAI_API_CONFIGS: that var is hardcoded in compose.yml
-// (servers/home/.env keeps it empty as a placeholder). The script will
-// inherit OPENAI_API_CONFIGS from the container's own env, where the
-// compose value lives.
-const dockerArgs = [
-  "ssh",
-  SSH,
-  `docker exec -i` +
-  ` -e OPENAI_API_KEYS=${shellQuote(OPENAI_API_KEYS)}` +
-  ` -e OPENAI_API_BASE_URLS=${shellQuote(OPENAI_API_BASE_URLS)}` +
-  ` ${CONTAINER} python3 ${REMOTE_SCRIPT_TMP}`,
-]
-const runResult = await runCommand(dockerArgs)
+// One line per secret, in the order the reader below consumes them. Neither
+// value may contain a newline; guard rather than silently truncate.
+for (const [name, value] of Object.entries({ OPENAI_API_KEYS, OPENAI_API_BASE_URLS })) {
+  if (value.includes("\n")) {
+    error(`${name} contains a newline, which the stdin handoff cannot represent`)
+    Deno.exit(1)
+  }
+}
+const stdinPayload = `${OPENAI_API_KEYS}\n${OPENAI_API_BASE_URLS}\n`
+
+// IFS= and -r so whitespace and backslashes survive verbatim.
+const remoteScript = `docker exec -i ${CONTAINER} sh -c '` +
+  `IFS= read -r k; IFS= read -r u; ` +
+  `export OPENAI_API_KEYS="$k" OPENAI_API_BASE_URLS="$u"; ` +
+  `exec python3 ${REMOTE_SCRIPT_TMP}'`
+
+const execProc = new Deno.Command("ssh", {
+  args: [SSH, remoteScript],
+  stdin: "piped",
+  stdout: "piped",
+  stderr: "piped",
+}).spawn()
+const writer = execProc.stdin.getWriter()
+await writer.write(new TextEncoder().encode(stdinPayload))
+await writer.close()
+const execOut = await execProc.output()
+const runResult = {
+  success: execOut.code === 0,
+  output: new TextDecoder().decode(execOut.stdout),
+  error: new TextDecoder().decode(execOut.stderr),
+}
 if (!runResult.success) {
   error(
     `init-models.py failed inside container:\nstdout: ${runResult.output || "<empty>"}\nstderr: ${
@@ -105,9 +129,3 @@ if (!restartResult.success) {
   Deno.exit(1)
 }
 success(`✓ ${CONTAINER} restarted`)
-
-/** Quote a value for safe inclusion inside single-quoted shell strings. */
-function shellQuote(s: string): string {
-  // 'foo' → 'foo',  foo'bar → 'foo'\''bar'
-  return `'${s.replace(/'/g, "'\\''")}'`
-}
