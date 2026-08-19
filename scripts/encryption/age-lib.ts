@@ -10,6 +10,7 @@
  */
 import { dirname, join } from "@std/path"
 import { decodeBase64, encodeBase64 } from "@std/encoding"
+import { exists } from "@std/fs"
 
 /** Resolve main repo root (not worktree root — .age/ lives there) */
 function resolveMainRepoRoot(): string {
@@ -196,8 +197,22 @@ export async function parseEnvDict(entries: EnvEntry[]): Promise<Record<string, 
 }
 
 /**
+ * True if `dir` is the root of its own git checkout — a nested clone (.git dir)
+ * or a `git worktree add` target placed inside this repo (.git file).
+ *
+ * Such a directory has its own branch and its own committed .env.age files, so
+ * walking into it would make env:encrypt/env:decrypt rewrite another branch's
+ * secrets with this checkout's values.
+ */
+async function isNestedCheckout(dir: string): Promise<boolean> {
+  return await exists(join(dir, ".git"))
+}
+
+/**
  * Find all .env files (not .example, not .age).
  * Matches .env, .env.root, servers/subdir/.env, etc.
+ *
+ * Never descends into nested git checkouts — see isNestedCheckout().
  */
 export async function findEnvFiles(): Promise<string[]> {
   const envFiles: string[] = []
@@ -205,6 +220,7 @@ export async function findEnvFiles(): Promise<string[]> {
     const path = join(getRootDir(), entry.name)
     if (entry.isDirectory) {
       if (entry.name.startsWith(".") || entry.name === "node_modules") continue
+      if (await isNestedCheckout(path)) continue
       await walkEnvDir(path, envFiles)
     } else if (
       entry.name.startsWith(".env") &&
@@ -223,6 +239,7 @@ async function walkEnvDir(dir: string, results: string[]) {
     const path = join(dir, entry.name)
     if (entry.isDirectory) {
       if (entry.name.startsWith(".") || entry.name === "node_modules") continue
+      if (await isNestedCheckout(path)) continue
       await walkEnvDir(path, results)
     } else if (
       entry.name.startsWith(".env") &&

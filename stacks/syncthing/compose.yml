@@ -1,3 +1,29 @@
+# Syncthing — reusable compose, no server-specific paths.
+# Per-server host paths come from servers/<server>/compose-override/syncthing.yml
+# (committed), merged at deploy time. Folders + devices come from
+# servers/<server>/configs/syncthing.yml and are reconciled via the REST API
+# by stacks/syncthing/after.deploy.ts.
+#
+# Required env (in server .env):
+#   SYNCTHING_API_KEY     — STGUIAPIKEY; same value persisted in
+#                           /var/syncthing/config/config.xml
+#   SYNCTHING_SUBDOMAIN   — Traefik host rule
+#   DOMAIN                — base domain
+#
+# ── First deploy ────────────────────────────────────────────────────
+# Generate the API key yourself before the first deploy. Do NOT leave the
+# placeholder in .env: Syncthing uses STGUIAPIKEY verbatim, so the container
+# would come up with an API key that is committed to this repo, on a GUI
+# Traefik publishes. before.deploy.ts refuses to deploy in that case.
+#
+#   head -c 24 /dev/urandom | base64        # generate
+#   # put it in servers/<server>/.env as SYNCTHING_API_KEY=...
+#   deno task env:encrypt                   # then commit the .env.age
+#   deno task deploy <server> syncthing
+#
+# STGUIAPIKEY overrides whatever is in config.xml on every start, so the key
+# stays stable across restarts and re-creations.
+
 name: ${PROJECT}
 
 networks:
@@ -8,8 +34,6 @@ networks:
     name: proxy
 
 services:
-  # Syncthing is a continuous file synchronization program.
-  # It synchronizes files between two or more computers in real time, safely protected from prying eyes.
   syncthing:
     container_name: hl-syncthing
     image: syncthing/syncthing:latest
@@ -22,14 +46,18 @@ services:
     environment:
       - PUID=${PUID:-1000}
       - PGID=${PGID:-1000}
-    volumes:
-      - ${VOLUMES_PATH}/syncthing:/var/syncthing:z
-      - /etc/localtime:/etc/localtime:ro,z
-      - ${PATH_SYNC}:/sync:z
+      # Forces container to use a stable API key across restarts.
+      # Syncthing overrides whatever is in config.xml.
+      - STGUIAPIKEY=${SYNCTHING_API_KEY:?}
+      - STHOMEDIR=/var/syncthing/config
+    # Volumes are NOT defined here — bind mounts live in the committed
+    # per-server override at:
+    #   servers/<server>/compose-override/syncthing.yml
+    # The deploy script (scripts/deploy/src/+lib.ts) merges it automatically.
     ports:
-      - 22000:22000/tcp # Sync protocol (BEP)
-      - 22000:22000/udp # QUIC connections
-      - 21027:21027/udp # Discovery broadcasts
+      - 22000:22000/tcp # BEP
+      - 22000:22000/udp # QUIC
+      - 21027:21027/udp # Discovery
     restart: unless-stopped
     deploy:
       resources:

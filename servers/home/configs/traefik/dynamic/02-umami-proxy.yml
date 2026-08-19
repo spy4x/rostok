@@ -1,0 +1,58 @@
+# Home-server specific Traefik dynamic config.
+# Only deployed to the home server (via before.deploy.ts).
+# Extends the base config in stacks/traefik/dynamic/00-base.yml.
+#
+# Serves Umami first-party at antonshubin.com/umami/* by proxying to the
+# Umami instance on the cloud server.
+#
+# Why this leg exists:
+#   antonshubin.com is served from BOTH hosts. On the cloud server the site sits
+#   alongside Umami, so the umami stack's own hl-umami-proxy labels handle
+#   /umami/* there. The home server also terminates the apex but runs no Umami
+#   container, so a label-based router is impossible here — this file covers the
+#   home leg by forwarding over the network to stats.antonshubin.com.
+#
+#   Keep both while both hosts serve the apex. If the home server stops serving
+#   antonshubin.com, this file can be deleted and the cloud labels are enough.
+#
+# Why proxy at all:
+#   Serving the tracker first-party sidesteps ad-blocker lists that match
+#   Umami's default /script.js path, and Safari ITP's treatment of a stats.*
+#   subdomain as third-party. Both were measured as suppressing Firefox and
+#   iOS Safari counts. See antonshubin.com#66.
+#
+# No priority needed: the antonshubin.com site router carries an explicit
+# !PathPrefix(`/umami/`) guard, so the two rules cannot both match.
+
+http:
+  middlewares:
+    # Umami is unaware of the /umami mount point — strip it before forwarding.
+    # The tracker derives its collect endpoint from its own script src, so
+    # /umami/script.js posts to /umami/api/send, which this same router and
+    # middleware handle.
+    umami-stripprefix:
+      stripPrefix:
+        prefixes:
+          - "/umami"
+
+  routers:
+    hl-umami-apex:
+      rule: "(Host(`antonshubin.com`) || Host(`www.antonshubin.com`)) && PathPrefix(`/umami/`)"
+      entryPoints:
+        - websecure
+      middlewares:
+        - umami-stripprefix
+        - robots-deny
+      service: hl-umami-remote
+      tls:
+        certResolver: myresolver
+
+  services:
+    hl-umami-remote:
+      loadBalancer:
+        # passHostHeader MUST stay false. The upstream cloud Traefik routes by
+        # Host: forwarding the apex Host would match no router there and 404,
+        # whereas false sends Host: stats.antonshubin.com and hits hl-umami.
+        passHostHeader: false
+        servers:
+          - url: "https://stats.antonshubin.com"
