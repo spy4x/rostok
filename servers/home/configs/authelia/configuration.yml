@@ -79,6 +79,8 @@ access_control:
       policy: two_factor
     - domain: "proxy-home.antonshubin.com"
       policy: two_factor
+    - domain: "sync-home.antonshubin.com"
+      policy: two_factor
 
 # Storage — SQLite
 storage:
