@@ -22,9 +22,13 @@ node_modules
 key.txt
 
 .playwright-mcp/
-todos.txt.playwright-mcp/
+todos.txt
 
 # Rendered secrets (do not commit; rendered by before.deploy.ts)
 stacks/*/config.toml
 stacks/*/*.rendered
+stacks/*/mta-sts/html/.well-known/mta-sts.txt
 *.sops-backup
+
+# Claude Code local settings (machine-specific, do not commit)
+.claude/settings.local.json

@@ -3,6 +3,9 @@ name: ${PROJECT}
 networks:
   proxy:
     external: true
+  default:
+    external: true
+    name: proxy
 
 services:
   akaunting-db:
@@ -55,7 +58,6 @@ services:
     security_opt:
       - no-new-privileges:true
     networks:
-      - proxy
       - default
     labels:
       - "traefik.enable=true"

@@ -52,7 +52,7 @@
           # Allow homelab user to change ownership for backup operations
           # This is needed because backup runs as root but needs to fix ownership
           # for volumes and backup repositories for user access
-          {{ homelab_user }} ALL=(ALL) NOPASSWD: /usr/bin/chown -R {{ homelab_user }}\:{{ homelab_user }} {{ apps_path }}/.volumes/*
+          {{ homelab_user }} ALL=(ALL) NOPASSWD: /usr/bin/chown -R {{ homelab_user }}\:{{ homelab_user }} {{ volumes_path }}/*
           {{ homelab_user }} ALL=(ALL) NOPASSWD: /usr/bin/chown -R {{ homelab_user }}\:{{ homelab_user }} {{ backup_log_path }}
           {{ homelab_user }} ALL=(ALL) NOPASSWD: /usr/bin/chown -R {{ homelab_user }}\:{{ homelab_user }} {{ backups_path }}/*
         validate: "visudo -cf %s"

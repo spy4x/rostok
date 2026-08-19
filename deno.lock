@@ -19,7 +19,8 @@
     "npm:imapflow@1": "1.3.3",
     "npm:mailparser@3": "3.9.8",
     "npm:nodemailer@6": "6.10.1",
-    "npm:yaml@*": "2.8.2"
+    "npm:yaml@*": "2.8.2",
+    "npm:yaml@^2.8.2": "2.8.2"
   },
   "jsr": {
     "@hongminhee/deno-task-hooks@0.1.2": {
@@ -375,7 +376,8 @@
       "jsr:@std/dotenv@*",
       "jsr:@std/encoding@^1.0.9",
       "jsr:@std/fs@^1.0.21",
-      "jsr:@std/path@^1.1.4"
+      "jsr:@std/path@^1.1.4",
+      "npm:yaml@^2.8.2"
     ]
   }
 }

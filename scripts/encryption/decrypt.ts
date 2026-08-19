@@ -1,20 +1,20 @@
 /**
  * env:decrypt — .env.age → .env (decrypts age64 values)
  *
- * Reads each .env.age file, decrypts age64 values, writes .env with
- * all values in plaintext. Non-secret values pass through unchanged.
+ * Walks for *.age files matching the env naming pattern (.env.age,
+ * .env.prod.age, .env.root.age, etc.), decrypts age64 values, writes
+ * sibling plaintext files. Non-secret values pass through unchanged.
  */
 
 import {
   ageDecrypt,
   checkAgeInstalled,
-  findEnvFiles,
-  getEnvAgePath,
+  findAgeFiles,
+  getEnvPathFromAge,
   getRelativePath,
   parseEnvFile,
   serializeEnv,
 } from "./age-lib.ts"
-import { exists } from "@std/fs"
 
 async function main() {
   console.log(" decrypting env files (age64)...")
@@ -25,16 +25,7 @@ async function main() {
     Deno.exit(1)
   }
 
-  // Find .env.age files (look for .env, then check if .env.age exists)
-  const envFiles = await findEnvFiles()
-  const ageFiles: string[] = []
-
-  for (const envPath of envFiles) {
-    const agePath = getEnvAgePath(envPath)
-    if (await exists(agePath)) {
-      ageFiles.push(agePath)
-    }
-  }
+  const ageFiles = await findAgeFiles()
 
   if (ageFiles.length === 0) {
     console.log(" No .env.age files found")
@@ -47,7 +38,7 @@ async function main() {
 
   for (const agePath of ageFiles) {
     const relPath = getRelativePath(agePath)
-    const envPath = agePath.replace(/\.age$/, "")
+    const envPath = getEnvPathFromAge(agePath)
     const envRelPath = getRelativePath(envPath)
 
     console.log(`   ${relPath}`)

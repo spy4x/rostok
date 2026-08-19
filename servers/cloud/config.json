@@ -1,47 +1,18 @@
 {
   "stacks": [
-    {
-      "name": "traefik"
-    },
-    {
-      "name": "watchtower"
-    },
-    {
-      "name": "syncthing"
-    },
-    {
-      "name": "gatus",
-      "watchFilesAndRestartIfChanged": [
-        "configs/gatus.yml"
-      ]
-    },
-    {
-      "name": "ntfy"
-    },
-    {
-      "name": "pangolin"
-    },
-    {
-      "name": "librespeed"
-    },
-    {
-      "name": "healthchecks"
-    },
-    {
-      "name": "stalwart"
-    },
-    {
-      "name": "bulwark"
-    },
-    {
-      "name": "vaultwarden"
-    },
-    {
-      "name": "umami"
-    },
-    {
-      "name": "caldiy"
-    },
+    { "name": "traefik" },
+    { "name": "watchtower" },
+    { "name": "syncthing" },
+    { "name": "gatus", "watchFilesAndRestartIfChanged": ["configs/gatus.yml"] },
+    { "name": "ntfy" },
+    { "name": "pangolin" },
+    { "name": "librespeed" },
+    { "name": "healthchecks" },
+    { "name": "stalwart" },
+    { "name": "bulwark" },
+    { "name": "vaultwarden" },
+    { "name": "umami" },
+    { "name": "caldiy" },
     {
       "name": "nginx",
       "deployAs": "neatsoft-landing",

@@ -103,6 +103,7 @@ endpoints:
     alerts:
       - type: ntfy
 
+  # Offsite: high thresholds due to internet connectivity issues in Russia
   - name: Traefik
     group: offsite
     url: "https://proxy-offsite.${DOMAIN}/dashboard"
@@ -113,8 +114,10 @@ endpoints:
       - "[STATUS] == 200"
     alerts:
       - type: ntfy
-        failure-threshold: 9
+        failure-threshold: 50
+        success-threshold: 1
 
+  # Offsite: high thresholds due to internet connectivity issues in Russia
   - name: Syncthing
     group: offsite
     url: "https://sync-offsite.${DOMAIN}"
@@ -123,7 +126,8 @@ endpoints:
       - "[STATUS] == 200"
     alerts:
       - type: ntfy
-        failure-threshold: 9
+        failure-threshold: 50
+        success-threshold: 1
 
   - name: NeatSoft Landing
     group: cloud
