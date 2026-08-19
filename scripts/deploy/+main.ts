@@ -183,6 +183,9 @@ try {
           "-R",
           "-W",
           "-E",
+          ...(stackName === "stalwart" && targetEnv["DOMAIN"]
+            ? [`--allow-net=mail.${targetEnv["DOMAIN"]}`]
+            : []),
           "--env-file=.env.root",
           "--env-file=.env",
           stackBeforeDeployPath,
@@ -360,7 +363,7 @@ try {
     const failedCount = results.filter((r) => !r.success).length
     if (failedCount > 0) {
       error(`${failedCount} stack(s) failed to deploy`)
-      // Don't exit immediately - we want to show the full summary
+      throw new Error("Skipping post-deploy hooks after stack deployment failure")
     }
   } else {
     log("No stacks to deploy")

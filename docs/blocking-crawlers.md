@@ -139,7 +139,7 @@ audited for search-engine blocking. The following services use
 - adguard, akaunting, audiobookshelf, authelia, bulwark, caldiy,
   docker-registry, filebrowser, gatus, gitea, grafana, healthchecks,
   immich, jellyfin, librespeed, metube, mirotalk, monica, ntfy,
-  offerlens, ollama, omni-tools, open-webui, paperless-ngx, piped,
+  ollama, omni-tools, open-webui, paperless-ngx, piped,
   plausible, reitti, searxng, stalwart, syncthing, traggo, transmission,
   umami, usememos, vaultwarden, victoria-metrics, woodpecker
 

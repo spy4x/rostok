@@ -268,32 +268,6 @@
               <img src="https://uptime-cloud.${DOMAIN}/api/v1/endpoints/home_woodpecker-ci/health/badge.svg" alt="Home CI/CD Uptime Badge" onclick="window.open('https://uptime-cloud.${DOMAIN}/endpoints/home_woodpecker-ci', '_blank')" style="cursor:pointer" />
             </a>
           </li>
-          <!-- Home section: CRM -->
-          <li class="service-item">
-            <a
-              href="https://crm.${DOMAIN}"
-              target="_blank"
-              class="service-link"
-            >
-              <div class="service-icon">💑</div>
-              <div class="service-name">CRM</div>
-              <div class="service-name-detail">Monica</div>
-              <img src="https://uptime-cloud.${DOMAIN}/api/v1/endpoints/home_monica/health/badge.svg" alt="Home CRM Uptime Badge" onclick="window.open('https://uptime-cloud.${DOMAIN}/endpoints/home_monica', '_blank')" style="cursor:pointer" />
-            </a>
-          </li>
-          <!-- Home section: Docs -->
-          <li class="service-item">
-            <a
-              href="https://docs.${DOMAIN}"
-              target="_blank"
-              class="service-link"
-            >
-              <div class="service-icon">📋</div>
-              <div class="service-name">Docs</div>
-              <div class="service-name-detail">Paperless</div>
-              <img src="https://uptime-cloud.${DOMAIN}/api/v1/endpoints/home_paperless-ngx/health/badge.svg" alt="Home Docs Uptime Badge" onclick="window.open('https://uptime-cloud.${DOMAIN}/endpoints/home_paperless-ngx', '_blank')" style="cursor:pointer" />
-            </a>
-          </li>
           <!-- Home section: Files -->
           <li class="service-item">
             <a
@@ -331,19 +305,6 @@
               <div class="service-name">Invoices</div>
               <div class="service-name-detail">Akaunting</div>
               <img src="https://uptime-cloud.${DOMAIN}/api/v1/endpoints/home_akaunting/health/badge.svg" alt="Home Invoices Uptime Badge" onclick="window.open('https://uptime-cloud.${DOMAIN}/endpoints/home_akaunting', '_blank')" style="cursor:pointer" />
-            </a>
-          </li>
-          <!-- Home section: Metrics -->
-          <li class="service-item">
-            <a
-              href="https://metrics.${DOMAIN}"
-              target="_blank"
-              class="service-link"
-            >
-              <div class="service-icon">📊</div>
-              <div class="service-name">Metrics</div>
-              <div class="service-name-detail">Grafana</div>
-              <img src="https://uptime-cloud.${DOMAIN}/api/v1/endpoints/home_grafana/health/badge.svg" alt="Home Metrics Uptime Badge" onclick="window.open('https://uptime-cloud.${DOMAIN}/endpoints/home_grafana', '_blank')" style="cursor:pointer" />
             </a>
           </li>
           <!-- Home section: Movies -->
@@ -580,19 +541,6 @@
               <div class="service-name">Traefik</div>
               <div class="service-name-detail">Traefik</div>
               <img src="https://uptime-cloud.${DOMAIN}/api/v1/endpoints/home_traefik/health/badge.svg" alt="Home Traefik Uptime Badge" onclick="window.open('https://uptime-cloud.${DOMAIN}/endpoints/home_traefik', '_blank')" style="cursor:pointer" />
-            </a>
-          </li>
-          <!-- Home section: Transit -->
-          <li class="service-item">
-            <a
-              href="https://loc.${DOMAIN}"
-              target="_blank"
-              class="service-link"
-            >
-              <div class="service-icon">🗺️</div>
-              <div class="service-name">Transit</div>
-              <div class="service-name-detail">Reitti</div>
-              <img src="https://uptime-cloud.${DOMAIN}/api/v1/endpoints/home_reitti/health/badge.svg" alt="Home Transit Uptime Badge" onclick="window.open('https://uptime-cloud.${DOMAIN}/endpoints/home_reitti', '_blank')" style="cursor:pointer" />
             </a>
           </li>
           <!-- Home section: Uptime -->

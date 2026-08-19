@@ -46,7 +46,7 @@ name: ${PROJECT}-piped
 Affected stacks: `adguard`, `audiobookshelf`, `caldav-mcp`, `caldiy`,
 `docker-registry`, `docker-sock-proxy`, `email-mcp`, `filebrowser`, `gitea`,
 `google-maps-mcp`, `grafana`, `healthchecks`, `home-assistant`, `immich`\*,
-`jellyfin`, `mail-ai`, `mailserver`, `metube`, `monica-mcp`, `nginx`,
+`jellyfin`, `mail-ai`, `mailserver`, `metube`, `nginx`,
 `openhands`, `open-webui`, `paperless-ngx`, `piped`\*, `playwright`,
 `transmission`, `vaultwarden`, `victoria-metrics`, `wireguard`, `woodpecker`.
 
@@ -98,7 +98,7 @@ document why.
 22 stacks lack a README.md:
 
 `akaunting`, `authelia`, `caldav-mcp`, `docker-registry`, `gitea`, `grafana`,
-`librespeed`, `mail-ai`, `mirotalk`, `monica`, `monica-mcp`, `monitoring`,
+`librespeed`, `mail-ai`, `mirotalk`, `monica`, `monitoring`,
 `ollama`, `paperless-ngx`, `plausible`, `reitti`, `stalwart`, `traggo`,
 `umami`, `usememos`, `zond`
 
@@ -175,7 +175,7 @@ Immix uses `restart: always` for 4 services but `restart: unless-stopped` for
 
 ### 3.4 Missing Dockerfile HEALTHCHECK
 
-The 4 custom Dockerfiles (`caldav-mcp`, `google-maps-mcp`, `monica-mcp`,
+The 3 custom Dockerfiles (`caldav-mcp`, `google-maps-mcp`,
 `playwright` MCP proxy) should include Dockerfile-level
 `HEALTHCHECK` instructions as a fallback even when compose-level healthchecks
 exist.

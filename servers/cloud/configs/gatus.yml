@@ -29,7 +29,6 @@ endpoints:
       - "[STATUS] == 200"
     alerts:
       - type: ntfy
-
   - name: Vaultwarden
     group: home
     url: "https://probe-home.${DOMAIN}/health/vaultwarden"
@@ -56,7 +55,6 @@ endpoints:
       - "[STATUS] == 200"
     alerts:
       - type: ntfy
-
   - name: AdGuard Home
     group: home
     url: "https://probe-home.${DOMAIN}/health/adguard"
@@ -230,15 +228,6 @@ endpoints:
         failure-threshold: 50
         success-threshold: 1
 
-  - name: Monica
-    group: home
-    url: "https://probe-home.${DOMAIN}/health/monica"
-    interval: 1m
-    conditions:
-      - "[STATUS] == 200"
-    alerts:
-      - type: ntfy
-
   - name: Akaunting
     group: home
     url: "https://probe-home.${DOMAIN}/health/akaunting"
@@ -247,10 +236,27 @@ endpoints:
       - "[STATUS] == 200"
     alerts:
       - type: ntfy
-
   - name: Ollama
     group: home
     url: "https://probe-home.${DOMAIN}/health/ollama"
+    interval: 1m
+    conditions:
+      - "[STATUS] == 200"
+    alerts:
+      - type: ntfy
+
+  - name: Umami
+    group: home
+    url: "https://probe-home.${DOMAIN}/health/umami"
+    interval: 1m
+    conditions:
+      - "[STATUS] == 200"
+    alerts:
+      - type: ntfy
+
+  - name: Schedule
+    group: home
+    url: "https://probe-home.${DOMAIN}/health/caldiy"
     interval: 1m
     conditions:
       - "[STATUS] == 200"
@@ -269,15 +275,6 @@ endpoints:
   - name: Usememos
     group: home
     url: "https://probe-home.${DOMAIN}/health/memos"
-    interval: 1m
-    conditions:
-      - "[STATUS] == 200"
-    alerts:
-      - type: ntfy
-
-  - name: Reitti
-    group: home
-    url: "https://probe-home.${DOMAIN}/health/reitti"
     interval: 1m
     conditions:
       - "[STATUS] == 200"
@@ -311,36 +308,9 @@ endpoints:
     alerts:
       - type: ntfy
 
-  - name: Paperless-ngx
-    group: home
-    url: "https://probe-home.${DOMAIN}/health/paperless"
-    interval: 1m
-    conditions:
-      - "[STATUS] == 200"
-    alerts:
-      - type: ntfy
-
   - name: Docker Registry
     group: home
     url: "https://probe-home.${DOMAIN}/health/docker-registry"
-    interval: 1m
-    conditions:
-      - "[STATUS] == 200"
-    alerts:
-      - type: ntfy
-
-  - name: Umami
-    group: home
-    url: "https://probe-home.${DOMAIN}/health/umami"
-    interval: 1m
-    conditions:
-      - "[STATUS] == 200"
-    alerts:
-      - type: ntfy
-
-  - name: Schedule
-    group: home
-    url: "https://probe-home.${DOMAIN}/health/caldiy"
     interval: 1m
     conditions:
       - "[STATUS] == 200"

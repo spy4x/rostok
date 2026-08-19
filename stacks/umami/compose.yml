@@ -69,9 +69,18 @@ services:
       - "traefik.http.routers.hl-umami.entrypoints=websecure"
       - "traefik.http.routers.hl-umami.tls=true"
       - "traefik.http.routers.hl-umami.tls.certresolver=myresolver"
-      # Proxy /umami/ through main domain (ad-blocker evasion)
+      # Proxy /umami/ through the main domain (ad-blocker + Safari ITP evasion).
+      # Active on the cloud server, which terminates antonshubin.com alongside
+      # Umami, so this router does see apex traffic and is what actually serves
+      # antonshubin.com/umami/* there.
+      #
+      # The home server also terminates antonshubin.com but runs no Umami
+      # container, so a label-based router cannot exist there. That leg is
+      # covered by servers/home/configs/traefik/dynamic/02-umami-proxy.yml,
+      # which forwards to stats.${DOMAIN} over the network. Both are needed
+      # while both hosts serve the apex.
       - "traefik.http.middlewares.umami-stripprefix.stripprefix.prefixes=/umami"
-      - "traefik.http.routers.hl-umami-proxy.rule=Host(`${DOMAIN}`) && PathPrefix(`/umami/`)"
+      - "traefik.http.routers.hl-umami-proxy.rule=(Host(`${DOMAIN}`) || Host(`www.${DOMAIN}`)) && PathPrefix(`/umami/`)"
       - "traefik.http.routers.hl-umami-proxy.middlewares=umami-stripprefix,robots-deny@file"
       - "traefik.http.routers.hl-umami-proxy.entrypoints=websecure"
       - "traefik.http.routers.hl-umami-proxy.tls=true"
