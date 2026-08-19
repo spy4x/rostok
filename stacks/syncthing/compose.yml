@@ -10,23 +10,20 @@
 #   SYNCTHING_SUBDOMAIN   — Traefik host rule
 #   DOMAIN                — base domain
 #
-# ── First-deploy bootstrap ──────────────────────────────────────────
-# On a fresh install the operator does NOT know SYNCTHING_API_KEY yet.
-# Syncthing generates a random key on first boot and stores it in
-# /var/syncthing/config/config.xml. The flow:
+# ── First deploy ────────────────────────────────────────────────────
+# Generate the API key yourself before the first deploy. Do NOT leave the
+# placeholder in .env: Syncthing uses STGUIAPIKEY verbatim, so the container
+# would come up with an API key that is committed to this repo, on a GUI
+# Traefik publishes. before.deploy.ts refuses to deploy in that case.
 #
-#   1. Leave SYNCTHING_API_KEY=REPLACE_WITH_RANDOM_32_CHAR_BASE64 in .env.
-#   2. Run `deno task deploy <server> syncthing`. compose up starts the
-#      container with a generated key (syncthing ignores STGUIAPIKEY if it's
-#      the literal placeholder, or generates one if env unset).
-#   3. after.deploy.ts detects SYNCTHING_API_KEY is unset/placeholder,
-#      SSHes to the server, greps `apikey` out of the container's
-#      config.xml, and uses it for this run.
-#   4. after.deploy prints: "Save it as SYNCTHING_API_KEY in this
-#      server's .env, then re-encrypt."
-#   5. Operator runs `deno task env:decrypt`, edits .env, runs
-#      `deno task env:encrypt`, commits .env.age. Future deploys use the
-#      persisted key.
+#   head -c 24 /dev/urandom | base64        # generate
+#   # put it in servers/<server>/.env as SYNCTHING_API_KEY=...
+#   deno task env:encrypt                   # then commit the .env.age
+#   deno task deploy <server> syncthing
+#
+# STGUIAPIKEY overrides whatever is in config.xml on every start, so the key
+# stays stable across restarts and re-creations.
+
 name: ${PROJECT}
 
 networks:

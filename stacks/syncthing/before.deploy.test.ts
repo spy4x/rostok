@@ -4,6 +4,7 @@
 import { assertEquals, assertThrows } from "@std/assert"
 
 import {
+  assertUsableApiKey,
   collectHostPaths,
   ConfigError,
   expandHome,
@@ -225,4 +226,31 @@ Deno.test("collectHostPaths: includes data_dir, mount roots, folder subdirs", ()
       `/home/${USER}/hdd/backups`,
     ]),
   )
+})
+
+Deno.test({
+  name: "assertUsableApiKey rejects unset, placeholder and short keys",
+  fn() {
+    const prev = Deno.env.get("SYNCTHING_API_KEY")
+    const restore = () =>
+      prev === undefined
+        ? Deno.env.delete("SYNCTHING_API_KEY")
+        : Deno.env.set("SYNCTHING_API_KEY", prev)
+    try {
+      Deno.env.delete("SYNCTHING_API_KEY")
+      assertThrows(() => assertUsableApiKey(), Error, "is not set")
+
+      // Syncthing would use this verbatim as the API key on a public GUI.
+      Deno.env.set("SYNCTHING_API_KEY", "REPLACE_WITH_RANDOM_32_CHAR_BASE64")
+      assertThrows(() => assertUsableApiKey(), Error, "still the placeholder")
+
+      Deno.env.set("SYNCTHING_API_KEY", "short")
+      assertThrows(() => assertUsableApiKey(), Error, "too short")
+
+      Deno.env.set("SYNCTHING_API_KEY", "PBkAoWs7ZBSN5vjBcvXqMWRqcZq3vP0m")
+      assertUsableApiKey() // does not throw
+    } finally {
+      restore()
+    }
+  },
 })

@@ -353,6 +353,37 @@ async function ensureHostDir(path: string, user: string): Promise<void> {
 
 // ── Entry point ───────────────────────────────────────────────────────
 
+/**
+ * Refuse to deploy with a missing or placeholder SYNCTHING_API_KEY.
+ *
+ * This runs BEFORE `docker compose up`, which is the point. Syncthing takes
+ * STGUIAPIKEY literally — it does not recognise a placeholder and generate its
+ * own — so starting the container with the placeholder would publish a
+ * Syncthing whose API key is a value committed to this repo, on a GUI that
+ * Traefik exposes publicly. Catching it in after.deploy would be too late:
+ * the container would already be running and reachable.
+ */
+export function assertUsableApiKey(): void {
+  const key = Deno.env.get("SYNCTHING_API_KEY") ?? ""
+  if (!key) {
+    throw new Error(
+      "SYNCTHING_API_KEY is not set. Generate one with\n" +
+        "  head -c 24 /dev/urandom | base64\n" +
+        "then add it to this server's .env, run `deno task env:encrypt`, and commit the .env.age.",
+    )
+  }
+  if (key.startsWith("REPLACE_WITH_")) {
+    throw new Error(
+      "SYNCTHING_API_KEY is still the placeholder. Syncthing would use it verbatim as a\n" +
+        "publicly-known API key on an internet-exposed GUI. Generate a real one with\n" +
+        "  head -c 24 /dev/urandom | base64",
+    )
+  }
+  if (key.length < 16) {
+    throw new Error(`SYNCTHING_API_KEY is too short (${key.length} chars); use at least 16.`)
+  }
+}
+
 async function main() {
   let text: string
   try {
@@ -373,6 +404,7 @@ async function main() {
   }
 
   const config = validateConfig(parsed)
+  assertUsableApiKey()
   const user = getUser()
   const paths = collectHostPaths(config, user)
   console.log(`Ensuring ${paths.length} host path(s) for Syncthing…`)
