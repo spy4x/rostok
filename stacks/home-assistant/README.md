@@ -32,7 +32,9 @@ For notification emails, configure in Home Assistant:
 
 A second compose file — `compose.local.yml` — runs HA directly on the local
 machine (laptop / mini PC) without Traefik, the `proxy` Docker network, or any
-public exposure. The container listens on `http://localhost:8123` only.
+public exposure — no Traefik router, no `proxy` network. It uses host
+networking for mDNS/SSDP discovery, so it binds `0.0.0.0:8123` and is
+reachable from the LAN; keep it on a trusted network.
 
 This is the path to take when you want to pair and test Zigbee devices
 locally before moving the stack to the production `home` server. The Zigbee
