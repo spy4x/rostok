@@ -5,14 +5,15 @@
 # Serves Umami first-party at antonshubin.com/umami/* by proxying to the
 # Umami instance on the cloud server.
 #
-# Why the route lives here and not on the umami stack:
-#   Umami runs on the CLOUD server and is published at stats.antonshubin.com.
-#   antonshubin.com itself is served by the HOME server's hl-traefik (behind
-#   Cloudflare). The cloud Traefik therefore never receives apex traffic, so
-#   the hl-umami-proxy router declared on the umami stack could never match —
-#   antonshubin.com/umami/script.js returned Traefik's 404 the whole time it
-#   was configured. An apex path route has to be declared on whichever Traefik
-#   terminates the apex, which is this one.
+# Why this leg exists:
+#   antonshubin.com is served from BOTH hosts. On the cloud server the site sits
+#   alongside Umami, so the umami stack's own hl-umami-proxy labels handle
+#   /umami/* there. The home server also terminates the apex but runs no Umami
+#   container, so a label-based router is impossible here — this file covers the
+#   home leg by forwarding over the network to stats.antonshubin.com.
+#
+#   Keep both while both hosts serve the apex. If the home server stops serving
+#   antonshubin.com, this file can be deleted and the cloud labels are enough.
 #
 # Why proxy at all:
 #   Serving the tracker first-party sidesteps ad-blocker lists that match
