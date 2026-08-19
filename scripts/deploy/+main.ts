@@ -76,8 +76,11 @@ const tempDir = await Deno.makeTempDir({ prefix: "deploy_" })
 log(`Created temp dir: ${tempDir}`)
 
 try {
-  // Copy server folder contents to temp directory
-  const whitelist = [".env", "configs/"]
+  // Copy server folder contents to temp directory. `compose-override/` lets
+  // each server commit per-stack bind mounts (e.g.
+  // servers/home/compose-override/syncthing.yml) without polluting the
+  // generic stacks/<stack>/compose.yml.
+  const whitelist = [".env", "configs/", "compose-override/"]
   log("Copying files to temp dir...")
   for (const item of whitelist) {
     const srcPath = `${targetPath}/${item}`
@@ -173,7 +176,10 @@ try {
       const proc = new Deno.Command(Deno.execPath(), {
         args: [
           "run",
-          "--allow-run=htpasswd",
+          // Stack-level before.deploy hooks commonly need: htpasswd
+          // (traefik), ssh/docker/bash (syncthing), and friends.
+          "--allow-run=htpasswd,ssh,docker,bash,mkdir,chown,test,rm,printf,wget,cp,mv,ln",
+          "--allow-net=localhost",
           "-R",
           "-W",
           "-E",
@@ -206,7 +212,8 @@ try {
       const proc = new Deno.Command(Deno.execPath(), {
         args: [
           "run",
-          "--allow-run=htpasswd",
+          "--allow-run=htpasswd,ssh,docker,bash,mkdir,chown,test,rm,printf,wget,cp,mv,ln",
+          "--allow-net=localhost",
           "-R",
           "-W",
           "-E",
@@ -362,7 +369,9 @@ try {
     log("No stacks to deploy")
   }
 
-  // Handle "after.deploy.ts" scripts for stacks (runs AFTER docker compose deployment)
+  // Handle "after.deploy.ts" scripts for stacks (runs AFTER docker compose deployment).
+  // Track per-stack failure to surface in the final exit code (CI-friendly).
+  const afterDeployFailures: string[] = []
   for (const stackConfig of stacks) {
     const stackName = stackConfig.name
     const deployAs = stackConfig.deployAs || stackName
@@ -388,10 +397,16 @@ try {
       if (output.code !== 0) {
         error(`after.deploy.ts failed for stack: ${stackName}`)
         error(new TextDecoder().decode(output.stderr))
-        Deno.exit(1)
+        afterDeployFailures.push(stackName)
+      } else {
+        success(`✓ after.deploy.ts for ${stackName}`)
       }
-      success(`✓ after.deploy.ts for ${stackName}`)
     }
+  }
+
+  if (afterDeployFailures.length > 0) {
+    error(`after.deploy.ts failed for stacks: ${afterDeployFailures.join(", ")}`)
+    Deno.exit(1)
   }
 
   log("Deployment script finished")
