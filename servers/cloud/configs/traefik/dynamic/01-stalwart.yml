@@ -1,4 +1,11 @@
 # Cloud-server specific routes — only deployed to cloud.
+#
+# This lives under servers/cloud/ so it reaches ONLY the cloud Traefik.
+# It previously sat in stacks/traefik/dynamic/, which is the SHARED base
+# mounted into every server, so home's Traefik also loaded this router and
+# spent months retrying an ACME challenge for mail.antonshubin.com that it
+# can never pass — that host resolves to the cloud server, so Let's Encrypt
+# validates against cloud, which has no token for home's challenge.
 # Traefik container resolves hl-stalwart via Docker DNS (same network).
 http:
   routers:

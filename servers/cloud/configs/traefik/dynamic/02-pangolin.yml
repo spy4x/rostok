@@ -1,3 +1,6 @@
+# Cloud-only: the backing service is hl-gerbil, which runs on cloud. Kept
+# under servers/cloud/ so it is not mounted into other servers' Traefik.
+#
 # TCP+SNI passthrough so gerbil Traefik (in gerbil's netns) does Pangolin's SSL.
 # main hl-traefik owns host:80/443. Gerbil Traefik does LE via TLS-ALPN-01
 # (challenges ride on port 443 SNI, no port 80 plumbing needed).
