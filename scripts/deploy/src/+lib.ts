@@ -82,7 +82,11 @@ cd ${pathApps} && docker ps -a --filter "name=hl-${stackName}" --format '{{.ID}}
     docker rm -f \$id >/dev/null 2>&1 || true
   fi
 done
-cd ${pathApps} && docker compose ${projectFlag} --env-file=.env.root --env-file=.env -f stacks/${stackName}/compose.yml up -d --build 2>&1
+# Per-server compose override (if present). Only this path is supported —
+# we don't generate override fragments in before.deploy.ts anymore.
+COMPOSE_FILES="-f stacks/${stackName}/compose.yml"
+[ -f "servers/${deployAs}/compose-override/${stackName}.yml" ] && COMPOSE_FILES="\$COMPOSE_FILES -f servers/${deployAs}/compose-override/${stackName}.yml"
+cd ${pathApps} && docker compose ${projectFlag} --env-file=.env.root --env-file=.env \$COMPOSE_FILES up -d --build 2>&1
 if [ $? -eq 0 ]; then
   echo "DEPLOY_SUCCESS:${stackName}:${deployAs}"
 else
@@ -92,7 +96,7 @@ ${
       needsRestart
         ? `
 echo "RESTARTING:${stackName}:${deployAs}"
-cd ${pathApps} && docker compose ${projectFlag} -f stacks/${stackName}/compose.yml restart 2>&1
+cd ${pathApps} && docker compose ${projectFlag} \$COMPOSE_FILES restart 2>&1
 echo "RESTART_DONE:${stackName}:${deployAs}"
 `
         : ""

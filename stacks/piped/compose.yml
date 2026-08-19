@@ -10,9 +10,16 @@ services:
     image: 1337kavin/piped-frontend:latest
     restart: unless-stopped
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
     environment:
       - BACKEND_HOSTNAME=pipedapi.${DOMAIN}
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS -o /dev/null http://localhost:80/ || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
     networks:
       - proxy
       - default
@@ -45,7 +52,13 @@ services:
       db:
         condition: service_healthy
       bg-helper:
-        condition: service_started
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS -o /dev/null http://localhost:8080/healthcheck || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 90s
     networks:
       - proxy
       - default
@@ -70,6 +83,12 @@ services:
     container_name: hl-piped-proxy
     image: 1337kavin/piped-proxy:latest
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c '</dev/tcp/127.0.0.1/8080' || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
     networks:
       - proxy
       - default
@@ -94,6 +113,12 @@ services:
     container_name: hl-piped-bg-helper
     image: 1337kavin/bg-helper-server:latest
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c '</dev/tcp/127.0.0.1/3000' || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
     networks:
       - default
     deploy:

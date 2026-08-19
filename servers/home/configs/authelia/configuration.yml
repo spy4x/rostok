@@ -63,27 +63,19 @@ access_control:
       policy: bypass
     - domain: "stats.antonshubin.com"
       policy: bypass
-    - domain: "docs.antonshubin.com"
-      policy: bypass
 
     # Everything else — 2FA required
     - domain: "torrents.antonshubin.com"
       policy: two_factor
     - domain: "invoices.antonshubin.com"
       policy: two_factor
-    - domain: "crm.antonshubin.com"
-      policy: two_factor
     - domain: "metube.antonshubin.com"
-      policy: two_factor
-    - domain: "ollama.antonshubin.com"
       policy: two_factor
     - domain: "time.antonshubin.com"
       policy: two_factor
     - domain: "rspamd.antonshubin.com"
       policy: two_factor
     - domain: "code.antonshubin.com"
-      policy: two_factor
-    - domain: "metrics.antonshubin.com"
       policy: two_factor
     - domain: "proxy-home.antonshubin.com"
       policy: two_factor

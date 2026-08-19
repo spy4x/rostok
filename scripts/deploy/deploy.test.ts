@@ -92,7 +92,7 @@ Deno.test({
     const stacks: StackConfig[] = [{ name: "traefik" }]
     const script = generateDeployScript(stacks, "/apps", new Set(["traefik"]))
     assertStringIncludes(script, "RESTARTING:traefik:traefik")
-    assertStringIncludes(script, "docker compose -p traefik -f stacks/traefik/compose.yml restart")
+    assertStringIncludes(script, "docker compose -p traefik $COMPOSE_FILES restart")
   },
 })
 

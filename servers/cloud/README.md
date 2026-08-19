@@ -26,18 +26,22 @@ TXT     @                   v=spf1 mx ip4:<VPS-IP> -all
 TXT     _dmarc              v=DMARC1; p=reject; rua=mailto:postmaster@yourdomain.com
 TXT     _mta-sts            v=STSv1; id=<YYYYMMDD>
 TXT     _smtp._tls          v=TLSRPTv1; rua=mailto:postmaster@yourdomain.com
-TXT     mail._domainkey     v=DKIM1; k=rsa; p=<get-from-server>
+TXT     v1-ed25519-YYYYMMDD._domainkey     v=DKIM1; k=ed25519; h=sha256; p=<get-from-server>
+TXT     v1-rsa-YYYYMMDD._domainkey         v=DKIM1; k=rsa; h=sha256; p=<get-from-server>
 PTR     <VPS-IP>            mail.yourdomain.com
 ```
 
 MTA-STS policy served at `https://mta-sts.${DOMAIN}/.well-known/mta-sts.txt`.
 TLS-RPT reports are sent to the `rua` address — review periodically via mailbox.
 
-Get DKIM public key for DNS:
-
-```bash
-docker exec hl-stalwart cat /etc/stalwart/config/keys/*/dkim/*.pem 2>/dev/null | openssl rsa -pubout 2>/dev/null | grep -v '^-----'
-```
+Get publishable DKIM DNS records from each domain object's generated
+`dnsZoneFile` through admin JMAP `x:Domain/get`. Keep Stalwart DKIM management
+manual while Cloudflare publication is manual. For each rotation: generate
+keys, publish both TXT records, verify public DNS, activate new selectors, then
+keep old selectors active for seven days. After deactivation, retain old TXT
+records for another seven-day mail transit window and at least one DNS TTL,
+then remove them. Revoke compromised selectors immediately. Enable automatic
+DKIM rotation only after configuring automatic DNS publication.
 
 ## Email Management
 
@@ -75,7 +79,8 @@ telnet mail.yourdomain.com 587
 # Check DNS
 dig mail.yourdomain.com +short
 dig yourdomain.com MX +short
-dig mail._domainkey.yourdomain.com TXT +short
+dig v1-ed25519-YYYYMMDD._domainkey.yourdomain.com TXT +short
+dig v1-rsa-YYYYMMDD._domainkey.yourdomain.com TXT +short
 ```
 
 ## Troubleshooting

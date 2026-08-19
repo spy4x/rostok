@@ -11,7 +11,7 @@ services:
       POSTGRES_PASSWORD: ${CALDIY_DB_PASSWORD}
       POSTGRES_DB: caldiy
     volumes:
-      - ${VOLUMES_PATH}/caldiy/db:/var/lib/postgresql/data
+      - ${VOLUMES_PATH}/caldiy/db:/var/lib/postgresql/data:z
     restart: unless-stopped
     deploy:
       resources:
@@ -30,7 +30,7 @@ services:
     container_name: hl-caldiy-redis
     image: redis:7-alpine
     volumes:
-      - ${VOLUMES_PATH}/caldiy/redis:/data
+      - ${VOLUMES_PATH}/caldiy/redis:/data:z
     restart: unless-stopped
     deploy:
       resources:

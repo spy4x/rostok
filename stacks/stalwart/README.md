@@ -38,16 +38,37 @@ Configured via `STALWART_RECOVERY_ADMIN` env var. First login at `/admin` uses t
 
 | Record                                               | Value                                                       |
 | ---------------------------------------------------- | ----------------------------------------------------------- |
-| `antonshubin.com` A                                  | `165.173.1.38` (cloud)                                      |
-| `mail.antonshubin.com` A                             | `165.173.1.38` (cloud)                                      |
+| `antonshubin.com` A                                  | `165.173.1.38` (home origin, Cloudflare-proxied)            |
+| `mail.antonshubin.com` A                             | `23.88.101.28` (cloud, DNS-only — never proxy SMTP)         |
 | `cal.antonshubin.com` A                              | `23.88.101.28` (cloud)                                      |
 | `antonshubin.com` MX                                 | `mail.antonshubin.com`                                      |
 | `antonshubin.com` SPF                                | `v=spf1 mx ip4:23.88.101.28 -all`                           |
 | `_dmarc.antonshubin.com` TXT                         | `v=DMARC1; p=reject; rua=mailto:postmaster@antonshubin.com` |
 | `_mta-sts.antonshubin.com` TXT                       | `v=STSv1; id=20260702`                                      |
 | `_smtp._tls.antonshubin.com` TXT                     | `v=TLSRPTv1; rua=mailto:postmaster@antonshubin.com`         |
-| `v1-ed25519-20260629._domainkey.antonshubin.com` TXT | DKIM Ed25519 key                                            |
-| `v1-rsa-20260629._domainkey.antonshubin.com` TXT     | DKIM RSA key                                                |
+| `v1-ed25519-20260702._domainkey.antonshubin.com` TXT | DKIM Ed25519 key                                            |
+| `v1-rsa-20260702._domainkey.antonshubin.com` TXT     | DKIM RSA key                                                |
+| `v1-ed25519-20260702._domainkey.neatsoft.dev` TXT    | DKIM Ed25519 key                                            |
+| `v1-rsa-20260702._domainkey.neatsoft.dev` TXT        | DKIM RSA key                                                |
+
+`before.deploy.ts` and `after.deploy.ts` enforce manual DKIM management while
+Cloudflare DNS publication remains manual. Post-deploy verification fails if
+either domain lacks matching active Ed25519 and RSA TXT records.
+
+Only first deployment, when no live Stalwart endpoint exists, may bypass
+preflight with `STALWART_INITIAL_DEPLOY=true deno task deploy cloud stalwart`.
+Post-deploy DKIM verification remains mandatory.
+
+The apex is proxied, so `dig antonshubin.com` returns Cloudflare addresses
+rather than the origin above. `mail.` and the `_domainkey` records must stay
+DNS-only: proxying them would hide the real SMTP address and break DKIM
+lookups.
+
+Retired selectors are deleted from DNS once no signature references them.
+The `v1-*-20260629` pair on both domains and the docker-mailserver-era
+`mail._domainkey.neatsoft.dev` were removed on 2026-08-19; only the active
+`20260702` pair above is published. Leaving a superseded selector in DNS keeps
+its old private key able to sign mail that still passes DKIM.
 
 ## Ports
 
