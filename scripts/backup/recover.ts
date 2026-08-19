@@ -59,21 +59,39 @@ async function main() {
 
   if (
     !confirm(
-      `\nProceed with recovery?\n  ${partial.length} partial repos: repair (keep last good snapshot)\n  ${broken.length} broken repos: re-init (LOSE ALL DATA)\n\nType 'YES' to confirm: `,
+      `\nProceed with recovery?\n` +
+        `  ${partial.length} partial repos: DELETE ALL SNAPSHOTS, keep data packs.\n` +
+        `      Existing restore points are gone; the next backup starts a new one.\n` +
+        `  ${broken.length} broken repos: DELETE THE REPO AND RE-INIT. ALL DATA LOST.\n` +
+        `\nType 'YES' to confirm: `,
     )
   ) {
     log("Aborted.")
     return
   }
 
+  // One repo that cannot be cleared must not strand the rest, and the final
+  // check below still needs to run — so report and carry on.
+  const failures: string[] = []
+
   log("\n========== RECOVERING PARTIAL REPOS ==========")
   for (const r of partial) {
-    await recoverPartial(`${basePath}/${r.name}`, password)
+    try {
+      await recoverPartial(`${basePath}/${r.name}`, password)
+    } catch (err) {
+      log(`    ❌ ${r.name}: ${(err as Error).message}`)
+      failures.push(r.name)
+    }
   }
 
   log("\n========== RE-INITIALIZING BROKEN REPOS ==========")
   for (const r of broken) {
-    await reinitRepo(`${basePath}/${r.name}`, password)
+    try {
+      await reinitRepo(`${basePath}/${r.name}`, password)
+    } catch (err) {
+      log(`    ❌ ${r.name}: ${(err as Error).message}`)
+      failures.push(r.name)
+    }
   }
 
   log("\n========== FINAL CHECK ==========")
@@ -83,6 +101,9 @@ async function main() {
     console.log(`${icon} ${final.name}: ${final.status}`)
   }
 
+  if (failures.length) {
+    log(`\n${failures.length} repo(s) could not be recovered: ${failures.join(", ")}`)
+  }
   log("\nDone. Re-run main backup: deno task backup")
 }
 
@@ -123,7 +144,13 @@ async function recoverPartial(path: string, password: string) {
   for (const subdir of ["snapshots", "index", "locks"]) {
     try {
       await Deno.remove(`${path}/${subdir}`, { recursive: true })
-    } catch (_) { /* may not exist */ }
+    } catch (err) {
+      // Absent is fine. Anything else (permissions, EBUSY) would leave a
+      // half-cleared repo that `repair index` cannot reason about, so stop.
+      if (!(err instanceof Deno.errors.NotFound)) {
+        throw new Error(`could not clear ${path}/${subdir}: ${(err as Error).message}`)
+      }
+    }
   }
 
   const repairCmd = new Deno.Command("restic", {
@@ -142,7 +169,15 @@ async function recoverPartial(path: string, password: string) {
 
 async function reinitRepo(path: string, password: string) {
   log(`  Re-initializing ${path} ...`)
-  await Deno.remove(path, { recursive: true }).catch(() => {})
+  // A swallowed failure here would leave a partially-deleted repo and then
+  // init over it, which is worse than not trying.
+  try {
+    await Deno.remove(path, { recursive: true })
+  } catch (err) {
+    if (!(err instanceof Deno.errors.NotFound)) {
+      throw new Error(`could not remove ${path}: ${(err as Error).message}`)
+    }
+  }
   await Deno.mkdir(path, { recursive: true })
   const cmd = new Deno.Command("restic", {
     args: ["-r", path, "init"],
