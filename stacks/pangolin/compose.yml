@@ -1,0 +1,94 @@
+name: ${PROJECT:-pangolin}
+
+services:
+  # Pangolin server + UI (Next.js) + SQLite DB.
+  # Self-hosted identity-aware reverse proxy + WireGuard tunnel broker.
+  # Reference: https://github.com/fosrl/pangolin
+  # NOTE: uses named volumes (not bind mount) to avoid userns-remap permission issues
+  pangolin:
+    image: fosrl/pangolin:1.21.1
+    container_name: ${PANGOLIN_CONTAINER_NAME:-hl-pangolin}
+    restart: unless-stopped
+    user: "0:0"
+    volumes:
+      - pangolin-config:/app/config
+    environment:
+      - PANGOLIN_APP_URL=${PANGOLIN_APP_URL}
+    deploy:
+      resources:
+        limits:
+          memory: ${PANGOLIN_MEM_LIMIT:-1024M}
+          cpus: ${PANGOLIN_CPU_LIMIT:-1}
+    healthcheck:
+      test: [
+        "CMD",
+        "node",
+        "-e",
+        "fetch('http://localhost:3001/api/v1/').then(r=>process.exit(r.status<500?0:1)).catch(()=>process.exit(1))",
+      ]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
+    # Expose the Next.js UI on host loopback for SSH-tunnel access.
+    # SSH: `ssh -f -N -L 3002:172.18.0.18:3002 cloudlab` (or just use this 127.0.0.1:3002).
+    # Public reachability is via main hl-traefik TCP+SNI passthrough (stacks/traefik/dynamic/02-pangolin.yml).
+    ports:
+      - "127.0.0.1:3002:3002"
+    networks:
+      - proxy
+
+  # Gerbil = WireGuard tunnel client that connects back to Pangolin server.
+  # Runs beside Pangolin as its server-side tunnel and relay endpoint.
+  gerbil:
+    image: fosrl/gerbil:1.4.3
+    container_name: ${GERBIL_CONTAINER_NAME:-hl-gerbil}
+    restart: unless-stopped
+    # Wait only for container start; API readiness is checked independently.
+    depends_on:
+      pangolin:
+        condition: service_started
+    command:
+      - --reachableAt=http://gerbil:3004
+      - --generateAndSaveKeyTo=/var/config/key
+      - --remoteConfig=http://pangolin:3001/api/v1/
+    volumes:
+      - pangolin-config:/var/config
+    cap_add:
+      - NET_ADMIN
+    # Expose WireGuard ports to host so remote sites (newt) can dial back.
+    # 80/443 are NOT published here — hl-traefik (main) on the host already
+    # owns 80/443, so it routes Pangolin hosts to gerbil via the proxy network.
+    ports:
+      - "51820:51820/udp"
+      - "21820:21820/udp"
+    networks:
+      - proxy
+
+  # Traefik terminates HTTPS for resources routed through Pangolin.
+  # Uses the gerbil network namespace so published ports appear on the tunnel endpoint.
+  # NOTE: container name is `hl-pangolin-traefik` (not `hl-traefik-pangolin`) so
+  # the global deploy filter `name=hl-traefik` doesn't accidentally match and
+  # remove it when deploying the main traefik stack.
+  traefik:
+    image: traefik:v3.7.6
+    container_name: ${TRAEFIK_PANGOLIN_CONTAINER_NAME:-hl-pangolin-traefik}
+    restart: unless-stopped
+    network_mode: service:gerbil
+    depends_on:
+      pangolin:
+        condition: service_started
+    command:
+      - --configFile=/etc/traefik/traefik_config.yml
+    volumes:
+      - ./traefik:/etc/traefik:ro,z
+      - pangolin-letsencrypt:/letsencrypt
+
+volumes:
+  pangolin-config:
+  pangolin-letsencrypt:
+
+networks:
+  proxy:
+    external: true
+    name: ${NETWORK:-proxy}
