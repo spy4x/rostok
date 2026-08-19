@@ -27,6 +27,14 @@
       "command": "deno run -A ./scripts/backup/restore.ts",
       "description": "📥 Restore service data from backup (interactive)"
     },
+    "backup:recover": {
+      "command": "deno run --env-file=.env.root --env-file=servers/home/.env -A ./scripts/backup/recover.ts",
+      "description": "🚧 Recover corrupted restic repos (dry-run by default, pass --execute)"
+    },
+    "backup:recover:dry-run": {
+      "command": "deno run --env-file=.env.root --env-file=servers/home/.env -A ./scripts/backup/recover.ts -- --dry-run",
+      "description": "🔍 Scan and report corrupted restic repos without modifying anything"
+    },
     "offline-backup": {
       "command": "deno run --env-file=.env.root -A ./scripts/offline-backup/+main.ts",
       "description": "🗄️ Backup/restore to/from external drive (monthly offline backups)"
