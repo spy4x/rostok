@@ -7,15 +7,21 @@ the rules causes conflicts.
 
 ---
 
-## 🔴 IMMUTABLE RULE: Branch + Worktree FIRST
+## 🔴 IMMUTABLE RULE: Branch + Worktree FIRST (ensure, don't assume)
 
 **This is the single most important rule. Violations cause merge conflicts
 between parallel AI workers.**
 
-The very first action you take when given any task involving code changes
-MUST be to create a new branch and worktree. You MUST NOT open any files,
-read any source code, explore the codebase, or make any changes in the
-**current directory first**. You work inside the new worktree.
+The very first action you take when given any task involving code changes MUST
+be to establish a dedicated branch and worktree — either confirming your
+harness already gave you one, or creating it. You MUST NOT open any files, read
+any source code, explore the codebase, or make any changes in the **main
+worktree**. You work inside the dedicated worktree.
+
+"Establish" is not "create unconditionally": check first (see below). Creating a
+worktree while already inside one nests a checkout inside a checkout, which is
+how this repo previously accumulated orphaned directories git could no longer
+see.
 
 ### Why this rule is absolute
 
@@ -30,43 +36,83 @@ you will either:
 **Creating the branch first is your very first action — not after exploring,
 not after understanding the code, not after "figuring out what to do".**
 
-### → Create branch + worktree immediately
+### → Ensure you have a worktree (your first action)
+
+Your harness may have already placed you in one — OpenCode Web gives every
+session its own worktree. **Check before creating anything**, or you end up
+with a worktree nested inside a worktree.
 
 ```bash
-# ONE COMMAND: create branch+worktree from main and cd into it
-git worktree add -b <type>/<short-description> <type>/<short-description> main
-cd <type>/<short-description>
+# A linked worktree has .git as a FILE. The main repo has it as a DIRECTORY.
+if [ -f .git ]; then
+  echo "Already in a worktree — work here. Do NOT create another."
+else
+  # Derive every path from the repo itself, so this works on any machine.
+  MAIN=$(realpath "$(dirname "$(git rev-parse --git-common-dir)")")
+  WT="$(dirname "$MAIN")/worktrees/$(basename "$MAIN")/<type>/<slug>"
+  mkdir -p "$(dirname "$WT")"   # git worktree add does NOT create parent dirs
+  git worktree add -b <type>/<slug> "$WT" main
+  cd "$WT"
+fi
 ```
 
-After creation, run `pwd` to confirm you're in the new directory, and `git
-branch --show-current` to confirm you're on the new branch.
+Then confirm with `pwd` and `git branch --show-current`.
+
+Two details that matter:
+
+- **`realpath`** collapses symlinked checkout paths to their canonical
+  location, so every worktree is registered under one consistent path. This
+  repo is reachable as both `~/sync/code/homelab` and
+  `~/ssd-2tb/sync/code/homelab`; without `realpath` you get a confusing mix.
+- **`mkdir -p`** on the parent — `git worktree add` fails with a bare
+  `No such file or directory` when an intermediate dir is missing.
 
 ### Worktree directory layout
 
+Worktrees live **outside** the repo, in a sibling `worktrees/<repo>/` directory:
+
 ```
-homelab/                          ← main worktree + .git/
-├── .git/                         ← git data (shared across all worktrees)
-├── stacks/                       # Service catalog (reusable)
-│   └── {service}/
-│       ├── compose.yml
-│       ├── backup.ts
-│       └── README.md
-├── servers/                      # Server-specific configs + .env
-├── scripts/                      # TypeScript automation
-├── ansible/                      # Ansible playbooks
-├── deno.jsonc                    # Deno configuration
-├── AGENTS.md                     ← this file
-├── feat/add-dark-mode/           ← worktree for feature branch
-│   ├── .git                      ← pointer to ../.git/worktrees/add-dark-mode
-│   ├── stacks/
-│   ├── servers/
-│   └── ...
-├── fix/backup-errors/            ← worktree for fix branch
-└── ...
+~/ssd-2tb/sync/code/               ← wherever you keep repos
+├── homelab/                       ← main worktree + .git/ (do NOT edit here)
+│   ├── .git/                      ← git data, shared by all worktrees
+│   ├── stacks/                    # Service catalog (reusable)
+│   │   └── {service}/
+│   │       ├── compose.yml
+│   │       ├── backup.ts
+│   │       └── README.md
+│   ├── servers/                   # Server-specific configs + .env
+│   ├── scripts/                   # TypeScript automation
+│   ├── ansible/                   # Ansible playbooks
+│   ├── deno.jsonc                 # Deno configuration
+│   └── AGENTS.md                  ← this file
+└── worktrees/
+    └── homelab/                   ← every worktree for this repo
+        ├── feat/add-dark-mode/    ← .git is a FILE pointing at ../../../homelab/.git
+        ├── fix/backup-errors/
+        └── review/pr-120/
 ```
 
-**Every branch gets its own subdirectory.** Worktrees live **inside** the
-repo directory. You `cd` into that subdirectory and do ALL work there.
+The layout is derived, not hardcoded: a repo at `~/projects/foo` gets its
+worktrees in `~/projects/worktrees/foo/<type>/<slug>`.
+
+### Why outside the repo, not inside
+
+Nesting worktrees inside the repo was the old convention here. It broke things
+in ways that took a while to trace, so do not go back to it:
+
+- **Repo tooling walks the working tree.** With worktrees nested inside,
+  `deno fmt --check` scanned 2079 files instead of 253 and failed on other
+  branches' code, so every commit needed `--no-verify`. Worse, `env:decrypt`
+  found 32 env files instead of 4 and rewrote _other_ worktrees' secrets with
+  this checkout's values — and those worktrees are on different branches, so
+  the pre-commit hook could commit one branch's secrets onto another.
+- **`git status` showed them as untracked** (`?? feat/`, `?? fix/`), leaving one
+  `git add -A` away from committing an entire nested checkout.
+- **Branch and directory names collided.** `git log feat/foo` fails with
+  `fatal: ambiguous argument 'feat/foo': both revision and filename`.
+
+A sibling directory has none of these problems, and `ls ../worktrees/homelab`
+becomes a useful view of what is currently in flight.
 
 ### Branch naming convention (Angular)
 
@@ -95,24 +141,50 @@ chore/upgrade-deno-version
 
 ### What about exploration / understanding the codebase first?
 
-NO. Create the branch first. Then explore inside the worktree. The sequence
-is ALWAYS:
+NO. Secure a worktree first. Then explore inside it. The sequence is ALWAYS:
 
 ```bash
-# STEP 1 (mandatory, no exceptions): create worktree
-git worktree add -b feat/my-task feat/my-task main
-cd feat/my-task
+# STEP 1 (mandatory): are you already in one? If not, create it.
+[ -f .git ] || {
+  MAIN=$(realpath "$(dirname "$(git rev-parse --git-common-dir)")")
+  WT="$(dirname "$MAIN")/worktrees/$(basename "$MAIN")/feat/my-task"
+  mkdir -p "$(dirname "$WT")"
+  git worktree add -b feat/my-task "$WT" main
+  cd "$WT"
+}
 
 # STEP 2: now explore and make changes
 ```
 
+### After creating a worktree — env setup
+
+A fresh worktree has no age key (`.age/` is gitignored), so the `post-checkout`
+hook cannot decrypt envs until you copy it across:
+
+```bash
+MAIN=$(realpath "$(dirname "$(git rev-parse --git-common-dir)")")
+[ -f .age/key.txt ] || { mkdir -p .age && cp "$MAIN/.age/key.txt" .age/key.txt; }
+deno task env:decrypt
+```
+
+Resolve `$MAIN` this way rather than with a relative `../../` path — the depth
+differs between a sibling worktree and a harness-managed one, and
+`--git-common-dir` is correct from both.
+
 ### Rules
 
-- The `.git` directory is at the repo root (shared across all worktrees)
-- Branch names with `/` create subdirectories (e.g., `fix/foo` → `fix/foo/`)
-- Flat names create flat directories (e.g., `feat-foo` → `feat-foo/`)
+- The `.git` directory lives in the **main** worktree and is shared; every
+  linked worktree has a `.git` **file** pointing at it
+- The worktree path and the branch name are independent — pass the branch to
+  `-b` and the path as a separate argument
+- Branch names with `/` create subdirectories under `worktrees/<repo>/`
+  (e.g. `fix/foo` → `worktrees/homelab/fix/foo/`)
 - You cannot check out the same branch in two worktrees at once — always
   create a fresh branch for new work
+- Never create a worktree **inside** the repo or inside another worktree
+- When done: `git worktree remove <path> && git branch -d <branch>`. If a
+  directory outlives its registration, its `.git` file points at a missing
+  gitdir and `git worktree prune` can no longer see it — delete it by hand
 
 ---
 

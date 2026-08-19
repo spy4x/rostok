@@ -85,7 +85,9 @@
       "description": "📘 Type-check TypeScript files"
     },
     "test": {
-      "command": "deno test --allow-env",
+      // -R/-W: findEnvFiles() tests build a throwaway dir tree (nested
+      // worktree fixtures) under the system temp dir and walk it.
+      "command": "deno test --allow-env -R -W",
       "description": "🧪 Run tests"
     },
     "fix": {
