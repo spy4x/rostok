@@ -34,9 +34,14 @@ PTR     <VPS-IP>            mail.yourdomain.com
 MTA-STS policy served at `https://mta-sts.${DOMAIN}/.well-known/mta-sts.txt`.
 TLS-RPT reports are sent to the `rua` address — review periodically via mailbox.
 
-Get DKIM DNS records from Stalwart admin JMAP (`x:DkimSignature/get`), or use
-the domain object's generated `dnsZoneFile`. Selectors rotate automatically;
-publish new records before old selectors expire.
+Get publishable DKIM DNS records from each domain object's generated
+`dnsZoneFile` through admin JMAP `x:Domain/get`. Keep Stalwart DKIM management
+manual while Cloudflare publication is manual. For each rotation: generate
+keys, publish both TXT records, verify public DNS, activate new selectors, then
+keep old selectors active for seven days. After deactivation, retain old TXT
+records for another seven-day mail transit window and at least one DNS TTL,
+then remove them. Revoke compromised selectors immediately. Enable automatic
+DKIM rotation only after configuring automatic DNS publication.
 
 ## Email Management
 
