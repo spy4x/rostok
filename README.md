@@ -1,106 +1,98 @@
 # rostok
 
-**rostok** (росток — Russian: "sprout") is an infrastructure-as-code
-catalog and CLI for self-hosted services. Sprout your own homelab from
-the catalog.
+**росток** (sprout) — scaffold a self-hosted homelab from a curated catalog.
 
-**WARNING**: This repo is **public**. Never commit plaintext passwords, secrets, or .env files.
-Secrets stored in `.env.age` using **age64** per-value encryption. Only changed values show in diff.
-Decryption key is local-only.
+`rostok` is a CLI + a catalog of self-hosted services. One command and
+a few questions get you from a fresh folder to a deployable
+infrastructure-as-code repo for your servers.
 
-> The `rostok` CLI tool is under design — see `docs/v1-cli.md`. Until it
-> ships, follow the manual workflow below.
+## Who it's for
 
-## Architecture
+| Persona                                             | What you get                                                  |
+| --------------------------------------------------- | ------------------------------------------------------------- |
+| **Hobbyist** — one old PC, want a few services      | One-command onboarding, sensible defaults, no jargon          |
+| **Multi-server homelabber** — 3 boxes, 20+ services | Cross-server wiring, dependency graph, multi-server config    |
+| **Small company** — replace SaaS with self-hosted   | SSO, backups, monitoring baked in; sensible security defaults |
 
-- **Stacks catalog** (`stacks/`): reusable Docker Compose definitions
-- **Server configs** (`servers/`): which stacks each server deploys + env vars
-- **Deno scripts** (`scripts/`): deploy, backup, SSH helpers
-- **Ansible** (`ansible/`): initial server setup, fail2ban, cron jobs
-- **All containers use `hl-` prefix** to avoid name conflicts with other projects
+Big companies are out of scope. The repo stays small and homelab-shaped.
 
-## Servers
-
-| Server  | Role                                | Stacks                                                      |
-| ------- | ----------------------------------- | ----------------------------------------------------------- |
-| Home    | Main server (GPU, media, storage)   | 47 stacks: auth, media, AI, git, CRM, analytics, monitoring |
-| Cloud   | Public-facing (mail, edge services) | 10 stacks: mailserver, gatus, healthchecks, ntfy            |
-| Offsite | Backup/DR                           | Syncthing, Traefik                                          |
-
-## Key Services
-
-| Service        | URL                          | Auth                |
-| -------------- | ---------------------------- | ------------------- |
-| Dashboard      | dash.antonshubin.com         | None                |
-| Uptime (cloud) | uptime-cloud.antonshubin.com | None                |
-| Authelia SSO   | auth.antonshubin.com         | SSO provider        |
-| Grafana        | metrics.antonshubin.com      | Basic auth          |
-| Passwords      | passwords.antonshubin.com    | Vaultwarden account |
-| Email          | (IMAP/SMTP)                  | Mailserver account  |
-| AI Chat        | ai.antonshubin.com           | OpenWebUI account   |
-
-Full service list: see `docs/improvements.md` or `servers/*/config.json`.
-
-## Quick Start
+## Install
 
 ```bash
-# Prerequisites
-curl -fsSL https://deno.land/install.sh | sh
-# Install Ansible (see docs)
-
-# Clone
-git clone https://github.com/spy4x/rostok.git && cd rostok
-
-# Setup env
-cp servers/home/.env.example servers/home/.env
-# Edit with your domain, SSH params, secrets
-nano servers/home/.env
-
-# Deploy
-deno task deploy home     # Deploy to home server
-deno task ansible ...     # Run Ansible playbooks
+deno install -A -n rostok jsr:@rostok/cli
 ```
 
-## Common Tasks
+Requires [Deno](https://deno.land) ≥ 2.0 and `age` on PATH.
+
+## Quick start
 
 ```bash
-deno task check           # Lint, format, type-check
-deno task deploy <server> # Deploy stacks to server
-deno task ssh <server> [cmd]  # SSH into server or run remote command
-deno task backup          # Run backup system
-deno task env:encrypt     # Encrypt .env files before commit
+mkdir ~/homelab && cd ~/homelab
+rostok                       # wizard: init, server, stack
+rostok stack list            # browse the catalog
+rostok deploy home           # deploy what you configured
 ```
 
-## Secrets Management
+The wizard writes `deno.jsonc`, init git, and creates `servers/<name>/`
+with your chosen stack. Every `.env` mutation is auto-encrypted to
+`.env.age` so it's safe to commit.
 
-- `.env` files are **gitignored** — never committed
-- Pre-commit hook auto-encrypts `.env` → `.env.age` via age64 (per-value, only changed lines)
-- Post-checkout hook auto-decrypts `.env.age` → `.env`
-- **CREDENTIALS IN THIS README OR DOCS**: Always use "see .env" instead of writing passwords
-- If you expose a password: rotate it immediately (update .env + DB + deploy)
+## What's in the catalog
 
-## Stack Patterns
+See [`docs/catalog.md`](docs/catalog.md) for the full list with
+descriptions. Categories include:
 
-Every stack includes:
+- **Proxy & TLS** — Traefik, Cloudflared
+- **Auth** — Authelia (SSO)
+- **Monitoring** — Gatus (health), Ntfy (alerts)
+- **Data** — Vaultwarden (passwords), Immich (photos), Jellyfin (media)
+- **Dev** — Gitea (git), Woodpecker (CI)
+- **Productivity** — Paperless, Stirling-PDF, HedgeDoc
+- **Smart-home** — Home Assistant
 
-1. `stacks/{name}/compose.yml` — container with `hl-` prefix, Traefik labels, resource limits
-2. `stacks/{name}/backup.ts` — backup config (skip for stateless)
-3. Gatus monitoring (cross-server: cloud watches home, home watches cloud)
-4. Dashboard entry with health badge
+## How it works
 
-Auth decision:
+```
+┌──────────────┐        ┌────────────────────┐
+│ rostok CLI   │───────▶│ stacks/ catalog    │
+│  (JSR)       │        │  (compose, backup, │
+│              │        │   +meta.ts)        │
+└──────────────┘        └────────────────────┘
+        │                         │
+        ▼                         ▼
+   your project:           your platform:
+   deno.jsonc              Docker host
+   servers/<n>/.env        (Traefik, gatus, …)
+   servers/<n>/config.json
+```
 
-- **Public**: Reitti, SearXNG, Schedule — no auth middleware
-- **Own auth**: Gitea, Vaultwarden, Paperless-ngx, Stirling-PDF — no Traefik auth
-- **Basic auth**: Everything else with `middlewares=auth`
-- **SSO**: `middlewares=authelia@file` — config-driven, no DB needed
+The CLI ships with the catalog bundled. Your project folder is a
+plain Git repo with `servers/<name>/` for each machine. `+meta.ts` files
+in the catalog declare variables; the CLI prompts for them, writes
+`.env`, and re-encrypts `.env.age`.
 
-## Status
+Full design: [`docs/v1-cli.md`](docs/v1-cli.md). Concepts:
+[`docs/concepts.md`](docs/concepts.md). Architecture:
+[`docs/architecture.md`](docs/architecture.md).
 
-✅ 50+ services across 3 servers\
-✅ Daily automated backups with Restic\
-✅ Cross-server health monitoring (Gatus + ntfy alerts)\
-✅ GPU passthrough for local LLMs (Ollama + OpenWebUI)\
-✅ Authelia SSO operational
+## Documentation
 
-See `docs/improvements.md` for detailed status and roadmap.
+- [Quickstart (above)](#quick-start)
+- [`docs/concepts.md`](docs/concepts.md) — stack, server, wizard
+- [`docs/architecture.md`](docs/architecture.md) — how the pieces fit
+- [`docs/catalog.md`](docs/catalog.md) — what's in the catalog
+- [`docs/adding-services.md`](docs/adding-services.md) — author a stack
+- [`docs/ENCRYPTED_ENV_FILES.md`](docs/ENCRYPTED_ENV_FILES.md) — age64 workflow
+- [`docs/v1-cli.md`](docs/v1-cli.md) — v1 design (ready-to-implement)
+- [`docs/v2-cli.md`](docs/v2-cli.md) — v2 backlog (draft)
+- [`docs/v2-website.md`](docs/v2-website.md) — future static site (draft)
+
+## Contributing
+
+See [`docs/contributing.md`](docs/contributing.md). New stacks are
+welcome — open a PR with a `stacks/<name>/+meta.ts` plus the usual
+compose, backup, README. See `docs/adding-services.md` for the schema.
+
+## License
+
+[MIT](LICENSE).

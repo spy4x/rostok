@@ -313,13 +313,14 @@ run via pre-commit hook.
 
 ## 11. Rollout phases
 
-Each row is a separate PR.
+Each row is a separate PR. ✅ = done.
 
 | # | PR | Depends on | What |
 |---|---|---|---|
-| 0 | [#148](https://github.com/spy4x/rostok/pull/148) | — | Gitignore private server dirs. |
-| 1 | repo rename | #0 merged | `homelab → rostok`. GitHub redirect. README header. |
-| 2 | `cli/` skeleton | #1 | `cli/+main.ts` with cliffy + arktype. `rostok --help` works. |
+| 0 | [#148](https://github.com/spy4x/rostok/pull/148) ✅ | — | Gitignore private server dirs. |
+| 1 | [#153](https://github.com/spy4x/rostok/pull/153) ✅ | #0 merged | `homelab → rostok`. GitHub redirect. README header. |
+| 1.5 | repo reframe | #1 merged | Strip user-specific dirs/docs. Catalog becomes public. |
+| 2 | `cli/` skeleton | #1.5 | `cli/+main.ts` with cliffy + arktype. `rostok --help` works. |
 | 3 | `StackMeta` + secrets | #2 | Type, default resolver, password generator, validation. |
 | 4 | First 6 stacks | #3 | traefik, gatus, vaultwarden, jellyfin, filebrowser, librespeed get `+meta.ts`. One commit per stack. |
 | 5 | wizard + power-user API | #4 | `$ rostok`, `server create`, `stack add`. Re-encryption after every write. |

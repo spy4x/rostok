@@ -1,24 +1,9 @@
 {
   "tasks": {
-    // #region Ansible
-    "ansible": {
-      "command": "deno run -A ./scripts/ansible/+main.ts",
-      "description": "🔧 Run Ansible playbooks (auto-loads env vars)"
-    },
-    // #endregion Ansible
-
-    // #region Deploy
-    "deploy": {
-      "command": "deno run -A ./scripts/deploy/+main.ts",
-      "description": "🚀 Deploy to remote server. Usage: deploy <server> [stack]"
-    },
-    "ssh": {
-      "command": "deno run -A ./scripts/ssh/+main.ts",
-      "description": "🔐 SSH into server (interactive) or run remote command: ssh <server> [cmd...]"
-    },
-    // #endregion Deploy
-
     // #region Backup
+    // Each server has its own .env with BACKUP_PATHS and SSH_ADDRESS.
+    // Override the env-file path with the SERVER_ENV env var, or set
+    // it to the server you want to back up.
     "backup": {
       "command": "deno run --env-file=.env.root --env-file=servers/home/.env -A ./scripts/backup/+main.ts",
       "description": "💾 Run backup for all services using Restic"
@@ -111,7 +96,6 @@
   "imports": {
     "@scripts/backup": "./scripts/backup/src/+lib.ts",
     "@std/assert": "jsr:@std/assert@^1.0.17",
-    "@std/dotenv": "jsr:@std/dotenv",
     "@std/encoding": "jsr:@std/encoding@^1.0.9",
     "@std/fs": "jsr:@std/fs@^1.0.21",
     "@std/path": "jsr:@std/path@^1.1.4",
@@ -127,7 +111,6 @@
     "dist",
     "build",
     "docs",
-    "infra",
     "stacks/**/webui/**",
     ".playwright-mcp",
     "*.lock"
