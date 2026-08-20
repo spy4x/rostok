@@ -19,27 +19,27 @@ Generated 2026-07-03 from this report. 21 issues filed. 3 findings already resol
 
 | Severity | # | Issue | Status |
 |----------|---|-------|--------|
-| 🔴 | #46 | [docs(README): correct outdated claims](https://github.com/spy4x/homelab/issues/46) | Open |
-| 🔴 | #47 | [docs: add LICENSE file](https://github.com/spy4x/homelab/issues/47) | Open |
-| 🔴 | #48 | [docs(offsite): fix broken paths in README](https://github.com/spy4x/homelab/issues/48) | Open |
-| 🔴 | #49 | [docs(auth): fix duplicate policy: two_factor YAML keys](https://github.com/spy4x/homelab/issues/49) | Open |
-| 🔴 | #50 | [chore(ansible): unify inventory references](https://github.com/spy4x/homelab/issues/50) | Open |
-| 🔴 | #51 | [fix(stacks): add hl- prefix to 3 container names](https://github.com/spy4x/homelab/issues/51) | Open |
-| 🟡 | #52 | [fix(stacks): pin :latest Docker tags to versions](https://github.com/spy4x/homelab/issues/52) | Open |
-| 🟡 | #53 | [chore(stacks): resolve monitoring vs victoria-metrics](https://github.com/spy4x/homelab/issues/53) | Open |
-| 🟡 | #54 | [chore(stacks): pick plausible or umami](https://github.com/spy4x/homelab/issues/54) | Open |
-| 🟡 | #55 | [fix(stacks): add healthchecks to 35 stacks](https://github.com/spy4x/homelab/issues/55) | Open |
-| 🟡 | #56 | [feat(backup): add backup.ts for victoria-metrics](https://github.com/spy4x/homelab/issues/56) | Open |
-| 🟡 | #57 | [chore(ci): add Woodpecker CI pipeline](https://github.com/spy4x/homelab/issues/57) | Open |
-| 🟡 | #58 | [fix(security): replace bcrypt hash interpolation](https://github.com/spy4x/homelab/issues/58) | Open |
-| 🟡 | #59 | [chore(docker): add root .dockerignore](https://github.com/spy4x/homelab/issues/59) | Open |
-| 🟡 | #66 | [docs(stacks): create READMEs for 22 stacks](https://github.com/spy4x/homelab/issues/66) | Open |
-| 🔵 | #60 | [refactor(scripts): split offline-backup +main.ts](https://github.com/spy4x/homelab/issues/60) | Open |
-| 🔵 | #61 | [test: add unit tests for backup, deploy, encryption](https://github.com/spy4x/homelab/issues/61) | Open |
-| 🔵 | #62 | [docs: add monitoring, DR, security-matrix docs](https://github.com/spy4x/homelab/issues/62) | Open |
-| 🔵 | #63 | [fix(deno): fix check task cargo-cult + 4 fmt failures](https://github.com/spy4x/homelab/issues/63) | Open |
-| 🔵 | #64 | [chore(servers): remove demo/ or document it](https://github.com/spy4x/homelab/issues/64) | Open |
-| 🔵 | #65 | [chore(ci): add hadolint to lint Dockerfiles](https://github.com/spy4x/homelab/issues/65) | Open |
+| 🔴 | #46 | [docs(README): correct outdated claims](https://github.com/spy4x/rostok/issues/46) | Open |
+| 🔴 | #47 | [docs: add LICENSE file](https://github.com/spy4x/rostok/issues/47) | Open |
+| 🔴 | #48 | [docs(offsite): fix broken paths in README](https://github.com/spy4x/rostok/issues/48) | Open |
+| 🔴 | #49 | [docs(auth): fix duplicate policy: two_factor YAML keys](https://github.com/spy4x/rostok/issues/49) | Open |
+| 🔴 | #50 | [chore(ansible): unify inventory references](https://github.com/spy4x/rostok/issues/50) | Open |
+| 🔴 | #51 | [fix(stacks): add hl- prefix to 3 container names](https://github.com/spy4x/rostok/issues/51) | Open |
+| 🟡 | #52 | [fix(stacks): pin :latest Docker tags to versions](https://github.com/spy4x/rostok/issues/52) | Open |
+| 🟡 | #53 | [chore(stacks): resolve monitoring vs victoria-metrics](https://github.com/spy4x/rostok/issues/53) | Open |
+| 🟡 | #54 | [chore(stacks): pick plausible or umami](https://github.com/spy4x/rostok/issues/54) | Open |
+| 🟡 | #55 | [fix(stacks): add healthchecks to 35 stacks](https://github.com/spy4x/rostok/issues/55) | Open |
+| 🟡 | #56 | [feat(backup): add backup.ts for victoria-metrics](https://github.com/spy4x/rostok/issues/56) | Open |
+| 🟡 | #57 | [chore(ci): add Woodpecker CI pipeline](https://github.com/spy4x/rostok/issues/57) | Open |
+| 🟡 | #58 | [fix(security): replace bcrypt hash interpolation](https://github.com/spy4x/rostok/issues/58) | Open |
+| 🟡 | #59 | [chore(docker): add root .dockerignore](https://github.com/spy4x/rostok/issues/59) | Open |
+| 🟡 | #66 | [docs(stacks): create READMEs for 22 stacks](https://github.com/spy4x/rostok/issues/66) | Open |
+| 🔵 | #60 | [refactor(scripts): split offline-backup +main.ts](https://github.com/spy4x/rostok/issues/60) | Open |
+| 🔵 | #61 | [test: add unit tests for backup, deploy, encryption](https://github.com/spy4x/rostok/issues/61) | Open |
+| 🔵 | #62 | [docs: add monitoring, DR, security-matrix docs](https://github.com/spy4x/rostok/issues/62) | Open |
+| 🔵 | #63 | [fix(deno): fix check task cargo-cult + 4 fmt failures](https://github.com/spy4x/rostok/issues/63) | Open |
+| 🔵 | #64 | [chore(servers): remove demo/ or document it](https://github.com/spy4x/rostok/issues/64) | Open |
+| 🔵 | #65 | [chore(ci): add hadolint to lint Dockerfiles](https://github.com/spy4x/rostok/issues/65) | Open |
 
 **Already resolved (no issue needed):**
 - snappymail removed from config.json

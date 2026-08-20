@@ -97,7 +97,7 @@ export async function writeReadme(
   const pathsInfo = pathSizes.map((ps) => `  - ${ps.path.source} → ${ps.path.target} (${ps.size})`)
     .join("\n")
 
-  const readmeContent = `# Homelab Offline Backup Drive
+  const readmeContent = `# Rostok Offline Backup Drive
 
 This drive contains encrypted backups of critical homelab services.
 
@@ -105,10 +105,10 @@ This drive contains encrypted backups of critical homelab services.
 
 **Restore Command:**  
 \`\`\`bash
-cd ~/dev/homelab && deno task offline-backup restore
+cd ~/dev/rostok && deno task offline-backup restore
 \`\`\`
 
-**Password Location:** \`~/dev/homelab/.env\` file as \`BACKUPS_PASSWORD\`
+**Password Location:** \`~/dev/rostok/.env\` file as \`BACKUPS_PASSWORD\`
 
 ## Storage (Singapore Climate)
 
@@ -140,14 +140,14 @@ ${pathsInfo}
 
 ### Password Location
 
-Restic password is stored in the "spy4x/homelab" code repository on GitHub in: \`.env\` file as \`BACKUPS_PASSWORD\`.
+Restic password is stored in the "spy4x/rostok" code repository on GitHub in: \`.env\` file as \`BACKUPS_PASSWORD\`.
 Actual .env file is not committed to the repository for security.
 But you can find its content in VaultWarden (password manager) entry named \`Homelab .env\`.
-Also it should be located on the local computer in \`~/dev/homelab/.env\` and on the home server in \`~/<apps_folder>/.env\`.
+Also it should be located on the local computer in \`~/dev/rostok/.env\` and on the home server in \`~/<apps_folder>/.env\`.
 
 ### Quick Restore
 
-Connect drive and execute \`deno task offline-backup restore\` from homelab repo.  
+Connect drive and execute \`deno task offline-backup restore\` from rostok repo.  
 The script will guide you through the restore process.
 `
 

@@ -608,7 +608,7 @@ After 30 days of clean Stalwart operation:
 - [ ] Confirm new aggregate DMARC reports show DKIM pass.
 - [ ] Remove legacy DMS after the rollback window closes.
 
-Owner: homelab operator. Tracking: [PR 131](https://github.com/spy4x/homelab/pull/131).
+Owner: homelab operator. Tracking: [PR 131](https://github.com/spy4x/rostok/pull/131).
 
 ## 13. Open questions / decisions
 

@@ -1,6 +1,6 @@
 # AGENTS.md — Dev Guidelines (Strict Git Flow)
 
-Guidelines for AI agents working on this homelab infrastructure repository.
+Guidelines for AI agents working on this rostok repository.
 This project uses **git worktrees** with a **strict branch-per-feature** flow.
 Multiple AI agents may work on different features simultaneously, so breaking
 the rules causes conflicts.
@@ -62,8 +62,9 @@ Two details that matter:
 
 - **`realpath`** collapses symlinked checkout paths to their canonical
   location, so every worktree is registered under one consistent path. This
-  repo is reachable as both `~/sync/code/homelab` and
-  `~/ssd-2tb/sync/code/homelab`; without `realpath` you get a confusing mix.
+  repo may be reachable under multiple paths (e.g. `~/sync/code/rostok`
+  and `~/ssd-2tb/sync/code/rostok`); without `realpath` you get a
+  confusing mix.
 - **`mkdir -p`** on the parent — `git worktree add` fails with a bare
   `No such file or directory` when an intermediate dir is missing.
 
@@ -73,7 +74,7 @@ Worktrees live **outside** the repo, in a sibling `worktrees/<repo>/` directory:
 
 ```
 ~/ssd-2tb/sync/code/               ← wherever you keep repos
-├── homelab/                       ← main worktree + .git/ (do NOT edit here)
+├── rostok/                        ← main worktree + .git/ (do NOT edit here)
 │   ├── .git/                      ← git data, shared by all worktrees
 │   ├── stacks/                    # Service catalog (reusable)
 │   │   └── {service}/
@@ -86,8 +87,8 @@ Worktrees live **outside** the repo, in a sibling `worktrees/<repo>/` directory:
 │   ├── deno.jsonc                 # Deno configuration
 │   └── AGENTS.md                  ← this file
 └── worktrees/
-    └── homelab/                   ← every worktree for this repo
-        ├── feat/add-dark-mode/    ← .git is a FILE pointing at ../../../homelab/.git
+    └── rostok/                    ← every worktree for this repo
+        ├── feat/add-dark-mode/    ← .git is a FILE pointing at ../../../rostok/.git
         ├── fix/backup-errors/
         └── review/pr-120/
 ```
@@ -146,7 +147,7 @@ Global `~/.config/opencode/AGENTS.md` → "Git workflow → After worktree creat
 - The worktree path and the branch name are independent — pass the branch to
   `-b` and the path as a separate argument
 - Branch names with `/` create subdirectories under `worktrees/<repo>/`
-  (e.g. `fix/foo` → `worktrees/homelab/fix/foo/`)
+  (e.g. `fix/foo` → `worktrees/rostok/fix/foo/`)
 - You cannot check out the same branch in two worktrees at once — always
   create a fresh branch for new work
 - Never create a worktree **inside** the repo or inside another worktree
@@ -351,7 +352,7 @@ import { BackupConfig } from "@scripts/backup"
 
 ### Naming Convention: `hl-` Prefix
 
-To avoid conflicts with other projects running on the same Docker host (e.g., `fn-*`, `th-*`), **all homelab containers and Traefik router/service names must use the `hl-` prefix**:
+To avoid conflicts with other projects running on the same Docker host (e.g., `fn-*`, `th-*`), **all rostok containers and Traefik router/service names must use the `hl-` prefix**:
 
 ```yaml
 # Good

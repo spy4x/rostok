@@ -13,7 +13,7 @@ Deploy your first self-hosted server in minutes.
 
 ```bash
 # 1. Clone & configure
-git clone <repo-url> ~/homelab && cd ~/homelab
+git clone <repo-url> ~/rostok && cd ~/rostok
 cp servers/demo/.env.example servers/demo/.env
 # Edit .env with your domain, email, SSH details, etc.
 
@@ -22,7 +22,7 @@ deno task deploy demo
 
 # 3. Start services (or: deno task ssh demo docker compose up -d)
 deno task ssh demo
-cd ~/homelab/apps && docker compose up -d
+cd ~/rostok/apps && docker compose up -d
 ```
 
 ## Verify
@@ -86,7 +86,7 @@ cd servers/demo && deno run --env-file=.env -A ../../scripts/backup/+main.ts
 
 # Setup daily cron (on server)
 crontab -e
-# Add: 0 2 * * * cd ~/homelab/apps && deno task backup
+# Add: 0 2 * * * cd ~/rostok/apps && deno task backup
 ```
 
 Deploy backup cron via Ansible: `deno task ansible ansible/playbooks/backup-cronjob.yml demo`

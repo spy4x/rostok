@@ -42,7 +42,7 @@ reader knows the tool is for them.
 deno install -A -n rostok jsr:@rostok/cli
 
 # one-time per project
-mkdir ~/homelab && cd ~/homelab
+mkdir ~/rostok && cd ~/rostok
 rostok                          # full wizard
 ```
 
@@ -317,7 +317,7 @@ Each row is a separate PR.
 
 | # | PR | Depends on | What |
 |---|---|---|---|
-| 0 | [#148](https://github.com/spy4x/homelab/pull/148) | — | Gitignore private server dirs. |
+| 0 | [#148](https://github.com/spy4x/rostok/pull/148) | — | Gitignore private server dirs. |
 | 1 | repo rename | #0 merged | `homelab → rostok`. GitHub redirect. README header. |
 | 2 | `cli/` skeleton | #1 | `cli/+main.ts` with cliffy + arktype. `rostok --help` works. |
 | 3 | `StackMeta` + secrets | #2 | Type, default resolver, password generator, validation. |
