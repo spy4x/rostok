@@ -190,19 +190,6 @@
         <h2 class="section-title">Home</h2>
         <ul class="services-grid">
 <!-- Keep services sorted alphabetically by nickname (service-name) -->
-          <!-- Home section: AdGuard DNS -->
-          <li class="service-item">
-            <a
-              href="https://dns.${DOMAIN}"
-              target="_blank"
-              class="service-link"
-            >
-              <div class="service-icon">🛡️</div>
-              <div class="service-name">AdGuard DNS</div>
-              <div class="service-name-detail">AdGuard</div>
-              <img src="https://uptime-cloud.${DOMAIN}/api/v1/endpoints/home_adguard-home/health/badge.svg" alt="Home AdGuard DNS Uptime Badge" onclick="window.open('https://uptime-cloud.${DOMAIN}/endpoints/home_adguard-home', '_blank')" style="cursor:pointer" />
-            </a>
-          </li>
           <!-- Home section: AI Chat -->
           <li class="service-item">
             <a
@@ -252,7 +239,7 @@
               <div class="service-icon">📅</div>
               <div class="service-name">Calendar & Contacts</div>
               <div class="service-name-detail">Stalwart</div>
-              <img src="https://uptime-home.${DOMAIN}/api/v1/endpoints/cloud_caldav/health/badge.svg" alt="Cloud CalDAV Uptime Badge" onclick="window.open('https://uptime-home.${DOMAIN}/endpoints/cloud_caldav', '_blank')" style="cursor:pointer" />
+              <img src="https://uptime-home.${DOMAIN}/api/v1/endpoints/cloud_stalwart/health/badge.svg" alt="Cloud Stalwart Uptime Badge" onclick="window.open('https://uptime-home.${DOMAIN}/endpoints/cloud_stalwart', '_blank')" style="cursor:pointer" />
             </a>
           </li>
           <!-- Home section: CI/CD -->
@@ -294,19 +281,6 @@
               <img src="https://uptime-cloud.${DOMAIN}/api/v1/endpoints/home_gitea/health/badge.svg" alt="Home Git Uptime Badge" onclick="window.open('https://uptime-cloud.${DOMAIN}/endpoints/home_gitea', '_blank')" style="cursor:pointer" />
             </a>
           </li>
-          <!-- Home section: Invoices -->
-          <li class="service-item">
-            <a
-              href="https://invoices.${DOMAIN}"
-              target="_blank"
-              class="service-link"
-            >
-              <div class="service-icon">💰</div>
-              <div class="service-name">Invoices</div>
-              <div class="service-name-detail">Akaunting</div>
-              <img src="https://uptime-cloud.${DOMAIN}/api/v1/endpoints/home_akaunting/health/badge.svg" alt="Home Invoices Uptime Badge" onclick="window.open('https://uptime-cloud.${DOMAIN}/endpoints/home_akaunting', '_blank')" style="cursor:pointer" />
-            </a>
-          </li>
           <!-- Home section: Movies -->
           <li class="service-item">
             <a
@@ -346,19 +320,6 @@
               <img src="https://uptime-cloud.${DOMAIN}/api/v1/endpoints/home_ntfy/health/badge.svg" alt="Home Notifications Uptime Badge" onclick="window.open('https://uptime-cloud.${DOMAIN}/endpoints/home_ntfy', '_blank')" style="cursor:pointer" />
             </a>
           </li>
-          <!-- Home section: Ollama -->
-          <li class="service-item">
-            <a
-              href="https://ollama.${DOMAIN}"
-              target="_blank"
-              class="service-link"
-            >
-              <div class="service-icon">🧠</div>
-              <div class="service-name">Ollama</div>
-              <div class="service-name-detail">Ollama</div>
-              <img src="https://uptime-cloud.${DOMAIN}/api/v1/endpoints/home_ollama/health/badge.svg" alt="Home Ollama Uptime Badge" onclick="window.open('https://uptime-cloud.${DOMAIN}/endpoints/home_ollama', '_blank')" style="cursor:pointer" />
-            </a>
-          </li>
           <!-- Home section: OpenCode Web -->
           <li class="service-item">
             <a
@@ -383,7 +344,9 @@
               <div class="service-icon">🔑</div>
               <div class="service-name">Passwords</div>
               <div class="service-name-detail">Vaultwarden</div>
-              <img src="https://uptime-cloud.${DOMAIN}/api/v1/endpoints/home_vaultwarden/health/badge.svg" alt="Home Passwords Uptime Badge" onclick="window.open('https://uptime-cloud.${DOMAIN}/endpoints/home_vaultwarden', '_blank')" style="cursor:pointer" />
+              <!-- Vaultwarden moved to cloud. Monitor via home gatus which
+                   cross-probes the cloud instance. -->
+              <img src="https://uptime-home.${DOMAIN}/api/v1/endpoints/cloud_vaultwarden/health/badge.svg" alt="Cloud Passwords Uptime Badge" onclick="window.open('https://uptime-home.${DOMAIN}/endpoints/cloud_vaultwarden', '_blank')" style="cursor:pointer" />
             </a>
           </li>
           <!-- Home section: Photos -->
@@ -410,19 +373,6 @@
               <div class="service-name">Registry</div>
               <div class="service-name-detail">Docker Registry</div>
               <img src="https://uptime-cloud.${DOMAIN}/api/v1/endpoints/home_docker-registry/health/badge.svg" alt="Home Registry Uptime Badge" onclick="window.open('https://uptime-cloud.${DOMAIN}/endpoints/home_docker-registry', '_blank')" style="cursor:pointer" />
-            </a>
-          </li>
-          <!-- Home section: Schedule -->
-          <li class="service-item">
-            <a
-              href="https://schedule.${DOMAIN}"
-              target="_blank"
-              class="service-link"
-            >
-              <div class="service-icon">📅</div>
-              <div class="service-name">Schedule</div>
-              <div class="service-name-detail">CalDIY</div>
-              <img src="https://uptime-cloud.${DOMAIN}/api/v1/endpoints/home_schedule/health/badge.svg" alt="Home Schedule Uptime Badge" onclick="window.open('https://uptime-cloud.${DOMAIN}/endpoints/home_schedule', '_blank')" style="cursor:pointer" />
             </a>
           </li>
           <!-- Home section: Search -->
@@ -452,19 +402,6 @@
             </a>
           </li>
 
-          <!-- Home section: Stats -->
-          <li class="service-item">
-            <a
-              href="https://stats.${DOMAIN}"
-              target="_blank"
-              class="service-link"
-            >
-              <div class="service-icon">📊</div>
-              <div class="service-name">Stats</div>
-              <div class="service-name-detail">Umami</div>
-              <img src="https://uptime-cloud.${DOMAIN}/api/v1/endpoints/home_umami/health/badge.svg" alt="Home Stats Uptime Badge" onclick="window.open('https://uptime-cloud.${DOMAIN}/endpoints/home_umami', '_blank')" style="cursor:pointer" />
-            </a>
-          </li>
           <!-- Home section: Sync -->
           <li class="service-item">
             <a
@@ -625,7 +562,7 @@
               <div class="service-icon">📧</div>
               <div class="service-name">Mail</div>
               <div class="service-name-detail">Stalwart</div>
-              <img src="https://uptime-home.${DOMAIN}/api/v1/endpoints/cloud_mail/health/badge.svg" alt="Cloud Mail Uptime Badge" onclick="window.open('https://uptime-home.${DOMAIN}/endpoints/cloud_mail', '_blank')" style="cursor:pointer" />
+              <img src="https://uptime-home.${DOMAIN}/api/v1/endpoints/cloud_mail-(https)/health/badge.svg" alt="Cloud Mail HTTPS Uptime Badge" onclick="window.open('https://uptime-home.${DOMAIN}/endpoints/cloud_mail-(https)', '_blank')" style="cursor:pointer" />
             </a>
           </li>
           <!-- Cloud section: Webmail -->
@@ -651,7 +588,7 @@
               <div class="service-icon">⚙️</div>
               <div class="service-name">Mail Admin</div>
               <div class="service-name-detail">Stalwart</div>
-              <img src="https://uptime-home.${DOMAIN}/api/v1/endpoints/cloud_mail/health/badge.svg" alt="Cloud Mail Uptime Badge" onclick="window.open('https://uptime-home.${DOMAIN}/endpoints/cloud_mail', '_blank')" style="cursor:pointer" />
+              <img src="https://uptime-home.${DOMAIN}/api/v1/endpoints/cloud_mail-(https)/health/badge.svg" alt="Cloud Mail HTTPS Uptime Badge" onclick="window.open('https://uptime-home.${DOMAIN}/endpoints/cloud_mail-(https)', '_blank')" style="cursor:pointer" />
             </a>
           </li>
           <!-- Cloud section: Speed -->

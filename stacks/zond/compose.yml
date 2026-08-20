@@ -16,12 +16,14 @@ services:
     # distroless-static image has no shell, no wget.
     restart: unless-stopped
     # Config lives in servers/home/configs/zond.yaml, deployed to
-    # <PATH_APPS>/configs/zond.yaml. The binary also reads $ZOND_CONFIG_PATH
-    # directly, so the bind mount is belt-and-braces.
+    # <PATH_APPS>/configs/zond.yaml and bind-mounted into the container at
+    # /app/zond.yaml. The Go binary's default config lookup is zond.yml (no
+    # a), so we set ZOND_CONFIG_PATH to the in-container path explicitly
+    # rather than relying on a pathlib guess.
     volumes:
-      - ${ZOND_CONFIG_PATH}:/app/zond.yaml:ro
+      - ${PATH_APPS}/configs/zond.yaml:/app/zond.yaml:ro
     environment:
-      - ZOND_CONFIG_PATH=${ZOND_CONFIG_PATH}
+      - ZOND_CONFIG_PATH=/app/zond.yaml
     deploy:
       resources:
         limits:
