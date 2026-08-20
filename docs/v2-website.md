@@ -1,4 +1,4 @@
-# Static website (idea — v2+)
+# rostok v2 — static website (idea)
 
 **Status:** not started. Captured for future planning.
 
