@@ -127,9 +127,10 @@ Options:
 - `containers.stop: false` — no stop; live backup (e.g., DB that hot-
   backups itself)
 
-The `[name].backup.ts` pattern in `scripts/backup/` is for **user-level
-backup configs** that span multiple stacks (e.g., home-directory
-backups). Per-stack configs live in `stacks/<name>/backup.ts`.
+User-level backup configs that span multiple stacks (e.g., a
+home-directory mirror) live in the user's project folder, not in the
+catalog. The catalog only ships per-stack configs under
+`stacks/<name>/backup.ts`.
 
 ---
 

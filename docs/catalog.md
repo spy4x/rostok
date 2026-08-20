@@ -85,7 +85,6 @@ The catalog is what the `rostok` CLI bundles. Users browse it with
 - **plausible** — privacy analytics (alternative to Umami)
 - **reitti** — public transport info
 - **traggo** — time tracking
-- **umami** — see above
 - **upwork-triage** — Upwork profile automation
 - **zond** — internal health probe bridge (companion to Gatus)
 

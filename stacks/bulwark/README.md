@@ -55,4 +55,6 @@ extensions).
 
 - [Bulwark Documentation](https://bulwarkmail.org/docs)
 - [Stalwart Stack](../stalwart/)
-- [Migration Doc](../../docs/migrate-from-docker-mailserver-to-stalwart.md)
+
+Note: Bulwark is the older auth-proxy stack. New users should use
+**Authelia** instead. This stack is kept for backwards compatibility.
