@@ -95,25 +95,6 @@ Worktrees live **outside** the repo, in a sibling `worktrees/<repo>/` directory:
 The layout is derived, not hardcoded: a repo at `~/projects/foo` gets its
 worktrees in `~/projects/worktrees/foo/<type>/<slug>`.
 
-### Why outside the repo, not inside
-
-Nesting worktrees inside the repo was the old convention here. It broke things
-in ways that took a while to trace, so do not go back to it:
-
-- **Repo tooling walks the working tree.** With worktrees nested inside,
-  `deno fmt --check` scanned 2079 files instead of 253 and failed on other
-  branches' code, so every commit needed `--no-verify`. Worse, `env:decrypt`
-  found 32 env files instead of 4 and rewrote _other_ worktrees' secrets with
-  this checkout's values — and those worktrees are on different branches, so
-  the pre-commit hook could commit one branch's secrets onto another.
-- **`git status` showed them as untracked** (`?? feat/`, `?? fix/`), leaving one
-  `git add -A` away from committing an entire nested checkout.
-- **Branch and directory names collided.** `git log feat/foo` fails with
-  `fatal: ambiguous argument 'feat/foo': both revision and filename`.
-
-A sibling directory has none of these problems, and `ls ../worktrees/homelab`
-becomes a useful view of what is currently in flight.
-
 ### Branch naming convention (Angular)
 
 ```
@@ -156,20 +137,7 @@ NO. Secure a worktree first. Then explore inside it. The sequence is ALWAYS:
 # STEP 2: now explore and make changes
 ```
 
-### After creating a worktree — env setup
-
-A fresh worktree has no age key (`.age/` is gitignored), so the `post-checkout`
-hook cannot decrypt envs until you copy it across:
-
-```bash
-MAIN=$(realpath "$(dirname "$(git rev-parse --git-common-dir)")")
-[ -f .age/key.txt ] || { mkdir -p .age && cp "$MAIN/.age/key.txt" .age/key.txt; }
-deno task env:decrypt
-```
-
-Resolve `$MAIN` this way rather than with a relative `../../` path — the depth
-differs between a sibling worktree and a harness-managed one, and
-`--git-common-dir` is correct from both.
+Global `~/.config/opencode/AGENTS.md` → "Git workflow → After worktree creation — env setup" covers this; no need to repeat here.
 
 ### Rules
 
@@ -735,17 +703,6 @@ Before any manual container manipulation: check if the change can be codified in
 - No automated CI/CD currently
 - Manual checks via `deno task check`
 - Focus on local development and manual deployment
-
-## 🗑️ DO NOT Delete Decrypted .env Files
-
-**NEVER `rm` or otherwise delete decrypted `.env` files.** They are gitignored
-and safe from accidental commit. Deleting them wastes the decrypt step on every
-session and causes deploy commands to fail with "SSH_ADDRESS must be set".
-
-- `.env` files in `servers/*/.env` and `.env.root` are gitignored — safe on disk
-- Only `.env.age` (encrypted) is tracked in git
-- If you must regenerate, run `deno task env:decrypt` again (requires age key)
-- **Keep decrypted `.env` files between deploy runs** — they do not leak
 
 ## 📋 Quick Reference
 
