@@ -1,0 +1,308 @@
+---
+# Playbook: System Maintenance
+# This playbook handles package updates, Docker cleanup, and log rotation
+
+- name: System Maintenance Configuration
+  hosts: homelab_servers
+  become: true
+
+  tasks:
+    # ===== Package Updates =====
+    - name: Configure automatic security updates (Fedora)
+      ansible.builtin.package:
+        name: dnf-automatic
+        state: present
+      when: ansible_os_family == "RedHat"
+
+    - name: Ensure dnf-automatic config directory exists
+      ansible.builtin.file:
+        path: /etc/dnf
+        state: directory
+        mode: "0755"
+      when: ansible_os_family == "RedHat"
+
+    - name: Check if dnf-automatic.conf exists
+      ansible.builtin.stat:
+        path: /etc/dnf/automatic.conf
+      register: dnf_automatic_conf
+      when: ansible_os_family == "RedHat"
+
+    - name: Configure dnf-automatic for security updates only
+      ansible.builtin.lineinfile:
+        path: /etc/dnf/automatic.conf
+        regexp: "^upgrade_type"
+        line: "upgrade_type = security"
+        create: yes
+      when: ansible_os_family == "RedHat"
+      notify: restart dnf-automatic
+
+    - name: Configure dnf-automatic to download and install
+      ansible.builtin.lineinfile:
+        path: /etc/dnf/automatic.conf
+        regexp: "^apply_updates"
+        line: "apply_updates = yes"
+        create: yes
+      when: ansible_os_family == "RedHat"
+      notify: restart dnf-automatic
+
+    - name: Enable dnf-automatic timer
+      ansible.builtin.systemd:
+        name: dnf-automatic.timer
+        enabled: yes
+        state: started
+      when: ansible_os_family == "RedHat"
+
+    # ===== Debian/Ubuntu: Security Updates Only =====
+    - name: Fix broken packages (Debian/Ubuntu)
+      ansible.builtin.command: dpkg --configure -a
+      when: ansible_os_family == "Debian"
+      failed_when: false
+      changed_when: false
+
+    - name: Install unattended-upgrades (Debian/Ubuntu)
+      ansible.builtin.package:
+        name:
+          - unattended-upgrades
+          - apt-listchanges
+        state: present
+      when: ansible_os_family == "Debian"
+      environment:
+        DEBIAN_FRONTEND: noninteractive
+
+    - name: Configure unattended-upgrades for security only (Debian/Ubuntu)
+      ansible.builtin.copy:
+        dest: /etc/apt/apt.conf.d/50unattended-upgrades
+        content: |
+          // Automatic security updates configuration
+          Unattended-Upgrade::Allowed-Origins {
+              "${distro_id}:${distro_codename}-security";
+              // Optionally include stable updates
+              // "${distro_id}:${distro_codename}-updates";
+          };
+
+          // Remove unused dependencies
+          Unattended-Upgrade::Remove-Unused-Dependencies "true";
+          Unattended-Upgrade::Remove-Unused-Kernel-Packages "true";
+
+          // Automatically reboot if required (disabled for homelab safety)
+          Unattended-Upgrade::Automatic-Reboot "false";
+
+          // Send email report
+          // Unattended-Upgrade::Mail "root";
+        backup: yes
+      when: ansible_os_family == "Debian"
+
+    - name: Enable unattended-upgrades (Debian/Ubuntu)
+      ansible.builtin.copy:
+        dest: /etc/apt/apt.conf.d/20auto-upgrades
+        content: |
+          APT::Periodic::Update-Package-Lists "1";
+          APT::Periodic::Download-Upgradeable-Packages "1";
+          APT::Periodic::AutocleanInterval "7";
+          APT::Periodic::Unattended-Upgrade "1";
+      when: ansible_os_family == "Debian"
+
+    # ===== Docker Cleanup Script =====
+    - name: Create Docker cleanup script
+      ansible.builtin.copy:
+        dest: /usr/local/bin/docker-cleanup
+        mode: "0755"
+        content: |
+          #!/bin/bash
+          # Docker cleanup script
+          # Removes unused containers, images, and networks
+          # NOTE: Does NOT prune volumes to prevent accidental data loss
+
+          echo "=== Docker Cleanup Started: $(date) ==="
+
+          # Remove stopped containers older than 24 hours
+          echo "Removing stopped containers..."
+          docker container prune -f --filter "until=24h" 2>&1
+
+          # Remove unused images
+          echo "Removing dangling images..."
+          docker image prune -f 2>&1
+
+          # Remove unused images older than 7 days (not just dangling)
+          echo "Removing unused images older than 7 days..."
+          docker image prune -a -f --filter "until=168h" 2>&1
+
+          # Remove unused networks
+          echo "Removing unused networks..."
+          docker network prune -f 2>&1
+
+          # Remove build cache older than 7 days
+          echo "Cleaning build cache..."
+          docker builder prune -a -f --filter "until=168h" 2>&1
+
+          # Display disk usage
+          echo "Current Docker disk usage:"
+          docker system df
+
+          echo "=== Docker Cleanup Completed: $(date) ==="
+          echo "⚠️  NOTE: Volumes are NOT auto-pruned. Manual cleanup:"
+          echo "    docker volume ls"
+          echo "    docker volume rm <volume-name>"
+
+    - name: Create Docker cleanup cron job
+      ansible.builtin.cron:
+        name: "Docker cleanup"
+        user: root
+        minute: "30"
+        hour: "3"
+        job: "/usr/local/bin/docker-cleanup >> /var/log/docker-cleanup.log 2>&1"
+        state: present
+
+    - name: Create Docker cleanup log file
+      ansible.builtin.file:
+        path: /var/log/docker-cleanup.log
+        state: touch
+        owner: root
+        group: root
+        mode: "0644"
+        modification_time: preserve
+        access_time: preserve
+
+    # ===== Log Rotation Configuration =====
+    - name: Ensure Docker configuration directory exists
+      ansible.builtin.file:
+        path: /etc/docker
+        state: directory
+        mode: "0755"
+        owner: root
+        group: root
+
+    - name: Check if Docker daemon.json exists
+      ansible.builtin.stat:
+        path: /etc/docker/daemon.json
+      register: docker_daemon_json
+
+    - name: Read existing Docker daemon.json
+      ansible.builtin.slurp:
+        path: /etc/docker/daemon.json
+      register: docker_daemon_content
+      when: docker_daemon_json.stat.exists
+
+    - name: Parse existing Docker daemon.json
+      ansible.builtin.set_fact:
+        docker_daemon_config: "{{ docker_daemon_content.content | b64decode | from_json }}"
+      when: docker_daemon_json.stat.exists
+
+    - name: Set default Docker config if file doesn't exist
+      ansible.builtin.set_fact:
+        docker_daemon_config: {}
+      when: not docker_daemon_json.stat.exists
+
+    - name: Merge log rotation settings into Docker config
+      ansible.builtin.set_fact:
+        docker_daemon_config: "{{ docker_daemon_config | combine({
+          'log-driver': 'json-file',
+          'log-opts': {
+          'max-size': '10m',
+          'max-file': '3',
+          'compress': 'true'
+          }
+          }, recursive=True) }}"
+
+    - name: Write merged Docker daemon.json
+      ansible.builtin.copy:
+        dest: /etc/docker/daemon.json
+        content: "{{ docker_daemon_config | to_nice_json }}"
+        backup: yes
+      notify: restart docker
+      register: docker_daemon_updated
+
+    - name: Configure system log rotation
+      ansible.builtin.copy:
+        dest: /etc/logrotate.d/homelab
+        content: |
+          # Homelab log rotation configuration
+
+          /var/log/docker-cleanup.log {
+              daily
+              rotate 7
+              compress
+              delaycompress
+              missingok
+              notifempty
+              create 0644 root root
+          }
+
+          {{ backup_log_path }} {
+              daily
+              rotate 14
+              compress
+              delaycompress
+              missingok
+              notifempty
+              create 0644 {{ homelab_user }} {{ homelab_user }}
+          }
+
+          /var/log/fail2ban.log {
+              weekly
+              rotate 4
+              compress
+              delaycompress
+              missingok
+              notifempty
+              create 0644 root root
+              postrotate
+                  /usr/bin/fail2ban-client flushlogs >/dev/null 2>&1 || true
+              endscript
+          }
+
+    - name: Test logrotate configuration
+      ansible.builtin.command: logrotate -d /etc/logrotate.d/homelab
+      register: logrotate_test
+      changed_when: false
+      failed_when: false
+
+    # ===== Summary =====
+    - name: Run initial Docker cleanup
+      ansible.builtin.command: /usr/local/bin/docker-cleanup
+      register: initial_cleanup
+      changed_when: false
+
+    - name: Display cleanup results
+      ansible.builtin.debug:
+        msg: "{{ initial_cleanup.stdout_lines }}"
+
+    - name: Display maintenance summary
+      ansible.builtin.debug:
+        msg:
+          - "✅ System maintenance configured successfully!"
+          - ""
+          - "Automatic Updates:"
+          - "  • Fedora: Security updates only (dnf-automatic)"
+          - "  • Debian/Ubuntu: Security updates only (unattended-upgrades)"
+          - "  • No automatic reboots configured"
+          - ""
+          - "Docker Cleanup:"
+          - "  • Schedule: Daily at 3:30 AM"
+          - "  • Removes: Stopped containers (>24h), unused images (>7d), unused networks"
+          - "  • ⚠️  SAFE: Volumes are NOT auto-deleted"
+          - "  • Log: /var/log/docker-cleanup.log"
+          - ""
+          - "Log Rotation:"
+          - "  • Docker logs: Max 10MB × 3 files per container (compressed)"
+          - "  • Backup log: Daily, keep 14 days"
+          - "  • Docker cleanup log: Daily, keep 7 days"
+          - "  • Fail2ban log: Weekly, keep 4 weeks"
+          - ""
+          - "Manual commands:"
+          - "  • Run cleanup now: sudo /usr/local/bin/docker-cleanup"
+          - "  • Update system: sudo dnf upgrade (Fedora) or sudo apt update && sudo apt upgrade (Debian)"
+          - "  • Check updates: sudo dnf check-update (Fedora) or apt list --upgradable (Debian)"
+          - "  • View cleanup log: sudo tail -f /var/log/docker-cleanup.log"
+          - "  • Manual volume cleanup: docker volume ls && docker volume prune"
+
+  handlers:
+    - name: restart dnf-automatic
+      ansible.builtin.systemd:
+        name: dnf-automatic.timer
+        state: restarted
+
+    - name: restart docker
+      ansible.builtin.systemd:
+        name: docker
+        state: restarted

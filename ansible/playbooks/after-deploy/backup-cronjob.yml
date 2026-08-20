@@ -1,0 +1,86 @@
+---
+# Playbook: Setup Backup Cronjob
+# This playbook configures the automated backup system to run daily via cron
+# It sets up the cron job as root to allow ownership changes without password prompts
+
+- name: Setup Backup Cronjob
+  hosts: homelab_servers
+  become: true # Run as root since cron needs to be in root's crontab
+
+  vars:
+    # Backup scheduling configuration
+    # Default: 19:00 UTC (3:00 AM next day UTC+8 Singapore time)
+    backup_cron_hour: "{{ lookup('env', 'BACKUP_CRON_HOUR') | default('19', true) }}"
+    backup_cron_minute: "{{ lookup('env', 'BACKUP_CRON_MINUTE') | default('0', true) }}"
+
+  tasks:
+    - name: Ensure backup script exists
+      ansible.builtin.stat:
+        path: "{{ apps_path }}/scripts/backup/+main.ts"
+      register: backup_script
+
+    - name: Fail if backup script doesn't exist
+      ansible.builtin.fail:
+        msg: "Backup script not found at {{ apps_path }}/scripts/backup/+main.ts"
+      when: not backup_script.stat.exists
+
+    - name: Ensure .env file exists
+      ansible.builtin.stat:
+        path: "{{ env_file_path }}"
+      register: env_file
+
+    - name: Fail if .env file doesn't exist
+      ansible.builtin.fail:
+        msg: ".env file not found at {{ env_file_path }}"
+      when: not env_file.stat.exists
+
+    - name: Ensure Deno is installed
+      ansible.builtin.stat:
+        path: "{{ deno_install_path }}/bin/deno"
+      register: deno_binary
+
+    - name: Fail if Deno is not installed
+      ansible.builtin.fail:
+        msg: "Deno not found at {{ deno_install_path }}/bin/deno. Run initial-setup.yml first."
+      when: not deno_binary.stat.exists
+
+    - name: Setup sudoers for backup ownership changes
+      ansible.builtin.copy:
+        dest: /etc/sudoers.d/backup-chown
+        mode: "0440"
+        content: |
+          # Allow homelab user to change ownership for backup operations
+          # This is needed because backup runs as root but needs to fix ownership
+          # for volumes and backup repositories for user access
+          {{ homelab_user }} ALL=(ALL) NOPASSWD: /usr/bin/chown -R {{ homelab_user }}\:{{ homelab_user }} {{ volumes_path }}/*
+          {{ homelab_user }} ALL=(ALL) NOPASSWD: /usr/bin/chown -R {{ homelab_user }}\:{{ homelab_user }} {{ backup_log_path }}
+          {{ homelab_user }} ALL=(ALL) NOPASSWD: /usr/bin/chown -R {{ homelab_user }}\:{{ homelab_user }} {{ backups_path }}/*
+        validate: "visudo -cf %s"
+
+    - name: Create backup log file if it doesn't exist
+      ansible.builtin.file:
+        path: "{{ backup_log_path }}"
+        state: touch
+        owner: "{{ homelab_user }}"
+        group: "{{ homelab_user }}"
+        mode: "0644"
+        modification_time: preserve
+        access_time: preserve
+
+    - name: Setup backup cronjob in root's crontab
+      ansible.builtin.cron:
+        name: "Homelab Backup"
+        user: root
+        minute: "{{ backup_cron_minute }}"
+        hour: "{{ backup_cron_hour }}"
+        job: "USER={{ homelab_user }} {{ deno_install_path }}/bin/deno run --env-file={{ root_env_file_path }} --env-file={{ env_file_path }} -A {{ apps_path }}/scripts/backup/+main.ts >> {{ backup_log_path }} 2>&1"
+        state: present
+
+    - name: Display cronjob info
+      ansible.builtin.debug:
+        msg:
+          - "Backup cronjob configured successfully!"
+          - "Schedule: Daily at {{ backup_cron_hour }}:{{ '%02d' | format(backup_cron_minute | int) }}"
+          - "Log file: {{ backup_log_path }}"
+          - "To view logs: tail -f {{ backup_log_path }}"
+          - "To test manually: sudo -u root USER={{ homelab_user }} {{ deno_install_path }}/bin/deno run --env-file={{ root_env_file_path }} --env-file={{ env_file_path }} -A {{ apps_path }}/scripts/backup/+main.ts"

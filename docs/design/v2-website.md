@@ -24,7 +24,7 @@ site is a renderer; no copy-paste between repo and site code.
 Before starting:
 
 1. CLI v1 stable on JSR for at least one release cycle.
-2. README + `docs/v1-cli.md` are insufficient for the audience.
+2. README + `docs/design/v1-cli.md` are insufficient for the audience.
 3. At least one external contributor lands a PR using only the
    existing docs (proof that docs-as-source can support new users).
 

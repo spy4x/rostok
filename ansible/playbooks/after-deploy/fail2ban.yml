@@ -1,0 +1,210 @@
+---
+# Playbook: Fail2ban Setup with Docker Log Monitoring
+# This playbook configures Fail2ban to protect SSH and monitor Docker container logs
+# for authentication failures in services like Vaultwarden, Traefik, and Home Assistant
+
+- name: Setup Fail2ban
+  hosts: homelab_servers
+  become: true
+
+  vars: {}
+
+  tasks:
+    - name: Fix Raspberry Pi boot partition (if applicable)
+      ansible.builtin.include_tasks: "{{ playbook_dir }}/../../tasks/raspberry-pi-fix.yml"
+
+    # ===== Install Fail2ban =====
+    - name: Install Fail2ban
+      ansible.builtin.package:
+        name: fail2ban
+        state: present
+      environment:
+        DEBIAN_FRONTEND: noninteractive
+
+    # ===== Detect Running Containers =====
+    - name: Get list of running Docker containers
+      ansible.builtin.shell: docker ps --format "{{ '{{' }}.Names{{ '}}' }}"
+      register: running_containers
+      changed_when: false
+      failed_when: false
+
+    - name: Build dynamic jail list based on running containers
+      ansible.builtin.set_fact:
+        fail2ban_docker_jails: "{{ fail2ban_docker_jails | default([]) + [item] }}"
+      loop:
+        - {
+            name: "vaultwarden",
+            container: "vaultwarden",
+            maxretry: 5,
+            bantime: "12h",
+            findtime: "5m",
+          }
+        - {
+            name: "traefik-auth",
+            container: "traefik",
+            maxretry: 5,
+            bantime: "1h",
+            findtime: "10m",
+          }
+        - {
+            name: "home-assistant",
+            container: "home-assistant",
+            maxretry: 5,
+            bantime: "1h",
+            findtime: "10m",
+          }
+        - {
+            name: "mailserver",
+            container: "mailserver",
+            maxretry: 3,
+            bantime: "24h",
+            findtime: "10m",
+          }
+      when: item.container in running_containers.stdout_lines
+
+    - name: Display detected containers for fail2ban protection
+      ansible.builtin.debug:
+        msg: "{{ 'Detected containers for fail2ban: ' + (fail2ban_docker_jails | map(attribute='name') | list | join(', ')) if fail2ban_docker_jails is defined and fail2ban_docker_jails | length > 0 else 'No protected containers detected' }}"
+
+    - name: Install Docker Python library
+      ansible.builtin.include_tasks: "{{ playbook_dir }}/../../tasks/install-docker-python.yml"
+
+    - name: Configure Fail2ban local settings
+      ansible.builtin.template:
+        dest: /etc/fail2ban/jail.local
+        src: "{{ playbook_dir }}/../../templates/jail.local.j2"
+        backup: yes
+      notify: restart fail2ban
+
+    - name: Create Traefik log directory
+      ansible.builtin.file:
+        path: "{{ apps_path }}/.volumes/traefik/logs"
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+      when: fail2ban_docker_jails is defined and 'traefik-auth' in fail2ban_docker_jails | map(attribute='name')
+
+    - name: Ensure home directory is accessible for log file access
+      ansible.builtin.file:
+        path: "/home/{{ homelab_user }}"
+        mode: "0755"
+        state: directory
+      when: fail2ban_docker_jails is defined and 'traefik-auth' in fail2ban_docker_jails | map(attribute='name')
+
+    - name: Create empty Traefik access log file if it doesn't exist
+      ansible.builtin.copy:
+        content: ""
+        dest: "{{ apps_path }}/.volumes/traefik/logs/access.log"
+        owner: root
+        group: root
+        mode: "0644"
+        force: no
+      when: fail2ban_docker_jails is defined and 'traefik-auth' in fail2ban_docker_jails | map(attribute='name')
+
+    - name: Create Vaultwarden jail filter
+      ansible.builtin.copy:
+        dest: "/etc/fail2ban/filter.d/vaultwarden.conf"
+        content: |
+          [Definition]
+          failregex = ^.*Username or password is incorrect\. Try again\. IP: <ADDR>\. Username:.*$
+                      ^.*Invalid admin token\. IP: <ADDR>.*$
+          ignoreregex =
+      when: fail2ban_docker_jails is defined and 'vaultwarden' in fail2ban_docker_jails | map(attribute='name')
+
+    - name: Create Traefik-auth jail filter
+      ansible.builtin.copy:
+        dest: "/etc/fail2ban/filter.d/traefik-auth.conf"
+        content: |
+          [Definition]
+          failregex = ^<ADDR> - - \[.+\] ".+" (401|403) .+$
+          ignoreregex =
+      when: fail2ban_docker_jails is defined and 'traefik-auth' in fail2ban_docker_jails | map(attribute='name')
+
+    - name: Create Home Assistant jail filter
+      ansible.builtin.copy:
+        dest: "/etc/fail2ban/filter.d/home-assistant.conf"
+        content: |
+          [Definition]
+          failregex = ^.*Login attempt or request with invalid authentication from <ADDR>.*$
+                      ^.*Invalid authentication.*\(<ADDR>\).*$
+          ignoreregex =
+      when: fail2ban_docker_jails is defined and 'home-assistant' in fail2ban_docker_jails | map(attribute='name')
+
+    - name: Create Mailserver jail filter
+      ansible.builtin.copy:
+        dest: "/etc/fail2ban/filter.d/mailserver.conf"
+        content: |
+          [Definition]
+          failregex = ^.*postfix.*authentication failure.*rhost=<ADDR>.*$
+                      ^.*dovecot.*auth.*failed.*rip=<ADDR>.*$
+                      ^.*postfix.*SASL.*authentication failed.*\[<ADDR>\].*$
+          ignoreregex =
+      when: fail2ban_docker_jails is defined and 'mailserver' in fail2ban_docker_jails | map(attribute='name')
+
+    - name: Enable and start Fail2ban service
+      ansible.builtin.systemd:
+        name: fail2ban
+        enabled: yes
+        state: restarted
+        daemon_reload: yes
+
+    - name: Wait for Fail2ban to start
+      ansible.builtin.pause:
+        seconds: 5
+
+    - name: Check if Fail2ban socket exists
+      ansible.builtin.stat:
+        path: /var/run/fail2ban/fail2ban.sock
+      register: fail2ban_socket
+
+    - name: Display socket status
+      ansible.builtin.debug:
+        msg: "Socket exists: {{ fail2ban_socket.stat.exists | default(false) }}"
+
+    - name: Get Fail2ban service status
+      ansible.builtin.systemd:
+        name: fail2ban
+      register: fail2ban_service_status
+
+    - name: Display service status
+      ansible.builtin.debug:
+        msg: "Service active: {{ fail2ban_service_status.status.ActiveState }}"
+
+    - name: Get Fail2ban status (if socket exists)
+      ansible.builtin.command: fail2ban-client status
+      register: fail2ban_status
+      changed_when: false
+      when: fail2ban_socket.stat.exists | default(false)
+
+    - name: Display Fail2ban status
+      ansible.builtin.debug:
+        msg: "{{ fail2ban_status.stdout_lines }}"
+      when: fail2ban_socket.stat.exists | default(false)
+
+    - name: Get Fail2ban logs if service failed
+      ansible.builtin.command: journalctl -u fail2ban -n 30 --no-pager
+      register: fail2ban_logs
+      when: not (fail2ban_socket.stat.exists | default(false))
+      changed_when: false
+
+    - name: Display Fail2ban logs on failure
+      ansible.builtin.debug:
+        msg: "{{ fail2ban_logs.stdout_lines }}"
+      when: not (fail2ban_socket.stat.exists | default(false))
+
+    - name: Build jail list for display
+      ansible.builtin.set_fact:
+        jail_display_list: "{{ jail_display_list | default([]) + ['  • ' + item.name + ': ' + (item.maxretry | default(5) | string) + ' attempts in ' + (item.findtime | default('10min')) + ' → ' + (item.bantime | default('1h')) + ' ban'] }}"
+      loop: "{{ fail2ban_docker_jails }}"
+      when: fail2ban_docker_jails is defined
+
+    - name: Display Fail2ban summary
+      ansible.builtin.debug:
+        msg: "{{ ['✅ Fail2ban configured successfully on ' + inventory_hostname + '!', '', 'Protected services:', '  • SSH' + ((' (port ' + (ssh_port | string) + ')') if ssh_port is defined else '') + ': 3 attempts in 10min → 1h ban'] + (jail_display_list | default([])) + ['', 'Useful commands:', '  • Check status: sudo fail2ban-client status', '  • Check jail: sudo fail2ban-client status sshd', '  • Unban IP: sudo fail2ban-client set sshd unbanip <IP>', '  • View logs: sudo tail -f /var/log/fail2ban.log'] }}"
+
+  handlers:
+    - name: restart fail2ban
+      ansible.builtin.systemd:
+        name: fail2ban
+        state: restarted

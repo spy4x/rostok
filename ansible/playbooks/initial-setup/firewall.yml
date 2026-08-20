@@ -1,0 +1,111 @@
+---
+# Playbook: Firewall Configuration
+# This playbook configures firewall rules based on FIREWALL_PORTS defined in .env
+# Supports both firewalld (RedHat/Fedora) and UFW (Debian/Ubuntu)
+# ⚠️  SAFE TO RE-RUN: Idempotent and only opens specified ports
+
+- name: Configure Firewall
+  hosts: homelab_servers
+  become: true
+
+  vars:
+    # Parse FIREWALL_PORTS from environment (comma-separated list like "80/tcp,443/tcp,22/tcp")
+    firewall_ports: "{{ lookup('env', 'FIREWALL_PORTS').split(',') }}"
+
+  tasks:
+    - name: Display ports to be configured
+      ansible.builtin.debug:
+        msg:
+          - "Configuring firewall for the following ports:"
+          - "{{ firewall_ports }}"
+
+    # ===== Firewalld Configuration (RedHat/Fedora) =====
+    - name: Check if firewalld is installed (RedHat/Fedora)
+      ansible.builtin.systemd:
+        name: firewalld
+      register: firewalld_status
+      when: ansible_os_family == "RedHat"
+      failed_when: false
+
+    - name: Ensure firewalld is running (RedHat/Fedora)
+      ansible.builtin.systemd:
+        name: firewalld
+        state: started
+        enabled: yes
+      when:
+        - ansible_os_family == "RedHat"
+        - firewalld_status is defined
+        - firewalld_status.status is defined
+
+    - name: Configure firewall ports with firewalld (RedHat/Fedora)
+      ansible.builtin.command: "firewall-cmd --permanent --add-port={{ item }}"
+      loop: "{{ firewall_ports }}"
+      when: ansible_os_family == "RedHat"
+      register: firewalld_add_result
+      changed_when: "'ALREADY_ENABLED' not in firewalld_add_result.stderr"
+      failed_when:
+        - firewalld_add_result.rc != 0
+        - "'ALREADY_ENABLED' not in firewalld_add_result.stderr"
+
+    - name: Enable masquerading for Docker (RedHat/Fedora)
+      ansible.builtin.command: firewall-cmd --permanent --zone=public --add-masquerade
+      when: ansible_os_family == "RedHat"
+      register: masquerade_result
+      changed_when: "'ALREADY_ENABLED' not in masquerade_result.stderr"
+      failed_when:
+        - masquerade_result.rc != 0
+        - "'ALREADY_ENABLED' not in masquerade_result.stderr"
+
+    - name: Reload firewalld to apply changes (RedHat/Fedora)
+      ansible.builtin.command: firewall-cmd --reload
+      when: ansible_os_family == "RedHat"
+      changed_when: false
+
+    - name: List active firewall ports (RedHat/Fedora)
+      ansible.builtin.command: firewall-cmd --list-ports
+      register: firewalld_ports
+      when: ansible_os_family == "RedHat"
+      changed_when: false
+
+    # ===== UFW Configuration (Debian/Ubuntu) =====
+    - name: Install UFW (Debian/Ubuntu)
+      ansible.builtin.apt:
+        name: ufw
+        state: present
+      when: ansible_os_family == "Debian"
+
+    - name: Configure firewall ports with UFW (Debian/Ubuntu)
+      community.general.ufw:
+        rule: allow
+        port: "{{ item.split('/')[0] }}"
+        proto: "{{ item.split('/')[1] }}"
+      loop: "{{ firewall_ports }}"
+      when: ansible_os_family == "Debian"
+
+    - name: Enable UFW (Debian/Ubuntu)
+      community.general.ufw:
+        state: enabled
+      when: ansible_os_family == "Debian"
+
+    - name: Get UFW status (Debian/Ubuntu)
+      ansible.builtin.command: ufw status
+      register: ufw_status
+      when: ansible_os_family == "Debian"
+      changed_when: false
+
+    # ===== Summary =====
+    - name: Display firewall configuration summary
+      ansible.builtin.debug:
+        msg:
+          - "✅ Firewall configuration completed!"
+          - ""
+          - "Configured ports:"
+          - "{{ firewall_ports }}"
+          - ""
+          - "Active firewall rules (firewalld):"
+          - "{{ firewalld_ports.stdout if ansible_os_family == 'RedHat' else 'N/A (using UFW)' }}"
+          - ""
+          - "Active firewall rules (UFW):"
+          - "{{ ufw_status.stdout_lines if ansible_os_family == 'Debian' else 'N/A (using firewalld)' }}"
+          - ""
+          - "✅ Safe to re-run: This playbook is idempotent"

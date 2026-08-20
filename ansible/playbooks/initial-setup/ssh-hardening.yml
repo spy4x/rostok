@@ -1,0 +1,184 @@
+---
+# Playbook: SSH Hardening
+# This playbook secures SSH by disabling root login, enforcing key-only authentication,
+# and applying other security best practices
+# ⚠️  SAFE TO RE-RUN: Idempotent and validates before applying changes
+# ⚠️  REQUIRES: Firewall must be configured FIRST to avoid lockout
+
+- name: Configure Firewall First
+  import_playbook: firewall.yml
+
+- name: Harden SSH Configuration
+  hosts: homelab_servers
+  become: true
+
+  tasks:
+    - name: Backup original sshd_config
+      ansible.builtin.copy:
+        src: /etc/ssh/sshd_config
+        dest: /etc/ssh/sshd_config.backup-{{ ansible_date_time.epoch }}
+        remote_src: yes
+        force: no
+
+    - name: Disable root login
+      ansible.builtin.lineinfile:
+        path: /etc/ssh/sshd_config
+        regexp: "^#?PermitRootLogin"
+        line: "PermitRootLogin no"
+        state: present
+        validate: "/usr/sbin/sshd -t -f %s"
+      notify: restart sshd
+
+    - name: Configure SSH port
+      ansible.builtin.lineinfile:
+        path: /etc/ssh/sshd_config
+        regexp: "^#?Port"
+        line: "Port {{ ssh_port }}"
+        state: present
+        validate: "/usr/sbin/sshd -t -f %s"
+      notify: restart sshd
+
+    - name: Disable password authentication
+      ansible.builtin.lineinfile:
+        path: /etc/ssh/sshd_config
+        regexp: "^#?PasswordAuthentication"
+        line: "PasswordAuthentication no"
+        state: present
+        validate: "/usr/sbin/sshd -t -f %s"
+      notify: restart sshd
+
+    - name: Disable challenge-response authentication
+      ansible.builtin.lineinfile:
+        path: /etc/ssh/sshd_config
+        regexp: "^#?ChallengeResponseAuthentication"
+        line: "ChallengeResponseAuthentication no"
+        state: present
+        validate: "/usr/sbin/sshd -t -f %s"
+      notify: restart sshd
+
+    - name: Disable PAM authentication
+      ansible.builtin.lineinfile:
+        path: /etc/ssh/sshd_config
+        regexp: "^#?UsePAM"
+        line: "UsePAM no"
+        state: present
+        validate: "/usr/sbin/sshd -t -f %s"
+      notify: restart sshd
+
+    - name: Enable public key authentication
+      ansible.builtin.lineinfile:
+        path: /etc/ssh/sshd_config
+        regexp: "^#?PubkeyAuthentication"
+        line: "PubkeyAuthentication yes"
+        state: present
+        validate: "/usr/sbin/sshd -t -f %s"
+      notify: restart sshd
+
+    - name: Set maximum authentication attempts
+      ansible.builtin.lineinfile:
+        path: /etc/ssh/sshd_config
+        regexp: "^#?MaxAuthTries"
+        line: "MaxAuthTries 3"
+        state: present
+        validate: "/usr/sbin/sshd -t -f %s"
+      notify: restart sshd
+
+    - name: Set login grace time
+      ansible.builtin.lineinfile:
+        path: /etc/ssh/sshd_config
+        regexp: "^#?LoginGraceTime"
+        line: "LoginGraceTime 30"
+        state: present
+        validate: "/usr/sbin/sshd -t -f %s"
+      notify: restart sshd
+
+    - name: Disable X11 forwarding
+      ansible.builtin.lineinfile:
+        path: /etc/ssh/sshd_config
+        regexp: "^#?X11Forwarding"
+        line: "X11Forwarding no"
+        state: present
+        validate: "/usr/sbin/sshd -t -f %s"
+      notify: restart sshd
+
+    - name: Set SSH protocol to 2
+      ansible.builtin.lineinfile:
+        path: /etc/ssh/sshd_config
+        regexp: "^#?Protocol"
+        line: "Protocol 2"
+        state: present
+        validate: "/usr/sbin/sshd -t -f %s"
+      notify: restart sshd
+
+    - name: Configure allowed users
+      ansible.builtin.lineinfile:
+        path: /etc/ssh/sshd_config
+        regexp: "^#?AllowUsers"
+        line: "AllowUsers {{ homelab_user }}"
+        state: present
+        validate: "/usr/sbin/sshd -t -f %s"
+      notify: restart sshd
+
+    - name: Use strong ciphers
+      ansible.builtin.lineinfile:
+        path: /etc/ssh/sshd_config
+        regexp: "^#?Ciphers"
+        line: "Ciphers chacha20-poly1305@openssh.com,aes256-gcm@openssh.com,aes128-gcm@openssh.com,aes256-ctr,aes192-ctr,aes128-ctr"
+        state: present
+        validate: "/usr/sbin/sshd -t -f %s"
+      notify: restart sshd
+
+    - name: Use strong MACs
+      ansible.builtin.lineinfile:
+        path: /etc/ssh/sshd_config
+        regexp: "^#?MACs"
+        line: "MACs hmac-sha2-512-etm@openssh.com,hmac-sha2-256-etm@openssh.com,hmac-sha2-512,hmac-sha2-256"
+        state: present
+        validate: "/usr/sbin/sshd -t -f %s"
+      notify: restart sshd
+
+    - name: Use strong key exchange algorithms
+      ansible.builtin.lineinfile:
+        path: /etc/ssh/sshd_config
+        regexp: "^#?KexAlgorithms"
+        line: "KexAlgorithms curve25519-sha256,curve25519-sha256@libssh.org,diffie-hellman-group16-sha512,diffie-hellman-group18-sha512,diffie-hellman-group-exchange-sha256"
+        state: present
+        validate: "/usr/sbin/sshd -t -f %s"
+      notify: restart sshd
+
+    - name: Verify SSH configuration
+      ansible.builtin.command: /usr/sbin/sshd -t
+      changed_when: false
+
+    - name: Display SSH hardening summary
+      ansible.builtin.debug:
+        msg:
+          - "✅ SSH hardening completed!"
+          - ""
+          - "Applied settings:"
+          - "  • Root login: DISABLED"
+          - "  • Password authentication: DISABLED"
+          - "  • Key-only authentication: ENABLED"
+          - "  • PAM: DISABLED"
+          - "  • SSH Port: {{ ssh_port }}"
+          - "  • Max auth attempts: 3"
+          - "  • Login grace time: 30s"
+          - "  • Allowed users: {{ homelab_user }}"
+          - "  • Strong ciphers and algorithms enforced"
+          - ""
+          - "⚠️  IMPORTANT: Keep your SSH key safe!"
+          - "⚠️  Timestamped backup saved: /etc/ssh/sshd_config.backup-*"
+          - ""
+          - "⚠️  NEXT STEP: Run the firewall playbook to open the SSH port:"
+          - "  deno task ansible ./ansible/playbooks/initial-setup/firewall.yml {{ inventory_hostname }}"
+          - ""
+          - "✅ Safe to re-run: This playbook is idempotent"
+          - ""
+          - "Test connection in a NEW terminal before closing this one:"
+          - "  ssh -p {{ ssh_port }} {{ homelab_user }}@{{ ansible_host }}"
+
+  handlers:
+    - name: restart sshd
+      ansible.builtin.systemd:
+        name: sshd
+        state: restarted

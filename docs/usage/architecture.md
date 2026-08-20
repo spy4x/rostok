@@ -82,14 +82,14 @@ Each stack has:
 - `backup.ts` — backup config (skipped for stateless services)
 - `README.md` — purpose, configuration, troubleshooting
 - `+meta.ts` — CLI schema (READY-TO-IMPLEMENT for v1; tracked per
-  `docs/v1-cli.md` §4 rollout)
+  `docs/design/v1-cli.md` §4 rollout)
 
 ### `cli/` — the rostok CLI source
 
 Deno-native. Uses `@cliffy/command` for parsing and `@cliffy/prompt`
 for interactive input. `npm:arktype@^2` for runtime validation.
 
-See `docs/v1-cli.md` for the full source-map and rollout.
+See `docs/design/v1-cli.md` for the full source-map and rollout.
 
 ### `scripts/encryption/` — age64
 

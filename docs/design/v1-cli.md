@@ -282,13 +282,13 @@ about to write.
 ## 9. Documentation
 
 - `README.md` — personas table, quickstart (`$ rostok`), command
-  reference, link to `docs/v1-cli.md`.
-- `docs/v1-cli.md` — this file.
-- `docs/v2-cli.md` — v2 backlog.
-- `docs/v2-website.md` — future static site idea.
+  reference, link to `docs/design/v1-cli.md`.
+- `docs/design/v1-cli.md` — this file.
+- `docs/design/v2-cli.md` — v2 backlog.
+- `docs/design/v2-website.md` — future static site idea.
 
-Repository's other docs (`docs/architecture.md`, `docs/monitoring.md`,
-etc.) stay as-is — they're independent of the CLI work.
+Repository's other docs (`docs/usage/architecture.md`, `docs/usage/...`)
+stay as-is — they're independent of the CLI work.
 
 ---
 
@@ -317,9 +317,10 @@ Each row is a separate PR. ✅ = done.
 
 | # | PR | Depends on | What |
 |---|---|---|---|
-| 0 | [#148](https://github.com/spy4x/rostok/pull/148) ✅ | — | Gitignore private server dirs. |
+| 0 | [#148](https://github.com/spy4x/rostok/pull/148) ✅¹ | — | Gitignore private server dirs. |
 | 1 | [#153](https://github.com/spy4x/rostok/pull/153) ✅ | #0 merged | `homelab → rostok`. GitHub redirect. README header. |
-| 1.5 | repo reframe | #1 merged | Strip user-specific dirs/docs. Catalog becomes public. |
+| 1.5 | [#154](https://github.com/spy4x/rostok/pull/154) ✅ | #1 merged | Strip user-specific dirs/docs. Catalog becomes public. |
+| 1.6 | recover + doc split | #1.5 merged | Restore scripts/, ansible/, deno.jsonc tasks. Split docs into usage/contributing/design. DR doc. Catalog .md links. |
 | 2 | `cli/` skeleton | #1.5 | `cli/+main.ts` with cliffy + arktype. `rostok --help` works. |
 | 3 | `StackMeta` + secrets | #2 | Type, default resolver, password generator, validation. |
 | 4 | First 6 stacks | #3 | traefik, gatus, vaultwarden, jellyfin, filebrowser, librespeed get `+meta.ts`. One commit per stack. |
@@ -330,6 +331,10 @@ Each row is a separate PR. ✅ = done.
 | 9 | Polish | #8 | Help text, examples, smoke. |
 | 10 | JSR publish | #9 | First release. |
 | — | v2 | #10 | See `v2-cli.md`. |
+
+¹ Phase 0 landed via direct squash-push to `main` (commit `f22135a`)
+because the repo's no-merge-commits rule was strict at the time. The
+PR was closed without merge; the work is on `main`.
 
 ---
 

@@ -1,0 +1,46 @@
+---
+# Reusable task: Install Docker Python library
+# Include this in playbooks that need to interact with Docker via Python
+# ===== Bootstrap Python Dependencies for Ansible =====
+- name: Install python3-libdnf5 for Ansible on RedHat/Fedora (bootstrap)
+  ansible.builtin.raw: |
+    if command -v dnf5 &> /dev/null; then
+      dnf5 install -y python3-libdnf5
+    elif command -v dnf &> /dev/null; then
+      dnf install -y python3-libdnf5
+    fi
+  when: ansible_os_family == "RedHat"
+  changed_when: false
+  failed_when: false
+
+- name: Re-gather facts after installing python3-libdnf5
+  ansible.builtin.setup:
+  when: ansible_os_family == "RedHat"
+
+- name: Install Python pip (RedHat/Fedora - using raw for DNF5 compatibility)
+  ansible.builtin.raw: |
+    if command -v dnf5 &> /dev/null; then
+      dnf5 install -y python3-pip
+    elif command -v dnf &> /dev/null; then
+      dnf install -y python3-pip
+    fi
+  when: ansible_os_family == "RedHat"
+  changed_when: false
+
+- name: Install Python pip (Debian/Ubuntu)
+  ansible.builtin.apt:
+    name: python3-pip
+    state: present
+  when: ansible_os_family == "Debian"
+
+- name: Install Python docker library (RedHat/Fedora)
+  ansible.builtin.pip:
+    name: docker
+    state: present
+  when: ansible_os_family == "RedHat"
+
+- name: Install Python docker library (Debian/Ubuntu)
+  ansible.builtin.apt:
+    name: python3-docker
+    state: present
+  when: ansible_os_family == "Debian"
