@@ -29,15 +29,6 @@ endpoints:
       - "[STATUS] == 200"
     alerts:
       - type: ntfy
-  - name: Vaultwarden
-    group: home
-    url: "https://probe-home.${DOMAIN}/health/vaultwarden"
-    interval: 1m
-    conditions:
-      - "[STATUS] == 200"
-    alerts:
-      - type: ntfy
-
   - name: Jellyfin
     group: home
     url: "https://probe-home.${DOMAIN}/health/jellyfin"
@@ -50,14 +41,6 @@ endpoints:
   - name: Immich
     group: home
     url: "https://probe-home.${DOMAIN}/health/immich"
-    interval: 1m
-    conditions:
-      - "[STATUS] == 200"
-    alerts:
-      - type: ntfy
-  - name: AdGuard Home
-    group: home
-    url: "https://probe-home.${DOMAIN}/health/adguard"
     interval: 1m
     conditions:
       - "[STATUS] == 200"
@@ -227,41 +210,6 @@ endpoints:
       - type: ntfy
         failure-threshold: 50
         success-threshold: 1
-
-  - name: Akaunting
-    group: home
-    url: "https://probe-home.${DOMAIN}/health/akaunting"
-    interval: 1m
-    conditions:
-      - "[STATUS] == 200"
-    alerts:
-      - type: ntfy
-  - name: Ollama
-    group: home
-    url: "https://probe-home.${DOMAIN}/health/ollama"
-    interval: 1m
-    conditions:
-      - "[STATUS] == 200"
-    alerts:
-      - type: ntfy
-
-  - name: Umami
-    group: home
-    url: "https://probe-home.${DOMAIN}/health/umami"
-    interval: 1m
-    conditions:
-      - "[STATUS] == 200"
-    alerts:
-      - type: ntfy
-
-  - name: Schedule
-    group: home
-    url: "https://probe-home.${DOMAIN}/health/caldiy"
-    interval: 1m
-    conditions:
-      - "[STATUS] == 200"
-    alerts:
-      - type: ntfy
 
   - name: Traggo
     group: home

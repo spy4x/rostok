@@ -11,21 +11,25 @@ services:
   zond:
     container_name: hl-zond
     image: ghcr.io/spy4x/zond:latest
-    healthcheck:
-      test: ["CMD", "wget", "--spider", "http://127.0.0.1:8080/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 40s
+    # Healthcheck is inherited from the image (zond -healthcheck).
+    # The previous wget-based check broke after the Deno→Go rewrite — the
+    # distroless-static image has no shell, no wget.
     restart: unless-stopped
+    # Config lives in servers/home/configs/zond.yaml, deployed to
+    # <PATH_APPS>/configs/zond.yaml and bind-mounted into the container at
+    # /app/zond.yaml. The Go binary's default config lookup is zond.yml (no
+    # a), so we set ZOND_CONFIG_PATH to the in-container path explicitly
+    # rather than relying on a pathlib guess.
     volumes:
-      - ./zond.yaml:/app/zond.yaml:ro
+      - ${PATH_APPS}/configs/zond.yaml:/app/zond.yaml:ro
+    environment:
+      - ZOND_CONFIG_PATH=/app/zond.yaml
     deploy:
       resources:
         limits:
-          # Deno baseline ~48MB; +probes buffer. 32MB triggered OOM-kill cycles
-          # every ~15min in production. Bumped to 128M after Jul 2026 incident.
-          memory: 128M
+          # Headroom for in-flight HTTP probes. The Go binary itself is ~5MB
+          # RSS; the limit is probe fan-out, not the runtime.
+          memory: 64M
           cpus: "0.25"
     security_opt:
       - no-new-privileges:true

@@ -103,7 +103,7 @@ hl-opencode-web:
 
 ## Monitoring
 
-Zond target in `stacks/zond/zond.yaml`:
+Zond target in `servers/home/configs/zond.yaml`:
 ```yaml
 - name: opencode-web
   url: http://172.23.0.1:8002/
