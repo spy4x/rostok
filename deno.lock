@@ -6,8 +6,7 @@
     "jsr:@std/assert@^1.0.17": "1.0.17",
     "jsr:@std/assert@~0.222.1": "0.222.1",
     "jsr:@std/cli@~0.222.1": "0.222.1",
-    "jsr:@std/dotenv@*": "0.225.5",
-    "jsr:@std/encoding@^1.0.9": "1.0.10",
+    "jsr:@std/encoding@^1.0.9": "1.0.11",
     "jsr:@std/fmt@~0.222.1": "0.222.1",
     "jsr:@std/fs@^1.0.21": "1.0.21",
     "jsr:@std/fs@~0.222.1": "0.222.1",
@@ -19,8 +18,7 @@
     "npm:imapflow@1": "1.3.3",
     "npm:mailparser@3": "3.9.8",
     "npm:nodemailer@6": "6.10.1",
-    "npm:yaml@*": "2.8.2",
-    "npm:yaml@^2.8.2": "2.8.2"
+    "npm:yaml@^2.8.2": "2.9.0"
   },
   "jsr": {
     "@hongminhee/deno-task-hooks@0.1.2": {
@@ -52,11 +50,8 @@
         "jsr:@std/assert@~0.222.1"
       ]
     },
-    "@std/dotenv@0.225.5": {
-      "integrity": "9ce6f9d0ec3311f74a32535aa1b8c62ed88b1ab91b7f0815797d77a6f60c922f"
-    },
-    "@std/encoding@1.0.10": {
-      "integrity": "8783c6384a2d13abd5e9e87a7ae0520a30e9f56aeeaa3bdf910a3eaaf5c811a1"
+    "@std/encoding@1.0.11": {
+      "integrity": "e7cef2f0b3153bccc17431e7c864a1de03a4b6d9647389c43e08aaa775d37385"
     },
     "@std/fmt@0.222.1": {
       "integrity": "ec3382f9b0261c1ab1a5c804aa355d816515fa984cdd827ed32edfb187c0a722"
@@ -365,15 +360,14 @@
     "uc.micro@2.1.0": {
       "integrity": "sha512-ARDJmphmdvUk6Glw7y9DQ2bFkKBHwQHLi2lsaH6PPmz/Ka9sFOBsBluozhDltWmnv9u/cF6Rt87znRTPV+yp/A=="
     },
-    "yaml@2.8.2": {
-      "integrity": "sha512-mplynKqc1C2hTVYxd0PU2xQAc22TI1vShAYGksCCfxbn/dFwnHTNi1bvYsBTkhdUNtGIf5xNOg938rrSSYvS9A==",
+    "yaml@2.9.0": {
+      "integrity": "sha512-2AvhNX3mb8zd6Zy7INTtSpl1F15HW6Wnqj0srWlkKLcpYl/gMIMJiyuGq2KeI2YFxUPjdlB+3Lc10seMLtL4cA==",
       "bin": true
     }
   },
   "workspace": {
     "dependencies": [
       "jsr:@std/assert@^1.0.17",
-      "jsr:@std/dotenv@*",
       "jsr:@std/encoding@^1.0.9",
       "jsr:@std/fs@^1.0.21",
       "jsr:@std/path@^1.1.4",

@@ -1,99 +1,195 @@
 # Architecture
 
-Infrastructure-as-code framework for multi-server Docker deployments.
+`rostok` is a **catalog** plus a **CLI tool**. The catalog is a tree of
+self-hosted services. The CLI scaffolds a user's project, prompts for
+the values each stack needs, and re-encrypts the secrets for git.
 
-## Design Principles
-
-**Infrastructure as Code** - All configuration in Git  
-**Composition** - Reusable stacks shared across servers  
-**Automation** - Deploy, backup, monitor without manual steps  
-**Redundancy** - Cross-server monitoring and backup replication
-
-## Core Components
-
-### Docker Compose Stacks
-
-Services organized as individual reusable stacks:
+## Pieces
 
 ```
-stacks/              # ALL service definitions (catalog)
-  ├── traefik/
-  │   ├── compose.yml
-  │   ├── backup.ts
-  │   └── README.md
-  ├── immich/
-  └── ...
-servers/{name}/
-  ├── config.json    # Which stacks to deploy
-  ├── configs/       # Server-specific overrides
-  └── .env          # Environment variables
+┌─────────────────────────────────────────────────────────────┐
+│                  github.com/spy4x/rostok                    │
+│                                                             │
+│  ┌──────────────┐   ┌─────────────────────────────────┐     │
+│  │  stacks/     │   │  cli/  (the rostok CLI source)  │     │
+│  │              │   │                                 │     │
+│  │  traefik/    │   │  cli/+main.ts                   │     │
+│  │  gatus/      │   │  cli/server-create.ts           │     │
+│  │  vaultwarden/│   │  cli/stack-add.ts               │     │
+│  │  ... (50+)   │   │  cli/stack-list.ts              │     │
+│  │              │   │  cli/stack-meta.ts              │     │
+│  │  +meta.ts    │   │  cli/secrets.ts                 │     │
+│  │  compose.yml │   │  cli/wizard.ts                  │     │
+│  │  backup.ts   │   │                                 │     │
+│  │  README.md   │   │  depends on:                    │     │
+│  └──────────────┘   │    scripts/encryption/          │     │
+│       │             │    scripts/hooks/               │     │
+│       │             └─────────────────────────────────┘     │
+│       │                        │                            │
+│       └────────┬───────────────┘                            │
+│                │                                            │
+│                ▼  published to JSR                          │
+│         ┌──────────────┐                                    │
+│         │  @rostok/cli │                                    │
+│         │  (binary +   │                                    │
+│         │   imports)   │                                    │
+│         └──────────────┘                                    │
+└────────────────────│────────────────────────────────────────┘
+                     │
+                     ▼  installed by users
+         ┌────────────────────┐
+         │  user's machine    │
+         │   $ rostok         │
+         └─────────┬──────────┘
+                   │
+                   ▼  scaffolds
+         ┌─────────────────────────────────────────┐
+         │  user's project folder                  │
+         │                                          │
+         │  ~/homelab/                              │
+         │  ├── deno.jsonc                          │
+         │  ├── .gitignore                          │
+         │  ├── .env.root         │  ← CLI-managed │
+         │  ├── .env.root.age     │  ← gitignored  │
+         │  └── servers/                           │
+         │      ├── home/                          │
+         │      │   ├── config.json                │
+         │      │   ├── .env        │  ← CLI-managed│
+         │      │   ├── .env.age    │  ← gitignored │
+         │      │   └── configs/                   │
+         │      └── cloud/                         │
+         │          └── ...                        │
+         └─────────────────────────────────────────┘
+                           │
+                           ▼  deploy
+                  ┌────────────────────────┐
+                  │  user's Docker hosts   │
+                  │  (home, cloud, ...)    │
+                  └────────────────────────┘
 ```
 
-**Deployment**: Stacks copied to server, deployed with server's `.env` and configs
+## Components
 
-### Traefik Reverse Proxy
+### `stacks/` — the catalog
 
-- Automatic SSL via [Let's Encrypt](https://doc.traefik.io/traefik/https/acme/)
-- Service discovery via [Docker provider](https://doc.traefik.io/traefik/providers/docker/)
-- Subdomain routing: `service.domain.com`
-- Configured via Docker labels
+A flat directory of self-hosted services. One folder per stack. Every
+folder is reusable by any user; nothing is hardcoded to a real
+domain, IP, or hostname.
 
-### Restic Backups
+Each stack has:
 
-- Per-service backup configs in `stacks/{name}/backup.ts`
-- Non-service backups in `servers/{name}/configs/backup/`
-- [Restic](https://restic.readthedocs.io/) for encrypted, deduplicated backups
-- Syncthing replicates repos across servers
-- See [backup README](../scripts/backup/README.md) for details
+- `compose.yml` — Docker Compose definition
+- `backup.ts` — backup config (skipped for stateless services)
+- `README.md` — purpose, configuration, troubleshooting
+- `+meta.ts` — CLI schema (READY-TO-IMPLEMENT for v1; tracked per
+  `docs/v1-cli.md` §4 rollout)
 
-### Cross-Server Monitoring
+### `cli/` — the rostok CLI source
 
-- [Gatus](https://github.com/TwiN/gatus) for health checks
-- Each server monitors others (failure detection without single point)
-- [ntfy](https://docs.ntfy.sh/) for push notifications
+Deno-native. Uses `@cliffy/command` for parsing and `@cliffy/prompt`
+for interactive input. `npm:arktype@^2` for runtime validation.
 
-### Deployment Automation
+See `docs/v1-cli.md` for the full source-map and rollout.
 
-`deno task deploy <server>`:
-1. Reads `servers/{server}/config.json` for required stacks
-2. Copies stacks and server configs to temp directory
-3. Runs any `before.deploy.ts` scripts (stack-level or server-specific)
-4. Syncs to server via rsync
-5. Deploys each stack with `docker compose up -d`
+### `scripts/encryption/` — age64
 
-## Example: 3-Server Setup
+Per-value age encryption. Each `KEY=age64:...` line is encrypted
+independently. Only changed lines re-encrypt. Avoids the
+"re-encrypt everything on every run" problem with SOPS.
+
+### `scripts/hooks/` — git hooks
+
+Installs pre-commit, post-checkout, post-merge hooks that:
+
+- Auto-encrypt `.env` → `.env.age` before commit
+- Auto-decrypt `.env.age` → `.env` after checkout/merge
+
+The wizard (`$ rostok`) runs `hooks:install` once during init.
+
+### User's project folder
+
+`rostok` creates a new project folder (or operates in an existing one)
+with:
+
+- `deno.jsonc` — imports map for `@rostok/cli`, env file refs
+- `.gitignore` — secrets, runtime state
+- `.env.root` + `.env.root.age` — project-wide env (CLI-managed)
+- `servers/<name>/` — one folder per server, created by
+  `rostok server create`
+- `servers/<name>/config.json` — which stacks to deploy
+- `servers/<name>/.env` + `.env.age` — server env (CLI-managed)
+- `servers/<name>/configs/` — per-service overrides (optional)
+
+The user's project folder is a plain Git repo. They commit `*.age`
+files; `.env` files stay on disk.
+
+## Data flow
 
 ```
-┌──────────┐         ┌──────────┐         ┌──────────┐
-│   home   │◄───────►│  cloud   │◄───────►│ offsite  │
-│  Fedora  │         │Hetzner VPS│         │  RPi 4   │
-└──────────┘         └──────────┘         └──────────┘
-     │                    │                     │
-  Services            Email/Ntfy          Backups Only
+1. User runs `rostok`
+   └─▶ CLI reads stacks/*/+meta.ts from the JSR-published bundle
+   └─▶ Prompts for project name, server name, SSH target, domain
+   └─▶ Prompts for stack variables (or uses --var defaults)
+   └─▶ Writes deno.jsonc, .env.root, servers/<n>/{config.json,.env}
+   └─▶ Triggers env:encrypt → .env.age
+   └─▶ Installs git hooks
+
+2. User runs `rostok deploy home`
+   └─▶ For each stack in servers/home/config.json:
+       - rsync the stack to the remote host
+       - docker compose up -d
+       - run before.deploy hooks
+   └─▶ Run cross-server health checks (Gatus)
+
+3. Git workflow
+   └─▶ User commits servers/<n>/.env.age (encrypted)
+   └─▶ On another machine, .env.age auto-decrypts to .env
 ```
 
-**home** - Primary services (media, automation, productivity)  
-**cloud** - Public services (email, external monitoring)  
-**offsite** - Backup replication via Syncthing
+## Deploy topology
 
-Each runs: Traefik, Gatus, Syncthing, Watchtower
+Each user picks their own topology. A common pattern:
 
-## Data Flows
+```
+   cloud (Hetzner, public IP)            home (Hetzner, private)
+   ┌────────────────────────┐           ┌────────────────────────┐
+   │  Traefik (public)      │◀── HTTPS ──▶  Traefik (LAN)       │
+   │  Authelia (SSO)        │           │  Vaultwarden           │
+   │  Gatus (cross-mon)     │           │  Gatus (cross-mon)     │
+   │  Stalwart (mail)       │           │  Immich / Jellyfin     │
+   │  Ntfy (alerts)         │           │  Gitea / Woodpecker    │
+   └────────┬───────────────┘           └────────────┬───────────┘
+            │                                        │
+            └────────────┐      ┌───────────────────┘
+                         ▼      ▼
+                   ┌────────────────────┐
+                   │  offsite (Hetzner) │
+                   │  Restic backups    │
+                   │  Syncthing mirror  │
+                   └────────────────────┘
+```
 
-**Service Access**:  
-DNS → Traefik → Container → Application
+The catalog is topology-agnostic. The CLI scaffolds whatever the user
+asks for.
 
-**Backups**:  
-Service data → Restic → Local repo → Syncthing → Remote servers
+## Security model
 
-**Monitoring**:  
-Gatus HTTP check → Failure → ntfy notification
+- **Per-value age encryption** — each `KEY=age64:...` encrypted
+  independently. `password=age64:abc`, `password_new=age64:xyz`. Only
+  the changed line re-encrypts.
+- **Key in `.age/key.txt`** — gitignored, restored from Syncthing or a
+  password manager across machines.
+- **Container prefix `hl-`** — avoids name conflicts with other
+  projects on the same Docker host.
+- **Auth middleware** — every non-public service uses
+  `middlewares=authelia@file` (SSO) or `middlewares=auth` (basic
+  auth). Public services have no auth middleware.
+- **No secrets in catalog** — values flow from the user's `.env`.
 
-## Adding Servers
+## What this is NOT
 
-1. Create `servers/{name}/` with config.json and .env
-2. Add to `ansible/inventory.yml`
-3. Run `deno task ansible ansible/site.yml {name}`
-4. Deploy: `deno task deploy {name}`
-
-See individual [server docs](../servers/) for specific configurations.
+- **Not a Kubernetes / Nomad alternative.** Single-host Docker Compose.
+- **Not a Terraform / Pulumi alternative.** No state, no plan, no
+  apply. Just an opinionated scaffold.
+- **Not a multi-tenant SaaS.** Each user runs their own CLI + their
+  own project folder.

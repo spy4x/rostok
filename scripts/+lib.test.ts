@@ -1,5 +1,5 @@
 import { assertEquals, assertThrows } from "@std/assert"
-import { absPath, substituteEnvVars } from "./scripts/+lib.ts"
+import { absPath, substituteEnvVars } from "./+lib.ts"
 
 Deno.test("substituteEnvVars replaces environment variables", () => {
   // Mock Deno.env.get

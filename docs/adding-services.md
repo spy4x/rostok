@@ -1,244 +1,231 @@
-# Adding Services
+# Adding a stack to the catalog
 
-Complete workflow for integrating new services into the infrastructure.
+A **stack** is one self-hosted service the rostok CLI can scaffold onto
+a user's server. Every stack in `stacks/<name>/` is generic — reusable
+by any user, no hardcoded domains, IPs, or secrets.
 
-## Quick Checklist
+This guide is for **contributors** adding a new stack. For users
+already running `rostok`, see [`docs/concepts.md`](concepts.md).
 
-1. ☐ Create stack in `stacks/{name}/` with compose.yml
-2. ☐ Add stack to server's `config.json`
-3. ☐ Add environment variables to `.env` and `.env.example`
-4. ☐ Create backup config (if service has persistent data)
-5. ☐ Deploy and verify
-6. ☐ Add monitoring to Gatus
+---
 
-## Service Definition
+## File checklist
 
-Create `stacks/myservice/compose.yml`. **Important: never add a `default` network unless the service communicates with other containers within the same stack** (e.g., app ↔ db). Single-service stacks must use this pattern:
+A new stack needs these files:
+
+```
+stacks/<name>/
+├── compose.yml       # required
+├── backup.ts         # required if stateful, skip if stateless
+├── README.md         # required
+└── +meta.ts          # required for rostok v1 — CLI schema
+```
+
+`+meta.ts` is the CLI's "what variables does this stack need?" file.
+See [`docs/v1-cli.md`](v1-cli.md) §4 for the full schema. Until v1
+ships, you can ship the stack without `+meta.ts` (the CLI will prompt
+with generic questions instead).
+
+---
+
+## `compose.yml`
+
+A minimal stack that joins the proxy network so Traefik can route to it:
 
 ```yaml
+services:
+  myservice:
+    image: myservice/myservice:1.2.3          # pin a version, never :latest
+    container_name: hl-myservice              # `hl-` prefix mandatory
+    restart: unless-stopped
+    networks: [proxy]
+    volumes:
+      - ${VOLUMES_PATH}/myservice:/data
+    environment:
+      - DOMAIN=${DOMAIN}                      # placeholder, never hardcoded
+      - SOME_TOKEN=${SOME_TOKEN}              # CLI will prompt for this
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.hl-myservice.rule=Host(`myservice.${DOMAIN}`)"
+      - "traefik.http.routers.hl-myservice.entrypoints=websecure"
+      - "traefik.http.routers.hl-myservice.tls.certresolver=letsencrypt"
+    # Auth middleware — every non-public service needs one:
+    - "traefik.http.routers.hl-myservice.middlewares=authelia@file"
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 512M
+
 networks:
   proxy:
     external: true
-  default:
-    external: true
-    name: proxy
-
-services:
-  myservice:
-    image: myservice/myservice:latest
-    container_name: myservice
-    volumes:
-      - ${VOLUMES_PATH}/myservice:/data
-    networks: [proxy]
-    restart: unless-stopped
-    labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.myservice.rule=Host(`myservice.${DOMAIN}`)"
-      - "traefik.http.routers.myservice.entrypoints=websecure"
-      - "traefik.http.routers.myservice.tls.certresolver=myresolver"
 ```
 
-Add to `servers/{server}/config.json`:
-```json
-{
-  "stacks": [
-    {"name": "traefik"},
-    {"name": "myservice"}
-  ]
+### Rules
+
+- **Container name prefix `hl-`** — `hl-myservice`, not `myservice`.
+  This avoids name conflicts with other projects on the same host.
+  Same prefix on Traefik routers/services.
+- **Pin image versions** — never `:latest`. Use `1.2.3` or
+  `1.2-alpine`.
+- **No hardcoded domains or IPs** — use `${DOMAIN}` placeholders;
+  Traefik labels interpolate them.
+- **No hardcoded secrets** — declare them in `+meta.ts` as `secret: true`
+  variables; the CLI prompts the user.
+- **Auth middleware** — every non-public service needs one:
+  - `middlewares=authelia@file` if the user has SSO
+  - `middlewares=auth` (basic auth) as a fallback
+  - Public services (status pages, calendars) have no auth middleware
+- **Resource limits** — set `cpus` and `memory` so a misbehaving
+  container can't starve the host.
+- **Single-service stack** — if the stack has only one container, alias
+  `default` to `proxy` to avoid wasting a Docker subnet:
+  ```yaml
+  networks:
+    proxy:
+      external: true
+    default:
+      external: true
+      name: proxy
+  ```
+- **Multi-service stack** (app + db) — declare a real `default` network
+  for the stack; keep `proxy` for app's external routing.
+
+See `stacks/traefik/compose.yml`, `stacks/vaultwarden/compose.yml`, and
+`stacks/gatus/compose.yml` for reference.
+
+---
+
+## `backup.ts`
+
+(Can be omitted for stateless services — pure proxies, transcoders
+without persistent state, etc.)
+
+```ts
+import { BackupConfig } from "../../scripts/backup/src/+lib.ts"
+
+const backupConfig: BackupConfig = {
+  name: "myservice",
+  sourcePaths: "default",          // uses ${VOLUMES_PATH}/myservice
+  containers: {
+    stop: "hl-myservice",          // container to stop+start during backup
+  },
 }
+
+export default backupConfig
 ```
 
-### Server-Specific Configuration
+This is the per-stack file the `scripts/backup/` system reads. The
+`BackupConfig` type lives in `scripts/backup/src/types.ts`.
 
-For server-specific settings, use environment variables or config overrides in `servers/{server}/configs/myservice/`.
+Options:
+- `sourcePaths: "default"` — auto-derived from `${VOLUMES_PATH}/<name>`
+- `sourcePaths: "/custom/path"` — explicit path
+- `containers.stop: "default"` — uses `hl-<name>` (same as container_name)
+- `containers.stop: ["hl-app", "hl-db"]` — multi-container stacks
+- `containers.stop: false` — no stop; live backup (e.g., DB that hot-
+  backups itself)
 
-### Deploying Same Stack Multiple Times
+User-level backup configs that span multiple stacks (e.g., a
+home-directory mirror) live in the user's project folder, not in the
+catalog. The catalog only ships per-stack configs under
+`stacks/<name>/backup.ts`.
 
-Use `deployAs` to deploy the same stack with different names:
+---
 
-```json
-{
-  "stacks": [
-    {"name": "nginx", "deployAs": "homepage"},
-    {"name": "nginx", "deployAs": "blog"}
-  ]
-}
-```
-```
+## `README.md`
 
-## Environment Variables
+A short doc with:
 
-Add to `servers/{server}/.env`:
-```bash
-#region MyService
-MYSERVICE_API_KEY=actual_secret_value
-#endregion
-```
+- **What it does** — one paragraph
+- **Configuration** — list of variables (with `+meta.ts` keys)
+- **Setup** — any post-deploy steps (e.g., "create admin user")
+- **Troubleshooting** — common errors
 
-Add to `servers/{server}/.env.example`:
-```bash
-#region MyService
-MYSERVICE_API_KEY=YOUR_API_KEY_HERE  # Get from https://myservice.com/settings
-#endregion
-```
+Two paragraphs minimum. Don't paste the full Traefik label block.
 
-## Backup Configuration
+---
 
-**Required for all services with persistent data.**
+## `+meta.ts` (rostok v1 schema)
 
-Create `stacks/myservice/backup.ts`:
+Declares what variables the CLI needs to prompt for. Generic, no
+real values.
 
-```typescript
-import { BackupConfig } from "@scripts/backup"
+```ts
+import type { StackMeta } from "@rostok/cli"
+import { generatePassword } from "@rostok/cli"
 
 export default {
   name: "myservice",
-  sourcePaths: "default",        // Backs up ${VOLUMES_PATH}/myservice
-  containers: { stop: "default" } // Stops container "myservice"
-} as BackupConfig
-```
-
-**Skip backup config entirely** for stateless services (config-only via env vars, no volumes).
-
-## Pre-Deploy Scripts (before.deploy.ts)
-
-Some services need configuration generated before deployment. Create `stacks/myservice/before.deploy.ts`:
-
-```typescript
-// This script runs during deployment, before rsync to the server
-// Environment variables from .env and .env.root are available
-// DEPLOY_AS env var contains the deployment name (for renamed stacks)
-
-const templateFile = new URL("config.template", import.meta.url).pathname
-const outputFile = new URL("config.properties", import.meta.url).pathname
-
-// Read template and substitute environment variables
-const template = await Deno.readTextFile(templateFile)
-const output = template.replace(/\${([^}]+)}/g, (_match, envVarName) => {
-  const value = Deno.env.get(envVarName.trim())
-  if (value === undefined) {
-    throw new Error(`Environment variable '${envVarName.trim()}' not found.`)
-  }
-  return value
-})
-await Deno.writeTextFile(outputFile, output)
-
-console.log(`Generated '${outputFile}' from template`)
-```
-
-**Use cases**:
-- Generate config files from templates with env var substitution
-- Create dynamic configuration based on server settings
-- Pre-process files that can't use Docker env var expansion
-
-**Server-specific before.deploy.ts**: Place in `servers/{server}/configs/{service}/before.deploy.ts` for server-specific preprocessing.
-
-### Advanced Backup Configs
-
-**Multiple paths**:
-```typescript
-export default {
-  name: "myservice",
-  sourcePaths: [
-    "${VOLUMES_PATH}/myservice/data",
-    "${VOLUMES_PATH}/myservice/config"
+  description: "What this service does in one sentence",
+  category: "data",                          // for `rostok stack list` grouping
+  variables: [
+    {
+      key: "IMAGE_TAG",
+      default: "1.2.3",
+      required: false,
+    },
+    {
+      key: "MYSERVICE_ADMIN_USER",
+      question: "Admin username?",
+      default: "admin",
+      required: true,
+    },
+    {
+      key: "MYSERVICE_ADMIN_PASSWORD",
+      question: "Admin password?",
+      default: () => generatePassword(24),
+      required: true,
+      secret: true,
+    },
   ],
-  containers: { stop: ["myservice", "myservice-worker"] }
-} as BackupConfig
+} satisfies StackMeta
 ```
 
-**Shared service deployed on multiple servers**:
-```typescript
-export default {
-  name: "myservice",
-  destName: `myservice-\${SERVER_NAME}`, // Unique repo name per server
-  sourcePaths: "default",
-  containers: { stop: "default" }
-} as BackupConfig
-```
+### Rules
 
-**Non-service backups** (server-specific folders):
-Create `servers/{server}/configs/backup/mybackup.backup.ts` instead.
+- **Every `required: true` variable has a `default`** — non-interactive
+  mode fails loud if missing.
+- **Secrets are `secret: true`** — never echoed, never logged,
+  encrypted via age64.
+- **`default: () => generatePassword(N)`** for secrets — uses
+  `crypto.getRandomValues`, not `Math.random`.
+- **`IMAGE_TAG` is a regular variable** — not a separate `defaults`
+  block. Always `required: false`.
+- **`${SERVER_NAME}` is the only allowed placeholder** — server-level
+  vars resolved before stack vars; v1 only supports this one.
 
-See [backup README](../scripts/backup/README.md) for full options.
+---
 
-## Deployment
+## Verify before opening a PR
 
 ```bash
-deno task deploy <server>
-
-# Verify (deno task ssh <server> docker ps to skip interactive)
-deno task ssh <server>
-cd /opt/apps
-docker compose ps
-docker compose logs -f myservice
+deno task check                  # lint + fmt + type-check + tests
+deno task ts:check                   # type-check stacks/<name>/*.ts
+deno task fmt:check                  # format
 ```
 
-## Monitoring
+CI (when present) runs the same checks. A failing check blocks merge.
 
-Add to `servers/{server}/configs/gatus.yml`:
+For visual review, run `deno task env:decrypt` and inspect the
+generated `.env` shape (don't commit it — it's gitignored).
 
-```yaml
-endpoints:
-  - name: MyService
-    url: "https://myservice.yourdomain.com"
-    interval: 5m
-    conditions:
-      - "[STATUS] == 200"
-```
+---
 
-[Gatus docs](https://github.com/TwiN/gatus#configuration) for advanced checks.
+## Open the PR
 
-## Common Patterns
+- Branch: `feat/<stack>-stack` or `feat/add-<stack>`
+- Title: `feat(stacks): add <stack>`
+- PR body: link the issue, list files added, paste the relevant
+  checklist items above
+- Reference: `Closes #N` if there is an issue, or just describe the
+  motivation
 
-### Service + Database
-
-```yaml
-services:
-  myservice:
-    image: myservice/myservice:latest
-    depends_on: [myservice-db]
-    environment:
-      - DB_HOST=myservice-db
-      - DB_PASSWORD=${MYSERVICE_DB_PASSWORD}
-      
-  myservice-db:
-    image: postgres:16-alpine
-    container_name: myservice-db
-    volumes:
-      - ${VOLUMES_PATH}/myservice/db:/var/lib/postgresql/data
-    environment:
-      - POSTGRES_PASSWORD=${MYSERVICE_DB_PASSWORD}
-    restart: unless-stopped
-```
-
-### With Basic Auth
-
-```yaml
-labels:
-  - "traefik.http.routers.myservice.middlewares=auth"
-  - "traefik.http.middlewares.auth.basicauth.users=${BASIC_AUTH_USER}:${BASIC_AUTH_PASSWORD}"
-```
-
-See [Traefik middleware docs](https://doc.traefik.io/traefik/middlewares/http/overview/).
-
-## Troubleshooting
-
-**Container won't start**:
-```bash
-docker compose logs myservice
-```
-
-**Can't access via domain**:
-```bash
-docker compose logs traefik | grep myservice  # Check Traefik discovery
-dig myservice.yourdomain.com                  # Verify DNS
-```
-
-**Backup fails**:
-```bash
-cd servers/<server>
-deno run --env-file=.env -A ../../scripts/backup/+main.ts
-```
-
-See [troubleshooting guide](troubleshooting.md) for more solutions.
+The reviewer will check:
+- `hl-` prefix on container + Traefik
+- No hardcoded secrets, domains, IPs
+- `+meta.ts` defaults are sensible
+- `backup.ts` present if stateful
+- README is useful
+- `deno task check` passes

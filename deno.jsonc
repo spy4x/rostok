@@ -1,46 +1,5 @@
 {
   "tasks": {
-    // #region Ansible
-    "ansible": {
-      "command": "deno run -A ./scripts/ansible/+main.ts",
-      "description": "🔧 Run Ansible playbooks (auto-loads env vars)"
-    },
-    // #endregion Ansible
-
-    // #region Deploy
-    "deploy": {
-      "command": "deno run -A ./scripts/deploy/+main.ts",
-      "description": "🚀 Deploy to remote server. Usage: deploy <server> [stack]"
-    },
-    "ssh": {
-      "command": "deno run -A ./scripts/ssh/+main.ts",
-      "description": "🔐 SSH into server (interactive) or run remote command: ssh <server> [cmd...]"
-    },
-    // #endregion Deploy
-
-    // #region Backup
-    "backup": {
-      "command": "deno run --env-file=.env.root --env-file=servers/home/.env -A ./scripts/backup/+main.ts",
-      "description": "💾 Run backup for all services using Restic"
-    },
-    "backup:restore": {
-      "command": "deno run -A ./scripts/backup/restore.ts",
-      "description": "📥 Restore service data from backup (interactive)"
-    },
-    "backup:recover": {
-      "command": "deno run --env-file=.env.root --env-file=servers/home/.env -A ./scripts/backup/recover.ts",
-      "description": "🚧 Recover corrupted restic repos (dry-run by default, pass --execute)"
-    },
-    "backup:recover:dry-run": {
-      "command": "deno run --env-file=.env.root --env-file=servers/home/.env -A ./scripts/backup/recover.ts -- --dry-run",
-      "description": "🔍 Scan and report corrupted restic repos without modifying anything"
-    },
-    "offline-backup": {
-      "command": "deno run --env-file=.env.root -A ./scripts/offline-backup/+main.ts",
-      "description": "🗄️ Backup/restore to/from external drive (monthly offline backups)"
-    },
-    // #endregion Backup
-
     // #region Encryption
     // age64 — per-value age encryption. Each value independent — only changed lines diff.
     "env:encrypt": {
@@ -111,7 +70,6 @@
   "imports": {
     "@scripts/backup": "./scripts/backup/src/+lib.ts",
     "@std/assert": "jsr:@std/assert@^1.0.17",
-    "@std/dotenv": "jsr:@std/dotenv",
     "@std/encoding": "jsr:@std/encoding@^1.0.9",
     "@std/fs": "jsr:@std/fs@^1.0.21",
     "@std/path": "jsr:@std/path@^1.1.4",
@@ -127,7 +85,6 @@
     "dist",
     "build",
     "docs",
-    "infra",
     "stacks/**/webui/**",
     ".playwright-mcp",
     "*.lock"

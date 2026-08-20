@@ -83,4 +83,7 @@ deno task deploy cloud stalwart
 
 ## Migration
 
-See `docs/migrate-from-docker-mailserver-to-stalwart.md` for the full migration plan from docker-mailserver.
+Stalwart replaces the older `docker-mailserver` stack. The migration
+involves exporting mailboxes / DKIM keys from the old setup and
+importing them into Stalwart via the admin API. As of this rewrite
+the migration is not first-class — the user runs the steps manually.

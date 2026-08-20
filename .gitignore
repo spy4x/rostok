@@ -14,15 +14,6 @@ node_modules
 !*.env.example
 !.env.root.example
 
-# Private server directories — not tracked. Only servers/demo/ is a public
-# template. Private server configs (including .env.age) are gitignored and
-# kept on disk for local use; backed up via Syncthing + the restic backup
-# pipeline. See servers/README.md.
-servers/cloud/
-servers/home/
-servers/offsite/
-servers/portable/
-
 # Age encryption keys (never commit!)
 .age/
 key.txt
@@ -30,7 +21,7 @@ key.txt
 .playwright-mcp/
 todos.txt
 
-# Rendered secrets (do not commit; rendered by before.deploy.ts)
+# Rendered secrets (do not commit)
 stacks/*/config.toml
 stacks/*/*.rendered
 stacks/*/mta-sts/html/.well-known/mta-sts.txt

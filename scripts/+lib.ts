@@ -74,3 +74,28 @@ export async function runCommand(
     error: new TextDecoder().decode(output.stderr),
   }
 }
+
+/**
+ * Restart a container on the deploy target. Equivalent to running
+ * `ssh $SSH_ADDRESS docker restart <container>` from the dev machine.
+ * Use from after.deploy.ts when a service needs to pick up new config
+ * that it doesn't hot-reload (Traefik basicAuth usersFile, Gatus YAML).
+ *
+ * Requires `SSH_ADDRESS` in the env (set by the deploy script).
+ */
+export async function restartRemoteContainer(container: string): Promise<void> {
+  const SSH_ADDRESS = Deno.env.get("SSH_ADDRESS")
+  if (!SSH_ADDRESS) {
+    throw new Error("SSH_ADDRESS not set")
+  }
+  log(`Restarting ${container} on ${SSH_ADDRESS}...`)
+  const result = await runCommand([
+    "ssh",
+    SSH_ADDRESS,
+    `docker restart ${container}`,
+  ])
+  if (!result.success) {
+    throw new Error(`Failed to restart ${container}: ${result.error}`)
+  }
+  success(`✓ ${container} restarted`)
+}

@@ -2,6 +2,6 @@
 // the .htpasswd usersFile. Traefik caches the basicAuth middleware at
 // startup; file changes alone don't reload it.
 
-import { restartRemoteContainer } from "../../scripts/remote/+lib.ts"
+import { restartRemoteContainer } from "../../scripts/+lib.ts"
 
 await restartRemoteContainer("hl-traefik")
