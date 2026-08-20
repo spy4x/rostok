@@ -1,10 +1,15 @@
-# Homelab Infrastructure
+# rostok
 
-Infrastructure-as-code for self-hosted services across 3 servers (home, cloud, offsite).
+**rostok** (росток — Russian: "sprout") is an infrastructure-as-code
+catalog and CLI for self-hosted services. Sprout your own homelab from
+the catalog.
 
 **WARNING**: This repo is **public**. Never commit plaintext passwords, secrets, or .env files.
 Secrets stored in `.env.age` using **age64** per-value encryption. Only changed values show in diff.
 Decryption key is local-only.
+
+> The `rostok` CLI tool is under design — see `docs/v1-cli.md`. Until it
+> ships, follow the manual workflow below.
 
 ## Architecture
 
@@ -44,7 +49,7 @@ curl -fsSL https://deno.land/install.sh | sh
 # Install Ansible (see docs)
 
 # Clone
-git clone https://github.com/spy4x/homelab.git && cd homelab
+git clone https://github.com/spy4x/rostok.git && cd rostok
 
 # Setup env
 cp servers/home/.env.example servers/home/.env
