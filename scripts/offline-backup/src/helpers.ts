@@ -97,7 +97,7 @@ export async function writeReadme(
   const pathsInfo = pathSizes.map((ps) => `  - ${ps.path.source} → ${ps.path.target} (${ps.size})`)
     .join("\n")
 
-  const readmeContent = `# Homelab Offline Backup Drive
+  const readmeContent = `# Rostok Offline Backup Drive
 
 This drive contains encrypted backups of critical homelab services.
 
@@ -147,7 +147,7 @@ Also it should be located on the local computer in \`~/dev/rostok/.env\` and on 
 
 ### Quick Restore
 
-Connect drive and execute \`deno task offline-backup restore\` from homelab repo.  
+Connect drive and execute \`deno task offline-backup restore\` from rostok repo.  
 The script will guide you through the restore process.
 `
 

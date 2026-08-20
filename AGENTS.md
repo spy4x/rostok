@@ -352,7 +352,7 @@ import { BackupConfig } from "@scripts/backup"
 
 ### Naming Convention: `hl-` Prefix
 
-To avoid conflicts with other projects running on the same Docker host (e.g., `fn-*`, `th-*`), **all homelab containers and Traefik router/service names must use the `hl-` prefix**:
+To avoid conflicts with other projects running on the same Docker host (e.g., `fn-*`, `th-*`), **all rostok containers and Traefik router/service names must use the `hl-` prefix**:
 
 ```yaml
 # Good
