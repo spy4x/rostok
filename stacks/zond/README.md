@@ -17,7 +17,9 @@ Internal health probe bridge — probes Docker containers and returns 200/503 st
 
 ## Configuration
 
-Probes defined in `zond.yaml`:
+Probes defined in `servers/home/configs/zond.yaml` (deployed to
+`<PATH_APPS>/configs/zond.yaml`, mounted into the container via
+`$ZOND_CONFIG_PATH`):
 
 ```yaml
 targets:
@@ -26,9 +28,13 @@ targets:
     interval: 30s
 ```
 
+The yaml is server-specific — it lists which containers actually run on this
+homelab. Other servers that want to run zond would commit their own copy under
+`stacks/zond/` or in their own server's `configs/`.
+
 ## Resources
 
-- ~50MB RAM baseline (Deno runtime) + probe buffer
-- Memory limit: 128M (was 32M — caused OOM-kill cycles in production)
+- ~5MB RSS baseline (Go, distroless-static)
+- Memory limit: 64M
 - CPU limit: 0.25
 - [Zond GitHub](https://github.com/spy4x/zond)
