@@ -1,0 +1,263 @@
+---
+# Playbook: Initial Server Setup
+# This playbook handles fresh server setup after OS installation
+# It installs essential tools (Docker, Deno) and configures the system
+
+- name: Initial Server Setup
+  hosts: homelab_servers
+  become: true
+
+  vars:
+    # Docker GPG key and repository
+    docker_gpg_url: "https://download.docker.com/linux/{{ ansible_distribution | lower }}/gpg"
+    docker_repo_url: "https://download.docker.com/linux/{{ ansible_distribution | lower }}"
+
+  tasks:
+    - name: Fix Raspberry Pi boot partition (if applicable)
+      ansible.builtin.include_tasks: "{{ playbook_dir }}/../../tasks/raspberry-pi-fix.yml"
+
+    - name: Install Docker Python library for Ansible
+      ansible.builtin.include_tasks: "{{ playbook_dir }}/../../tasks/install-docker-python.yml"
+
+    # ===== System Update =====
+    - name: Update package cache (Debian/Ubuntu)
+      ansible.builtin.apt:
+        update_cache: yes
+        cache_valid_time: 3600
+      when: ansible_os_family == "Debian"
+
+    - name: Update package cache (RedHat/Fedora)
+      ansible.builtin.dnf:
+        update_cache: yes
+      when: ansible_os_family == "RedHat"
+
+    # ===== Essential Packages =====
+    - name: Install essential packages (Debian/Ubuntu)
+      ansible.builtin.apt:
+        name:
+          - apt-transport-https
+          - ca-certificates
+          - curl
+          - gnupg
+          - lsb-release
+          - git
+          - vim
+          - htop
+          - tmux
+          - unzip
+          - restic # For backups
+          - apache2-utils # For htpasswd command to use with basic auth in Radicale
+        state: present
+      when: ansible_os_family == "Debian"
+
+    - name: Install essential packages (RedHat/Fedora)
+      ansible.builtin.dnf:
+        name:
+          - ca-certificates
+          - curl
+          - gnupg
+          - git
+          - vim
+          - htop
+          - tmux
+          - unzip
+          - restic # For backups
+          - httpd-tools # For htpasswd command to use with basic auth in Radicale
+        state: present
+      when: ansible_os_family == "RedHat"
+
+    # ===== Cron Installation =====
+    - name: Install and enable cron service
+      block:
+        - name: Install cron package
+          ansible.builtin.package:
+            name: "{{ 'cronie' if ansible_os_family == 'RedHat' else 'cron' }}"
+            state: present
+        - name: Enable and start cron service
+          ansible.builtin.systemd:
+            name: "{{ 'crond' if ansible_os_family == 'RedHat' else 'cron' }}"
+            state: started
+            enabled: yes
+
+    # ===== Docker Installation =====
+    - name: Check if Docker is already installed
+      ansible.builtin.command: docker --version
+      register: docker_check
+      failed_when: false
+      changed_when: false
+
+    - name: Install Docker using get.docker.com script
+      ansible.builtin.shell: |
+        curl -fsSL https://get.docker.com -o /tmp/get-docker.sh
+        sh /tmp/get-docker.sh
+        rm /tmp/get-docker.sh
+      when: docker_check.rc != 0
+      args:
+        creates: /usr/bin/docker
+
+    - name: Add user to docker group
+      ansible.builtin.user:
+        name: "{{ homelab_user }}"
+        groups: docker
+        append: yes
+
+    - name: Enable Docker service
+      ansible.builtin.systemd:
+        name: docker
+        enabled: yes
+        state: started
+
+    # ===== SELinux Configuration for Docker =====
+    # Note: Containers that need docker.sock access must use:
+    #   security_opt: [label=type:container_runtime_t]
+    # See stacks/traefik, stacks/watchtower, stacks/woodpecker for examples
+    - name: Set correct SELinux context for Docker socket (RedHat/Fedora)
+      when: ansible_os_family == "RedHat"
+      block:
+        - name: Install SELinux policy tools
+          ansible.builtin.dnf:
+            name:
+              - policycoreutils-python-utils
+            state: present
+
+        - name: Ensure Docker socket has correct SELinux label
+          ansible.builtin.command: restorecon -Fv /var/run/docker.sock
+          changed_when: false
+          failed_when: false
+
+        - name: Verify Docker socket SELinux context
+          ansible.builtin.command: ls -Z /var/run/docker.sock
+          register: docker_sock_context
+          changed_when: false
+
+        - name: Display Docker socket SELinux context
+          ansible.builtin.debug:
+            msg: "Docker socket SELinux context: {{ docker_sock_context.stdout }}"
+
+    - name: Detect system architecture for Docker Compose
+      ansible.builtin.set_fact:
+        docker_compose_arch: "{{ 'aarch64' if ansible_architecture == 'aarch64' else 'x86_64' }}"
+
+    - name: Install Docker Compose plugin
+      ansible.builtin.shell: |
+        DOCKER_CONFIG=${DOCKER_CONFIG:-/usr/local/lib/docker}
+        mkdir -p $DOCKER_CONFIG/cli-plugins
+        curl -SL https://github.com/docker/compose/releases/latest/download/docker-compose-linux-{{ docker_compose_arch }} -o $DOCKER_CONFIG/cli-plugins/docker-compose
+        chmod +x $DOCKER_CONFIG/cli-plugins/docker-compose
+      args:
+        creates: /usr/local/lib/docker/cli-plugins/docker-compose
+
+    # ===== Deno Installation =====
+    - name: Check if Deno is already installed
+      ansible.builtin.stat:
+        path: "{{ deno_install_path }}/bin/deno"
+      register: deno_installed
+
+    - name: Install Deno
+      ansible.builtin.shell: |
+        curl -fsSL https://deno.land/install.sh | sh
+      environment:
+        DENO_INSTALL: "{{ deno_install_path }}"
+      become_user: "{{ homelab_user }}"
+      when: not deno_installed.stat.exists
+
+    - name: Add Deno to PATH in .bashrc
+      ansible.builtin.lineinfile:
+        path: "/home/{{ homelab_user }}/.bashrc"
+        line: 'export PATH="{{ deno_install_path }}/bin:$PATH"'
+        state: present
+        create: yes
+      become_user: "{{ homelab_user }}"
+
+    - name: Add Deno to PATH in .zshrc
+      ansible.builtin.lineinfile:
+        path: "/home/{{ homelab_user }}/.zshrc"
+        line: 'export PATH="{{ deno_install_path }}/bin:$PATH"'
+        state: present
+        create: yes
+      become_user: "{{ homelab_user }}"
+      ignore_errors: yes # User might not use zsh
+
+    # ===== System Configuration =====
+    - name: Disable swap (recommended for Docker/Kubernetes)
+      ansible.builtin.command: swapoff -a
+      when: ansible_swaptotal_mb > 0
+      changed_when: false
+
+    - name: Remove swap from fstab
+      ansible.builtin.lineinfile:
+        path: /etc/fstab
+        regexp: ".*swap.*"
+        state: absent
+
+    # ===== Redis / Memory Overcommit =====
+    # Required by Redis containers for background saves under memory pressure
+    - name: Configure vm.overcommit_memory for Redis
+      ansible.posix.sysctl:
+        name: vm.overcommit_memory
+        value: "1"
+        state: present
+        reload: true
+
+    - name: Set timezone to UTC
+      community.general.timezone:
+        name: UTC
+      ignore_errors: yes # Module might not be available
+
+    - name: Configure firewall for Docker (if firewalld is active)
+      ansible.builtin.command: firewall-cmd --permanent --zone=public --add-masquerade
+      when: ansible_os_family == "RedHat"
+      failed_when: false
+      changed_when: false
+
+    - name: Reload firewall
+      ansible.builtin.command: firewall-cmd --reload
+      when: ansible_os_family == "RedHat"
+      failed_when: false
+      changed_when: false
+
+    # ===== Directory Structure =====
+    - name: Create apps directory structure
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        owner: "{{ homelab_user }}"
+        group: "{{ homelab_user }}"
+        mode: "0755"
+      loop:
+        - "{{ apps_path }}"
+        - "{{ apps_path }}/.volumes"
+        - "{{ apps_path }}/scripts"
+
+    # ===== Summary =====
+    - name: Get Docker version
+      ansible.builtin.command: docker --version
+      register: docker_version
+      changed_when: false
+
+    - name: Get Deno version
+      ansible.builtin.command: "{{ deno_install_path }}/bin/deno --version"
+      register: deno_version
+      changed_when: false
+      become_user: "{{ homelab_user }}"
+
+    - name: Build summary message
+      ansible.builtin.set_fact:
+        setup_summary:
+          - "✅ Initial server setup completed!"
+          - ""
+          - "Installed components:"
+          - "  - {{ docker_version.stdout }}"
+          - "  - Deno {{ deno_version.stdout_lines[0] }}"
+          - "  - Restic (backup tool)"
+          - ""
+          - "Configured:"
+          - "{{ '  - Raspberry Pi boot partition fixed' if (ansible_os_family == 'Debian' and boot_firmware.stat.exists | default(false)) else '' }}"
+          - "  - User '{{ homelab_user }}' added to docker group"
+          - "  - Deno added to PATH"
+          - "  - Apps directory created at {{ apps_path }}"
+          - "  - Swap disabled"
+
+    - name: Display setup summary
+      ansible.builtin.debug:
+        msg: "{{ setup_summary | reject('equalto', '') | list }}"

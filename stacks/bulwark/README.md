@@ -54,7 +54,7 @@ extensions).
 ## See Also
 
 - [Bulwark Documentation](https://bulwarkmail.org/docs)
-- [Stalwart Stack](../stalwart/)
+- [Stalwart Stack](../stalwart/) — Bulwark is the webmail UI for Stalwart's JMAP endpoint
 
-Note: Bulwark is the older auth-proxy stack. New users should use
-**Authelia** instead. This stack is kept for backwards compatibility.
+Note: Bulwark is a JMAP webmail client. It is not an authentication
+proxy — for SSO, use [Authelia](../authelia/) or [the Stalwart auth endpoints](../stalwart/) directly.

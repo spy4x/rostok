@@ -1,0 +1,27 @@
+---
+# Reusable task: Fix Raspberry Pi read-only boot partition issue
+# Include this in playbooks that install packages on Debian systems
+
+- name: Check if this is a Raspberry Pi
+  ansible.builtin.stat:
+    path: /boot/firmware
+  register: boot_firmware
+  when: ansible_os_family == "Debian"
+
+- name: Remount boot partition as read-write (Raspberry Pi)
+  ansible.builtin.command: mount -o remount,rw /boot/firmware
+  when:
+    - ansible_os_family == "Debian"
+    - boot_firmware.stat.exists | default(false)
+  failed_when: false
+  changed_when: false
+
+- name: Fix broken packages before installing (Raspberry Pi)
+  ansible.builtin.command: dpkg --configure -a
+  environment:
+    DEBIAN_FRONTEND: noninteractive
+  when:
+    - ansible_os_family == "Debian"
+    - boot_firmware.stat.exists | default(false)
+  failed_when: false
+  changed_when: false

@@ -59,9 +59,7 @@ It has to be installed for root via `sudo crontab -e` to allow changing ownershi
 
 ```bash
 # Daily at 2:30am
-30 2 * * * USER=username /path/to/deno run --env-file=/path/to/.env -A /path/to/+main.ts >> /path/to/backup.log 2>&1
-# Example
-30 2 * * * USER=spy4x /home/spy4x/.deno/bin/deno run --env-file=/home/spy4x/ssd-2tb/apps/.env -A /home/spy4x/ssd-2tb/apps/scripts/backup/+main.ts >> /home/spy4x/backup.log 2>&1
+30 2 * * * USER=$USER /path/to/deno run --env-file=/path/to/.env -A /path/to/+main.ts >> /path/to/backup.log 2>&1
 ```
 
 ## Environment Variables

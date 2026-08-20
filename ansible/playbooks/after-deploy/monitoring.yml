@@ -1,0 +1,321 @@
+---
+# Playbook: Monitoring and Alerting
+# This playbook sets up Docker healthchecks and alerting for service failures
+
+- name: Setup Monitoring and Alerting
+  hosts: homelab_servers
+  become: true
+
+  vars:
+    # NTFY notification settings
+    ntfy_url_uptime: "{{ lookup('env', 'NTFY_URL_UPTIME') }}"
+    ntfy_token_uptime: "{{ lookup('env', 'NTFY_TOKEN_UPTIME') }}"
+    ntfy_url_hardware: "{{ lookup('env', 'NTFY_URL_HARDWARE') }}"
+    ntfy_token_hardware: "{{ lookup('env', 'NTFY_TOKEN_HARDWARE') }}"
+
+  tasks:
+    # ===== Container Health Monitoring Script =====
+    - name: Create container health check script
+      ansible.builtin.copy:
+        dest: /usr/local/bin/check-container-health
+        mode: "0755"
+        content: |
+          #!/bin/bash
+          # Container health monitoring script
+
+          NTFY_URL="{{ ntfy_url_uptime }}"
+          NTFY_TOKEN="{{ ntfy_token_uptime }}"
+          STATE_FILE="/var/lib/container-health-state.json"
+
+          # Initialize state file if it doesn't exist
+          if [ ! -f "$STATE_FILE" ]; then
+              echo '{}' > "$STATE_FILE"
+          fi
+
+          # Get all containers with their health status
+          # Use printf to avoid Jinja2 template conflicts
+          containers=$(docker ps --format 'NAME={{"{{"}} .Names {{"}}"}} STATUS={{"{{"}} .Status {{"}}"}}' 2>/dev/null | sed 's/NAME=//g; s/ STATUS=/|/g')
+
+          if [ $? -ne 0 ]; then
+              echo "Error: Unable to query Docker"
+              exit 1
+          fi
+
+          # Log container status information
+          echo "=== Container Health Check - $(date) ==="
+          container_count=0
+          running_count=0
+          stopped_count=0
+          unhealthy_count=0
+
+          # Load previous state
+          previous_state=$(cat "$STATE_FILE")
+          current_state="{}"
+
+          alert_sent=false
+
+          while IFS='|' read -r name status; do
+              # Skip empty lines
+              [ -z "$name" ] && continue
+
+              container_count=$((container_count + 1))
+
+              # Determine container state
+              if echo "$status" | grep -qi "unhealthy"; then
+                  state="unhealthy"
+                  state_icon="🚨"
+                  unhealthy_count=$((unhealthy_count + 1))
+              elif echo "$status" | grep -qi "up"; then
+                  state="running"
+                  state_icon="✅"
+                  running_count=$((running_count + 1))
+              else
+                  state="stopped"
+                  state_icon="❌"
+                  stopped_count=$((stopped_count + 1))
+              fi
+
+              # Log container status
+              echo "  $state_icon $name: $state ($status)"
+
+              # Get previous state for this container
+              prev_state=$(echo "$previous_state" | jq -r ".[\"$name\"] // \"unknown\"")
+
+              # Store current state
+              current_state=$(echo "$current_state" | jq ". + {\"$name\": \"$state\"}")
+
+              # Alert on state changes to unhealthy or stopped
+              if [ "$state" != "$prev_state" ] && [ "$state" != "running" ]; then
+                  if [ "$state" = "unhealthy" ]; then
+                      title="⚠️ Container Unhealthy: $name"
+                      priority="high"
+                      tags="{{ inventory_hostname }},warning,docker,health"
+                      message=$'📍 Server: {{ inventory_hostname }}\n🐳 Container: '"$name"$'\n🏥 Status: Unhealthy\n📊 Previous: '"$prev_state"$'\nℹ️ Details: '"$status"
+                  elif [ "$state" = "stopped" ]; then
+                      title="🛑 Container Stopped: $name"
+                      priority="urgent"
+                      tags="{{ inventory_hostname }},alert,docker,down"
+                      message=$'📍 Server: {{ inventory_hostname }}\n🐳 Container: '"$name"$'\n❌ Status: Stopped\n📊 Previous: '"$prev_state"$'\nℹ️ Details: '"$status"
+                  fi
+
+                  curl -H "Authorization: Bearer $NTFY_TOKEN" \
+                       -H "Title: $title" \
+                       -H "Priority: $priority" \
+                       -H "Tags: $tags" \
+                       -d "$message" \
+                       "$NTFY_URL" 2>/dev/null
+
+                  alert_sent=true
+                  logger -t container-health "Alert: $name changed from $prev_state to $state"
+              fi
+
+              # Alert on recovery (back to running)
+              if [ "$state" = "running" ] && [ "$prev_state" != "running" ] && [ "$prev_state" != "unknown" ]; then
+                  curl -H "Authorization: Bearer $NTFY_TOKEN" \
+                       -H "Title: ✅ Container Recovered: $name" \
+                       -H "Priority: default" \
+                       -H "Tags: {{ inventory_hostname }},success,docker,recovery" \
+                       -d $'📍 Server: {{ inventory_hostname }}\n🐳 Container: '"$name"$'\n✅ Status: Running again\n📊 Previous: '"$prev_state" \
+                       "$NTFY_URL" 2>/dev/null
+
+                  alert_sent=true
+                  logger -t container-health "Recovery: $name is now running"
+              fi
+          done <<< "$containers"
+
+          # Log summary
+          echo ""
+          echo "Summary: $container_count containers total"
+          echo "  ✅ Running: $running_count"
+          if [ $stopped_count -gt 0 ]; then
+              echo "  ❌ Stopped: $stopped_count"
+          fi
+          if [ $unhealthy_count -gt 0 ]; then
+              echo "  🚨 Unhealthy: $unhealthy_count"
+          fi
+
+          if [ $alert_sent = true ]; then
+              echo "  📢 Alerts sent via ntfy"
+          else
+              echo "  🔕 No alerts needed"
+          fi
+          echo ""
+
+          # Save current state
+          echo "$current_state" > "$STATE_FILE"
+
+          exit 0
+
+    - name: Create container health check cron job
+      ansible.builtin.cron:
+        name: "Container health check"
+        user: root
+        minute: "*/5"
+        job: "/usr/local/bin/check-container-health >> /var/log/container-health.log 2>&1"
+        state: present
+
+    - name: Create health check log file
+      ansible.builtin.file:
+        path: /var/log/container-health.log
+        state: touch
+        owner: root
+        group: root
+        mode: "0644"
+        modification_time: preserve
+        access_time: preserve
+
+    # ===== Disk Space Monitoring =====
+    - name: Create disk space monitoring script
+      ansible.builtin.copy:
+        dest: /usr/local/bin/check-disk-space
+        mode: "0755"
+        content: |
+          #!/bin/bash
+          # Disk space monitoring script
+
+          NTFY_URL="{{ ntfy_url_hardware }}"
+          NTFY_TOKEN="{{ ntfy_token_hardware }}"
+          LOW_THRESHOLD=70
+          WARNING_THRESHOLD=80
+          CRITICAL_THRESHOLD=90
+          STATE_FILE="/var/lib/disk-space-alerts.txt"
+
+          # Log disk space check information
+          echo "=== Disk Space Check - $(date) ==="
+
+          alert_count=0
+          filesystem_count=0
+
+          # Check all mounted filesystems
+          df -H | grep -vE '^Filesystem|tmpfs|cdrom|loop' | awk '{print $5 " " $1 " " $6}' | while read output;
+          do
+              [ -z "$output" ] && continue
+              filesystem_count=$((filesystem_count + 1))
+
+              usage=$(echo $output | awk '{print $1}' | sed 's/%//g')
+              partition=$(echo $output | awk '{print $2}')
+              mountpoint=$(echo $output | awk '{print $3}')
+
+              # Determine status icon and level
+              if [ $usage -ge $CRITICAL_THRESHOLD ]; then
+                  status_icon="🚨"
+                  level="CRITICAL"
+              elif [ $usage -ge $WARNING_THRESHOLD ]; then
+                  status_icon="⚠️"
+                  level="WARNING"
+              elif [ $usage -ge $LOW_THRESHOLD ]; then
+                  status_icon="ℹ️"
+                  level="NOTICE"
+              else
+                  status_icon="✅"
+                  level="OK"
+              fi
+
+              # Log filesystem status
+              echo "  $status_icon $mountpoint ($partition): ${usage}% used - $level"
+
+              # Create alert key
+              alert_key="${partition}_${usage}"
+
+              # Check if we've already alerted for this level
+              if grep -q "$alert_key" "$STATE_FILE" 2>/dev/null; then
+                  continue
+              fi
+
+              if [ $usage -ge $CRITICAL_THRESHOLD ]; then
+                  # Clear old alerts for this partition
+                  sed -i "/^${partition}_/d" "$STATE_FILE" 2>/dev/null
+                  echo "$alert_key" >> "$STATE_FILE"
+                  alert_count=$((alert_count + 1))
+
+                  curl -H "Authorization: Bearer $NTFY_TOKEN" \
+                       -H "Title: 🚨 CRITICAL: Disk Space ${usage}%" \
+                       -H "Priority: urgent" \
+                       -H "Tags: {{ inventory_hostname }},alert,disk,critical" \
+                       -d $'📍 Server: {{ inventory_hostname }}\n💾 Partition: '"$partition"$'\n📁 Mount: '"$mountpoint"$'\n📊 Usage: '"${usage}%" \
+                       "$NTFY_URL" 2>/dev/null
+
+              elif [ $usage -ge $WARNING_THRESHOLD ]; then
+                  # Clear old alerts for this partition
+                  sed -i "/^${partition}_/d" "$STATE_FILE" 2>/dev/null
+                  echo "$alert_key" >> "$STATE_FILE"
+                  alert_count=$((alert_count + 1))
+
+                  curl -H "Authorization: Bearer $NTFY_TOKEN" \
+                       -H "Title: ⚠️ WARNING: Disk Space ${usage}%" \
+                       -H "Priority: high" \
+                       -H "Tags: {{ inventory_hostname }},warning,disk" \
+                       -d $'📍 Server: {{ inventory_hostname }}\n💾 Partition: '"$partition"$'\n📁 Mount: '"$mountpoint"$'\n📊 Usage: '"${usage}%" \
+                       "$NTFY_URL" 2>/dev/null
+
+              elif [ $usage -ge $LOW_THRESHOLD ]; then
+                  # Clear old alerts for this partition
+                  sed -i "/^${partition}_/d" "$STATE_FILE" 2>/dev/null
+                  echo "$alert_key" >> "$STATE_FILE"
+                  alert_count=$((alert_count + 1))
+
+                  curl -H "Authorization: Bearer $NTFY_TOKEN" \
+                       -H "Title: ℹ️ NOTICE: Disk Space ${usage}%" \
+                       -H "Priority: default" \
+                       -H "Tags: {{ inventory_hostname }},info,disk,notice" \
+                       -d $'📍 Server: {{ inventory_hostname }}\n💾 Partition: '"$partition"$'\n📁 Mount: '"$mountpoint"$'\n📊 Usage: '"${usage}%" \
+                       "$NTFY_URL" 2>/dev/null
+              fi
+          done
+
+          # Log summary
+          echo ""
+          echo "Summary: $filesystem_count filesystems checked"
+          if [ $alert_count -gt 0 ]; then
+              echo "  📢 $alert_count alerts sent via ntfy"
+          else
+              echo "  🔕 No alerts needed - all filesystems below thresholds"
+          fi
+          echo "  Thresholds: Notice ≥${LOW_THRESHOLD}%, Warning ≥${WARNING_THRESHOLD}%, Critical ≥${CRITICAL_THRESHOLD}%"
+          echo ""
+
+          # Clean up old alerts (if usage dropped below threshold)
+          if [ -f "$STATE_FILE" ]; then
+              while read alert_key; do
+                  partition=$(echo $alert_key | cut -d'_' -f1)
+                  current_usage=$(df -H "$partition" 2>/dev/null | tail -1 | awk '{print $5}' | sed 's/%//g')
+
+                  if [ ! -z "$current_usage" ] && [ $current_usage -lt $LOW_THRESHOLD ]; then
+                      sed -i "/^${partition}_/d" "$STATE_FILE"
+                  fi
+              done < "$STATE_FILE"
+          fi
+
+    - name: Create disk space monitoring cron job
+      ansible.builtin.cron:
+        name: "Disk space check"
+        user: root
+        minute: "*/15"
+        job: "/usr/local/bin/check-disk-space"
+        state: present
+
+    # ===== Summary =====
+    - name: Run initial container health check
+      ansible.builtin.command: /usr/local/bin/check-container-health
+      register: health_check
+      changed_when: false
+      failed_when: false
+
+    - name: Display monitoring summary
+      ansible.builtin.debug:
+        msg:
+          - "✅ Monitoring and alerting configured successfully!"
+          - ""
+          - "Active monitors:"
+          - "  • Container health: Every 5 minutes"
+          - "  • Disk space: Every 15 minutes (notice: 70%, warn: 80%, critical: 90%)"
+          - ""
+          - "Notifications: {{ ntfy_url_hardware }}"
+          - ""
+          - "Manual checks:"
+          - "  • Container health: sudo /usr/local/bin/check-container-health"
+          - "  • Disk space: sudo /usr/local/bin/check-disk-space"
+          - ""
+          - "Logs:"
+          - "  • Container health: /var/log/container-health.log"
+          - "  • Cron jobs: /var/log/cron"

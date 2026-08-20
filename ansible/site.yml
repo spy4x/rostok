@@ -1,0 +1,48 @@
+---
+# Main Site Playbook
+# This is the master playbook that orchestrates the complete homelab setup
+# It runs initial setup first, then service deployment, followed by post-deployment configuration
+
+- name: Complete Homelab Setup
+  hosts: homelab_servers
+
+  tasks:
+    - name: Welcome message
+      ansible.builtin.debug:
+        msg:
+          - "🏠 Starting Complete Homelab Setup"
+          - "Target: {{ inventory_hostname }}"
+          - "User: {{ homelab_user }}"
+          - ""
+          - "This will:"
+          - "  1. Configure server (initial-setup.yml)"
+          - "  2. Deploy services (deploy.yml)"
+          - "  3. Configure post-deployment (after-deploy.yml)"
+
+# Import all playbooks in order
+- import_playbook: playbooks/initial-setup.yml
+# Note: Uncomment the next line when deploy.yml is available
+# - import_playbook: playbooks/deploy.yml
+- import_playbook: playbooks/after-deploy.yml
+
+- name: Complete Setup Finished
+  hosts: homelab_servers
+  tasks:
+    - name: Final summary
+      ansible.builtin.debug:
+        msg:
+          - "✅ Complete homelab setup finished!"
+          - ""
+          - "Your homelab is now fully configured with:"
+          - "  ✓ Docker and Docker Compose"
+          - "  ✓ Deno runtime"
+          - "  ✓ SSH hardening (key-only auth)"
+          - "  ✓ SMART monitoring (SSD/NVMe health)"
+          - "  ✓ System maintenance automation"
+          - "  ✓ Fail2ban protection"
+          - "  ✓ Container health monitoring"
+          - "  ✓ Automated backups"
+          - ""
+          - "🎉 Your homelab is ready!"
+          - ""
+          - "Services deployed and secured with monitoring and backups."

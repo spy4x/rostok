@@ -1,0 +1,194 @@
+---
+# Playbook: SMART Monitoring with ntfy Notifications
+# This playbook sets up smartd to monitor SSD/NVMe health and send alerts via ntfy
+
+- name: Setup SMART Monitoring
+  hosts: homelab_servers
+  become: true
+
+  vars:
+    # NTFY notification settings
+    ntfy_url_hardware: "{{ lookup('env', 'NTFY_URL_HARDWARE') }}"
+    ntfy_token_hardware: "{{ lookup('env', 'NTFY_TOKEN_HARDWARE') }}"
+
+    # SMART monitoring temperature thresholds
+    smart_temp_change: "{{ lookup('env', 'SMART_TEMP_CHANGE_THRESHOLD') | default('4', true) }}"
+    smart_temp_info: "{{ lookup('env', 'SMART_TEMP_INFO_THRESHOLD') | default('35', true) }}"
+    smart_temp_critical: "{{ lookup('env', 'SMART_TEMP_CRITICAL_THRESHOLD') | default('40', true) }}"
+
+  tasks:
+    - name: Install smartmontools
+      ansible.builtin.package:
+        name: smartmontools
+        state: present
+
+    - name: Detect available drives
+      ansible.builtin.shell: |
+        lsblk -d -n -o NAME,TYPE | grep disk | awk '{print "/dev/"$1}'
+      register: detected_drives
+      changed_when: false
+
+    - name: Display detected drives
+      ansible.builtin.debug:
+        msg: "Detected drives: {{ detected_drives.stdout_lines }}"
+
+    - name: Test SMART capability for each drive
+      ansible.builtin.shell: |
+        smartctl -i {{ item }} 2>/dev/null | grep -q "SMART support is: Enabled" && echo "enabled" || echo "disabled"
+      loop: "{{ detected_drives.stdout_lines }}"
+      register: smart_capability
+      changed_when: false
+      failed_when: false
+
+    - name: Create ntfy notification script
+      ansible.builtin.copy:
+        dest: /usr/local/bin/smartd-notify
+        mode: "0755"
+        content: |
+          #!/bin/bash
+          # SMART event notification script for ntfy
+
+          NTFY_URL="{{ ntfy_url_hardware }}"
+          NTFY_TOKEN="{{ ntfy_token_hardware }}"
+
+          DEVICE="$SMARTD_DEVICE"
+          MESSAGE="$SMARTD_FULLMESSAGE"
+
+          # Get current temperature if available
+          TEMP=$(smartctl -A "$DEVICE" 2>/dev/null | grep -i temperature | head -1 | awk '{print $10}')
+          if [ -z "$TEMP" ]; then
+            TEMP_INFO="N/A"
+          else
+            # Determine temperature status and safe ranges
+            if [ "$TEMP" -le 70 ]; then
+              TEMP_STATUS="✅ Safe"
+              TEMP_RANGE="(0-70°C)"
+            elif [ "$TEMP" -le 85 ]; then
+              TEMP_STATUS="⚠️ Warm"
+              TEMP_RANGE="(70-85°C)"
+            else
+              TEMP_STATUS="🔥 Hot"
+              TEMP_RANGE="(>85°C)"
+            fi
+            TEMP_INFO="${TEMP}°C $TEMP_STATUS $TEMP_RANGE"
+          fi
+
+          # Get device model
+          MODEL=$(smartctl -i "$DEVICE" 2>/dev/null | grep "Device Model" | cut -d: -f2 | xargs)
+          if [ -z "$MODEL" ]; then
+            MODEL=$(smartctl -i "$DEVICE" 2>/dev/null | grep "Model Number" | cut -d: -f2 | xargs)
+          fi
+          if [ -z "$MODEL" ]; then
+            MODEL="Unknown"
+          fi
+
+          # Determine priority based on message content
+          if echo "$MESSAGE" | grep -qi "fail\|error\|critical"; then
+            PRIORITY="urgent"
+            TAGS="{{ inventory_hostname }},warning,disk"
+            TITLE="🚨 SMART Critical Alert: $DEVICE"
+            MESSAGE=$'📍 Server: {{ inventory_hostname }}\n💽 Device: '"$DEVICE"$'\n🏷️ Model: '"$MODEL"$'\n🌡️ Temperature: '"$TEMP_INFO"$'\n⚠️ Status: Critical\n\n'"$MESSAGE"
+          elif echo "$MESSAGE" | grep -qi "warn"; then
+            PRIORITY="high"
+            TAGS="{{ inventory_hostname }},warning,disk"
+            TITLE="⚠️ SMART Warning: $DEVICE"
+            MESSAGE=$'📍 Server: {{ inventory_hostname }}\n💽 Device: '"$DEVICE"$'\n🏷️ Model: '"$MODEL"$'\n🌡️ Temperature: '"$TEMP_INFO"$'\n⚠️ Status: Warning\n\n'"$MESSAGE"
+          else
+            PRIORITY="default"
+            TAGS="{{ inventory_hostname }},disk"
+            TITLE="💽 SMART Status: $DEVICE"
+            MESSAGE=$'📍 Server: {{ inventory_hostname }}\n💽 Device: '"$DEVICE"$'\n🏷️ Model: '"$MODEL"$'\n🌡️ Temperature: '"$TEMP_INFO"$'\nℹ️ Status: Info\n\n'"$MESSAGE"
+          fi
+
+          # Send notification
+          curl -H "Authorization: Bearer $NTFY_TOKEN" \
+               -H "Title: $TITLE" \
+               -H "Priority: $PRIORITY" \
+               -H "Tags: $TAGS" \
+               -d "$MESSAGE" \
+               "$NTFY_URL" 2>/dev/null
+
+          # Log to syslog
+          logger -t smartd "SMART alert for $DEVICE ($MODEL, $TEMP_INFO): $MESSAGE"
+
+    - name: Configure smartd
+      ansible.builtin.copy:
+        dest: /etc/smartmontools/smartd.conf
+        content: |
+          # smartd configuration for homelab monitoring
+          # Monitor all drives and report issues via ntfy
+
+          # Global settings
+          DEVICESCAN -a -o on -S on -n standby,q \
+            -s (S/../.././02|L/../../6/03) \
+            -W {{ smart_temp_change }},{{ smart_temp_info }},{{ smart_temp_critical }} \
+            -m root \
+            -M exec /usr/local/bin/smartd-notify
+
+          # Configuration explanation:
+          # -a: Monitor all SMART attributes
+          # -o on: Enable automatic offline testing
+          # -S on: Enable attribute autosave
+          # -n standby,q: Don't check if drive is in standby/sleep
+          # -s: Schedule short self-test daily at 2AM, long test Saturday at 3AM
+          # -W: Temperature monitoring ({{ smart_temp_change }}°C change, {{ smart_temp_info }}°C info, {{ smart_temp_critical }}°C critical)
+          # -m root: Mail alerts to root (will be handled by script)
+          # -M exec: Execute notification script on alerts
+        backup: yes
+      notify: restart smartd
+
+    - name: Enable and start smartd service
+      ansible.builtin.systemd:
+        name: smartd
+        enabled: yes
+        state: started
+
+    - name: Send test notification
+      ansible.builtin.shell: |
+        /usr/local/bin/smartd-notify "Test" "SMART monitoring configured successfully for {{ inventory_hostname }}"
+      changed_when: false
+      ignore_errors: yes
+
+    - name: Get SMART info for all drives
+      ansible.builtin.shell: |
+        for drive in {{ detected_drives.stdout_lines | join(' ') }}; do
+          echo "=== $drive ==="
+          smartctl -H $drive 2>/dev/null | grep -E "SMART overall-health|PASSED|FAILED" || echo "SMART not available"
+          smartctl -A $drive 2>/dev/null | grep -E "Power_On_Hours|Temperature|Reallocated_Sector|Current_Pending_Sector" | head -5 || true
+          echo ""
+        done
+      register: smart_status
+      changed_when: false
+      failed_when: false
+
+    - name: Display SMART status
+      ansible.builtin.debug:
+        msg: "{{ smart_status.stdout_lines }}"
+
+    - name: Display monitoring summary
+      ansible.builtin.debug:
+        msg:
+          - "✅ SMART monitoring configured successfully!"
+          - ""
+          - "Monitored drives:"
+          - "{{ detected_drives.stdout_lines | join(', ') }}"
+          - ""
+          - "Configuration:"
+          - "  • Daily short self-test: 2:00 AM"
+          - "  • Weekly long self-test: Saturday 3:00 AM"
+          - "  • Temperature alerts: >{{ smart_temp_critical }}°C critical, >{{ smart_temp_info }}°C info, {{ smart_temp_change }}°C change"
+          - "  • Notifications: {{ ntfy_url_hardware }}"
+          - ""
+          - "Test notification sent! Check your ntfy app."
+          - ""
+          - "Manual commands:"
+          - "  • Check status: sudo smartctl -H /dev/sda"
+          - "  • View attributes: sudo smartctl -A /dev/sda"
+          - "  • Run test: sudo smartctl -t short /dev/sda"
+          - "  • Check service: sudo systemctl status smartd"
+
+  handlers:
+    - name: restart smartd
+      ansible.builtin.systemd:
+        name: smartd
+        state: restarted

@@ -10,7 +10,7 @@ Thanks for considering a contribution to `rostok`. This repo is the
 - **Bug fix** — including type errors, broken deploys, Travis-style
   config issues.
 - **CLI improvement** — the CLI is in active development. See
-  [v1-cli.md](v1-cli.md) for the design.
+  [v1-cli.md](../design/v1-cli.md) for the design.
 - **Documentation** — fix typos, add examples, clarify the wizard
   flow.
 - **Test** — golden-file fixtures for `cli/server-create` and
@@ -18,10 +18,11 @@ Thanks for considering a contribution to `rostok`. This repo is the
 
 ## Before opening a PR
 
-1. **Read [AGENTS.md](../AGENTS.md)** — git workflow, branch naming,
+1. **Read [AGENTS.md](../../AGENTS.md)** — git workflow, branch naming,
    commit convention, review process.
-2. **Read [v1-cli.md](v1-cli.md)** — if your change touches the CLI
-   design, the design doc is the source of truth. Update it first.
+2. **Read [v1-cli.md](../design/v1-cli.md)** — if your change touches
+   the CLI design, the design doc is the source of truth. Update it
+   first.
 3. **Run `deno task check`** — lint, fmt, type-check, tests. All must
    pass.
 

@@ -5,7 +5,7 @@ a user's server. Every stack in `stacks/<name>/` is generic — reusable
 by any user, no hardcoded domains, IPs, or secrets.
 
 This guide is for **contributors** adding a new stack. For users
-already running `rostok`, see [`docs/concepts.md`](concepts.md).
+already running `rostok`, see [`docs/usage/concepts.md`](../usage/concepts.md).
 
 ---
 
@@ -22,9 +22,9 @@ stacks/<name>/
 ```
 
 `+meta.ts` is the CLI's "what variables does this stack need?" file.
-See [`docs/v1-cli.md`](v1-cli.md) §4 for the full schema. Until v1
-ships, you can ship the stack without `+meta.ts` (the CLI will prompt
-with generic questions instead).
+See [`docs/design/v1-cli.md`](../design/v1-cli.md) §4 for the full
+schema. Until v1 ships, you can ship the stack without `+meta.ts`
+(the CLI will prompt with generic questions instead).
 
 ---
 

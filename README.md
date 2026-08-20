@@ -39,8 +39,8 @@ with your chosen stack. Every `.env` mutation is auto-encrypted to
 
 ## What's in the catalog
 
-See [`docs/catalog.md`](docs/catalog.md) for the full list with
-descriptions. Categories include:
+See [`docs/usage/catalog.md`](docs/usage/catalog.md) for the full list
+with descriptions. Categories include:
 
 - **Proxy & TLS** — Traefik, Cloudflared
 - **Auth** — Authelia (SSO)
@@ -71,27 +71,28 @@ plain Git repo with `servers/<name>/` for each machine. `+meta.ts` files
 in the catalog declare variables; the CLI prompts for them, writes
 `.env`, and re-encrypts `.env.age`.
 
-Full design: [`docs/v1-cli.md`](docs/v1-cli.md). Concepts:
-[`docs/concepts.md`](docs/concepts.md). Architecture:
-[`docs/architecture.md`](docs/architecture.md).
+Full design: [`docs/design/v1-cli.md`](docs/design/v1-cli.md). Concepts:
+[`docs/usage/concepts.md`](docs/usage/concepts.md). Architecture:
+[`docs/usage/architecture.md`](docs/usage/architecture.md).
 
 ## Documentation
 
 - [Quickstart (above)](#quick-start)
-- [`docs/concepts.md`](docs/concepts.md) — stack, server, wizard
-- [`docs/architecture.md`](docs/architecture.md) — how the pieces fit
-- [`docs/catalog.md`](docs/catalog.md) — what's in the catalog
-- [`docs/adding-services.md`](docs/adding-services.md) — author a stack
-- [`docs/ENCRYPTED_ENV_FILES.md`](docs/ENCRYPTED_ENV_FILES.md) — age64 workflow
-- [`docs/v1-cli.md`](docs/v1-cli.md) — v1 design (ready-to-implement)
-- [`docs/v2-cli.md`](docs/v2-cli.md) — v2 backlog (draft)
-- [`docs/v2-website.md`](docs/v2-website.md) — future static site (draft)
+- [`docs/usage/concepts.md`](docs/usage/concepts.md) — stack, server, wizard
+- [`docs/usage/architecture.md`](docs/usage/architecture.md) — how the pieces fit
+- [`docs/usage/catalog.md`](docs/usage/catalog.md) — what's in the catalog
+- [`docs/contributing/adding-services.md`](docs/contributing/adding-services.md) — author a stack
+- [`docs/usage/ENCRYPTED_ENV_FILES.md`](docs/usage/ENCRYPTED_ENV_FILES.md) — age64 workflow
+- [`docs/design/v1-cli.md`](docs/design/v1-cli.md) — v1 design (ready-to-implement)
+- [`docs/design/v2-cli.md`](docs/design/v2-cli.md) — v2 backlog (draft)
+- [`docs/design/v2-website.md`](docs/design/v2-website.md) — future static site (draft)
 
 ## Contributing
 
-See [`docs/contributing.md`](docs/contributing.md). New stacks are
-welcome — open a PR with a `stacks/<name>/+meta.ts` plus the usual
-compose, backup, README. See `docs/adding-services.md` for the schema.
+See [`docs/contributing/contributing.md`](docs/contributing/contributing.md).
+New stacks are welcome — open a PR with a `stacks/<name>/+meta.ts`
+plus the usual compose, backup, README. See
+`docs/contributing/adding-services.md` for the schema.
 
 ## License
 

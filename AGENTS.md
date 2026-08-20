@@ -19,7 +19,7 @@ rostok/
 │   └── <stack>/
 │       ├── compose.yml       # Docker Compose (must use `hl-` prefix)
 │       ├── backup.ts         # backup config (skip for stateless)
-│       ├── +meta.ts          # CLI schema (READY-TO-IMPLEMENT, see v1-cli.md)
+│       ├── +meta.ts          # CLI schema (READY-TO-IMPLEMENT, see docs/design/v1-cli.md)
 │       └── README.md         # what the stack does, how to configure
 ├── cli/                      # the rostok CLI source (added in v1 phase 2)
 ├── scripts/
@@ -36,44 +36,6 @@ rostok/
 `stacks/` is the catalog — every entry is reusable by any user. Never
 hardcode a real domain, IP, or hostname in a stack. The catalog travels
 through JSR; it's read by every `rostok` invocation.
-
----
-
-## 🔴 IMMUTABLE RULE: Branch + worktree first
-
-Multiple AI agents work on this repo in parallel. Touching `main`
-directly causes merge conflicts.
-
-```bash
-# A linked worktree has .git as a FILE. The main repo has it as a DIRECTORY.
-if [ -f .git ]; then
-  echo "Already in a worktree — work here."
-else
-  MAIN=$(realpath "$(dirname "$(git rev-parse --git-common-dir)")")
-  WT="$(dirname "$MAIN")/worktrees/$(basename "$MAIN")/<type>/<slug>"
-  mkdir -p "$(dirname "$WT")"
-  git worktree add -b <type>/<slug> "$WT" main
-  cd "$WT"
-fi
-```
-
-Two details that matter:
-
-- **`realpath`** collapses symlinked checkout paths. The repo may be
-  reachable under multiple paths (e.g. `~/sync/code/rostok` and
-  `~/ssd-2tb/sync/code/rostok`); without `realpath` you get a
-  conflicting mix.
-- **`mkdir -p`** on the parent — `git worktree add` fails with a bare
-  `No such file or directory` when an intermediate dir is missing.
-
-Worktrees live in `worktrees/rostok/<type>/<slug>/`. Never inside the
-repo or inside another worktree.
-
-### Branch naming (Angular)
-
-`<type>/<short-kebab-description>` — `feat/`, `fix/`, `refactor/`,
-`chore/`, `docs/`, `style/`, `perf/`, `ci/`. Examples: `feat/traefik-meta`,
-`fix/backup-errors`, `chore/bump-arktype`.
 
 ---
 
@@ -124,7 +86,7 @@ Every stack needs:
 - `compose.yml` — Traefik labels, resource limits, `hl-` prefix
 - `backup.ts` — skip for stateless services
 - `README.md` — purpose, configuration, troubleshooting
-- `+meta.ts` — CLI schema (see `docs/v1-cli.md` §4) — REQUIRED for v1
+- `+meta.ts` — CLI schema (see `docs/design/v1-cli.md` §4) — REQUIRED for v1
 
 Rules:
 
@@ -135,7 +97,7 @@ Rules:
 - **Defaults in `+meta.ts`** — every `required: true` variable has a
   `default` value or a `--var` flag fail mode
 
-See `docs/adding-services.md` for the full author guide.
+See `docs/contributing/adding-services.md` for the full author guide.
 
 ---
 
@@ -220,10 +182,12 @@ deno task backup:restore    # interactive restore
 
 ## 📚 See also
 
-- `docs/v1-cli.md` — v1 design (ready-to-implement)
-- `docs/v2-cli.md` — v2 backlog (draft)
-- `docs/concepts.md` — stack, server, wizard
-- `docs/architecture.md` — how the pieces fit
-- `docs/adding-services.md` — author a stack
-- `docs/contributing.md` — PR checklist for contributors
-- `docs/catalog.md` — what's in the catalog
+- `docs/design/v1-cli.md` — v1 design (ready-to-implement)
+- `docs/design/v2-cli.md` — v2 backlog (draft)
+- `docs/design/v2-website.md` — future static site (draft)
+- `docs/usage/concepts.md` — stack, server, wizard
+- `docs/usage/architecture.md` — how the pieces fit
+- `docs/usage/catalog.md` — what's in the catalog
+- `docs/usage/ENCRYPTED_ENV_FILES.md` — age64 workflow
+- `docs/contributing/adding-services.md` — author a stack
+- `docs/contributing/contributing.md` — PR checklist for contributors

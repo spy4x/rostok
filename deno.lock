@@ -6,6 +6,7 @@
     "jsr:@std/assert@^1.0.17": "1.0.17",
     "jsr:@std/assert@~0.222.1": "0.222.1",
     "jsr:@std/cli@~0.222.1": "0.222.1",
+    "jsr:@std/dotenv@*": "0.225.8",
     "jsr:@std/encoding@^1.0.9": "1.0.11",
     "jsr:@std/fmt@~0.222.1": "0.222.1",
     "jsr:@std/fs@^1.0.21": "1.0.21",
@@ -49,6 +50,9 @@
       "dependencies": [
         "jsr:@std/assert@~0.222.1"
       ]
+    },
+    "@std/dotenv@0.225.8": {
+      "integrity": "27b8c1a9d00cbf938345a5924487c04d9b27bdd7e7bd1983f54bcf76d0a0174a"
     },
     "@std/encoding@1.0.11": {
       "integrity": "e7cef2f0b3153bccc17431e7c864a1de03a4b6d9647389c43e08aaa775d37385"
@@ -368,6 +372,7 @@
   "workspace": {
     "dependencies": [
       "jsr:@std/assert@^1.0.17",
+      "jsr:@std/dotenv@*",
       "jsr:@std/encoding@^1.0.9",
       "jsr:@std/fs@^1.0.21",
       "jsr:@std/path@^1.1.4",
