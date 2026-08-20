@@ -5,6 +5,5 @@
 export const VERSION = "0.1.0"
 
 export const NAME = "rostok"
-
-// Russian "росток" — sprout, seedling. Kept in English for help output.
+// Russian name (dropped from comments to avoid mixed-script lint friction).
 export const DESCRIPTION = "Self-hosted homelab scaffolding CLI. Grow a homelab from a sprout."

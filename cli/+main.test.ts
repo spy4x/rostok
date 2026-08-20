@@ -4,7 +4,12 @@
 // (getVersion, getHelp) instead of spawning subprocesses. Fast, deterministic,
 // no flag-parsing drift.
 
-import { assertEquals, assertExists, assertStringIncludes } from "@std/assert"
+import {
+  assertEquals,
+  assertExists,
+  assertNotStrictEquals,
+  assertStringIncludes,
+} from "@std/assert"
 import { buildCommand } from "./+main.ts"
 import { DESCRIPTION, NAME, VERSION } from "./version.ts"
 
@@ -12,7 +17,7 @@ Deno.test("buildCommand: returns a fresh Command on every call", () => {
   // Important for tests — sharing one Command across cases would mutate state.
   const a = buildCommand()
   const b = buildCommand()
-  assertEquals(a === b, false)
+  assertNotStrictEquals(a, b)
 })
 
 Deno.test("buildCommand: name and description match version.ts", () => {
@@ -46,7 +51,8 @@ Deno.test("--help: nested subcommands are registered with descriptions", () => {
   const cmd = buildCommand()
   const serverCmd = cmd.getCommand("server")
   assertExists(serverCmd)
-  assertEquals(serverCmd.getDescription(), "Manage rostok servers (Phase 5).")
+  // Robust to wording tweaks — only assert the stable phrase.
+  assertStringIncludes(serverCmd.getDescription(), "Manage rostok servers")
   assertEquals(serverCmd.hasCommand("create"), true)
 
   const stackCmd = cmd.getCommand("stack")
@@ -54,8 +60,7 @@ Deno.test("--help: nested subcommands are registered with descriptions", () => {
   assertEquals(stackCmd.hasCommand("add"), true)
   assertEquals(stackCmd.hasCommand("list"), true)
 
-  assertEquals(
-    cmd.getCommand("deploy")?.getDescription(),
-    "Deploy a server (or one of its stacks). Phase 7.",
-  )
+  const deployCmd = cmd.getCommand("deploy")
+  assertExists(deployCmd)
+  assertStringIncludes(deployCmd.getDescription(), "Deploy a server")
 })

@@ -4,11 +4,7 @@
 // is locked in. The real `server create` flow lands with the wizard.
 
 import { Command } from "@cliffy/command"
-
-const notImplemented = (phase: string) => () => {
-  console.error(`server: coming in ${phase}. see docs/v1-cli.md.`)
-  Deno.exit(1)
-}
+import { notImplemented } from "./+lib.ts"
 
 export const serverCommand = new Command()
   .description("Manage rostok servers (Phase 5).")
@@ -17,5 +13,5 @@ export const serverCommand = new Command()
     new Command()
       .arguments("[name:string]")
       .description("Create a new server. Phase 5.")
-      .action(notImplemented("v1 Phase 5")),
+      .action(notImplemented("server create", "v1 Phase 5")),
   )
