@@ -1,17 +1,13 @@
 # Zond targets — home server internal services
+# Only services currently deployed on home server. Targets removed when the
+# underlying stack is not running — see homelab/stacks/ for what is available.
 port: 8080
 
 targets:
-  - name: adguard
-    url: http://hl-adguard:80/
-  - name: akaunting
-    url: http://hl-akaunting:80/health.html
   - name: audiobookshelf
     url: http://hl-audiobookshelf:80/
   - name: authelia
     url: http://hl-authelia:9091/api/health
-  - name: caldiy
-    url: http://hl-caldiy:3000/
   - name: dash
     url: http://dash:80/
   - name: docker-registry
@@ -36,8 +32,6 @@ targets:
     url: http://hl-mirotalk:3000/
   - name: ntfy
     url: http://hl-ntfy:80/
-  - name: ollama
-    url: http://hl-ollama:11434/api/tags
   - name: open-webui
     url: http://hl-open-webui:8080/
   - name: opencode-web
@@ -54,10 +48,8 @@ targets:
     url: http://hl-traggo:3030/
   - name: transmission
     url: http://hl-transmission:9091/
-  - name: umami
-    url: http://hl-umami:3000/
-  - name: vaultwarden
-    url: http://hl-vaultwarden:80/
   - name: woodpecker
     url: http://hl-woodpecker-server:8000/
   # No self-target — zond is infrastructure, not a monitored service
+  # Recently dropped targets (no stack deployed on home server):
+  #   - adguard, akaunting, caldiy, ollama, umami, vaultwarden
