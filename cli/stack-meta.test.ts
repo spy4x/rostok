@@ -69,6 +69,58 @@ Deno.test("validateStackMeta: rejects non-boolean `required`", () => {
   assertThrows(() => validateStackMeta(bad), Error)
 })
 
+Deno.test("validateStackMeta: rejects unsupported ${...} references in string defaults", () => {
+  // v1 only allows ${SERVER_NAME}. ${DOMAIN}, ${OTHER}, etc. must fail.
+  const bad = {
+    name: "t",
+    description: "x",
+    variables: [{ key: "DOMAIN", default: "${DOMAIN}.example" }],
+  }
+  assertThrows(
+    () => validateStackMeta(bad),
+    Error,
+    "unsupported reference",
+  )
+})
+
+Deno.test("validateStackMeta: allows ${SERVER_NAME} in string defaults", () => {
+  const ok = {
+    name: "t",
+    description: "x",
+    variables: [{ key: "DOMAIN", default: "${SERVER_NAME}.example" }],
+  }
+  const result = validateStackMeta(ok)
+  assertEquals(result.variables[0].default, "${SERVER_NAME}.example")
+})
+
+Deno.test("validateStackMeta: skips ref check for function defaults", () => {
+  // Functions aren't string-replaceable — skip the ref check.
+  const ok = {
+    name: "t",
+    description: "x",
+    variables: [{ key: "PW", default: () => "x" }],
+  }
+  const result = validateStackMeta(ok)
+  assertEquals(typeof result.variables[0].default, "function")
+})
+
+Deno.test("validateStackMeta: multi-error summary is flattened to one line", () => {
+  // arktype joins per-field summaries with \n; CLI output wants one line.
+  const bad = {
+    name: "",
+    description: "",
+    variables: [],
+  }
+  try {
+    validateStackMeta(bad)
+    throw new Error("should have thrown")
+  } catch (e) {
+    const msg = (e as Error).message
+    assertEquals(msg.includes("\n"), false, `multi-line error: ${msg}`)
+    assertStringIncludes(msg, "; ")
+  }
+})
+
 Deno.test("validateStackMeta: accepts empty `variables` array", () => {
   // A stateless stack (e.g. a pure proxy) may declare no env vars.
   const result = validateStackMeta({

@@ -22,13 +22,15 @@ const SUPPORTED_REFS = [SERVER_NAME_REF] as const
  * below enforces the allow-list at resolution time.
  */
 export function resolveReferences(value: string, serverName: string): string {
-  if (!value.includes("$")) return value
+  if (!value.includes(SERVER_NAME_REF)) return value
   return value.split(SERVER_NAME_REF).join(serverName)
 }
 
 /**
  * Detect `${...}` references in a string that are NOT in the v1 allow-list.
  * Used by `validateStackMeta` and tests to flag unsupported references early.
+ * Duplicates are preserved in declaration order — caller decides whether
+ * to dedupe (e.g. for user-facing error messages).
  */
 export function unsupportedReferences(value: string): string[] {
   const refs = value.match(/\$\{[^}]+\}/g) ?? []

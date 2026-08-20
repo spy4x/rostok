@@ -10,6 +10,7 @@
 // (see cli/arktype-type.ts).
 
 import { ArkErrors, type } from "arktype"
+import { unsupportedReferences } from "./defaults.ts"
 
 // Public type — what `+meta.ts` authors write `satisfies StackMeta` against.
 export interface VariableSpec {
@@ -44,7 +45,7 @@ export interface StackMeta {
 // Authors who hand-author a malformed `+meta.ts` get a clean error from
 // `validateStackMeta()` rather than a cryptic TypeScript diagnostic.
 
-const _VariableSpec = type({
+const VariableSpec = type({
   key: "string > 0",
   "question?": "string",
   // `default` accepts string or function. arktype's DSL can't type
@@ -54,20 +55,20 @@ const _VariableSpec = type({
   "secret?": "boolean",
 }).narrow((value, ctx) => {
   // Narrow the `default` field: must be string, function, or undefined.
-  const def = (value as Record<string, unknown>).default
+  const def = value.default
   if (def !== undefined && typeof def !== "string" && typeof def !== "function") {
     return ctx.mustBe("a string or function")
   }
   return true
 })
 
-export const VariableSpecSchema = _VariableSpec
+export const VariableSpecSchema = VariableSpec
 
 export const StackMetaSchema = type({
   name: "string > 0",
   description: "string > 0",
   "category?": "string",
-  variables: _VariableSpec.array(),
+  variables: VariableSpec.array(),
 })
 
 /**
@@ -78,9 +79,31 @@ export const StackMetaSchema = type({
 export function validateStackMeta(input: unknown): StackMeta {
   const result = StackMetaSchema(input)
   if (result instanceof ArkErrors) {
-    throw new Error(`Invalid +meta.ts: ${result.summary}`)
+    throw new Error(`Invalid +meta.ts: ${summarizeArkErrors(result)}`)
+  }
+  // Secondary pass: reject unsupported `${...}` references in string defaults.
+  // Per docs/v1-cli.md §4 only `${SERVER_NAME}` is allowed in v1.
+  for (const v of result.variables) {
+    if (typeof v.default === "string") {
+      const bad = unsupportedReferences(v.default)
+      if (bad.length > 0) {
+        throw new Error(
+          `Invalid +meta.ts: variable "${v.key}" uses unsupported reference(s): ${
+            bad.join(", ")
+          }. only \${SERVER_NAME} is allowed in v1.`,
+        )
+      }
+    }
   }
   return result as StackMeta
+}
+
+/**
+ * arktype's `ArkErrors.summary` returns one line per failing field, joined
+ * with `\n`. CLI output wants a single line. Normalize for thrown messages.
+ */
+function summarizeArkErrors(errors: ArkErrors): string {
+  return errors.summary.replace(/\n+/g, "; ")
 }
 
 /**

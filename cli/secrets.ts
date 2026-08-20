@@ -35,6 +35,11 @@ export function generatePassword(length = 24): string {
  * or truncating the output.
  */
 export function passwordEntropyBits(length: number): number {
+  if (!Number.isInteger(length) || length < 0) {
+    throw new RangeError(
+      `passwordEntropyBits length must be a non-negative integer, got ${length}`,
+    )
+  }
   return length * 6
 }
 

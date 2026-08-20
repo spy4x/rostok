@@ -22,10 +22,15 @@ Deno.test("resolveReferences: handles multiple occurrences", () => {
   )
 })
 
-Deno.test("resolveReferences: short-circuits when no '$' present", () => {
+Deno.test("resolveReferences: short-circuits when no ${SERVER_NAME} present", () => {
   // Cheap path: no allocation if there's nothing to substitute.
   const value = "static.example.com"
   assertStrictEquals(resolveReferences(value, "home"), value)
+})
+
+Deno.test("resolveReferences: passes through strings with lone '$' verbatim", () => {
+  // "$FOO" (no braces) isn't a supported reference — must not be touched.
+  assertStrictEquals(resolveReferences("$FOO", "home"), "$FOO")
 })
 
 Deno.test("unsupportedReferences: returns empty for allowed refs", () => {

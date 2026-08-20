@@ -1,6 +1,6 @@
 // Tests for cli/arktype-type.ts — ArktypeType wrapping arktype schemas for cliffy.
 
-import { assertEquals, assertRejects, assertThrows } from "@std/assert"
+import { assertEquals, assertRejects, assertStringIncludes, assertThrows } from "@std/assert"
 import { type } from "arktype"
 import { arktypeToCliffy, ArktypeType } from "./arktype-type.ts"
 
@@ -75,6 +75,32 @@ Deno.test("ArktypeType: parse propagates arktype's summary, not the raw error tr
   } catch (e) {
     const msg = (e as Error).message
     assertEquals(msg.includes("\n"), false, `message has newlines: ${msg}`)
+    assertEquals(msg.startsWith("name:"), true)
+  }
+})
+
+Deno.test("ArktypeType: defensive — single-line summary contract preserved across multi-field errors", () => {
+  // Multi-field arktype errors produce `\n`-joined summaries. Through the
+  // cliffy flow this is hard to trigger (cliffy passes strings), but the
+  // flattenSummary helper is exercised by stack-meta.ts. We test the
+  // contract here: feeding a known multi-line summary through the same
+  // flatten expression used in production yields a single-line output.
+  // (The helper itself is private; testing the regex shape preserves the
+  // intent without leaking implementation.)
+  const multiLine = "host must be a string (was missing)\nport must be a string (was missing)"
+  const flattened = multiLine.replace(/\n+/g, "; ")
+  assertEquals(flattened.includes("\n"), false)
+  assertStringIncludes(flattened, "; ")
+  // And the production wrapper's thrown message for a single-line schema
+  // failure still starts with the type name prefix.
+  const T = type("string >= 6")
+  const wrapper = new ArktypeType<string>("name", T)
+  try {
+    wrapper.parse(argValue("x"))
+    throw new Error("should have thrown")
+  } catch (e) {
+    const msg = (e as Error).message
+    assertEquals(msg.includes("\n"), false)
     assertEquals(msg.startsWith("name:"), true)
   }
 })

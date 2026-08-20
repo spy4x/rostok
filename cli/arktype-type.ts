@@ -11,23 +11,25 @@
 //
 // Phase 3 ships the wrapper. Phase 5 wires it into real CLI args/options.
 
-import { Type } from "@cliffy/command"
+import { Type as CliffyType } from "@cliffy/command"
 import type { ArgumentValue } from "@cliffy/command"
-import { ArkErrors } from "arktype"
-
-interface ArktypeCallable {
-  (input: unknown): unknown
-  // arktype's Type class has more members; we only need the callable form.
-}
+import { ArkErrors, type Type as ArktypeSchema } from "arktype"
 
 /**
  * cliffy Type subclass that delegates parsing to an arktype schema.
  * Use via `cmd.type("name", new ArktypeType("name", schema))`.
+ *
+ * `T` should match the schema's output type. arktype 2.x does not enforce
+ * the caller's declared `T` against the schema's inferred type — the cast
+ * at parse() is best-effort. Misalignment surfaces as runtime type errors
+ * downstream, not here.
  */
-export class ArktypeType<T = unknown> extends Type<T> {
+export class ArktypeType<T = unknown> extends CliffyType<T> {
   constructor(
+    /** Name shown in --help output for args/options that use this type. */
     readonly typeName: string,
-    readonly schema: ArktypeCallable,
+    /** arktype schema to delegate validation to. */
+    readonly schema: ArktypeSchema<unknown>,
   ) {
     super()
   }
@@ -35,8 +37,9 @@ export class ArktypeType<T = unknown> extends Type<T> {
   override parse({ value }: ArgumentValue): T {
     const result = this.schema(value)
     if (result instanceof ArkErrors) {
-      // `summary` is a single-line, human-readable error string.
-      throw new Error(`${this.typeName}: ${result.summary}`)
+      // `summary` is multi-line when multiple fields fail — flatten to
+      // a single line so cliffy's stderr channel stays CLI-friendly.
+      throw new Error(`${this.typeName}: ${flattenSummary(result.summary)}`)
     }
     return result as T
   }
@@ -47,7 +50,12 @@ export class ArktypeType<T = unknown> extends Type<T> {
  */
 export function arktypeToCliffy<T>(
   name: string,
-  schema: ArktypeCallable,
+  schema: ArktypeSchema<unknown>,
 ): ArktypeType<T> {
   return new ArktypeType<T>(name, schema)
+}
+
+/** Replace newlines in arktype's summary with `; ` for single-line CLI output. */
+function flattenSummary(summary: string): string {
+  return summary.replace(/\n+/g, "; ")
 }
