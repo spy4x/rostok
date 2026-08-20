@@ -1,6 +1,4 @@
 # Zond targets — home server internal services
-# Only services currently deployed on home server. Targets removed when the
-# underlying stack is not running — see homelab/stacks/ for what is available.
 port: 8080
 
 targets:
@@ -51,5 +49,3 @@ targets:
   - name: woodpecker
     url: http://hl-woodpecker-server:8000/
   # No self-target — zond is infrastructure, not a monitored service
-  # Recently dropped targets (no stack deployed on home server):
-  #   - adguard, akaunting, caldiy, ollama, umami, vaultwarden
