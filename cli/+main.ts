@@ -11,9 +11,9 @@ import { DESCRIPTION, NAME, VERSION } from "./version.ts"
 import { serverCommand } from "./commands/server.ts"
 import { stackCommand } from "./commands/stack.ts"
 import { deployCommand } from "./commands/deploy.ts"
-// Wiring smoke test for arktype — imports the module so deno.lock
-// pins the dependency. Phase 3 replaces _arktypeOk with StackMeta.
-import "./types.ts"
+// Side-effect import: ensures arktype/StackMeta stay loadable end-to-end.
+// Phase 5 wires the real arg types.
+import "./+lib.ts"
 
 const WIZARD_PHASE = "v1 Phase 5"
 
