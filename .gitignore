@@ -13,9 +13,15 @@ node_modules
 !.env.example
 !*.env.example
 !.env.root.example
-!.env.age
-!*.env.age
-!.env.root.age
+
+# Private server directories — not tracked. Only servers/demo/ is a public
+# template. Private server configs (including .env.age) are gitignored and
+# kept on disk for local use; backed up via Syncthing + the restic backup
+# pipeline. See servers/README.md.
+servers/cloud/
+servers/home/
+servers/offsite/
+servers/portable/
 
 # Age encryption keys (never commit!)
 .age/
