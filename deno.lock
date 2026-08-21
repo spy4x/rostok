@@ -9,6 +9,7 @@
     "jsr:@cliffy/internal@1.2.1": "1.2.1",
     "jsr:@cliffy/keycode@1.2.1": "1.2.1",
     "jsr:@cliffy/prompt@*": "1.2.1",
+    "jsr:@cliffy/prompt@^1.2.1": "1.2.1",
     "jsr:@cliffy/table@1.2.1": "1.2.1",
     "jsr:@hongminhee/deno-task-hooks@*": "0.1.2",
     "jsr:@hono/hono@4": "4.12.21",
@@ -487,6 +488,7 @@
   "workspace": {
     "dependencies": [
       "jsr:@cliffy/command@^1.2.1",
+      "jsr:@cliffy/prompt@^1.2.1",
       "jsr:@std/assert@^1.0.17",
       "jsr:@std/dotenv@*",
       "jsr:@std/encoding@^1.0.9",
