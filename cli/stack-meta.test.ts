@@ -70,11 +70,12 @@ Deno.test("validateStackMeta: rejects non-boolean `required`", () => {
 })
 
 Deno.test("validateStackMeta: rejects unsupported ${...} references in string defaults", () => {
-  // v1 only allows ${SERVER_NAME}. ${DOMAIN}, ${OTHER}, etc. must fail.
+  // v1 allow-list: ${SERVER_NAME}, ${DOMAIN}, ${TIMEZONE}, ${PUID},
+  // ${PGID}, ${VOLUMES_PATH}, ${PATH_*}. Anything else fails.
   const bad = {
     name: "t",
     description: "x",
-    variables: [{ key: "DOMAIN", default: "${DOMAIN}.example" }],
+    variables: [{ key: "X", default: "${FOOBAR}.example" }],
   }
   assertThrows(
     () => validateStackMeta(bad),
@@ -83,14 +84,21 @@ Deno.test("validateStackMeta: rejects unsupported ${...} references in string de
   )
 })
 
-Deno.test("validateStackMeta: allows ${SERVER_NAME} in string defaults", () => {
+Deno.test("validateStackMeta: allows ${SERVER_NAME}, ${DOMAIN}, ${TIMEZONE}, ${PUID}, ${PGID}, ${VOLUMES_PATH}, ${PATH_*} in string defaults", () => {
   const ok = {
     name: "t",
     description: "x",
-    variables: [{ key: "DOMAIN", default: "${SERVER_NAME}.example" }],
+    variables: [
+      { key: "A", default: "${SERVER_NAME}.example" },
+      { key: "B", default: "files.${DOMAIN}" },
+      { key: "C", default: "${TIMEZONE}" },
+      { key: "D", default: "${PUID}:${PGID}" },
+      { key: "E", default: "${VOLUMES_PATH}/data" },
+      { key: "F", default: "${PATH_MEDIA}" },
+    ],
   }
   const result = validateStackMeta(ok)
-  assertEquals(result.variables[0].default, "${SERVER_NAME}.example")
+  assertEquals(result.variables.length, 6)
 })
 
 Deno.test("validateStackMeta: skips ref check for function defaults", () => {
