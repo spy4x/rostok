@@ -65,17 +65,18 @@ rostok --version
 
 ### 3.1 `$ rostok` — onboarding wizard
 
-No-args command. Three steps in sequence:
+No-args command. Three steps in sequence. Phase 4 user feedback split
+`.env.root` (cross-server) from `servers/<server>/.env` (per-server) —
+see §5 for the layout and §7 for ownership.
 
 1. **Init** — idempotent project skeleton in cwd:
    ```
    .
-   ├── deno.jsonc            # imports map for @rostok/cli, tasks
-   ├── .gitignore            # secrets, runtime state
+   ├── deno.jsonc            # imports map for @rostok/cli
+   ├── .gitignore            # plaintext secrets only (.env, .env.root)
    ├── .git/                 # git init if missing and git is installed
    ├── servers/              # empty dir
-   ├── .env.root             # CLI-managed root env (gitignored)
-   └── .env.root.age         # encrypted (gitignored)
+   └── .env.root             # CLI-managed cross-server vars (gitignored)
    ```
    - If any file already exists → warn, leave it alone.
    - If `.git/` present → skip `git init`.
@@ -83,20 +84,41 @@ No-args command. Three steps in sequence:
      ("rostok recommends git for version control, but it's optional.
      Re-run rostok after installing it if you want a `.git/`."), skip
      `git init`. Non-tech users shouldn't be scared.
+   - `.env.age` and `.env.root.age` are **NOT** gitignored. They're
+     age64-encrypted blobs — safe to commit; that's the whole point.
+   - **Encryption is optional.** If `age` is not on PATH, the wizard
+     runs to completion without encrypting. The user can install
+     `age` later and run `deno task env:encrypt` manually. The CLI
+     never blocks on this — encryption is a nice-to-have for
+     keeping `.env.age` in git; it's not required for the wizard.
 
-2. **Server create** — interactive prompts:
-   - Server name
-   - SSH target as a single alias string: `user@host:port` (port
-     defaults to 22 if omitted). Stored verbatim.
-   - Domain
-   - Contact email
-   - `~/.rostok/secrets/` for the age key, age64-encrypted (gitignored)
+2. **Server create** — interactive prompts; writes to
+   `servers/<server>/.env` (NOT `.env.root`):
+   - Server name → directory name under `servers/`
+   - SSH target — single string. Either an `ssh_config` alias
+     (`homelab`) or a connection string (`user@host[:port]`). No
+     validation. If `user@host` form, the user is extracted and used
+     as the hint for the next prompt.
+   - User — defaults to the user extracted from SSH target, or
+     current shell user. Skip the prompt entirely if SSH target was
+     `user@host` form (the user is already known).
+   - Domain — apex domain for this server
+   - Contact email — for ACME/Let's Encrypt registration
+   - `PROJECT` — short project identifier (e.g. `hl`)
+   - `DOCKER_GROUP_ID` — group ID for `/var/run/docker.sock` access
+   - `TIMEZONE` — IANA tz, defaults to `/etc/timezone` or `UTC`
+   - `PUID`, `PGID` — container user/group IDs
+   - `VOLUMES_PATH` — host dir for compose volumes
+   - `BASIC_AUTH_*` (only added in Phase 5+ when stacks need it)
 
 3. **Stack add** — interactive multi-select prompt: pick ONE stack from
-   the bundled catalog. Runs that stack's variable flow.
+   the bundled catalog. Runs that stack's variable flow. Builds the
+   `ServerContext` from `servers/<server>/.env` (per-server vars) so
+   `${DOMAIN}`, `${TIMEZONE}`, `${PUID}`, `${PGID}`, `${VOLUMES_PATH}`,
+   `${PATH_*}` all resolve.
 
-After stack add, `.env.age` (and `.env.root.age` if root vars changed)
-are re-encrypted automatically for git versioning.
+After stack add, `servers/<server>/.env.age` is re-encrypted (if age
+is available; otherwise the user runs `deno task env:encrypt` later).
 
 ### 3.2 Power-user subcommands
 
@@ -212,44 +234,87 @@ imports (`import { type } from "arktype"`).
 ```
 .
 ├── deno.jsonc
-├── .gitignore
-├── .git/                       # if git installed
-├── .env.root                   # CLI-managed (gitignored)
-├── .env.root.age               # encrypted (gitignored)
+├── .gitignore            # plaintext secrets only (.env, .env.root)
+├── .git/                 # if git installed
+├── .env.root            # CLI-managed cross-server vars (gitignored)
+├── .env.root.age        # encrypted — safe to commit
 └── servers/
     └── home/
-        ├── config.json         # which stacks (CLI-managed)
-        ├── .env                # CLI-managed keys (gitignored)
-        ├── .env.age            # encrypted (gitignored)
-        ├── configs/            # per-service overrides
+        ├── config.json  # which stacks (CLI-managed, committed)
+        ├── .env         # CLI-managed per-server vars (gitignored)
+        ├── .env.age     # encrypted — safe to commit
+        ├── configs/     # per-service overrides (committed)
         └── README.md
 ```
 
+**`.env.age` and `.env.root.age` are safe to commit.** They're age64-
+encrypted blobs. The plaintext `.env` and `.env.root` are the secrets;
+they stay gitignored. Encrypt-on-write is **optional** — if `age` is
+not installed, the wizard still runs to completion; the user can
+install `age` later and run `deno task env:encrypt` manually.
+
 **No `.env.example` files.** The schema lives in `+meta.ts`. CLI manages
 `.env` directly. Re-encryption runs after every `.env` mutation (see
-§6).
+§6) when `age` is available.
 
 `config.json` shape is unchanged from current repo.
+
+### 5.1 What goes where
+
+Phase 4 user feedback split server config into two files:
+
+**`.env.root` — cross-server, shared by every `servers/<n>/`:**
+- `BACKUPS_PASSWORD` — restic repo password
+- `BACKUP_PATHS` — paths included in backups (e.g. `/etc`, `/var/lib`)
+- `CLOUDFLARE_API_TOKEN` — for DNS-01 ACME challenges
+
+**`servers/<server>/.env` — per-server, deploy identity + container
+config:**
+- `PROJECT` — short project ID (e.g. `hl`)
+- `SSH_ADDRESS` — verbatim ssh target (alias or `user@host[:port]`)
+- `USER` — shell user on the remote host (parsed from SSH or prompted)
+- `DOMAIN` — apex domain for this server
+- `CONTACT_EMAIL` — for ACME/Let's Encrypt registration
+- `DOCKER_GROUP_ID` — group ID for `/var/run/docker.sock` access
+- `TIMEZONE` — IANA tz, defaults to `/etc/timezone` or `UTC`
+- `PUID`, `PGID` — container user/group IDs
+- `VOLUMES_PATH` — host dir for compose volumes
+- `BASIC_AUTH_*` — basic-auth credentials (when stack needs it)
+- `PATH_*` — host dirs for media libraries (PATH_MEDIA, etc.)
+
+The wizard's `$ rostok` action creates `.env.root` empty by default;
+the user populates it manually for cross-server creds. The wizard's
+"server create" step writes to `servers/<server>/.env`.
 
 ---
 
 ## 6. Re-encryption after .env manipulation
 
-Every command that writes to `servers/<n>/.env` or `.env.root` MUST
+Every command that writes to `servers/<n>/.env` or `.env.root` SHOULD
 re-encrypt the corresponding `.env.age` immediately afterwards. This
 keeps `.env.age` always current with `.env`, so committing
 `.env.age` to git is meaningful (no stale state).
 
+**Encryption is optional.** If `age` is not on PATH, the wizard
+continues without encrypting. Failures from `deno task env:encrypt`
+are non-fatal (warn) — encryption never blocks the wizard.
+
 Concrete triggers:
-- Wizard step 2 (server create) writes `.env` → encrypt.
-- Wizard step 3 (stack add) writes `.env` → encrypt.
-- Power-user `server create` writes `.env` → encrypt.
-- Power-user `stack add` writes `.env` → encrypt.
+- Wizard step 2 (server create) writes `servers/<n>/.env` → encrypt.
+- Wizard step 3 (stack add) writes `servers/<n>/.env` → encrypt.
+- Power-user `server create` writes `servers/<n>/.env` → encrypt.
+- Power-user `stack add` writes `servers/<n>/.env` → encrypt.
 - Any `.env.root` change → encrypt `.env.root.age`.
 
 Implementation: call the existing `deno task env:encrypt` flow after
 each write. Failures are non-fatal (warn) — the wizard should not block
 on encrypt hiccups.
+
+User-side key management: the wizard does NOT auto-generate age
+keypairs. Encryption is opt-in. If the user wants to encrypt their
+`.env.age`, they run `age-keygen -o .age/key.txt` once, then commit
+`.env.age` (NOT `.age/key.txt`). The CLI never warns or errors if
+encryption is missing — it just runs without encrypting.
 
 ---
 
@@ -258,8 +323,14 @@ on encrypt hiccups.
 The list of `variables[].key` in `+meta.ts` IS the ownership list. No
 extra manifest file.
 
+### 7.1 Per-stack ownership (`servers/<n>/.env`)
+
 When CLI writes `servers/<n>/.env`:
 - Keys declared by stack X → written/updated by stack X's setup
+- Keys declared by `server create` (PROJECT, SSH_ADDRESS, USER, DOMAIN,
+  CONTACT_EMAIL, DOCKER_GROUP_ID, TIMEZONE, PUID, PGID, VOLUMES_PATH,
+  PATH_*) → written/updated by server-create; not clobbered by stack-add
+  (stack-add's merge preserves them)
 - Keys not declared by any stack → preserved untouched
 - Hand-edits to declared keys → preserved on `--var` only if explicit
 
@@ -267,6 +338,25 @@ Tradeoff: hand-edit to a CLI-managed key gets clobbered on next `stack
 add`. Acceptable because CLI-managed keys are always overridable via
 `--var`, and a clear log line tells the user which keys the CLI is
 about to write.
+
+### 7.2 Per-project root (`.env.root`)
+
+`server create` does NOT touch `.env.root`. The wizard creates it empty
+during init; the user populates it manually for cross-server creds
+(BACKUPS_PASSWORD, BACKUP_PATHS, CLOUDFLARE_API_TOKEN). The CLI never
+prompts for these — they're outside the per-server flow.
+
+If the user wants the CLI to help populate `.env.root`, they edit it
+manually or run `deno task env:encrypt` after manual edits. There's no
+`rostok root edit` subcommand in v1.
+
+### 7.3 No `~/.rostok/secrets/`
+
+Earlier designs referenced `~/.rostok/secrets/` for a global age
+keypair. Phase 5 user feedback dropped this: the keypair lives in
+`<project>/.age/key.txt` (committed only to the user's local machine
+or secret manager — never to the public repo). One key per project is
+simpler than a global key across projects.
 
 ---
 
@@ -320,16 +410,17 @@ Each row is a separate PR. ✅ = done.
 | 0 | [#148](https://github.com/spy4x/rostok/pull/148) ✅¹ | — | Gitignore private server dirs. |
 | 1 | [#153](https://github.com/spy4x/rostok/pull/153) ✅ | #0 merged | `homelab → rostok`. GitHub redirect. README header. |
 | 1.5 | [#154](https://github.com/spy4x/rostok/pull/154) ✅ | #1 merged | Strip user-specific dirs/docs. Catalog becomes public. |
-| 1.6 | recover + doc split | #1.5 merged | Restore scripts/, ansible/, deno.jsonc tasks. Split docs into usage/contributing/design. DR doc. Catalog .md links. |
-| 2 | `cli/` skeleton | #1.5 | `cli/+main.ts` with cliffy + arktype. `rostok --help` works. |
-| 3 | `StackMeta` + secrets | #2 | Type, default resolver, password generator, validation. |
-| 4 | First 6 stacks | #3 | traefik, gatus, vaultwarden, jellyfin, filebrowser, librespeed get `+meta.ts`. One commit per stack. |
-| 5 | wizard + power-user API | #4 | `$ rostok`, `server create`, `stack add`. Re-encryption after every write. |
-| 6 | `stack list [--tree]` | #4 | Catalog browse + deps graph. Parallel with #5. |
-| 7 | `deploy` wrapper | #5 | Thin alias for `deno task deploy`. |
-| 8 | README + docs | #5, #6, #7 | Rewrite README, ship v1/v2/v2-website docs. |
-| 9 | Polish | #8 | Help text, examples, smoke. |
-| 10 | JSR publish | #9 | First release. |
+| 1.6 | [#156](https://github.com/spy4x/rostok/pull/156) ✅ | #1.5 merged | Recover scripts/, ansible/, split docs/usage|contributing|design. |
+| 2 | [#157](https://github.com/spy4x/rostok/pull/157) ✅ | #1.5 | `cli/` skeleton with cliffy + arktype. `rostok --help` works. |
+| 3 | [#158](https://github.com/spy4x/rostok/pull/158) ✅ | #2 | `StackMeta` type, default resolver, password generator, arktype-cliffy bridge. |
+| 4 | [#159](https://github.com/spy4x/rostok/pull/159) ✅ | #3 | First 6 stacks ship `+meta.ts`. One commit per stack. Phase 4 user feedback: single `<SERVICE>_DOMAIN` pattern, vaultwarden SMTP optional, server-level vars (`${DOMAIN}`, `${TIMEZONE}`, `${PUID}`, `${PGID}`, `${VOLUMES_PATH}`, `${PATH_*}`) added to `${...}` allow-list. |
+| 5 | [#160](https://github.com/spy4x/rostok/pull/160) (WIP) | #4 | Wizard (`$ rostok`) + `server create` + `stack add`. Re-encryption hook. |
+| 5b | — | #5 | `--stacks=<csv>` bulk-add, `~/.rostok/secrets/` dropped in favor of per-project `.age/key.txt`. SSH alias support + `${USER}` hint from `user@host`. Encryption marked optional. |
+| 6 | — | #5 | `stack list [--tree]` — catalog browse + deps graph. Parallel with #5. |
+| 7 | — | #5 | `deploy` wrapper — thin alias for `deno task deploy`. |
+| 8 | — | #5, #6, #7 | Rewrite README, ship v1/v2/v2-website docs. |
+| 9 | — | #8 | Help text, examples, smoke. |
+| 10 | — | #9 | JSR publish. First release. |
 | — | v2 | #10 | See `v2-cli.md`. |
 
 ¹ Phase 0 landed via direct squash-push to `main` (commit `f22135a`)

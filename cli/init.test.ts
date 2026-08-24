@@ -8,8 +8,8 @@ Deno.test("initProject: creates skeleton in empty dir", async () => {
   const tmp = await Deno.makeTempDir({ prefix: "rostok-init-" })
   try {
     const result = await initProject(tmp)
-    // Created: deno.jsonc, .gitignore, servers/, .age/, .age/key.txt, .env.root
-    assertEquals(result.created.length, 6)
+    // Created: deno.jsonc, .gitignore, servers/, .env.root (4 files)
+    assertEquals(result.created.length, 4)
     assertEquals(result.skipped.length, 0)
 
     // Verify files exist with expected content.
@@ -17,14 +17,15 @@ Deno.test("initProject: creates skeleton in empty dir", async () => {
     assertExists(denoJsonc.match(/"@rostok\/cli"/))
 
     const gitignore = await Deno.readTextFile(join(tmp, ".gitignore"))
-    assertExists(gitignore.match(/\.env\.age/))
-    assertExists(gitignore.match(/\.env\.root/))
+    // Plaintext secrets are gitignored.
+    assertExists(gitignore.match(/^\.env$/m))
+    assertExists(gitignore.match(/^\.env\.root$/m))
+    // Encrypted blobs are NOT gitignored — safe to commit.
+    assertEquals(gitignore.match(/\.env\.age/), null)
+    assertEquals(gitignore.match(/\.env\.root\.age/), null)
 
     const serversStat = await Deno.stat(join(tmp, "servers"))
     assertEquals(serversStat.isDirectory, true)
-
-    const ageDirStat = await Deno.stat(join(tmp, ".age"))
-    assertEquals(ageDirStat.isDirectory, true)
 
     const envRoot = await Deno.readTextFile(join(tmp, ".env.root"))
     assertEquals(envRoot, "")
@@ -39,7 +40,7 @@ Deno.test("initProject: idempotent — second call skips existing files", async 
     await initProject(tmp)
     const second = await initProject(tmp)
     assertEquals(second.created.length, 0)
-    assertEquals(second.skipped.length, 6)
+    assertEquals(second.skipped.length, 4)
   } finally {
     await Deno.remove(tmp, { recursive: true })
   }

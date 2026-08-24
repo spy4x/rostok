@@ -23,25 +23,13 @@ const DENO_JSONC_TEMPLATE = `{
 }
 `
 
-const GITIGNORE_TEMPLATE = `# secrets + runtime state — never commit
+const GITIGNORE_TEMPLATE = `# Plaintext secrets — never commit. The encrypted blobs (the
+# *.age pair) are safe to commit; that's the whole point of encryption.
 .env
-.env.age
 .env.root
-.env.root.age
-.age/
 
-# deno
+# deno runtime
 deno.lock
-`
-
-// Age key directory + placeholder file. The encrypt flow expects
-// .age/key.txt to exist (CLI-managed key lives there). Creating an
-// empty placeholder lets `initProject` succeed without a real age key —
-// the user runs `age-keygen -o .age/key.txt` (or our future setup flow)
-// before the first encrypt.
-const AGE_KEY_PLACEHOLDER = `# Placeholder — replace with your age keypair.
-# Generate one with:  age-keygen -o .age/key.txt
-# (See docs/v1-cli.md §6 for the full encryption flow.)
 `
 
 export interface InitResult {
@@ -56,7 +44,20 @@ export interface InitResult {
 /**
  * Initialize the project skeleton in `cwd`. Idempotent.
  *
- * @param cwd Directory to initialize. Defaults to process CWD.
+ * Phase 5 user feedback:
+ * - No `.age/` directory or keypair placeholder. Encryption is
+ *   optional; the user runs `age-keygen -o .age/key.txt` themselves
+ *   if they want to encrypt.
+ * - `.env.age` and `.env.root.age` are NOT gitignored — they're
+ *   encrypted blobs, safe to commit.
+ * - `.env.root` is created empty; user populates with cross-server
+ *   creds (BACKUPS_PASSWORD, BACKUP_PATHS, CLOUDFLARE_API_TOKEN)
+ *   manually or in a later edit.
+ *
+ *   Note: `.env.root.age` is NOT created by init. When the user adds
+ *   age64 encryption (via `age-keygen -o .age/key.txt` + manual edits),
+ *   `deno task env:encrypt` produces both `.env.age` and
+ *   `.env.root.age` (per scripts/encryption/encrypt.ts logic).
  */
 export async function initProject(cwd: string = Deno.cwd()): Promise<InitResult> {
   const created: string[] = []
@@ -65,20 +66,16 @@ export async function initProject(cwd: string = Deno.cwd()): Promise<InitResult>
   // 1. deno.jsonc
   await writeIfMissing(join(cwd, "deno.jsonc"), DENO_JSONC_TEMPLATE, created, skipped)
 
-  // 2. .gitignore
+  // 2. .gitignore (plaintext secrets only)
   await writeIfMissing(join(cwd, ".gitignore"), GITIGNORE_TEMPLATE, created, skipped)
 
-  // 3. servers/ — empty dir
+  // 3. servers/ — empty dir for per-server config
   await mkdirIfMissing(join(cwd, "servers"), created, skipped)
 
-  // 4. .age/ — key directory (placeholder for first encrypt)
-  await mkdirIfMissing(join(cwd, ".age"), created, skipped)
-  await writeIfMissing(join(cwd, ".age", "key.txt"), AGE_KEY_PLACEHOLDER, created, skipped)
-
-  // 5. .env.root — empty file (server-create populates it)
+  // 4. .env.root — empty file (cross-server creds, user populates manually)
   await writeIfMissing(join(cwd, ".env.root"), "", created, skipped)
 
-  // 6. git init — best effort, do not fail the wizard
+  // 5. git init — best effort, do not fail the wizard
   let gitInitialized = false
   if (!(await exists(join(cwd, ".git")))) {
     gitInitialized = await tryGitInit(cwd)

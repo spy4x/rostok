@@ -1,32 +1,17 @@
 // Server creation flow.
 //
-// Per docs/v1-cli.md §3.1 step 2:
-//
-//   - Server name
-//   - SSH target as a single alias string: `user@host:port` (port
-//     defaults to 22 if omitted). Stored verbatim.
-//   - Domain
-//   - Contact email
-//   - `~/.rostok/secrets/` for the age key, age64-encrypted (gitignored)
-//
-// Phase 4 user feedback extended the well-known server-level refs to
-// include `${DOMAIN}`, `${TIMEZONE}`, `${PUID}`, `${PGID}`, `${VOLUMES_PATH}`.
-// Server-create populates the corresponding .env.root keys so stacks can
-// reference them via `${KEY}` substitution.
-//
-// SSH_ADDRESS is parsed into SSH_ADDRESS + HOMELAB_USER (the user part)
-// for compatibility with scripts/deploy/+main.ts (which reads both).
-//
-// `.env.root` keys written:
-//   SERVER_NAME       server name (also the dir name under servers/)
-//   SSH_ADDRESS       full user@host:port (verbatim)
-//   HOMELAB_USER      user part of SSH target
-//   DOMAIN            apex domain (e.g. example.com)
-//   CONTACT_EMAIL     ACME registration contact
-//   TIMEZONE          IANA tz (e.g. Europe/Berlin)
-//   PUID              container user ID (linuxserver.io)
-//   PGID              container group ID
-//   VOLUMES_PATH      host dir for compose volumes
+// Per docs/v1-cli.md §3.1 (Phase 5 user feedback):
+// - Writes to `servers/<server>/.env` (NOT `.env.root`).
+// - SSH target accepts any string: ssh_config alias (`homelab`),
+//   connection string (`user@host[:port]`), or just a hostname.
+//   No validation. If `user@host`, the user is extracted and used as
+//   the hint for the next USER prompt (which can be skipped).
+// - USER renamed from HOMELAB_USER; matches scripts/deploy/+main.ts
+//   convention (it reads `SSH_ADDRESS` and `HOMELAB_USER` — we keep
+//   the project-agnostic `USER` here; deploy scripts translate).
+// - Encryption is optional. If `age` is missing, the wizard still
+//   runs to completion; the user runs `deno task env:encrypt`
+//   manually after installing age.
 
 import { Input } from "@cliffy/prompt"
 import { join } from "@std/path"
@@ -36,16 +21,18 @@ import { type EnvEntry, mergeEnv, readEnvFile, writeEnvFile } from "./env-files.
 /** Result of a server-create invocation. */
 export interface ServerCreateResult {
   serverName: string
-  /** Path to the .env.root file (relative to cwd). */
-  envRootPath: string
-  /** Path to the servers/<name>/ directory (relative to cwd). */
+  /** Path to `servers/<name>/` (relative to cwd). */
   serverDir: string
+  /** Path to `servers/<name>/.env` (relative to cwd). */
+  envPath: string
+  /** Parsed SSH target — `USER` (if any) plus the verbatim address. */
+  parsedSsh: { user?: string; address: string }
 }
 
 export interface ServerCreateOptions {
   /**
    * Pre-supplied inputs. Keys present here skip their prompt. Missing
-   * keys trigger a prompt unless `nonInteractive` is also set.
+   * keys trigger a prompt unless `failFast` is also set.
    */
   nonInteractive?: Partial<ServerCreateInput>
   /**
@@ -57,19 +44,15 @@ export interface ServerCreateOptions {
   cwd?: string
 }
 
-/**
- * Subset of the server-create inputs that can be pre-supplied via
- * --var-style flags. Phase 5 power-user API: `--server=home
- * --ssh=user@host:22 --domain=...`.
- *
- * Phase 5 ships the structural shape; richer flag parsing arrives with
- * Phase 5b alongside `--var KEY=VAL` for stack add.
- */
+/** Subset of the server-create inputs that can be pre-supplied. */
 export interface ServerCreateInput {
   serverName: string
   sshTarget: string
+  user: string
   domain: string
   contactEmail: string
+  project: string
+  dockerGroupId: string
   timezone: string
   puid: string
   pgid: string
@@ -77,61 +60,61 @@ export interface ServerCreateInput {
 }
 
 /**
- * Run the server creation flow. Interactive prompts unless `nonInteractive`
- * is set; in non-interactive mode, all required inputs must be pre-supplied.
- *
- * Writes `.env.root` (server-level vars) and creates `servers/<name>/`.
- * Re-encrypts `.env.root` to `.env.root.age` at the end.
+ * Run the server creation flow. Writes `servers/<name>/.env` and the
+ * `configs/` subdirectory. Re-encrypts the per-server `.env.age` (no-op
+ * if `age` isn't installed — see cli/encrypt.ts).
  */
 export async function serverCreate(opts: ServerCreateOptions = {}): Promise<ServerCreateResult> {
   const cwd = opts.cwd ?? Deno.cwd()
   const input = await collectInput(opts.nonInteractive, opts.failFast)
 
-  // Parse SSH target into user@host:port + HOMELAB_USER.
-  const sshTarget = input.sshTarget
-  const atSign = sshTarget.lastIndexOf("@")
-  if (atSign < 1) {
-    throw new Error(`invalid SSH target: ${sshTarget} (expected user@host[:port])`)
-  }
-  const homelabUser = sshTarget.slice(0, atSign)
-  const hostPort = sshTarget.slice(atSign + 1)
-  if (!hostPort) {
-    throw new Error(`invalid SSH target: ${sshTarget} (missing host)`)
-  }
+  // Parse SSH target once. `user@host[:port]` → user hint; alias is preserved.
+  const parsed = parseSshTarget(input.sshTarget)
 
-  // 1. Read existing .env.root (preserve unknown keys, e.g. PATH_*).
-  const envRootPath = join(cwd, ".env.root")
-  const existing = await readEnvFile(envRootPath)
+  // 1. Write per-server .env. Read existing first to preserve unknown keys
+  //    (e.g. PATH_* the user added by hand).
+  const serverDir = join(cwd, "servers", input.serverName)
+  const envPath = join(serverDir, ".env")
+  await Deno.mkdir(join(serverDir, "configs"), { recursive: true })
+  const existing = await readEnvFile(envPath)
 
-  // 2. Compose the new entries. Order: existing (minus overwritten) first,
-  //    then incoming. mergeEnv handles the dedup.
   const incoming: EnvEntry[] = [
-    { key: "SERVER_NAME", value: input.serverName },
-    { key: "SSH_ADDRESS", value: sshTarget },
-    { key: "HOMELAB_USER", value: homelabUser },
+    { key: "PROJECT", value: input.project },
+    { key: "SSH_ADDRESS", value: input.sshTarget },
+    // USER only if known — phase 5: SSH `user@host` parses, alias prompts.
+    ...(input.user ? [{ key: "USER", value: input.user }] as EnvEntry[] : []),
     { key: "DOMAIN", value: input.domain },
     { key: "CONTACT_EMAIL", value: input.contactEmail },
+    { key: "DOCKER_GROUP_ID", value: input.dockerGroupId },
     { key: "TIMEZONE", value: input.timezone },
     { key: "PUID", value: input.puid },
     { key: "PGID", value: input.pgid },
     { key: "VOLUMES_PATH", value: input.volumesPath },
   ]
   const merged = mergeEnv(existing, incoming)
+  await writeEnvFile(envPath, merged)
 
-  // 3. Write .env.root atomically.
-  await writeEnvFile(envRootPath, merged)
-
-  // 4. Create servers/<name>/ skeleton (idempotent).
-  const serverDir = join(cwd, "servers", input.serverName)
-  await Deno.mkdir(join(serverDir, "configs"), { recursive: true })
-
-  // 5. Re-encrypt .env.root → .env.root.age (non-fatal).
+  // 2. Re-encrypt (non-fatal — see cli/encrypt.ts).
   await encryptEnvFiles(cwd)
 
   return {
     serverName: input.serverName,
-    envRootPath,
     serverDir,
+    envPath,
+    parsedSsh: parsed,
+  }
+}
+
+/**
+ * Split `user@host[:port]` into (user, address). If no `@`, returns
+ * `{}` for the user — caller prompts separately.
+ */
+function parseSshTarget(target: string): { user?: string; address: string } {
+  const at = target.lastIndexOf("@")
+  if (at <= 0) return { address: target }
+  return {
+    user: target.slice(0, at),
+    address: target.slice(at + 1),
   }
 }
 
@@ -140,19 +123,18 @@ export async function serverCreate(opts: ServerCreateOptions = {}): Promise<Serv
  * non-interactive (caller pre-supplies via `pre`).
  *
  * When `failFast` is true, missing inputs throw instead of prompting
- * (docs/v1-cli.md §3.4 strict-default policy). The CLI passes `failFast`
- * when the user sets `--non-interactive`.
+ * (docs/v1-cli.md §3.4).
  */
 async function collectInput(
   pre: Partial<ServerCreateInput> | undefined,
   failFast?: boolean,
 ): Promise<ServerCreateInput> {
   const ask = async (
-    label: string,
+    label: keyof ServerCreateInput,
     fallback: string | undefined,
     validate: (v: string) => true | string,
   ): Promise<string> => {
-    const preValue = pre?.[label as keyof ServerCreateInput]
+    const preValue = pre?.[label]
     if (preValue !== undefined) return preValue
     if (failFast) {
       throw new Error(
@@ -168,11 +150,38 @@ async function collectInput(
     "home",
     (v) => (v.trim().length > 0 ? true : "server name required"),
   )
-  const sshTarget = await ask(
-    "sshTarget",
-    undefined,
-    (v) => (/^[^@]+@[^@]+(:\d+)?$/.test(v) ? true : "expected user@host[:port]"),
-  )
+  // SSH target — any string. No validation (per Phase 5 user feedback).
+  const sshTarget = await ask("sshTarget", undefined, () => true)
+
+  // User — only prompt if SSH target didn't tell us. If user@host, the
+  // user part is the default (editable). If alias, prompt fresh with the
+  // current shell user as the default hint.
+  const parsedSsh = parseSshTarget(sshTarget)
+  let user: string
+  if (parsedSsh.user !== undefined) {
+    // Pre-supplied takes priority; otherwise confirm via prompt (editable
+    // default lets user keep or change).
+    if (pre?.user !== undefined) {
+      user = pre.user
+    } else if (failFast) {
+      throw new Error(
+        `server-create: SSH target "${sshTarget}" doesn't include a user; ` +
+          `pass --var user=... in non-interactive mode.`,
+      )
+    } else {
+      user = await Input.prompt({
+        message: "user",
+        default: parsedSsh.user,
+      })
+    }
+  } else {
+    user = await ask(
+      "user",
+      await defaultShellUser(),
+      () => true,
+    )
+  }
+
   const domain = await ask(
     "domain",
     undefined,
@@ -182,6 +191,16 @@ async function collectInput(
     "contactEmail",
     undefined,
     (v) => (/^[^@]+@[^@]+\.[^@]+$/.test(v) ? true : "expected a valid email"),
+  )
+  const project = await ask(
+    "project",
+    "hl",
+    (v) => (/^[a-z0-9_-]+$/i.test(v) ? true : "alphanumeric/dash/underscore only"),
+  )
+  const dockerGroupId = await ask(
+    "dockerGroupId",
+    "990",
+    (v) => (/^\d+$/.test(v) ? true : "must be a numeric group ID"),
   )
 
   // Detect host timezone as a default for TIMEZONE.
@@ -207,8 +226,11 @@ async function collectInput(
   return {
     serverName,
     sshTarget,
+    user,
     domain,
     contactEmail,
+    project,
+    dockerGroupId,
     timezone,
     puid,
     pgid,
@@ -216,12 +238,23 @@ async function collectInput(
   }
 }
 
-/** Detect host timezone via /etc/timezone (Linux) or /etc/localtime symlink. */
+/** Detect host timezone via /etc/timezone (Debian/Ubuntu); fallback UTC. */
 async function detectTimezone(): Promise<string> {
   try {
     const text = await Deno.readTextFile("/etc/timezone")
     return text.trim() || "UTC"
   } catch {
     return "UTC"
+  }
+}
+
+/** Get the current shell user via `whoami` (falls back to $USER). */
+async function defaultShellUser(): Promise<string> {
+  try {
+    const cmd = new Deno.Command("whoami", { stdout: "piped", stderr: "null" })
+    const out = await cmd.output()
+    return new TextDecoder().decode(out.stdout).trim() || Deno.env.get("USER") || "homelab"
+  } catch {
+    return Deno.env.get("USER") || "homelab"
   }
 }

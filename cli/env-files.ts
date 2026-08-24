@@ -81,8 +81,8 @@ export async function writeEnvFile(path: string, entries: EnvEntry[]): Promise<v
 
 /**
  * Build a `ServerContext` for `resolveReferences` from the parsed entries
- * of `.env.root`. Unknown keys are not added; the resolver only touches
- * the well-known allow-list.
+ * of `servers/<server>/.env`. Unknown keys are not added; the resolver
+ * only touches the well-known allow-list.
  */
 export function serverContextFromRoot(entries: EnvEntry[]) {
   const out: Record<string, string> = {}

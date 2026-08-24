@@ -50,7 +50,7 @@ export function buildCommand() {
         new Command()
           .arguments("[name:string]")
           .option("-n, --non-interactive", "skip prompts, use defaults")
-          .description("Create a new server (writes .env.root, encrypts, creates servers/<name>/).")
+          .description("Create a new server (writes servers/<name>/.env, encrypts).")
           .action(async (options, name?: string) => {
             await serverCreate({
               cwd: Deno.cwd(),

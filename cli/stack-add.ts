@@ -67,10 +67,11 @@ export async function stackAdd(
   const catalog = await loadCatalog(catalogDir)
   const entry = findStack(catalog, stackName)
 
-  // Build server context from .env.root so ${KEY} defaults resolve.
+  // Build server context from `servers/<server>/.env` (per-server vars).
+  // Phase 5: server-create writes there; .env.root is cross-server only.
   const ctx = opts.skipServerPropagation
     ? null
-    : serverContextFromRoot(await readEnvFile(join(cwd, ".env.root")))
+    : serverContextFromRoot(await readEnvFile(join(cwd, "servers", serverName, ".env")))
 
   const writtenEntries: EnvEntry[] = []
   const skippedKeys: string[] = []
