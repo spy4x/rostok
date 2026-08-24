@@ -62,6 +62,12 @@ Deno.test("--help: nested subcommands are registered with descriptions", () => {
   assertEquals(stackCmd.hasCommand("add"), true)
   assertEquals(stackCmd.hasCommand("list"), true)
 
+  // Phase 6: stack list now has real --format / --tree flags. Stable
+  // assertions — wording in descriptions may shift.
+  const listCmd = stackCmd.getCommand("list")
+  assertExists(listCmd)
+  assertStringIncludes(listCmd.getDescription().toLowerCase(), "catalog")
+
   const deployCmd = cmd.getCommand("deploy")
   assertExists(deployCmd)
   assertStringIncludes(deployCmd.getDescription(), "Deploy a server")

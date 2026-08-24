@@ -1,5 +1,13 @@
+when:
+  - event: push
+  - event: pull_request
+
 steps:
   check:
     image: denoland/deno:2.9.0
     commands:
+      # Install age for the encryption tests (cli/encrypt.test.ts assumes
+      # age + age-keygen are on PATH). Slim debian-slim container ships
+      # without it; matches the dev box environment.
+      - apt-get update && apt-get install -y age
       - deno task check
