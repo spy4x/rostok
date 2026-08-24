@@ -91,11 +91,13 @@ see §5 for the layout and §7 for ownership.
      age64-encrypted blobs — safe to commit; that's the whole point.
    - **Encryption is optional but endorsed.** If `age` is not on PATH,
      the wizard prints a one-time info-level tip ("install age, then
-     `age-keygen -o .age/key.txt`") and runs to completion without
-     encrypting. The user can install `age` later and run
-     `rostok env encrypt` to backfill `.env.age`. The CLI never blocks
-     on this — encryption is a nice-to-have for keeping `.env.age` in
-     git; it's not required for the wizard.
+     re-run rostok — it will offer to set up encryption") and runs to
+     completion without encrypting. If `age` IS on PATH but no key is
+     present, the wizard prompts the user to generate one (rostok runs
+     `age-keygen` itself — the user never has to know that command
+     exists). The CLI never blocks on this — encryption is a nice-to-
+     have for keeping `.env.age` in git; it's not required for the
+     wizard.
 
 2. **Server create** — interactive prompts; writes to
    `servers/<server>/.env` (NOT `.env.root`):
@@ -255,9 +257,9 @@ imports (`import { type } from "arktype"`).
 **`.env.age` and `.env.root.age` are safe to commit.** They're age64-
 encrypted blobs. The plaintext `.env` and `.env.root` are the secrets;
 they stay gitignored. Encrypt-on-write is **optional but endorsed** —
-if `age` is not installed, the wizard still runs to completion and
-prints a one-time tip; the user can install `age` later and run
-`rostok env encrypt` to backfill `.env.age`.
+the CLI runs `age-keygen` transparently when the user accepts the
+post-init prompt (or invokes `rostok env setup` later). The user never
+has to call `age-keygen` themselves.
 
 **No `.env.example` files.** The schema lives in `+meta.ts`. CLI manages
 `.env` directly. Re-encryption runs after every `.env` mutation (see
@@ -345,15 +347,17 @@ the user can invoke the same logic directly:
   semantics.
 - `rostok env status` — prints whether `age` is on PATH, whether
   `.age/key.txt` exists, and the list of `.env` / `.env.age` files.
-  Exits 0 always. Ends with a recommendation:
-  - if `age` missing → 4-line "install + keygen + encrypt" recipe
-  - if `age` present, no key → 2-line "keygen + encrypt" recipe
-  - if key present but some `.env` lacks `.env.age` → "run `rostok env encrypt`"
-  - if everything empty → "run `rostok` to start the wizard"
+  Exits 0 always. Ends with a recommendation that never exposes raw
+  `age-keygen` commands — instead points at `rostok env setup` and
+  re-running `rostok`.
+- `rostok env setup` — generates `.age/key.txt` for the user. The CLI
+  runs `age-keygen` internally; the user never has to know that
+  command exists.
 
 These are thin wrappers — they do exactly what the encrypt/decrypt
-tasks do. The only added value is the friendly status output and the
-exit-code-by-missing-dependency for `encrypt`/`decrypt`.
+tasks do. The only added value is the friendly status output, the
+exit-code-by-missing-dependency for `encrypt`/`decrypt`, and the
+encapsulation of `age-keygen` behind `rostok env setup`.
 
 ---
 

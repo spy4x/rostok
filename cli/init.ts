@@ -15,7 +15,8 @@
 
 import { exists } from "@std/fs"
 import { join } from "@std/path"
-import { checkAgeInstalled, checkAgeKeyPresent } from "./encrypt.ts"
+import { Confirm } from "@cliffy/prompt"
+import { checkAgeInstalled, checkAgeKeyPresent, generateAgeKey } from "./encrypt.ts"
 
 const DENO_JSONC_TEMPLATE = `{
   "imports": {
@@ -84,35 +85,63 @@ export async function initProject(cwd: string = Deno.cwd()): Promise<InitResult>
     gitInitialized = true // already initialized
   }
 
-  // 6. age endorsement — best effort, info-level only.
+  // 6. age endorsement — best effort, interactive prompt only on first init.
   //
   // Encryption is OPTIONAL but the CLI actively recommends it: .env.age
-  // is safe to commit, .env is not. After init, if age is missing or
-  // .age/key.txt is missing, print a single tip telling the user how to
-  // turn encryption on. Skipped on subsequent (idempotent) calls so the
-  // message doesn't repeat on every wizard run.
+  // is safe to commit, .env is not. After init:
+  // - age missing → info-level tip + return
+  // - age present, key missing → ASK the user if they want rostok to
+  //   generate the keypair for them (rostok runs age-keygen, hides the
+  //   raw command from the user)
+  // - key present → silent
+  //
+  // Skipped on idempotent calls (created.length === 0) so the prompt
+  // doesn't repeat on every wizard run.
   if (created.length > 0) {
-    await maybeEndorseAge(cwd)
+    await maybeOfferKeyGeneration(cwd)
   }
 
   return { created, skipped, gitInitialized }
 }
 
-/** Print an info-level hint about enabling age encryption. One-shot. */
-async function maybeEndorseAge(cwd: string): Promise<void> {
+/**
+ * Endorse age encryption after init. Per Phase 5b UX feedback, we never
+ * show the user a raw `age-keygen` command — when a key is missing, we
+ * OFFER to generate it for them. Non-interactive calls skip the prompt
+ * entirely (the user explicitly opted out of prompts by passing -n).
+ */
+async function maybeOfferKeyGeneration(cwd: string): Promise<void> {
   const ageInstalled = await checkAgeInstalled()
   if (!ageInstalled) {
     console.info(
       "rostok: install `age` (e.g. `apt install age`) to encrypt .env.age for git. " +
-        "see `rostok env status` once installed.",
+        "`rostok` will detect it on the next run and offer to set up encryption.",
     )
     return
   }
-  if (!(await checkAgeKeyPresent(cwd))) {
+  if (await checkAgeKeyPresent(cwd)) return // already set up — silent
+  // Skip the prompt entirely when stdin isn't a TTY (CI, test runners,
+  // non-interactive mode). Confirm.prompt redraws forever in non-TTY
+  // mode, so we check upfront rather than catching a hang.
+  if (!Deno.stdin.isTerminal()) return
+  const answer = await Confirm.prompt({
+    message: "no encryption key found. generate one now? (so .env.age can be committed)",
+    default: true,
+  })
+  if (!answer) {
     console.info(
-      "rostok: age is installed. generate a key with `age-keygen -o .age/key.txt` " +
-        "and run `rostok env encrypt` to backfill .env.age.",
+      "rostok: skipped key generation. run `rostok env setup` later to enable encryption.",
     )
+    return
+  }
+  const result = await generateAgeKey(cwd)
+  if (result.ok) {
+    console.info(
+      `rostok: generated ${result.path}. public key: ${result.publicKey}\n` +
+        "  (the public key is safe to share; the secret key in .age/key.txt is NOT — gitignore'd automatically.)",
+    )
+  } else {
+    console.warn(`rostok: failed to generate key: ${result.error}`)
   }
 }
 

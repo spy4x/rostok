@@ -1,4 +1,4 @@
-// `rostok env encrypt|decrypt|status` — explicit encryption commands.
+// `rostok env encrypt|decrypt|status|setup` — explicit encryption commands.
 //
 // The wizard auto-runs encrypt after every `.env` write (see
 // `cli/encrypt.ts`). These commands let users invoke the same logic
@@ -8,10 +8,21 @@
 // `rostok env status` reports the encryption posture: is `age`
 // installed? Is `.age/key.txt` present? How many `.env`/`.env.age`
 // files exist?
+//
+// `rostok env setup` generates `.age/key.txt` for the user. rostok
+// hides the underlying `age-keygen` invocation — the user never has to
+// know that command exists.
 
 import { Command } from "@cliffy/command"
 import { relative } from "@std/path"
-import { ageStatus, decryptEnvFiles, encryptEnvFiles } from "../encrypt.ts"
+import {
+  ageStatus,
+  checkAgeInstalled,
+  checkAgeKeyPresent,
+  decryptEnvFiles,
+  encryptEnvFiles,
+  generateAgeKey,
+} from "../encrypt.ts"
 
 /** `rostok env encrypt` — run the encrypt task directly. */
 export const envEncryptCommand = new Command()
@@ -90,30 +101,67 @@ export const envStatusCommand = new Command()
       for (const f of status.ageFiles) console.log(`  ${rel(f)}`)
     }
 
-    // Friendly recommendation.
+    // Friendly recommendation. Per Phase 5b UX feedback, we never expose
+    // raw `age-keygen` commands — the CLI runs age-keygen internally
+    // when the user invokes `rostok env setup` (or accepts the prompt
+    // during `rostok`).
     if (!status.ageInstalled) {
       console.log("")
       console.log(
-        "rostok recommends enabling age encryption so .env.age can be safely committed:",
+        "rostok: install `age` (e.g. `apt install age`) and re-run `rostok` — " +
+          "it will offer to set up encryption for you.",
       )
-      console.log("  1. install age:  apt install age  (or: brew install age)")
-      console.log("  2. generate key: age-keygen -o .age/key.txt")
-      console.log("  3. backfill:     rostok env encrypt")
-      console.log("  4. commit the encrypted .env.age, NOT .age/key.txt")
     } else if (!status.ageKeyPresent) {
       console.log("")
       console.log(
-        "rostok: age is installed but no .age/key.txt. generate one to enable encryption:",
+        "rostok: age is installed but no encryption key. " +
+          "run `rostok env setup` to generate one.",
       )
-      console.log("  age-keygen -o .age/key.txt")
-      console.log("  rostok env encrypt")
     } else if (status.envFiles.length > status.ageFiles.length) {
       console.log("")
-      console.log("rostok: some .env files lack an .env.age sibling. run `rostok env encrypt`.")
+      console.log(
+        "rostok: some .env files lack an .env.age sibling. run `rostok env encrypt` to backfill.",
+      )
     } else if (status.envFiles.length === 0 && status.ageFiles.length === 0) {
       console.log("")
       console.log("rostok: no .env files in this project yet. run `rostok` to start the wizard.")
     }
+  })
+
+/**
+ * `rostok env setup` — generate `.age/key.txt` for the user. This is
+ * how the CLI hides `age-keygen`: the user never has to invoke that
+ * command themselves. Run after installing `age` to enable encryption.
+ */
+export const envSetupCommand = new Command()
+  .description(
+    "Generate the project's age encryption key (rostok hides age-keygen for you).",
+  )
+  .action(async () => {
+    const cwd = Deno.cwd()
+    if (!(await checkAgeInstalled())) {
+      console.error(
+        "rostok env setup: age not installed. install with `apt install age` and retry.",
+      )
+      Deno.exit(1)
+    }
+    if (await checkAgeKeyPresent(cwd)) {
+      console.log(`rostok env setup: .age/key.txt already exists at ${cwd}/.age/key.txt`)
+      console.log("  no changes made.")
+      Deno.exit(0)
+    }
+    const result = await generateAgeKey(cwd)
+    if (!result.ok) {
+      console.error(`rostok env setup: failed: ${result.error}`)
+      Deno.exit(1)
+    }
+    console.log(`rostok env setup: generated ${result.path}`)
+    if (result.publicKey) {
+      console.log(`  public key (safe to share): ${result.publicKey}`)
+      console.log("  secret key in .age/key.txt — already gitignored.")
+    }
+    console.log("")
+    console.log("next: run `rostok env encrypt` to backfill any existing .env files.")
   })
 
 /** `rostok env ...` — the group. */
@@ -125,3 +173,4 @@ export const envCommand = new Command()
   .command("encrypt", envEncryptCommand)
   .command("decrypt", envDecryptCommand)
   .command("status", envStatusCommand)
+  .command("setup", envSetupCommand)

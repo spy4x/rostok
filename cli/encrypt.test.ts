@@ -11,9 +11,9 @@
 // The encryption logic itself lives in scripts/encryption/ and has
 // its own tests (scripts/encryption/encryption.test.ts).
 
-import { assertEquals } from "@std/assert"
+import { assertEquals, assertExists } from "@std/assert"
 import { join } from "@std/path"
-import { ageStatus, checkAgeInstalled, encryptEnvFiles } from "./encrypt.ts"
+import { ageStatus, checkAgeInstalled, encryptEnvFiles, generateAgeKey } from "./encrypt.ts"
 
 Deno.test("checkAgeInstalled: returns true on this machine (age is on PATH)", async () => {
   // The test runner has age installed (CI/dev box). If this fails, the
@@ -96,6 +96,23 @@ Deno.test("decryptEnvFiles: same skip semantics as encrypt — no-key path retur
     const result = await decryptEnvFiles(tmp)
     assertEquals(result.ok, false)
     assertEquals(result.skipped, "no-key")
+  } finally {
+    await Deno.remove(tmp, { recursive: true })
+  }
+})
+
+Deno.test("generateAgeKey: writes .age/key.txt and returns public key", async () => {
+  // Exercises the same code path that init's "would you like me to
+  // generate the key?" prompt takes. age-keygen must be on PATH.
+  const tmp = await Deno.makeTempDir({ prefix: "rostok-keygen-" })
+  try {
+    const result = await generateAgeKey(tmp)
+    assertEquals(result.ok, true)
+    assertExists(result.publicKey, "public key parsed from key file")
+    assertEquals(result.publicKey?.startsWith("age1"), true)
+    // The key file exists with the expected marker line.
+    const content = await Deno.readTextFile(result.path)
+    assertExists(content.match(/# public key: /))
   } finally {
     await Deno.remove(tmp, { recursive: true })
   }

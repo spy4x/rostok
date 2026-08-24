@@ -73,6 +73,7 @@ Deno.test("--help: nested subcommands are registered with descriptions", () => {
   assertEquals(envCmd.hasCommand("encrypt"), true)
   assertEquals(envCmd.hasCommand("decrypt"), true)
   assertEquals(envCmd.hasCommand("status"), true)
+  assertEquals(envCmd.hasCommand("setup"), true)
 })
 
 // ─────────────────────────────────────────────────────────────────────

@@ -46,6 +46,70 @@ export async function checkAgeKeyPresent(cwd: string): Promise<boolean> {
   return await exists(join(cwd, ".age", "key.txt"))
 }
 
+/**
+ * Result of {@link generateAgeKey}.
+ */
+export interface GenerateKeyResult {
+  ok: boolean
+  /** Absolute path to the generated key file (relative to cwd if ok). */
+  path: string
+  /** Parsed `public key: age1...` line from the key file (safe to share). */
+  publicKey?: string
+  /** Captured stderr when `ok=false`. */
+  error?: string
+}
+
+/**
+ * Generate an age keypair via `age-keygen -o <cwd>/.age/key.txt`. Used by
+ * `cli/init.ts` (interactive prompt after init) and `cli/commands/env.ts`
+ * (`rostok env setup`). The CLI never asks the user to run `age-keygen`
+ * themselves — this is the wrapper that hides that command.
+ *
+ * Pre-conditions: age-keygen on PATH, .age/ writable, .age/key.txt
+ * absent. Caller checks these.
+ */
+export async function generateAgeKey(cwd: string): Promise<GenerateKeyResult> {
+  const keyPath = join(cwd, ".age", "key.txt")
+  await Deno.mkdir(join(cwd, ".age"), { recursive: true }).catch(() => {})
+  try {
+    const cmd = new Deno.Command("age-keygen", {
+      args: ["-o", keyPath],
+      stdout: "piped",
+      stderr: "piped",
+    })
+    const out = await cmd.output()
+    if (!out.success) {
+      return {
+        ok: false,
+        path: keyPath,
+        error: new TextDecoder().decode(out.stderr).trim() || "age-keygen exited non-zero",
+      }
+    }
+    // age-keygen prints the public key on stdout; parse it as a fallback
+    // in case the file doesn't contain it for some reason.
+    const stdout = new TextDecoder().decode(out.stdout)
+    const publicKey = stdout.match(/Public key: (\S+)/)?.[1] ??
+      (await safeReadPublicKey(keyPath))
+    return { ok: true, path: keyPath, publicKey }
+  } catch (err) {
+    return {
+      ok: false,
+      path: keyPath,
+      error: err instanceof Error ? err.message : String(err),
+    }
+  }
+}
+
+/** Parse the `# public key: age1...` line from a key file. Best effort. */
+async function safeReadPublicKey(keyPath: string): Promise<string | undefined> {
+  try {
+    const text = await Deno.readTextFile(keyPath)
+    return text.match(/# public key: (\S+)/)?.[1]
+  } catch {
+    return undefined
+  }
+}
+
 /** Print the "install age" tip at most once per CLI invocation. */
 export function maybeShowAgeHint(context: string): void {
   if (_ageHintShown) return
@@ -138,7 +202,7 @@ function maybeShowAgeHintOnce(msg: string, action: string): void {
   const k = `${action}:${msg}`
   if (_perActionHint.has(k)) return
   _perActionHint.add(k)
-  console.info(`rostok: ${msg}. run \`age-keygen -o .age/key.txt\` to generate one.`)
+  console.info(`rostok: ${msg}. run \`rostok env setup\` to generate one.`)
 }
 
 /**
