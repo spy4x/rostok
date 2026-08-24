@@ -8,6 +8,7 @@ import { DESCRIPTION, NAME, VERSION } from "./version.ts"
 import { serverCreate } from "./server-create.ts"
 import { stackAdd } from "./stack-add.ts"
 import { deployCommand } from "./commands/deploy.ts"
+import { envCommand } from "./commands/env.ts"
 // Side-effect import: keep arktype + StackMeta + defaults reachable through
 // the public barrel. The CLI entry is the canonical "load the package"
 // location.
@@ -97,6 +98,8 @@ export function buildCommand() {
   )
 
   cmd.command("deploy", deployCommand)
+
+  cmd.command("env", envCommand)
 
   return cmd
 }

@@ -58,6 +58,9 @@ rostok server create [<name>]   # power-user: create one server
 rostok stack add <name> --server=<name>  # power-user: add one stack
 rostok stack list [--tree]      # browse bundled catalog
 rostok deploy <server> [stack]  # wraps `deno task deploy`
+rostok env encrypt              # run `deno task env:encrypt` directly
+rostok env decrypt              # run `deno task env:decrypt` directly
+rostok env status               # show encryption posture + next steps
 
 rostok --help
 rostok --version
@@ -86,11 +89,13 @@ see §5 for the layout and §7 for ownership.
      `git init`. Non-tech users shouldn't be scared.
    - `.env.age` and `.env.root.age` are **NOT** gitignored. They're
      age64-encrypted blobs — safe to commit; that's the whole point.
-   - **Encryption is optional.** If `age` is not on PATH, the wizard
-     runs to completion without encrypting. The user can install
-     `age` later and run `deno task env:encrypt` manually. The CLI
-     never blocks on this — encryption is a nice-to-have for
-     keeping `.env.age` in git; it's not required for the wizard.
+   - **Encryption is optional but endorsed.** If `age` is not on PATH,
+     the wizard prints a one-time info-level tip ("install age, then
+     `age-keygen -o .age/key.txt`") and runs to completion without
+     encrypting. The user can install `age` later and run
+     `rostok env encrypt` to backfill `.env.age`. The CLI never blocks
+     on this — encryption is a nice-to-have for keeping `.env.age` in
+     git; it's not required for the wizard.
 
 2. **Server create** — interactive prompts; writes to
    `servers/<server>/.env` (NOT `.env.root`):
@@ -118,7 +123,7 @@ see §5 for the layout and §7 for ownership.
    `${PATH_*}` all resolve.
 
 After stack add, `servers/<server>/.env.age` is re-encrypted (if age
-is available; otherwise the user runs `deno task env:encrypt` later).
+is available; otherwise the user runs `rostok env encrypt` later).
 
 ### 3.2 Power-user subcommands
 
@@ -249,9 +254,10 @@ imports (`import { type } from "arktype"`).
 
 **`.env.age` and `.env.root.age` are safe to commit.** They're age64-
 encrypted blobs. The plaintext `.env` and `.env.root` are the secrets;
-they stay gitignored. Encrypt-on-write is **optional** — if `age` is
-not installed, the wizard still runs to completion; the user can
-install `age` later and run `deno task env:encrypt` manually.
+they stay gitignored. Encrypt-on-write is **optional but endorsed** —
+if `age` is not installed, the wizard still runs to completion and
+prints a one-time tip; the user can install `age` later and run
+`rostok env encrypt` to backfill `.env.age`.
 
 **No `.env.example` files.** The schema lives in `+meta.ts`. CLI manages
 `.env` directly. Re-encryption runs after every `.env` mutation (see
@@ -295,9 +301,19 @@ re-encrypt the corresponding `.env.age` immediately afterwards. This
 keeps `.env.age` always current with `.env`, so committing
 `.env.age` to git is meaningful (no stale state).
 
-**Encryption is optional.** If `age` is not on PATH, the wizard
-continues without encrypting. Failures from `deno task env:encrypt`
-are non-fatal (warn) — encryption never blocks the wizard.
+**Encryption is optional but endorsed.** The CLI actively recommends it
+but never requires it. Concrete behavior:
+
+- `age` on PATH + `.age/key.txt` present → encrypt runs after every
+  `.env` write (`cli/encrypt.ts:encryptEnvFiles`). Best effort — any
+  task failure is warned, not thrown; the wizard completes anyway.
+- `age` on PATH, no `.age/key.txt` → skip with a one-time hint about
+  `age-keygen`. The wizard still completes.
+- `age` missing entirely → skip with a one-time hint about
+  `apt install age`. The wizard still completes.
+
+After `init`, the CLI prints an info-level tip about age if it's not
+set up (single-shot — idempotent calls stay quiet).
 
 Concrete triggers:
 - Wizard step 2 (server create) writes `servers/<n>/.env` → encrypt.
@@ -308,13 +324,36 @@ Concrete triggers:
 
 Implementation: call the existing `deno task env:encrypt` flow after
 each write. Failures are non-fatal (warn) — the wizard should not block
-on encrypt hiccups.
+on encrypt hiccups. The wrapper (`cli/encrypt.ts`) detects `age`
+presence up front so the task is only spawned when it can succeed.
 
 User-side key management: the wizard does NOT auto-generate age
 keypairs. Encryption is opt-in. If the user wants to encrypt their
 `.env.age`, they run `age-keygen -o .age/key.txt` once, then commit
-`.env.age` (NOT `.age/key.txt`). The CLI never warns or errors if
-encryption is missing — it just runs without encrypting.
+`.env.age` (NOT `.age/key.txt`).
+
+### 6.1 Explicit `rostok env ...` commands
+
+The wizard auto-runs encrypt after every `.env` write. For ad-hoc
+needs (backfilling after installing `age`, decrypting a fresh clone),
+the user can invoke the same logic directly:
+
+- `rostok env encrypt` — runs `deno task env:encrypt`. Exits non-zero
+  if `age` is missing or `.age/key.txt` is missing (explicit error —
+  the user invoked the command deliberately).
+- `rostok env decrypt` — runs `deno task env:decrypt`. Same exit
+  semantics.
+- `rostok env status` — prints whether `age` is on PATH, whether
+  `.age/key.txt` exists, and the list of `.env` / `.env.age` files.
+  Exits 0 always. Ends with a recommendation:
+  - if `age` missing → 4-line "install + keygen + encrypt" recipe
+  - if `age` present, no key → 2-line "keygen + encrypt" recipe
+  - if key present but some `.env` lacks `.env.age` → "run `rostok env encrypt`"
+  - if everything empty → "run `rostok` to start the wizard"
+
+These are thin wrappers — they do exactly what the encrypt/decrypt
+tasks do. The only added value is the friendly status output and the
+exit-code-by-missing-dependency for `encrypt`/`decrypt`.
 
 ---
 
@@ -414,8 +453,8 @@ Each row is a separate PR. ✅ = done.
 | 2 | [#157](https://github.com/spy4x/rostok/pull/157) ✅ | #1.5 | `cli/` skeleton with cliffy + arktype. `rostok --help` works. |
 | 3 | [#158](https://github.com/spy4x/rostok/pull/158) ✅ | #2 | `StackMeta` type, default resolver, password generator, arktype-cliffy bridge. |
 | 4 | [#159](https://github.com/spy4x/rostok/pull/159) ✅ | #3 | First 6 stacks ship `+meta.ts`. One commit per stack. Phase 4 user feedback: single `<SERVICE>_DOMAIN` pattern, vaultwarden SMTP optional, server-level vars (`${DOMAIN}`, `${TIMEZONE}`, `${PUID}`, `${PGID}`, `${VOLUMES_PATH}`, `${PATH_*}`) added to `${...}` allow-list. |
-| 5 | [#160](https://github.com/spy4x/rostok/pull/160) (WIP) | #4 | Wizard (`$ rostok`) + `server create` + `stack add`. Re-encryption hook. |
-| 5b | — | #5 | `--stacks=<csv>` bulk-add, `~/.rostok/secrets/` dropped in favor of per-project `.age/key.txt`. SSH alias support + `${USER}` hint from `user@host`. Encryption marked optional. |
+| 5 | [#160](https://github.com/spy4x/rostok/pull/160) (WIP) | #4 | Wizard (`$ rostok`) + `server create` + `stack add`. Re-encryption hook. `rostok env encrypt|decrypt|status` for explicit encryption control. Encryption marked optional-but-endorsed: wizard completes even when `age` is missing; init prints a one-time tip about installing `age` + generating a keypair. `.env.root` / `servers/<n>/.env` split. SSH target accepts `user@host[:port]` OR alias. |
+| 5b | — | #5 | `--stacks=<csv>` bulk-add for non-interactive wizard. |
 | 6 | — | #5 | `stack list [--tree]` — catalog browse + deps graph. Parallel with #5. |
 | 7 | — | #5 | `deploy` wrapper — thin alias for `deno task deploy`. |
 | 8 | — | #5, #6, #7 | Rewrite README, ship v1/v2/v2-website docs. |

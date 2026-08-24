@@ -39,12 +39,13 @@ Deno.test("--version: prints the package name + version", () => {
   assertStringIncludes(banner, VERSION)
 })
 
-Deno.test("--help: lists subcommands server/stack/deploy", () => {
+Deno.test("--help: lists subcommands server/stack/deploy/env", () => {
   const cmd = buildCommand()
   const help = cmd.getHelp()
   assertStringIncludes(help, "server")
   assertStringIncludes(help, "stack")
   assertStringIncludes(help, "deploy")
+  assertStringIncludes(help, "env")
   assertStringIncludes(help, NAME)
 })
 
@@ -64,6 +65,14 @@ Deno.test("--help: nested subcommands are registered with descriptions", () => {
   const deployCmd = cmd.getCommand("deploy")
   assertExists(deployCmd)
   assertStringIncludes(deployCmd.getDescription(), "Deploy a server")
+
+  const envCmd = cmd.getCommand("env")
+  assertExists(envCmd)
+  // Robust — only assert the stable phrase "encryption".
+  assertStringIncludes(envCmd.getDescription().toLowerCase(), "encryption")
+  assertEquals(envCmd.hasCommand("encrypt"), true)
+  assertEquals(envCmd.hasCommand("decrypt"), true)
+  assertEquals(envCmd.hasCommand("status"), true)
 })
 
 // ─────────────────────────────────────────────────────────────────────

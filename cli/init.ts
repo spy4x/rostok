@@ -15,6 +15,7 @@
 
 import { exists } from "@std/fs"
 import { join } from "@std/path"
+import { checkAgeInstalled, checkAgeKeyPresent } from "./encrypt.ts"
 
 const DENO_JSONC_TEMPLATE = `{
   "imports": {
@@ -83,7 +84,36 @@ export async function initProject(cwd: string = Deno.cwd()): Promise<InitResult>
     gitInitialized = true // already initialized
   }
 
+  // 6. age endorsement — best effort, info-level only.
+  //
+  // Encryption is OPTIONAL but the CLI actively recommends it: .env.age
+  // is safe to commit, .env is not. After init, if age is missing or
+  // .age/key.txt is missing, print a single tip telling the user how to
+  // turn encryption on. Skipped on subsequent (idempotent) calls so the
+  // message doesn't repeat on every wizard run.
+  if (created.length > 0) {
+    await maybeEndorseAge(cwd)
+  }
+
   return { created, skipped, gitInitialized }
+}
+
+/** Print an info-level hint about enabling age encryption. One-shot. */
+async function maybeEndorseAge(cwd: string): Promise<void> {
+  const ageInstalled = await checkAgeInstalled()
+  if (!ageInstalled) {
+    console.info(
+      "rostok: install `age` (e.g. `apt install age`) to encrypt .env.age for git. " +
+        "see `rostok env status` once installed.",
+    )
+    return
+  }
+  if (!(await checkAgeKeyPresent(cwd))) {
+    console.info(
+      "rostok: age is installed. generate a key with `age-keygen -o .age/key.txt` " +
+        "and run `rostok env encrypt` to backfill .env.age.",
+    )
+  }
 }
 
 async function writeIfMissing(
