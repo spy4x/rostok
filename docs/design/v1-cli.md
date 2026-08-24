@@ -56,11 +56,12 @@ License: MIT.
 rostok                          # onboarding wizard (init + server create + stack add)
 rostok server create [<name>]   # power-user: create one server
 rostok stack add <name> --server=<name>  # power-user: add one stack
-rostok stack list [--tree]      # browse bundled catalog
+rostok stack list [--tree] [--format json]  # browse bundled catalog
 rostok deploy <server> [stack]  # wraps `deno task deploy`
 rostok env encrypt              # run `deno task env:encrypt` directly
 rostok env decrypt              # run `deno task env:decrypt` directly
 rostok env status               # show encryption posture + next steps
+rostok env setup                # generate `.age/key.txt` (wraps `age-keygen`)
 
 rostok --help
 rostok --version
@@ -136,7 +137,11 @@ duplicate the wizard — they do one step each:
   no init, no stack add.
 - `rostok stack add <name> --server=<name>` — same as wizard step 3,
   but standalone.
-- `rostok stack list [--tree]` — read-only catalog browse.
+- `rostok stack list [--tree] [--format json]` — read-only catalog browse.
+  Default is a table grouped by category (proxy first, then alphabetical).
+  `--tree` indents each stack under its category header. `--format json`
+  dumps a minimal `{name, description, category, variables: [...]}` array
+  — safe for scripts. The full deps graph (cross-stack wiring) is v2.
 - `rostok deploy <server> [stack]` — thin wrapper over `deno task
   deploy`. Reads from the project's `deno.jsonc`.
 
@@ -457,9 +462,8 @@ Each row is a separate PR. ✅ = done.
 | 2 | [#157](https://github.com/spy4x/rostok/pull/157) ✅ | #1.5 | `cli/` skeleton with cliffy + arktype. `rostok --help` works. |
 | 3 | [#158](https://github.com/spy4x/rostok/pull/158) ✅ | #2 | `StackMeta` type, default resolver, password generator, arktype-cliffy bridge. |
 | 4 | [#159](https://github.com/spy4x/rostok/pull/159) ✅ | #3 | First 6 stacks ship `+meta.ts`. One commit per stack. Phase 4 user feedback: single `<SERVICE>_DOMAIN` pattern, vaultwarden SMTP optional, server-level vars (`${DOMAIN}`, `${TIMEZONE}`, `${PUID}`, `${PGID}`, `${VOLUMES_PATH}`, `${PATH_*}`) added to `${...}` allow-list. |
-| 5 | [#160](https://github.com/spy4x/rostok/pull/160) (WIP) | #4 | Wizard (`$ rostok`) + `server create` + `stack add`. Re-encryption hook. `rostok env encrypt|decrypt|status` for explicit encryption control. Encryption marked optional-but-endorsed: wizard completes even when `age` is missing; init prints a one-time tip about installing `age` + generating a keypair. `.env.root` / `servers/<n>/.env` split. SSH target accepts `user@host[:port]` OR alias. |
-| 5b | — | #5 | `--stacks=<csv>` bulk-add for non-interactive wizard. |
-| 6 | — | #5 | `stack list [--tree]` — catalog browse + deps graph. Parallel with #5. |
+| 5 | [#160](https://github.com/spy4x/rostok/pull/160) ✅ | #4 | Wizard (`$ rostok`) + `server create` + `stack add`. Re-encryption hook. `rostok env encrypt|decrypt|status|setup` for explicit encryption control (with `age-keygen` fully encapsulated behind rostok — the user never sees the raw command). Encryption marked optional-but-endorsed: wizard completes even when `age` is missing; init offers to generate a key when `age` is installed but no key exists. `.env.root` / `servers/<n>/.env` split. SSH target accepts `user@host[:port]` OR alias. |
+| 6 | — | #5 | `stack list [--tree] [--format json]` — catalog browse. Default table grouped by category (proxy first). `--tree` indents; `--format json` for scripts. Full deps graph (cross-stack wiring) deferred to v2 — Phase 6 ships the read-only viewer only. |
 | 7 | — | #5 | `deploy` wrapper — thin alias for `deno task deploy`. |
 | 8 | — | #5, #6, #7 | Rewrite README, ship v1/v2/v2-website docs. |
 | 9 | — | #8 | Help text, examples, smoke. |

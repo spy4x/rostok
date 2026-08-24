@@ -24,6 +24,7 @@ import {
   writeEnvFile,
 } from "./env-files.ts"
 import { type CatalogEntry, findStack, loadCatalog } from "./catalog.ts"
+import { defaultCatalogDir } from "./catalog-paths.ts"
 import { decidePrompt } from "./prompt-rule.ts"
 import { resolveVariable } from "./defaults.ts"
 import { normalizeVariableSpec } from "./stack-meta.ts"
@@ -175,28 +176,6 @@ async function promptFor(spec: VariableSpec): Promise<string> {
   // show up literally in the prompt — user can edit inline.
   const defaultValue = typeof spec.default === "function" ? spec.default() : spec.default
   return await Input.prompt({ message, default: defaultValue })
-}
-
-/** Resolve the bundled catalog directory in dev mode. */
-function defaultCatalogDir(cwd: string): string {
-  // Dev assumption: rostok CLI runs from `cli/` and the catalog lives at
-  // `<repo>/stacks/`. Walk up from cwd until we find a `stacks/` dir.
-  let dir = cwd
-  for (let i = 0; i < 5; i++) {
-    try {
-      const stat = Deno.statSync(join(dir, "stacks"))
-      if (stat.isDirectory) return join(dir, "stacks")
-    } catch {
-      // not found, walk up
-    }
-    const parent = join(dir, "..")
-    if (parent === dir) break
-    dir = parent
-  }
-  throw new Error(
-    `could not locate bundled catalog (no stacks/ found within 5 levels of ${cwd}). ` +
-      `pass --catalog=<path> to override.`,
-  )
 }
 
 /** Read or create servers/<n>/config.json with the new stack entry. */

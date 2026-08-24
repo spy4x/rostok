@@ -9,6 +9,7 @@ import { serverCreate } from "./server-create.ts"
 import { stackAdd } from "./stack-add.ts"
 import { deployCommand } from "./commands/deploy.ts"
 import { envCommand } from "./commands/env.ts"
+import { stackListCommand } from "./commands/list.ts"
 // Side-effect import: keep arktype + StackMeta + defaults reachable through
 // the public barrel. The CLI entry is the canonical "load the package"
 // location.
@@ -92,8 +93,7 @@ export function buildCommand() {
       )
       .command(
         "list",
-        new Command()
-          .description("Browse the bundled catalog. Phase 6."),
+        stackListCommand,
       ),
   )
 

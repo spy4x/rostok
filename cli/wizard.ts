@@ -16,7 +16,7 @@ import { initProject, type InitResult } from "./init.ts"
 import { serverCreate, type ServerCreateInput } from "./server-create.ts"
 import { stackAdd, type StackAddResult } from "./stack-add.ts"
 import { loadCatalog } from "./catalog.ts"
-import { join } from "@std/path"
+import { defaultCatalogDir } from "./catalog-paths.ts"
 
 export interface WizardOptions {
   cwd?: string
@@ -108,23 +108,4 @@ async function pickStackInteractive(stackNames: string[]): Promise<string | unde
     ],
   })
   return picked === SKIP ? undefined : picked
-}
-
-function defaultCatalogDir(cwd: string): string {
-  let dir = cwd
-  for (let i = 0; i < 5; i++) {
-    try {
-      const stat = Deno.statSync(join(dir, "stacks"))
-      if (stat.isDirectory) return join(dir, "stacks")
-    } catch {
-      // walk up
-    }
-    const parent = join(dir, "..")
-    if (parent === dir) break
-    dir = parent
-  }
-  throw new Error(
-    `could not locate bundled catalog (no stacks/ found within 5 levels of ${cwd}). ` +
-      `pass --catalog=<path> to override.`,
-  )
 }
