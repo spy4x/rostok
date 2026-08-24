@@ -13,7 +13,6 @@
 // compose sees them. This is the v1 implementation of "server-level vars
 // resolved before stack vars" (docs/v1-cli.md §4).
 
-import { Input, Secret } from "@cliffy/prompt"
 import { join } from "@std/path"
 import { encryptEnvFiles } from "./encrypt.ts"
 import {
@@ -29,6 +28,7 @@ import { decidePrompt } from "./prompt-rule.ts"
 import { resolveVariable } from "./defaults.ts"
 import { normalizeVariableSpec } from "./stack-meta.ts"
 import type { VariableSpec } from "./stack-meta.ts"
+import { promptValue } from "./prompts.ts"
 
 /** Result of a stack-add invocation. */
 export interface StackAddResult {
@@ -89,13 +89,15 @@ export async function stackAdd(
     if (decision === "use-resolved" && resolved) {
       value = resolved.value
     } else if (decision === "prompt") {
-      if (opts.nonInteractive) {
-        throw new Error(
-          `stack '${stackName}' variable '${normalized.key}' requires a value; ` +
-            `use --var ${normalized.key}=VALUE or remove --non-interactive`,
-        )
-      }
-      value = await promptFor(normalized)
+      const fallback = typeof normalized.default === "function"
+        ? normalized.default()
+        : normalized.default
+      value = await promptValue({
+        label: normalized.question ?? normalized.key,
+        fallback,
+        secret: normalized.secret,
+        nonInteractive: !!opts.nonInteractive,
+      })
     } else {
       // skip
       skippedKeys.push(normalized.key)
@@ -164,18 +166,6 @@ function resolvedSkipContext(
   }
   if (typeof spec.default === "string") return { value: spec.default, fromDefault: true }
   return null
-}
-
-/** Render an interactive prompt for a single variable. */
-async function promptFor(spec: VariableSpec): Promise<string> {
-  const message = spec.question ?? spec.key
-  if (spec.secret) {
-    return await Secret.prompt({ message })
-  }
-  // Resolve the default against an empty context so ${KEY} placeholders
-  // show up literally in the prompt — user can edit inline.
-  const defaultValue = typeof spec.default === "function" ? spec.default() : spec.default
-  return await Input.prompt({ message, default: defaultValue })
 }
 
 /** Read or create servers/<n>/config.json with the new stack entry. */

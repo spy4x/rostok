@@ -16,26 +16,14 @@
 
 import { exists } from "@std/fs"
 import { join } from "@std/path"
-
-/** Cache of age availability — checked once per CLI invocation. */
-let _ageInstalled: boolean | undefined
-let _ageHintShown = false
+import { isCommandOnPath } from "./shell.ts"
 
 /**
- * Detect whether the `age` CLI is on PATH. Cached per process.
- * Imported from scripts/encryption/age-lib.ts for a single source of truth
- * (also used by the encrypt/decrypt tasks themselves).
+ * Detect whether the `age` CLI is on PATH. Thin wrapper around
+ * `isCommandOnPath` for semantic clarity at the call sites.
  */
 export async function checkAgeInstalled(): Promise<boolean> {
-  if (_ageInstalled !== undefined) return _ageInstalled
-  try {
-    const cmd = new Deno.Command("age", { args: ["--version"], stdout: "null", stderr: "null" })
-    const out = await cmd.output()
-    _ageInstalled = out.success
-  } catch {
-    _ageInstalled = false
-  }
-  return _ageInstalled
+  return await isCommandOnPath("age")
 }
 
 /**
@@ -110,14 +98,12 @@ async function safeReadPublicKey(keyPath: string): Promise<string | undefined> {
   }
 }
 
-/** Print the "install age" tip at most once per CLI invocation. */
-export function maybeShowAgeHint(context: string): void {
-  if (_ageHintShown) return
-  _ageHintShown = true
-  console.info(
-    `rostok: age not installed — skipping ${context}. install with \`apt install age\`` +
-      ` and run \`age-keygen -o .age/key.txt\` to enable encrypted commits.`,
-  )
+/** Print a hint at most once per CLI invocation (per-key dedup). */
+const _hintShown = new Set<string>()
+function hintOnce(key: string, msg: string): void {
+  if (_hintShown.has(key)) return
+  _hintShown.add(key)
+  console.info(`rostok: ${msg}`)
 }
 
 export interface EncryptResult {
@@ -132,55 +118,51 @@ export interface EncryptResult {
  * Run `deno task env:encrypt` in `cwd`. Returns ok=true on exit code 0.
  *
  * If `age` is not on PATH: emits a one-time info tip, returns
- * `{ ok: false, skipped: "no-age" }` WITHOUT invoking the subprocess
- * (the task would just exit 1 with the same hint).
+ * `{ ok: false, skipped: "no-age" }` WITHOUT invoking the subprocess.
  *
  * If `age` is installed but `.age/key.txt` is missing: emits a one-time
  * tip about generating a keypair, returns `{ ok: false, skipped: "no-key" }`.
  *
  * Other failures (the task ran and exited non-zero) return
- * `{ ok: false, output }` with the captured output.
- *
- * Caller is responsible for `cwd` — pass the project root that contains
- * the `.env` / `.env.age` files to re-encrypt.
+ * `{ ok: false, output }` with the captured output. Caller decides
+ * whether to warn or throw.
  */
 export async function encryptEnvFiles(cwd: string): Promise<EncryptResult> {
-  return await runEncryptionTask(cwd, "encrypt", "deno task env:encrypt")
+  return await runEncryptionTask(cwd, "encrypt", ["task", "env:encrypt"])
 }
 
-/**
- * Symmetric counterpart to {@link encryptEnvFiles}. Runs
- * `deno task env:decrypt`. Same skip semantics — `age` missing ⇒ skip
- * silently with a one-time hint.
- */
+/** Symmetric counterpart to {@link encryptEnvFiles}. */
 export async function decryptEnvFiles(cwd: string): Promise<EncryptResult> {
-  return await runEncryptionTask(cwd, "decrypt", "deno task env:decrypt")
+  return await runEncryptionTask(cwd, "decrypt", ["task", "env:decrypt"])
 }
 
 /**
- * Shared implementation for encrypt/decrypt. The "no-env-files" skip is
- * only meaningful for encrypt (decrypting nothing is fine and produces
- * zero output), so we gate it on the action.
+ * Shared implementation for encrypt/decrypt. Args are passed as an array
+ * (no string-splitting brittleness). The `action` drives the dedup key
+ * for one-time hints and the failure-message suffix.
  */
 async function runEncryptionTask(
   cwd: string,
   action: "encrypt" | "decrypt",
-  cmdArgs: string,
+  args: string[],
 ): Promise<EncryptResult> {
-  const ageOk = await checkAgeInstalled()
-  if (!ageOk) {
-    maybeShowAgeHint(`${action} of .env.age`)
+  if (!(await checkAgeInstalled())) {
+    hintOnce(
+      `age-missing:${action}`,
+      `age not installed — skipping ${action} of .env.age. ` +
+        `install with \`apt install age\` and run \`rostok env setup\` to enable encryption.`,
+    )
     return { ok: false, output: "", skipped: "no-age" }
   }
-
-  const keyOk = await checkAgeKeyPresent(cwd)
-  if (!keyOk) {
-    maybeShowAgeHintOnce(`${action} — .age/key.txt missing`, action)
+  if (!(await checkAgeKeyPresent(cwd))) {
+    hintOnce(
+      `no-key:${action}`,
+      `${action}: .age/key.txt missing. run \`rostok env setup\` to generate one.`,
+    )
     return { ok: false, output: "", skipped: "no-key" }
   }
-
   const cmd = new Deno.Command(Deno.execPath(), {
-    args: cmdArgs.split(" ").slice(1), // drop "deno"
+    args,
     cwd,
     stdout: "piped",
     stderr: "piped",
@@ -196,15 +178,6 @@ async function runEncryptionTask(
   return { ok: false, output }
 }
 
-/** Per-action dedup so encrypt and decrypt can each show their own hint. */
-const _perActionHint = new Set<string>()
-function maybeShowAgeHintOnce(msg: string, action: string): void {
-  const k = `${action}:${msg}`
-  if (_perActionHint.has(k)) return
-  _perActionHint.add(k)
-  console.info(`rostok: ${msg}. run \`rostok env setup\` to generate one.`)
-}
-
 /**
  * Snapshot of the project's encryption state. Used by `rostok env status`
  * and exposed for tests. Cheap to compute — just stat calls.
@@ -216,11 +189,7 @@ export interface AgeStatus {
   ageFiles: string[]
 }
 
-/**
- * Inspect the project's encryption posture. Doesn't read file contents;
- * only checks PATH for `age` and stats for the key/env files. Safe to
- * call any number of times.
- */
+/** Inspect the project's encryption posture. */
 export async function ageStatus(cwd: string): Promise<AgeStatus> {
   const envFiles: string[] = []
   const ageFiles: string[] = []

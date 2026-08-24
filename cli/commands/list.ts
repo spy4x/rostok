@@ -132,7 +132,15 @@ export function formatCatalogJson(entries: CatalogEntry[]): string {
 
 /** `rostok stack list` — the subcommand. */
 export const stackListCommand = new Command()
-  .description("Browse the bundled catalog.")
+  .description(
+    `Browse the bundled catalog.
+
+Examples:
+
+    rostok stack list                   # table grouped by category
+    rostok stack list --tree            # indented category tree
+    rostok stack list --format json     # machine-readable, for scripts`,
+  )
   .option("--catalog <dir:string>", "override bundled catalog directory")
   .option("--format <fmt:string>", "table | json (default: table)")
   .option("--tree", "indented category tree")

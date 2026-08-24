@@ -61,7 +61,7 @@ export async function runWizard(opts: WizardOptions = {}): Promise<WizardResult>
   console.log(`Server '${server.serverName}' created at ${server.serverDir}`)
 
   // Step 3: stack add (optional). In non-interactive mode without
-  // --stacks=, skip — caller can run `rostok stack add <name> --server=...`
+  // --stacks=, skip — caller can run `rostok stack add <name> -s <server>`
   // explicitly. In interactive mode, prompt for a stack.
   let stackAddResult: StackAddResult | undefined
   if (!opts.skipStackAdd) {
