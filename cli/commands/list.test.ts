@@ -20,7 +20,8 @@ import {
 function entry(
   name: string,
   description: string,
-  opts: { category?: string; variables?: { key: string; required?: boolean; secret?: boolean }[] } = {},
+  opts: { category?: string; variables?: { key: string; required?: boolean; secret?: boolean }[] } =
+    {},
 ): CatalogEntry {
   const meta: StackMeta = {
     name,
@@ -60,7 +61,10 @@ Deno.test("orderCategories: leaves categories without 'proxy' untouched", () => 
 
 Deno.test("formatCatalogTable: groups by category + shows var counts", () => {
   const entries = [
-    entry("traefik", "Reverse proxy", { category: "proxy", variables: [{ key: "A" }, { key: "B" }] }),
+    entry("traefik", "Reverse proxy", {
+      category: "proxy",
+      variables: [{ key: "A" }, { key: "B" }],
+    }),
     entry("gatus", "Health checks", { category: "monitoring", variables: [{ key: "URL" }] }),
   ]
   const out = formatCatalogTable(entries)

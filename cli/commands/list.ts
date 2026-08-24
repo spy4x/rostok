@@ -14,10 +14,7 @@
 // auth, monitoring, etc. — indented under their category header.
 
 import { Command } from "@cliffy/command"
-import {
-  type CatalogEntry,
-  loadCatalog,
-} from "../catalog.ts"
+import { type CatalogEntry, loadCatalog } from "../catalog.ts"
 import { DEFAULT_CATALOG_DIR, defaultCatalogDir } from "../catalog-paths.ts"
 
 /**
