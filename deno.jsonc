@@ -97,7 +97,11 @@
     "test": {
       // -R/-W: findEnvFiles() tests build a throwaway dir tree (nested
       // worktree fixtures) under the system temp dir and walk it.
-      "command": "deno test --allow-env -R -W",
+      // --allow-run: cli/encrypt.ts shells out to `age` for detection,
+      // `age-keygen` for test fixtures, and `deno task env:encrypt` for
+      // the re-encrypt hook. Broad run access mirrors the production
+      // encrypt/decrypt task permissions.
+      "command": "deno test --allow-env --allow-run -R -W",
       "description": "🧪 Run tests"
     },
     "fix": {
@@ -112,6 +116,7 @@
   },
   "imports": {
     "@cliffy/command": "jsr:@cliffy/command@^1.2.1",
+    "@cliffy/prompt": "jsr:@cliffy/prompt@^1.2.1",
     "@rostok/cli": "./cli/+lib.ts",
     "@scripts/backup": "./scripts/backup/src/+lib.ts",
     "@std/assert": "jsr:@std/assert@^1.0.17",
