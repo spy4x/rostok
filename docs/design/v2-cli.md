@@ -91,9 +91,10 @@ each `stack add` a single-stack operation.
 
 ## Bulk stack add — `--stacks=<csv>`
 
-For non-interactive wizard only. Interactive wizard still picks one
-stack at a time. Power users can re-run `$ rostok --stacks=foo,bar` or
-use the standalone `stack add` repeatedly.
+Deferred from v1. For non-interactive wizard only — interactive wizard
+still picks one stack at a time. Power users today re-run
+`$ rostok stack add <name> -s <server>` per stack. v2 adds
+`--stacks=foo,bar` so the whole flow finishes in one invocation.
 
 ---
 
@@ -253,8 +254,6 @@ English; v2 adds locale files keyed by variable key.
 - **`.env` comment markers (`# @rostok:traefik`)** — fragile to hand
   edits; ownership in `+meta.ts`
 - **Separate manifest per server** — parallel metadata
-- **`rostok env` subcommand** — out of scope; CLI manages `.env` while
-  manipulating servers/stacks
 - **Import tool for existing servers** — user migrates manually
 - **`.rostok/archive/`** — user has `.git`
 - **`rostok migrate`** — not needed

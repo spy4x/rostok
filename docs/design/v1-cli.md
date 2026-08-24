@@ -143,7 +143,11 @@ duplicate the wizard — they do one step each:
   dumps a minimal `{name, description, category, variables: [...]}` array
   — safe for scripts. The full deps graph (cross-stack wiring) is v2.
 - `rostok deploy <server> [stack]` — thin wrapper over `deno task
-  deploy`. Reads from the project's `deno.jsonc`.
+  deploy`. Pre-flights `servers/<server>/` exists and `config.json` is
+  valid (clear error instead of the raw deploy script's confusing
+  output); passes stdout/stderr through so the user sees live deploy
+  output. If `[stack]` is given, verifies it's listed in
+  `servers/<server>/config.json` first.
 
 ### 3.3 Flags
 
@@ -151,7 +155,6 @@ duplicate the wizard — they do one step each:
 -n, --non-interactive          # skip prompts, use defaults
     --server=<name>            # target server (for stack add, deploy)
     --var KEY=VAL              # repeatable; overrides one variable
-    --stacks=<csv>             # bulk-add during non-interactive wizard
 ```
 
 No `--yes`/`-y` alias. `--non-interactive`/`-n` only.
@@ -440,9 +443,8 @@ stay as-is — they're independent of the CLI work.
 - `cli/stack-add.test.ts` — variable merging, ownership preservation
 - `cli/encrypt-after-write.test.ts` — every mutation path leaves
   `.env.age` current with `.env`
-- Per-stack smoke: `rostok --non-interactive --server=home
-  --stacks=traefik` produces a deployable dir that passes
-  `deno task check`
+- Per-stack smoke: `rostok stack add traefik -s home --var KEY=VAL`
+  produces a deployable dir that passes `deno task check`
 
 CI not automated (per repo AGENTS.md). Tests stay in `deno task test`,
 run via pre-commit hook.
@@ -463,12 +465,12 @@ Each row is a separate PR. ✅ = done.
 | 3 | [#158](https://github.com/spy4x/rostok/pull/158) ✅ | #2 | `StackMeta` type, default resolver, password generator, arktype-cliffy bridge. |
 | 4 | [#159](https://github.com/spy4x/rostok/pull/159) ✅ | #3 | First 6 stacks ship `+meta.ts`. One commit per stack. Phase 4 user feedback: single `<SERVICE>_DOMAIN` pattern, vaultwarden SMTP optional, server-level vars (`${DOMAIN}`, `${TIMEZONE}`, `${PUID}`, `${PGID}`, `${VOLUMES_PATH}`, `${PATH_*}`) added to `${...}` allow-list. |
 | 5 | [#160](https://github.com/spy4x/rostok/pull/160) ✅ | #4 | Wizard (`$ rostok`) + `server create` + `stack add`. Re-encryption hook. `rostok env encrypt|decrypt|status|setup` for explicit encryption control (with `age-keygen` fully encapsulated behind rostok — the user never sees the raw command). Encryption marked optional-but-endorsed: wizard completes even when `age` is missing; init offers to generate a key when `age` is installed but no key exists. `.env.root` / `servers/<n>/.env` split. SSH target accepts `user@host[:port]` OR alias. |
-| 6 | — | #5 | `stack list [--tree] [--format json]` — catalog browse. Default table grouped by category (proxy first). `--tree` indents; `--format json` for scripts. Full deps graph (cross-stack wiring) deferred to v2 — Phase 6 ships the read-only viewer only. |
-| 7 | — | #5 | `deploy` wrapper — thin alias for `deno task deploy`. |
+| 6 | [#162](https://github.com/spy4x/rostok/pull/162) ✅ | #5 | `stack list [--tree] [--format json]` — catalog browse. Default table grouped by category (proxy first). `--tree` indents; `--format json` for scripts. Full deps graph (cross-stack wiring) deferred to v2 — Phase 6 ships the read-only viewer only. |
+| 7 | [#163](https://github.com/spy4x/rostok/pull/163) ✅ | #5 | `deploy` wrapper — thin alias for `deno task deploy`. Pre-flights `servers/<n>/.env` + `config.json`; if `[stack]` given, verifies it's listed. Clear errors instead of the raw deploy script's confusing "SSH_ADDRESS must be set". |
 | 8 | — | #5, #6, #7 | Rewrite README, ship v1/v2/v2-website docs. |
 | 9 | — | #8 | Help text, examples, smoke. |
 | 10 | — | #9 | JSR publish. First release. |
-| — | v2 | #10 | See `v2-cli.md`. |
+| — | v2 | #10 | See `v2-cli.md`. Bulk stack add (`--stacks=<csv>`) deferred to v2 — interactive single-stack pick + per-stack re-runs cover current needs. |
 
 ¹ Phase 0 landed via direct squash-push to `main` (commit `f22135a`)
 because the repo's no-merge-commits rule was strict at the time. The
