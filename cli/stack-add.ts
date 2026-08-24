@@ -130,11 +130,12 @@ export async function stackAdd(
     }
   }
 
-  const merged = mergeEnv(
-    // existing comes first so stack-declared keys (incoming) override
-    propagated.concat(existing),
-    writtenEntries,
-  )
+  // `existing` is the base (hand-edits survive); propagated server vars
+  // + the stack's written entries are the incoming layer. mergeEnv keeps
+  // existing keys that aren't in incoming, then appends incoming in order
+  // — stack-declared keys override server-level values on collision, and
+  // hand-edited keys (not in incoming) are preserved untouched.
+  const merged = mergeEnv(existing, propagated.concat(writtenEntries))
   await writeEnvFile(envPath, merged)
 
   // Update servers/<server>/config.json with the stack list.

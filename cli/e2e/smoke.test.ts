@@ -134,6 +134,13 @@ Deno.test("smoke: stack add writes .env + config.json", async () => {
     assertEquals(env.includes("CONTACT_EMAIL=ops@example.test"), true)
     assertEquals(env.includes("PROXY_DOMAIN=traefik.example.test"), true)
     assertEquals(env.includes("PROXY_CPU_LIMIT=1"), true)
+
+    // No duplicate keys after server-level propagation (regression:
+    // mergeEnv was called with propagated.concat(existing) as the base,
+    // so server-level keys appeared twice).
+    const keys = env.split("\n").filter((l) => l && !l.startsWith("#"))
+      .map((l) => l.slice(0, l.indexOf("=")))
+    assertEquals(new Set(keys).size, keys.length, "no duplicate keys in .env")
   })
 })
 
