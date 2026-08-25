@@ -1,0 +1,46 @@
+name: ${PROJECT}
+
+networks:
+  proxy:
+    external: true
+
+services:
+  # mig — Tiny self-hosted meeting scheduler (миг = moment).
+  # One owner, one URL, one feature: book a time slot.
+  # Configured entirely via env vars. Bookings persist as JSON.
+  mig:
+    container_name: hl-mig
+    image: ghcr.io/spy4x/mig:latest
+    restart: unless-stopped
+    env_file:
+      - ${PATH_APPS}/configs/mig.env
+    volumes:
+      - ${PATH_VOLUMES}/mig:/data
+    healthcheck:
+      test: ["CMD-SHELL", "wget --spider -q http://localhost:8080/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    deploy:
+      resources:
+        # ~30-60 MB RSS typical (Fresh + nodemailer). Limit set with
+        # headroom for in-flight SMTP sends.
+        limits:
+          memory: 128M
+          cpus: "0.2"
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - proxy
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=proxy"
+      - "traefik.http.services.hl-mig.loadbalancer.server.port=8080"
+      - "traefik.http.routers.hl-mig.rule=Host(`meet.${DOMAIN}`)"
+      - "traefik.http.routers.hl-mig.entrypoints=websecure"
+      - "traefik.http.routers.hl-mig.tls=true"
+      - "traefik.http.routers.hl-mig.tls.certresolver=myresolver"
+      - "traefik.http.routers.hl-mig.middlewares=security-headers@file,compression@file"
+      # robots-deny for good measure — booking page isn't index-worthy
+      - "traefik.http.routers.hl-mig.middlewares=security-headers@file,compression@file,robots-deny@file"
