@@ -32,7 +32,14 @@ the same pattern to other mailboxes with a tweaked sender list.
 ```sieve
 require ["fileinto", "mailbox", "envelope", "comparator-i;ascii-numeric"];
 
+# ============================================================
+# Auto-folder rules for anton@antonshubin.com
+# Auto-generated via JMAP by homelab cleanup, 2026-08-25
+# ============================================================
+
 # --- Reports: DMARC / TLS aggregate reports ---
+# These are noise we want out of INBOX but kept for regression signal.
+# Sources: Google, mail.ru, amazonses (Google forwarding).
 if anyof (
     address :is "from" "noreply-dmarc-support@google.com",
     address :is "from" "noreply-smtp-tls-reporting@google.com",
@@ -43,8 +50,61 @@ if anyof (
     stop;
 }
 
-# Repeat the same pattern for VCB and Digests.
+# --- VCB: Vietcombank banking notifications ---
+# Transaction notifications, marketing — all noise.
+if anyof (
+    address :is "from" "info@info.vietcombank.com.vn",
+    address :is "from" "VCBDigibank@info.vietcombank.com.vn"
+) {
+    fileinto "VCB";
+    stop;
+}
+
+# --- Digests: newsletters and digest-style mail ---
+# All known recurring digests/newsletters. Anything that fails anyof here
+# stays in INBOX. Subject keywords catch subjects like "Weekly", "Issue",
+# "digest" that we haven't enumerated by sender yet.
+#
+# Note: wise.com is INTENTIONALLY absent — those are real transactional
+# emails (transfer notifications, statements) that belong in INBOX.
+if anyof (
+    # known digest/newsletter senders
+    address :is "from" "noreply@mail.selfh.st",
+    address :is "from" "informer@daily.dev",
+    address :is "from" "jsw@peterc.org",
+    address :is "from" "node@cooperpress.com",
+    address :is "from" "postgres@cooperpress.com",
+    address :is "from" "newsletter@nodeweekly.com",
+    address :is "from" "do-not-reply@singlife.com",
+    address :is "from" "no-reply@agoda.com",
+    address :is "from" "noreply@simba.sg",
+    # other notifications digests
+    address :is "from" "no_reply@immigration.gov.vn",
+    address :is "from" "no-reply@grab.com",
+    address :is "from" "dvc_bca@noreply.vnpay.vn",
+    # meetup.com newsletters (event digest emails — high volume)
+    address :matches "from" "*@meetup.com",
+    # Russian invoicing/billing digests
+    address :is "from" "billing@ic.vrn.ru",
+    # generic: subject keywords
+    header :contains "subject" "weekly",
+    header :contains "subject" "digest",
+    header :contains "subject" "newsletter",
+    header :contains "subject" "roundup"
+) {
+    fileinto "Digests";
+    stop;
+}
 ```
+
+## Sender notes
+
+- **wise.com (`noreply@wise.com`)** — REMOVED from filters. These are
+  real transactional emails (transfer notifications, statements).
+  Belongs in INBOX.
+- **meetup.com (`*@meetup.com`)** — Event digest emails, high volume.
+  Folder: `Digests/`.
+- **billing@ic.vrn.ru** — Russian invoicing/billing. Folder: `Digests/`.
 
 ## Applying a Sieve script via JMAP
 
@@ -61,6 +121,17 @@ names use the `SieveScript*` prefix (not `Sieve*`):
 
 Every method call needs a client id (the third tuple element). Without
 it Stalwart rejects the request as `notRequest`.
+
+Updating an existing script requires deactivating it first
+(`update {id: {isActive: false}}`) before you can destroy it, otherwise
+Stalwart returns `scriptIsActive`. Trying to create a script with the
+same name as an existing one returns `alreadyExists`. So the workflow
+to update is:
+
+1. `SieveScript/set` with `update {existingId: {isActive: false}}`
+2. `SieveScript/set` with `destroy [existingId]`
+3. `Blob/upload` to upload the new source
+4. `SieveScript/set` with `create {sameName: {blobId, name, isActive: true}}`
 
 Minimal working sequence (Python, using `urllib.request`):
 
