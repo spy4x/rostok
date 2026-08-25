@@ -24,7 +24,10 @@ Deno.test("buildCommand: returns a fresh Command on every call", () => {
 Deno.test("buildCommand: name and description match version.ts", () => {
   const cmd = buildCommand()
   assertEquals(cmd.getName(), NAME)
-  assertEquals(cmd.getDescription(), DESCRIPTION)
+  // Phase 9: description now embeds examples under the original tagline.
+  // Check the tagline is preserved at the top.
+  const desc = cmd.getDescription()
+  assertEquals(typeof desc === "string" && desc.startsWith(DESCRIPTION), true)
 })
 
 Deno.test("--version: prints the package name + version", () => {

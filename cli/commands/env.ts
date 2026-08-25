@@ -167,8 +167,15 @@ export const envSetupCommand = new Command()
 /** `rostok env ...` — the group. */
 export const envCommand = new Command()
   .description(
-    "Manage .env encryption (age64). " +
-      "Auto-runs after every wizard write, but you can also invoke manually.",
+    `Manage .env encryption (age64). Auto-runs after every wizard write,
+but you can also invoke manually for backfills and fresh clones.
+
+Examples:
+
+    rostok env status         # see whether age + key are set up
+    rostok env setup          # generate .age/key.txt (rostok runs age-keygen)
+    rostok env encrypt        # backfill .env.age for any missing files
+    rostok env decrypt        # run after a fresh git clone`,
   )
   .command("encrypt", envEncryptCommand)
   .command("decrypt", envDecryptCommand)

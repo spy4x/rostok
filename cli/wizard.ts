@@ -53,15 +53,22 @@ export async function runWizard(opts: WizardOptions = {}): Promise<WizardResult>
   }
 
   // Step 2: server create.
+  //
+  // --var KEY=VAL flags apply to BOTH server-create inputs and stack
+  // variables: callers expect `rostok --var serverName=foo --var DOMAIN=...`
+  // to feed both layers. server-create's `nonInteractive` accepts a
+  // Partial<ServerCreateInput>; we merge providedVars into it so flag
+  // values reach collectInput. Explicit serverInputs still win on key
+  // collision (programmatic callers shouldn't be overridden by --var).
   const server = await serverCreate({
     cwd,
-    nonInteractive: opts.serverInputs,
+    nonInteractive: { ...opts.providedVars, ...opts.serverInputs },
     failFast: opts.nonInteractive,
   })
   console.log(`Server '${server.serverName}' created at ${server.serverDir}`)
 
   // Step 3: stack add (optional). In non-interactive mode without
-  // --stacks=, skip — caller can run `rostok stack add <name> --server=...`
+  // --stacks=, skip — caller can run `rostok stack add <name> -s <server>`
   // explicitly. In interactive mode, prompt for a stack.
   let stackAddResult: StackAddResult | undefined
   if (!opts.skipStackAdd) {

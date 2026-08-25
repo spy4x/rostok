@@ -13,10 +13,11 @@
 //   runs to completion; the user runs `deno task env:encrypt`
 //   manually after installing age.
 
-import { Input } from "@cliffy/prompt"
 import { join } from "@std/path"
 import { encryptEnvFiles } from "./encrypt.ts"
 import { type EnvEntry, mergeEnv, readEnvFile, writeEnvFile } from "./env-files.ts"
+import { promptValue } from "./prompts.ts"
+import { tryCaptureStdout } from "./shell.ts"
 
 /** Result of a server-create invocation. */
 export interface ServerCreateResult {
@@ -129,21 +130,18 @@ async function collectInput(
   pre: Partial<ServerCreateInput> | undefined,
   failFast?: boolean,
 ): Promise<ServerCreateInput> {
-  const ask = async (
+  const ask = (
     label: keyof ServerCreateInput,
     fallback: string | undefined,
-    validate: (v: string) => true | string,
-  ): Promise<string> => {
-    const preValue = pre?.[label]
-    if (preValue !== undefined) return preValue
-    if (failFast) {
-      throw new Error(
-        `server-create: missing required value '${label}' in non-interactive mode. ` +
-          `pass via --var or positional argument.`,
-      )
-    }
-    return await Input.prompt({ message: label, default: fallback, validate })
-  }
+    validate?: (v: string) => true | string,
+  ) =>
+    promptValue({
+      label,
+      provided: pre?.[label],
+      fallback,
+      validate,
+      nonInteractive: !!failFast,
+    })
 
   const serverName = await ask(
     "serverName",
@@ -169,9 +167,9 @@ async function collectInput(
           `pass --var user=... in non-interactive mode.`,
       )
     } else {
-      user = await Input.prompt({
-        message: "user",
-        default: parsedSsh.user,
+      user = await promptValue({
+        label: "user",
+        fallback: parsedSsh.user,
       })
     }
   } else {
@@ -250,11 +248,5 @@ async function detectTimezone(): Promise<string> {
 
 /** Get the current shell user via `whoami` (falls back to $USER). */
 async function defaultShellUser(): Promise<string> {
-  try {
-    const cmd = new Deno.Command("whoami", { stdout: "piped", stderr: "null" })
-    const out = await cmd.output()
-    return new TextDecoder().decode(out.stdout).trim() || Deno.env.get("USER") || "homelab"
-  } catch {
-    return Deno.env.get("USER") || "homelab"
-  }
+  return (await tryCaptureStdout("whoami")) ?? Deno.env.get("USER") ?? "rostok"
 }

@@ -17,6 +17,7 @@ import { exists } from "@std/fs"
 import { join } from "@std/path"
 import { Confirm } from "@cliffy/prompt"
 import { checkAgeInstalled, checkAgeKeyPresent, generateAgeKey } from "./encrypt.ts"
+import { isCommandOnPath } from "./shell.ts"
 
 const DENO_JSONC_TEMPLATE = `{
   "imports": {
@@ -175,15 +176,21 @@ async function mkdirIfMissing(
 }
 
 async function tryGitInit(cwd: string): Promise<boolean> {
+  if (!(await isCommandOnPath("git"))) {
+    console.info(
+      "rostok: git not found on PATH. skipped `git init`. re-run after installing git if you want version control.",
+    )
+    return false
+  }
   try {
     const cmd = new Deno.Command("git", { args: ["init"], cwd, stdout: "null", stderr: "null" })
     const out = await cmd.output()
     if (out.success) return true
   } catch {
-    // git not on PATH — fall through to info message below.
+    // git crashed mid-run — fall through to info message below.
   }
   console.info(
-    "rostok: git not found on PATH. skipped `git init`. re-run after installing git if you want version control.",
+    "rostok: `git init` failed. re-run after fixing git if you want version control.",
   )
   return false
 }

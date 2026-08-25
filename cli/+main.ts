@@ -1,7 +1,9 @@
 // rostok CLI root entry.
 //
 // Phase 5: wire the wizard as the default action, replace server/stack
-// subcommand stubs with real flows. `deploy` stays stubbed for Phase 7.
+// subcommand stubs with real flows. Phase 9: polish help text + add
+// examples per subcommand (cliffy renders the multi-line description
+// verbatim in --help output).
 
 import { Command } from "@cliffy/command"
 import { DESCRIPTION, NAME, VERSION } from "./version.ts"
@@ -15,14 +17,27 @@ import { stackListCommand } from "./commands/list.ts"
 // location.
 import "./+lib.ts"
 
+const ROOT_DESCRIPTION = `${DESCRIPTION}
+
+Run \`rostok\` for the full onboarding wizard (init + server create + stack
+add). Use the subcommands below for finer control.
+
+Examples:
+
+    rostok                                # full wizard, interactive
+    rostok server create home             # create one server, standalone
+    rostok stack add traefik -s home      # add a stack to a server
+    rostok stack list --tree              # browse the bundled catalog
+    rostok deploy home                    # deploy (wraps deno task deploy)
+    rostok env status                     # encryption posture + next steps`
+
 export function buildCommand() {
   const cmd = new Command()
     .name(NAME)
     .version(VERSION)
-    .description(DESCRIPTION)
+    .description(ROOT_DESCRIPTION)
     .option("-n, --non-interactive", "skip prompts, use defaults")
     .option("--catalog <dir:string>", "override bundled catalog directory")
-    .option("--server <name:string>", "target server (for stack add)")
     .option(
       "--var <kv...:string[]>",
       "repeatable; overrides one variable (KEY=VAL)",
@@ -30,8 +45,6 @@ export function buildCommand() {
     )
     .action(async (options) => {
       const providedVars = parseVarFlags(options.var)
-      // Phase 5: wizard skips stack add in non-interactive mode.
-      // Phase 5b adds `--stacks=<csv>` bulk-add.
       const { runWizard } = await import("./wizard.ts")
       await runWizard({
         cwd: Deno.cwd(),
@@ -52,7 +65,15 @@ export function buildCommand() {
         new Command()
           .arguments("[name:string]")
           .option("-n, --non-interactive", "skip prompts, use defaults")
-          .description("Create a new server (writes servers/<name>/.env, encrypts).")
+          .description(
+            `Create a new server (writes servers/<name>/.env, encrypts).
+
+Examples:
+
+    rostok server create                  # interactive, prompts for everything
+    rostok server create home             # name as positional arg
+    rostok server create -n               # use defaults, fail fast on missing`,
+          )
           .action(async (options, name?: string) => {
             await serverCreate({
               cwd: Deno.cwd(),
@@ -79,7 +100,17 @@ export function buildCommand() {
             "repeatable; overrides one variable (KEY=VAL)",
             { collect: true },
           )
-          .description("Add a stack to a server (resolves variables, writes .env, encrypts).")
+          .description(
+            `Add a stack to a server (resolves variables, writes .env, encrypts).
+
+Examples:
+
+    rostok stack add traefik -s home                    # interactive
+    rostok stack add traefik -s home -n                 # non-interactive, defaults only
+    rostok stack add traefik -s home \\
+        --var DOMAIN=example.com \\
+        --var BASIC_AUTH_USER=admin                     # pre-supply variables`,
+          )
           .action(async (options, name: string) => {
             const catalogDir = options.catalog ?? undefined
             const providedVars = parseVarFlags(options.var)

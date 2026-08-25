@@ -89,7 +89,15 @@ export async function validateDeployArgs(
 /** `rostok deploy <server> [stack]` — the subcommand. */
 export const deployCommand = new Command()
   .description(
-    "Deploy a server (or one of its stacks) — thin wrapper over `deno task deploy`.",
+    `Deploy a server (or one of its stacks) — thin wrapper over \`deno task deploy\`.
+
+Pre-flights servers/<server>/ + config.json so missing config produces a
+clear error before the underlying deploy script runs.
+
+Examples:
+
+    rostok deploy home                 # deploy everything for home
+    rostok deploy home traefik         # deploy only the traefik stack`,
   )
   .arguments("<server:string> [stack:string]")
   .action(async (_options, server: string, stack?: string) => {
