@@ -33,7 +33,7 @@ function entry(
       secret: v.secret ?? false,
     })),
   }
-  return { meta, dir: `/fake/${name}` }
+  return { meta, name }
 }
 
 Deno.test("groupByCategory: sorts within each category, unknown → 'other'", () => {

@@ -15,8 +15,7 @@ import { Select } from "@cliffy/prompt"
 import { initProject, type InitResult } from "./init.ts"
 import { serverCreate, type ServerCreateInput } from "./server-create.ts"
 import { stackAdd, type StackAddResult } from "./stack-add.ts"
-import { loadCatalog } from "./catalog.ts"
-import { defaultCatalogDir } from "./catalog-paths.ts"
+import { resolveCatalog } from "./catalog-paths.ts"
 
 export interface WizardOptions {
   cwd?: string
@@ -72,19 +71,18 @@ export async function runWizard(opts: WizardOptions = {}): Promise<WizardResult>
   // explicitly. In interactive mode, prompt for a stack.
   let stackAddResult: StackAddResult | undefined
   if (!opts.skipStackAdd) {
-    const catalogDir = opts.catalogDir ?? defaultCatalogDir(cwd)
-    const catalog = await loadCatalog(catalogDir)
+    const catalog = await resolveCatalog(opts.catalogDir)
 
     let chosen: string | undefined
     if (opts.nonInteractive) {
       // Phase 5 non-interactive mode: skip stack add. Phase 5b adds
       // `--stacks=<csv>` bulk-add.
     } else {
-      chosen = await pickStackInteractive(catalog.map((e) => e.meta.name))
+      chosen = await pickStackInteractive(catalog.map((e) => e.name))
       if (chosen) {
         stackAddResult = await stackAdd(chosen, server.serverName, {
           cwd,
-          catalogDir,
+          catalogDir: opts.catalogDir,
           providedVars: opts.providedVars,
           nonInteractive: opts.nonInteractive,
         })

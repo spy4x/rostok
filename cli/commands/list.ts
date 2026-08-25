@@ -14,8 +14,8 @@
 // auth, monitoring, etc. — indented under their category header.
 
 import { Command } from "@cliffy/command"
-import { type CatalogEntry, loadCatalog } from "../catalog.ts"
-import { DEFAULT_CATALOG_DIR, defaultCatalogDir } from "../catalog-paths.ts"
+import { type CatalogEntry } from "../catalog.ts"
+import { resolveCatalog } from "../catalog-paths.ts"
 
 /**
  * Format a CatalogEntry as one row of the table view.
@@ -145,8 +145,7 @@ Examples:
   .option("--format <fmt:string>", "table | json (default: table)")
   .option("--tree", "indented category tree")
   .action(async (options) => {
-    const catalogDir = options.catalog ?? DEFAULT_CATALOG_DIR ?? defaultCatalogDir(Deno.cwd())
-    const entries = await loadCatalog(catalogDir)
+    const entries = await resolveCatalog(options.catalog)
     const format = options.format ?? "table"
     if (format === "json") {
       console.log(formatCatalogJson(entries))

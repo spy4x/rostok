@@ -22,8 +22,8 @@ import {
   serverContextFromRoot,
   writeEnvFile,
 } from "./env-files.ts"
-import { type CatalogEntry, findStack, loadCatalog } from "./catalog.ts"
-import { defaultCatalogDir } from "./catalog-paths.ts"
+import { type CatalogEntry, findStack } from "./catalog.ts"
+import { resolveCatalog } from "./catalog-paths.ts"
 import { decidePrompt } from "./prompt-rule.ts"
 import { resolveVariable } from "./defaults.ts"
 import { normalizeVariableSpec } from "./stack-meta.ts"
@@ -64,8 +64,7 @@ export async function stackAdd(
   opts: StackAddOptions = {},
 ): Promise<StackAddResult> {
   const cwd = opts.cwd ?? Deno.cwd()
-  const catalogDir = opts.catalogDir ?? defaultCatalogDir(cwd)
-  const catalog = await loadCatalog(catalogDir)
+  const catalog = await resolveCatalog(opts.catalogDir)
   const entry = findStack(catalog, stackName)
 
   // Build server context from `servers/<server>/.env` (per-server vars).

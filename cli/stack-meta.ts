@@ -45,7 +45,7 @@ export interface StackMeta {
 // Authors who hand-author a malformed `+meta.ts` get a clean error from
 // `validateStackMeta()` rather than a cryptic TypeScript diagnostic.
 
-const VariableSpec = type({
+const VariableSpec: type.Any = type({
   key: "string > 0",
   "question?": "string",
   // `default` accepts string or function. arktype's DSL can't type
@@ -62,9 +62,9 @@ const VariableSpec = type({
   return true
 })
 
-export const VariableSpecSchema = VariableSpec
+export const VariableSpecSchema: type.Any = VariableSpec
 
-export const StackMetaSchema = type({
+export const StackMetaSchema: type.Any = type({
   name: "string > 0",
   description: "string > 0",
   "category?": "string",
