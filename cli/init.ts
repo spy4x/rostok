@@ -21,7 +21,7 @@ import { isCommandOnPath } from "./shell.ts"
 
 const DENO_JSONC_TEMPLATE = `{
   "imports": {
-    "@rostok/cli": "jsr:@rostok/cli@^1"
+    "@rostok/cli": "jsr:@rostok/cli/lib"
   }
 }
 `

@@ -1,8 +1,8 @@
-// Package metadata. Single source of truth for CLI version + name.
-// Bumped manually per release. Phase 3+ will read from a jsr config file
-// or deno.jsonc; for now keep it trivial.
+// Package metadata. Kept in sync with `version` in deno.jsonc — see
+// the "Releasing" section of AGENTS.md. Bump both files together per
+// release.
 
-export const VERSION = "1.0.0"
+export const VERSION = "1.0.3"
 
 export const NAME = "rostok"
 // Russian name (dropped from comments to avoid mixed-script lint friction).
