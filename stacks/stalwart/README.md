@@ -70,6 +70,66 @@ The `v1-*-20260629` pair on both domains and the docker-mailserver-era
 `20260702` pair above is published. Leaving a superseded selector in DNS keeps
 its old private key able to sign mail that still passes DKIM.
 
+## DKIM verification (`dkim-verify.ts`)
+
+`stacks/stalwart/dkim-verify.ts` is a pure-Deno RFC 6376 DKIM signature
+verifier — both `rsa-sha256` and `ed25519-sha256`. Pure functions, no
+Stalwart dependency, usable from any Deno script or `deno repl`.
+
+### Why it exists
+
+DMARC aggregate reports from Google (delivered to `postmaster@`) report
+failures per selector. Distinguishing the three classes of failure
+("no signature at all" vs "signature but algorithm broken" vs "receiver
+doesn't implement RFC 8463") requires checking the actual signed message
+against the published public key — which is what this module does.
+
+Used during [#141](https://github.com/spy4x/rostok/issues/141) to
+distinguish the historical failure modes (no signature pre-#131) from
+the ongoing Ed25519-at-Google noise.
+
+### API
+
+```ts
+import { parseDkimPublicKey, verifyDkim } from "./stacks/stalwart/dkim-verify.ts"
+
+// Fetch the public key from DNS (or wherever) and verify
+const pubKey = parseDkimPublicKey(
+  "v=DKIM1; k=rsa; h=sha256; p=MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8...",
+)
+const result = await verifyDkim(rawMessage, pubKey)
+// result: { valid: boolean, reason?: string, parsed?, computedBodyHash?, ... }
+```
+
+`verifyDkim` accepts the raw RFC822 message (with whatever line endings
+IMAP serves you) and the parsed public key. It folds continuation
+headers, canonicalises per the `c=` tag (relaxed/relaxed default),
+recomputes the body hash, and verifies the signature with WebCrypto.
+
+### Regression check after deploy
+
+A round-trip is worth running once after any deploy that touches the
+DKIM pipeline:
+
+```sh
+# Send a test message via SMTP submission, then read it back via JMAP
+# and verify the signature against the published DNS key. See issue #141
+# for the full reproduction script.
+```
+
+If `result.valid === true` for the `rsa-sha256` selector, outbound
+mail is signing correctly. Ed25519 will report `invalid` at Google
+regardless — that's RFC 8463 not being implemented there, not our bug.
+
+### Tolerates real-world input
+
+- Mixed CRLF/LF line endings (IMAP servers sometimes normalise mid-stream)
+- Folded continuation headers (Stalwart emits multi-line DKIM-Signature)
+- Folded values across line breaks (`bh=AAA\n\tBBB` → `bh=AAABBB`)
+
+17 unit tests cover the round-trip (sign with generated keypair, verify
+with the verifier). Tests are in `dkim.verify.test.ts`.
+
 ## Ports
 
 External mail ports (25, 465, 587, 993) are published. **Port 25 requires Hetzner support ticket to unblock** for inbound mail from external servers.
