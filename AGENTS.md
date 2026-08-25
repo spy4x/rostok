@@ -180,6 +180,67 @@ deno task backup:restore    # interactive restore
 
 ---
 
+## 📦 Releasing — keep versions in sync
+
+The package version is declared in **two places** that must stay
+identical:
+
+1. `deno.jsonc` — `version` field. Drives the JSR package version.
+2. `cli/version.ts` — `VERSION` export. Drives `rostok --version`.
+
+JSR versions are immutable once published, so a drift between the two
+surfaces as `deno.jsonc: 1.0.2` installed while the binary prints
+`rostok 1.0.1` (Phase 10 shipped this state). It also breaks
+`import "jsr:@rostok/cli"` in downstream projects if anyone pins a
+specific version.
+
+### How to bump
+
+Both files, every release. No exceptions.
+
+```ts
+// cli/version.ts
+export const VERSION = "1.0.4"   // bump here
+
+// deno.jsonc
+"version": "1.0.4",              // and here — same value
+```
+
+Semver:
+
+- **patch** (`1.0.X`) — bug fixes, refactors, no behavior change
+- **minor** (`1.X.0`) — new CLI subcommand, new catalog stack, opt-in
+  feature
+- **major** (`X.0.0`) — breaking change to `+meta.ts` schema, exports,
+  or the wizard output. Coordinate with downstream stack authors.
+
+### Publish flow
+
+After merge to `main`:
+
+1. Confirm `deno task check` passes on the bumped source.
+2. `deno publish` from `main`. Browser OAuth; need a JSR token from
+   `jsr.io/account/tokens` for non-interactive shells.
+3. Verify the new version with `deno install -A --global
+   --minimum-dependency-age=0 -n rostok --force jsr:@rostok/cli`
+   (the dep-age flag bypasses deno's 24h install delay on fresh
+   publishes).
+4. `rostok --version` must print the new version. If it prints an
+   older one, you forgot to bump `cli/version.ts`.
+
+### Avoid drift with `git grep`
+
+If you ever need to verify the two values match without trusting this
+doc:
+
+```bash
+grep -H '"version"' deno.jsonc cli/version.ts
+# deno.jsonc:  "version": "1.0.4",
+# cli/version.ts:export const VERSION = "1.0.4"
+```
+
+---
+
 ## 📚 See also
 
 - `docs/design/v1-cli.md` — v1 design (ready-to-implement)

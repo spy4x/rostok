@@ -77,6 +77,23 @@ checker walks through `stacks/<name>/compose.yml` references.
 - Markdown: same — `deno fmt` covers `.md` files.
 - Commit messages: imperative mood, no AI attribution.
 
+## Versioning
+
+The package version lives in two places — both must match every
+release:
+
+- `deno.jsonc` → `version` field (the JSR package version)
+- `cli/version.ts` → `VERSION` export (what `rostok --version` prints)
+
+If you bump one without the other, end users see
+`deno.jsonc: 1.0.4` installed but `rostok 1.0.3`, and JSR versions
+are immutable so the fix needs another release. See the "Releasing"
+section of [AGENTS.md](../../AGENTS.md) for the full publish flow.
+
+Convention: a release PR that bumps the version also includes any
+related changes. Don't ship a version-only commit unless it's a
+follow-up fix.
+
 ## Code of conduct
 
 Be kind. We're all building this for fun. Disagreements on design

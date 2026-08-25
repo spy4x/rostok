@@ -137,7 +137,7 @@
   // `stacks/*/+meta.ts` are statically imported from cli/catalog.ts,
   // so they ride along with the published binary.
   "name": "@rostok/cli",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "license": "MIT",
   "exports": {
     ".": "./cli/+main.ts",
