@@ -31,7 +31,8 @@ Examples:
     rostok deploy home                    # deploy (wraps deno task deploy)
     rostok env status                     # encryption posture + next steps`
 
-export function buildCommand() {
+// deno-lint-ignore no-explicit-any
+export function buildCommand(): any {
   const cmd = new Command()
     .name(NAME)
     .version(VERSION)

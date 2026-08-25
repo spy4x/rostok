@@ -19,12 +19,6 @@ import { runWizard } from "../wizard.ts"
 import { stackAdd } from "../stack-add.ts"
 import { validateDeployArgs } from "../commands/deploy.ts"
 
-// Resolve the repo's stacks/ directory at test time. `defaultCatalogDir`
-// walks up 5 levels from cwd — fine when running the CLI from the repo,
-// useless from /tmp. Tests pass it explicitly so they don't depend on
-// the tmp dir's location.
-const CATALOG_DIR = new URL("../../stacks", import.meta.url).pathname
-
 async function withTmpDir<T>(fn: (dir: string) => Promise<T>): Promise<T> {
   const dir = await Deno.makeTempDir({ prefix: "rostok-smoke-" })
   try {
@@ -109,7 +103,8 @@ Deno.test("smoke: stack add writes .env + config.json", async () => {
 
     const result = await stackAdd("traefik", "home", {
       cwd: dir,
-      catalogDir: CATALOG_DIR,
+      // catalogDir omitted — Phase 10 ships the catalog bundled into
+      // the CLI binary via static imports in cli/catalog.ts.
       nonInteractive: true,
       providedVars: {
         // CONTACT_EMAIL has no default in traefik/+meta.ts; required.

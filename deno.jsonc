@@ -127,6 +127,49 @@
     "arktype": "npm:arktype@^2.2.3",
     "yaml": "npm:yaml@^2.8.2"
   },
+  // JSR package metadata. `rostok` ships the CLI as a publishable binary
+  // at jsr.io/@rostok/cli. Per docs/design/v1-cli.md §8 the catalog is
+  // bundled into the CLI — `stacks/*/+meta.ts` are statically imported
+  // from cli/catalog.ts, so they ride along with the published binary.
+  "name": "@rostok/cli",
+  "version": "1.0.0",
+  "license": "MIT",
+  "exports": {
+    ".": "./cli/+lib.ts",
+    "./cli": "./cli/+main.ts"
+  },
+  "publish": {
+    // Ship the CLI + only `+meta.ts` from `stacks/`. Everything else in
+    // `stacks/`, `scripts/`, `ansible/`, `docs/` is rostok-repo dev
+    // tooling — the published CLI never reads it.
+    //
+    // JSR's exclude doesn't follow gitignore semantics for negative
+    // globs in nested directories. The working syntax is to exclude
+    // `stacks/**` AND re-include each top-level +meta.ts by explicit
+    // path. The catalog loader (cli/catalog.ts) keeps an explicit
+    // `import` per stack, so adding a stack is a 2-line change here AND
+    // in catalog.ts — keep them in sync.
+    "exclude": [
+      "**/*.test.ts",
+      "**/*.test.tsx",
+      "**/*_test.ts",
+      "ansible",
+      "ansible/**",
+      "scripts",
+      "scripts/**",
+      "docs",
+      "docs/**",
+      "stacks/**",
+      "stacks/**/*",
+      "stacks/*/+meta.ts",
+      "!stacks/traefik/+meta.ts",
+      "!stacks/gatus/+meta.ts",
+      "!stacks/vaultwarden/+meta.ts",
+      "!stacks/jellyfin/+meta.ts",
+      "!stacks/filebrowser/+meta.ts",
+      "!stacks/librespeed/+meta.ts"
+    ]
+  },
   "exclude": [
     "**/.vite/*",
     "**/.cache/*",
@@ -137,7 +180,14 @@
     "dist",
     "build",
     "docs",
-    "stacks/**/webui/**",
+    "ansible",
+    "**/.dockerignore",
+    "**/.env.root.example",
+    "**/.gitguardian.yml",
+    "**/.vscode/**",
+    "**/.woodpecker.yml",
+    "**/AGENTS.md",
+    "**/LICENSE",
     ".playwright-mcp",
     "*.lock"
   ],

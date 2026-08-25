@@ -1,79 +1,71 @@
 // Catalog loader.
 //
-// Discovers `+meta.ts` files under a stacks directory, dynamically imports
-// each one, validates with `validateStackMeta`, and returns the resulting
-// `StackMeta[]`.
+// The catalog ships inside the CLI binary via static imports. JSR's
+// bundler resolves each `+meta.ts` at publish time and includes the
+// files in the published package — `rostok` works without a `--catalog`
+// flag from any project folder.
 //
-// In dev mode the catalog lives at `./stacks/` (the rostok repo root). In
-// the published JSR package it will be bundled at publish time — Phase 10.
+// Adding a stack:
+//   1. Create `stacks/<name>/+meta.ts` with a `StackMeta` default export.
+//   2. Add a static import + entry below.
 //
-// Phase 5 ships the dynamic-import path. Bundling is Phase 10.
+// `--catalog=<dir>` (handled in `catalog-paths.ts`) remains available for
+// forks / custom stacks — v2 territory per docs/v2-cli.md.
 
-import { join, relative } from "@std/path"
-import { validateStackMeta } from "./stack-meta.ts"
 import type { StackMeta } from "./stack-meta.ts"
 
 export interface CatalogEntry {
   meta: StackMeta
-  /** Absolute path to the stack's directory (where compose.yml lives). */
-  dir: string
+  /** Stack directory name (e.g. "traefik"). Used for display + sorting. */
+  name: string
 }
 
+// Static imports — bundled into the CLI binary via JSR's resolver.
+import traefik from "../stacks/traefik/+meta.ts"
+import gatus from "../stacks/gatus/+meta.ts"
+import vaultwarden from "../stacks/vaultwarden/+meta.ts"
+import jellyfin from "../stacks/jellyfin/+meta.ts"
+import filebrowser from "../stacks/filebrowser/+meta.ts"
+import librespeed from "../stacks/librespeed/+meta.ts"
+
+// A second batch is already shipping in stacks/ but their +meta.ts isn't
+// written yet — Phase 4 shipped the first 6. The remaining ~40 stacks
+// will add +meta.ts + an entry here in follow-up PRs. Until then the
+// catalog only contains the 6 first-batch stacks.
+
+const STACK_META: Record<string, StackMeta> = {
+  traefik,
+  gatus,
+  vaultwarden,
+  jellyfin,
+  filebrowser,
+  librespeed,
+}
+
+const ENTRIES: CatalogEntry[] = Object.entries(STACK_META)
+  .map(([name, meta]) => ({ name, meta }))
+  .sort((a, b) => a.name.localeCompare(b.name))
+
 /**
- * Scan `catalogDir` for `+meta.ts` files one level deep.
- *
- *   catalogDir/
- *     traefik/+meta.ts
- *     gatus/+meta.ts
- *     ...
- *
- * Returns entries sorted by stack name. Throws if any +meta.ts fails
- * validation — better to fail loud at startup than to silently corrupt
- * the user's project.
+ * Return the bundled catalog entries. Pure (no I/O) — the catalog is
+ * embedded in the binary, so this is a constant array.
  */
-export async function loadCatalog(catalogDir: string): Promise<CatalogEntry[]> {
-  let subdirs: string[]
-  try {
-    subdirs = []
-    for await (const entry of Deno.readDir(catalogDir)) {
-      if (entry.isDirectory) subdirs.push(entry.name)
-    }
-  } catch (err) {
-    if (err instanceof Deno.errors.NotFound) {
-      throw new Error(`catalog directory not found: ${catalogDir}`)
-    }
-    throw err
-  }
-  subdirs.sort()
-
-  const entries: CatalogEntry[] = []
-  for (const name of subdirs) {
-    const dir = join(catalogDir, name)
-    const metaPath = join(dir, "+meta.ts")
-    try {
-      await Deno.stat(metaPath)
-    } catch {
-      // Directory has no +meta.ts — skip silently (could be a non-stack dir).
-      continue
-    }
-    const mod = await import(/* @vite-ignore */ pathToFileUrl(metaPath))
-    const meta = validateStackMeta(mod.default)
-    entries.push({ meta, dir })
-  }
-  return entries
+export function loadCatalog(): CatalogEntry[] {
+  return ENTRIES
 }
 
 /**
- * Resolve a stack name in the catalog. Throws on missing or ambiguous
- * (no duplicates in v1, but guard for future cross-stack imports).
+ * Resolve a stack by name. Matches the entry's import-key (which is
+ * always the directory name) and falls back to `meta.name` for stacks
+ * whose +meta.ts declares a different display name.
  */
 export function findStack(
   catalog: CatalogEntry[],
   name: string,
 ): CatalogEntry {
-  const matches = catalog.filter((e) => e.meta.name === name)
+  const matches = catalog.filter((e) => e.name === name || e.meta.name === name)
   if (matches.length === 0) {
-    const available = catalog.map((e) => e.meta.name).join(", ")
+    const available = catalog.map((e) => e.name).join(", ")
     throw new Error(`stack '${name}' not found in catalog. available: ${available || "(none)"}`)
   }
   if (matches.length > 1) {
@@ -82,19 +74,15 @@ export function findStack(
   return matches[0]
 }
 
-/** Format catalog for the `stack list` subcommand (Phase 6 — placeholder). */
+/**
+ * Format a one-line summary of the catalog. Kept for parity with the
+ * pre-bundling implementation — currently unused by the CLI surface
+ * but still useful for debugging.
+ */
 export function formatCatalogSummary(entries: CatalogEntry[]): string {
   const lines: string[] = []
   for (const e of entries) {
-    const rel = relative(Deno.cwd(), e.dir)
-    lines.push(`  ${e.meta.name.padEnd(16)} ${e.meta.description} (${rel})`)
+    lines.push(`  ${e.name.padEnd(16)} ${e.meta.description}`)
   }
   return lines.join("\n")
-}
-
-/** Convert an absolute path to a `file://` URL for dynamic import. */
-function pathToFileUrl(path: string): string {
-  // Deno-native path → URL conversion. Avoids a `pathToFileURL` import.
-  // Normalize Windows paths (not relevant on Deno-only repo but defensive).
-  return new URL(`file://${path.replace(/\\/g, "/")}`).href
 }

@@ -1,18 +1,6 @@
 import { assertEquals } from "@std/assert"
-import { findEnvFiles, getRelativePath } from "./age-lib.ts"
-import { indexOldAge, renderAgeContent } from "./encrypt.ts"
-
-Deno.test({
-  name: "getRelativePath removes cwd prefix from paths",
-  fn() {
-    // Uses Deno.cwd() internally, so test that a file outside cwd is unchanged
-    const cwd = Deno.cwd()
-    const testPath = `${cwd}/some/file.txt`
-    const result = getRelativePath(testPath)
-    // Should strip cwd prefix
-    assertEquals(result, "some/file.txt")
-  },
-})
+import { findEnvFiles } from "../../cli/age.ts"
+import { indexOldAge, renderAgeContent } from "../../cli/encrypt.ts"
 
 // Stand-ins for age: ciphertext is non-deterministic in reality, so make the
 // fake encrypt return a different value each call. Any value that gets
