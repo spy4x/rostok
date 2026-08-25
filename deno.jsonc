@@ -128,15 +128,20 @@
     "yaml": "npm:yaml@^2.8.2"
   },
   // JSR package metadata. `rostok` ships the CLI as a publishable binary
-  // at jsr.io/@rostok/cli. Per docs/design/v1-cli.md §8 the catalog is
-  // bundled into the CLI — `stacks/*/+meta.ts` are statically imported
-  // from cli/catalog.ts, so they ride along with the published binary.
+  // at jsr.io/@rostok/cli. The default `.` export is the CLI binary
+  // (per docs/design/v1-cli.md §8: `deno install -A -n rostok
+  // jsr:@rostok/cli` should give the binary). Library consumers
+  // (stack authors, `+meta.ts` files) import from `jsr:@rostok/cli/lib`.
+  //
+  // Per docs/design/v1-cli.md §8 the catalog is bundled into the CLI —
+  // `stacks/*/+meta.ts` are statically imported from cli/catalog.ts,
+  // so they ride along with the published binary.
   "name": "@rostok/cli",
-  "version": "1.0.0",
+  "version": "1.0.2",
   "license": "MIT",
   "exports": {
-    ".": "./cli/+lib.ts",
-    "./cli": "./cli/+main.ts"
+    ".": "./cli/+main.ts",
+    "./lib": "./cli/+lib.ts"
   },
   "publish": {
     // Ship the CLI + only `+meta.ts` from `stacks/`. Everything else in
