@@ -1,0 +1,1095 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#0a0a0a">
+    <meta name="description" content="Anton Shubin's servers">
+    <link rel="manifest" href="manifest.json">
+    <link rel="icon" type="image/png" sizes="192x192" href="assets/icon-192.png">
+    <link rel="apple-touch-icon" href="assets/icon-192.png">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
+      rel="stylesheet"
+    >
+    <style>
+      :root {
+        --bg-page: #0a0a0a;
+        --bg-card: #141414;
+        --bg-card-hover: #1c1c1c;
+        --bg-stat: rgba(255, 255, 255, 0.04);
+        --bg-stat-hover: rgba(255, 255, 255, 0.07);
+        --border: rgba(255, 255, 255, 0.06);
+        --border-hover: rgba(255, 255, 255, 0.12);
+        --border-down: rgba(239, 68, 68, 0.55);
+        --text-primary: #ededed;
+        --text-secondary: #9a9a9a;
+        --text-muted: #5e5e5e;
+        --accent: #5e9eff;
+        --accent-soft: rgba(94, 158, 255, 0.12);
+        --healthy: #4ade80;
+        --down: #ef4444;
+        --radius-card: 14px;
+        --radius-pill: 999px;
+        --shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+        --shadow-hover: 0 12px 28px rgba(0, 0, 0, 0.55);
+        --font: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+        --font-mono: "JetBrains Mono", "SF Mono", ui-monospace, Menlo, monospace;
+      }
+
+      * { box-sizing: border-box; }
+
+      html, body {
+        margin: 0;
+        padding: 0;
+      }
+
+      body {
+        font-family: var(--font);
+        background: var(--bg-page);
+        background-image: radial-gradient(
+          ellipse 80% 50% at 50% -10%,
+          rgba(94, 158, 255, 0.08),
+          transparent 60%
+        );
+        background-attachment: fixed;
+        color: var(--text-primary);
+        min-height: 100vh;
+        padding: 48px 20px 80px;
+        line-height: 1.5;
+        -webkit-font-smoothing: antialiased;
+      }
+
+      .page {
+        max-width: 1200px;
+        margin: 0 auto;
+      }
+
+      .header {
+        text-align: center;
+        margin-bottom: 32px;
+      }
+
+      .header h1 {
+        margin: 0 0 8px;
+        font-size: 32px;
+        font-weight: 700;
+        letter-spacing: -0.02em;
+        background: linear-gradient(180deg, #ffffff, #b8b8b8);
+        -webkit-background-clip: text;
+        background-clip: text;
+        -webkit-text-fill-color: transparent;
+      }
+
+      .header-sub {
+        margin: 0;
+        font-size: 13px;
+        color: var(--text-muted);
+        font-family: var(--font-mono);
+        letter-spacing: 0.02em;
+      }
+
+      .search-wrap {
+        max-width: 560px;
+        margin: 0 auto 16px;
+      }
+
+      .search {
+        width: 100%;
+        padding: 14px 18px 14px 46px;
+        font: 500 15px var(--font);
+        background: var(--bg-card);
+        border: 1px solid var(--border);
+        border-radius: var(--radius-pill);
+        color: var(--text-primary);
+        outline: none;
+        transition: border-color 0.2s ease, box-shadow 0.2s ease;
+        background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='%239a9a9a'><path fill-rule='evenodd' d='M9 3a6 6 0 100 12 6 6 0 000-12zM1 9a8 8 0 1114.32 4.906l4.387 4.387-1.414 1.414-4.387-4.387A8 8 0 011 9z' clip-rule='evenodd'/></svg>");
+        background-repeat: no-repeat;
+        background-position: 18px center;
+        background-size: 16px 16px;
+      }
+
+      .search:focus {
+        border-color: var(--accent);
+        box-shadow: 0 0 0 4px var(--accent-soft);
+      }
+
+      .search::placeholder { color: var(--text-muted); }
+
+      .search-hint {
+        margin: 10px 0 0;
+        text-align: center;
+        font-size: 12px;
+        color: var(--text-muted);
+      }
+
+      .search-hint kbd {
+        font-family: var(--font-mono);
+        font-size: 11px;
+        background: var(--bg-stat);
+        border: 1px solid var(--border);
+        border-radius: 4px;
+        padding: 1px 5px;
+        color: var(--text-secondary);
+      }
+
+      .no-results {
+        display: none;
+        text-align: center;
+        padding: 60px 20px;
+        color: var(--text-muted);
+        font-size: 14px;
+      }
+
+      .no-results.visible { display: block; }
+
+      .section.hidden { display: none; }
+
+      .section {
+        margin: 0 0 48px;
+      }
+
+      .section-header {
+        display: flex;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 12px;
+        margin: 0 0 18px;
+        padding-bottom: 12px;
+        border-bottom: 1px solid var(--border);
+      }
+
+      .section-title {
+        margin: 0;
+        font-size: 22px;
+        font-weight: 700;
+        letter-spacing: -0.01em;
+        color: var(--text-primary);
+      }
+
+      .section-stats {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+        margin-left: auto;
+      }
+
+      .pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 5px 11px;
+        background: var(--bg-stat);
+        border: 1px solid var(--border);
+        border-radius: var(--radius-pill);
+        font-size: 12px;
+        font-weight: 500;
+        color: var(--text-secondary);
+        font-variant-numeric: tabular-nums;
+        font-family: var(--font-mono);
+      }
+
+      .pill-healthy { color: var(--healthy); }
+      .pill-healthy::before {
+        content: "";
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background: var(--healthy);
+        box-shadow: 0 0 8px rgba(74, 222, 128, 0.5);
+      }
+
+      .pill-degraded {
+        color: var(--down);
+        border-color: rgba(239, 68, 68, 0.25);
+        background: rgba(239, 68, 68, 0.08);
+      }
+      .pill-degraded::before {
+        content: "";
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background: var(--down);
+        box-shadow: 0 0 8px rgba(239, 68, 68, 0.5);
+      }
+
+      .pill-empty {
+        color: var(--text-muted);
+        font-style: italic;
+      }
+
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+        gap: 14px;
+        list-style: none;
+        padding: 0;
+        margin: 0;
+      }
+
+      .service {
+        position: relative;
+        background: var(--bg-card);
+        border: 1px solid var(--border);
+        border-radius: var(--radius-card);
+        transition:
+          background 0.18s ease,
+          border-color 0.18s ease,
+          transform 0.18s ease,
+          box-shadow 0.18s ease;
+        min-height: 168px;
+        overflow: hidden;
+      }
+
+      .service:hover {
+        background: var(--bg-card-hover);
+        border-color: var(--border-hover);
+        transform: translateY(-2px);
+        box-shadow: var(--shadow-hover);
+      }
+
+      .service--down {
+        border-color: var(--border-down);
+        box-shadow: 0 0 0 1px var(--border-down), 0 0 20px rgba(239, 68, 68, 0.18);
+      }
+
+      .service--down:hover {
+        border-color: var(--down);
+        box-shadow: 0 0 0 1px var(--down), 0 0 24px rgba(239, 68, 68, 0.28);
+      }
+
+      .service-main {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        text-align: center;
+        text-decoration: none;
+        color: inherit;
+        padding: 22px 14px 44px;
+        min-height: 100%;
+      }
+
+      .service-main:focus-visible {
+        outline: 2px solid var(--accent);
+        outline-offset: -2px;
+      }
+
+      .service-icon {
+        font-size: 36px;
+        line-height: 1;
+        margin-bottom: 10px;
+        filter: saturate(1.05);
+      }
+
+      .service-name {
+        font-size: 15px;
+        font-weight: 600;
+        letter-spacing: -0.005em;
+        margin-bottom: 4px;
+        color: var(--text-primary);
+      }
+
+      .service-description {
+        font-size: 12px;
+        line-height: 1.45;
+        color: var(--text-secondary);
+        margin: 0;
+        padding: 0 6px;
+      }
+
+      .service-product {
+        position: absolute;
+        bottom: 12px;
+        left: 14px;
+        right: 14px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 4px;
+        font-size: 11px;
+        color: var(--text-muted);
+        text-decoration: underline;
+        text-decoration-color: rgba(255, 255, 255, 0.18);
+        text-underline-offset: 2px;
+        font-family: var(--font-mono);
+        letter-spacing: 0.01em;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      .service-product:hover {
+        color: var(--accent);
+        text-decoration-color: var(--accent);
+      }
+
+      .service-product svg {
+        flex: 0 0 9px;
+        opacity: 0.7;
+      }
+
+      .service-product:hover svg { opacity: 1; }
+
+      .empty-state {
+        padding: 40px 24px;
+        text-align: center;
+        color: var(--text-muted);
+        background: var(--bg-card);
+        border: 1px dashed var(--border);
+        border-radius: var(--radius-card);
+        font-size: 14px;
+      }
+
+      .footer {
+        margin-top: 64px;
+        padding-top: 24px;
+        border-top: 1px solid var(--border);
+        text-align: center;
+        font-size: 11px;
+        color: var(--text-muted);
+        font-family: var(--font-mono);
+        letter-spacing: 0.02em;
+      }
+
+      .footer a {
+        color: var(--text-secondary);
+        text-decoration: none;
+      }
+      .footer a:hover { color: var(--accent); }
+
+      @media (max-width: 640px) {
+        body { padding: 24px 12px 60px; }
+        .header h1 { font-size: 24px; }
+        .grid { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
+        .service { min-height: 148px; }
+        .service-main { padding: 16px 10px 38px; }
+        .service-icon { font-size: 28px; }
+        .service-name { font-size: 13px; }
+        .service-description { font-size: 11px; }
+        .section-header { gap: 8px; }
+        .section-title { font-size: 18px; }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        *, *::before, *::after {
+          transition-duration: 0.01ms !important;
+          animation-duration: 0.01ms !important;
+        }
+      }
+    </style>
+    <title>Anton Shubin's servers</title>
+  </head>
+
+  <body>
+    <div class="page">
+      <header class="header">
+        <h1>Anton Shubin's servers</h1>
+        <p class="header-sub">Single page for every self-hosted service — search, jump, check status</p>
+      </header>
+
+      <div class="search-wrap">
+        <input
+          type="search"
+          class="search"
+          id="search"
+          placeholder="Search by name, product, or description…"
+          autocomplete="off"
+          spellcheck="false"
+          aria-label="Search services"
+        >
+        <p class="search-hint">
+          Try <kbd>/</kbd> to focus · <kbd>Esc</kbd> to clear
+        </p>
+      </div>
+
+      <div id="noResults" class="no-results">No services match your search.</div>
+
+      <main>
+        <section class="section" data-server="home">
+          <div class="section-header">
+            <h2 class="section-title">Home</h2>
+            <div class="section-stats">
+              <span class="pill pill-counter" data-counter>
+                <span data-healthy>0</span><span>/</span><span data-total>0</span> healthy
+              </span>
+              <span class="pill pill-uptime" data-uptime>—</span>
+            </div>
+          </div>
+          <ul class="grid">
+            <!-- service cards rendered below -->
+            <li class="service" data-endpoint="home_audiobookshelf">
+              <a href="https://books.${DOMAIN}" target="_blank" rel="noopener" class="service-main">
+                <div class="service-icon">📚</div>
+                <div class="service-name">Audiobooks</div>
+                <p class="service-description">Audiobook and podcast library with streaming</p>
+              </a>
+              <a href="https://www.audiobookshelf.org/" target="_blank" rel="noopener noreferrer" class="service-product" title="Audiobookshelf">
+                Audiobookshelf
+                <svg viewBox="0 0 16 16" width="9" height="9" aria-hidden="true">
+                  <path fill="currentColor" d="M10 1v2h2.3L7.7 7.6l1.4 1.4L13.7 4.4V7h2V1h-5.7zM3 3v10h10V8h-2v3H5V5h3V3H3z"/>
+                </svg>
+              </a>
+            </li>
+            <li class="service" data-endpoint="home_authelia">
+              <a href="https://auth.${DOMAIN}" target="_blank" rel="noopener" class="service-main">
+                <div class="service-icon">🔐</div>
+                <div class="service-name">Auth</div>
+                <p class="service-description">SSO and 2FA front-door for protected services</p>
+              </a>
+              <a href="https://www.authelia.com/" target="_blank" rel="noopener noreferrer" class="service-product" title="Authelia">
+                Authelia
+                <svg viewBox="0 0 16 16" width="9" height="9" aria-hidden="true">
+                  <path fill="currentColor" d="M10 1v2h2.3L7.7 7.6l1.4 1.4L13.7 4.4V7h2V1h-5.7zM3 3v10h10V8h-2v3H5V5h3V3H3z"/>
+                </svg>
+              </a>
+            </li>
+            <!-- Home section: Calendar & Contacts — REMOVED: rolled into Cloud "Mail" below.
+                 See https://mail.${DOMAIN} for CalDAV / CardDAV access. -->
+            <li class="service" data-endpoint="home_woodpecker-ci">
+              <a href="https://ci.${DOMAIN}" target="_blank" rel="noopener" class="service-main">
+                <div class="service-icon">🔧</div>
+                <div class="service-name">CI/CD</div>
+                <p class="service-description">Pipeline-based CI/CD for Docker stacks</p>
+              </a>
+              <a href="https://woodpecker-ci.org/" target="_blank" rel="noopener noreferrer" class="service-product" title="Woodpecker CI">
+                Woodpecker
+                <svg viewBox="0 0 16 16" width="9" height="9" aria-hidden="true">
+                  <path fill="currentColor" d="M10 1v2h2.3L7.7 7.6l1.4 1.4L13.7 4.4V7h2V1h-5.7zM3 3v10h10V8h-2v3H5V5h3V3H3z"/>
+                </svg>
+              </a>
+            </li>
+            <li class="service" data-endpoint="home_opencode-web">
+              <a href="https://code.${DOMAIN}" target="_blank" rel="noopener" class="service-main">
+                <div class="service-icon">💻</div>
+                <div class="service-name">OpenCode Web</div>
+                <p class="service-description">AI coding assistant with a browser terminal UI</p>
+              </a>
+              <a href="https://opencode.ai/" target="_blank" rel="noopener noreferrer" class="service-product" title="OpenCode">
+                OpenCode
+                <svg viewBox="0 0 16 16" width="9" height="9" aria-hidden="true">
+                  <path fill="currentColor" d="M10 1v2h2.3L7.7 7.6l1.4 1.4L13.7 4.4V7h2V1h-5.7zM3 3v10h10V8h-2v3H5V5h3V3H3z"/>
+                </svg>
+              </a>
+            </li>
+            <li class="service" data-endpoint="home_filebrowser">
+              <a href="https://files.${DOMAIN}" target="_blank" rel="noopener" class="service-main">
+                <div class="service-icon">📁</div>
+                <div class="service-name">Files</div>
+                <p class="service-description">Web UI to browse, upload, and edit files</p>
+              </a>
+              <a href="https://filebrowser.org/" target="_blank" rel="noopener noreferrer" class="service-product" title="FileBrowser Quantum">
+                FileBrowser
+                <svg viewBox="0 0 16 16" width="9" height="9" aria-hidden="true">
+                  <path fill="currentColor" d="M10 1v2h2.3L7.7 7.6l1.4 1.4L13.7 4.4V7h2V1h-5.7zM3 3v10h10V8h-2v3H5V5h3V3H3z"/>
+                </svg>
+              </a>
+            </li>
+            <li class="service" data-endpoint="home_gitea">
+              <a href="https://git.${DOMAIN}" target="_blank" rel="noopener" class="service-main">
+                <div class="service-icon">📦</div>
+                <div class="service-name">Git</div>
+                <p class="service-description">Git hosting with issues, PRs, and packages</p>
+              </a>
+              <a href="https://about.gitea.com/" target="_blank" rel="noopener noreferrer" class="service-product" title="Gitea">
+                Gitea
+                <svg viewBox="0 0 16 16" width="9" height="9" aria-hidden="true">
+                  <path fill="currentColor" d="M10 1v2h2.3L7.7 7.6l1.4 1.4L13.7 4.4V7h2V1h-5.7zM3 3v10h10V8h-2v3H5V5h3V3H3z"/>
+                </svg>
+              </a>
+            </li>
+            <li class="service" data-endpoint="home_jellyfin">
+              <a href="https://movies.${DOMAIN}" target="_blank" rel="noopener" class="service-main">
+                <div class="service-icon">🎬</div>
+                <div class="service-name">Movies</div>
+                <p class="service-description">Stream movies, TV shows, and music</p>
+              </a>
+              <a href="https://jellyfin.org/" target="_blank" rel="noopener noreferrer" class="service-product" title="Jellyfin">
+                Jellyfin
+                <svg viewBox="0 0 16 16" width="9" height="9" aria-hidden="true">
+                  <path fill="currentColor" d="M10 1v2h2.3L7.7 7.6l1.4 1.4L13.7 4.4V7h2V1h-5.7zM3 3v10h10V8h-2v3H5V5h3V3H3z"/>
+                </svg>
+              </a>
+            </li>
+            <!-- Home section: Notes — REMOVED: not used. Stack kept in ./stacks/usememos/ for re-enable. -->
+            <li class="service" data-endpoint="home_ntfy">
+              <a href="https://ntfy-home.${DOMAIN}" target="_blank" rel="noopener" class="service-main">
+                <div class="service-icon">🔔</div>
+                <div class="service-name">Notifications</div>
+                <p class="service-description">Pub/sub push notifications to phone, desktop, or scripts</p>
+              </a>
+              <a href="https://ntfy.sh/" target="_blank" rel="noopener noreferrer" class="service-product" title="ntfy">
+                ntfy
+                <svg viewBox="0 0 16 16" width="9" height="9" aria-hidden="true">
+                  <path fill="currentColor" d="M10 1v2h2.3L7.7 7.6l1.4 1.4L13.7 4.4V7h2V1h-5.7zM3 3v10h10V8h-2v3H5V5h3V3H3z"/>
+                </svg>
+              </a>
+            </li>
+            <li class="service" data-endpoint="home_open-webui">
+              <a href="https://ai.${DOMAIN}" target="_blank" rel="noopener" class="service-main">
+                <div class="service-icon">🤖</div>
+                <div class="service-name">AI Chat</div>
+                <p class="service-description">Chat with local LLMs and OpenAI-compatible APIs</p>
+              </a>
+              <a href="https://github.com/open-webui/open-webui" target="_blank" rel="noopener noreferrer" class="service-product" title="Open WebUI">
+                Open WebUI
+                <svg viewBox="0 0 16 16" width="9" height="9" aria-hidden="true">
+                  <path fill="currentColor" d="M10 1v2h2.3L7.7 7.6l1.4 1.4L13.7 4.4V7h2V1h-5.7zM3 3v10h10V8h-2v3H5V5h3V3H3z"/>
+                </svg>
+              </a>
+            </li>
+            <li class="service" data-endpoint="cloud_vaultwarden">
+              <a href="https://passwords.${DOMAIN}" target="_blank" rel="noopener" class="service-main">
+                <div class="service-icon">🔑</div>
+                <div class="service-name">Passwords</div>
+                <p class="service-description">Bitwarden-compatible password and secrets manager</p>
+              </a>
+              <a href="https://github.com/dani-garcia/vaultwarden" target="_blank" rel="noopener noreferrer" class="service-product" title="Vaultwarden">
+                Vaultwarden
+                <svg viewBox="0 0 16 16" width="9" height="9" aria-hidden="true">
+                  <path fill="currentColor" d="M10 1v2h2.3L7.7 7.6l1.4 1.4L13.7 4.4V7h2V1h-5.7zM3 3v10h10V8h-2v3H5V5h3V3H3z"/>
+                </svg>
+              </a>
+            </li>
+            <li class="service" data-endpoint="home_immich">
+              <a href="https://photos.${DOMAIN}" target="_blank" rel="noopener" class="service-main">
+                <div class="service-icon">📷</div>
+                <div class="service-name">Photos</div>
+                <p class="service-description">Google Photos replacement with mobile backups</p>
+              </a>
+              <a href="https://immich.app/" target="_blank" rel="noopener noreferrer" class="service-product" title="Immich">
+                Immich
+                <svg viewBox="0 0 16 16" width="9" height="9" aria-hidden="true">
+                  <path fill="currentColor" d="M10 1v2h2.3L7.7 7.6l1.4 1.4L13.7 4.4V7h2V1h-5.7zM3 3v10h10V8h-2v3H5V5h3V3H3z"/>
+                </svg>
+              </a>
+            </li>
+            <li class="service" data-endpoint="home_docker-registry">
+              <a href="https://registry.${DOMAIN}" target="_blank" rel="noopener" class="service-main">
+                <div class="service-icon">🐳</div>
+                <div class="service-name">Registry</div>
+                <p class="service-description">Private Docker image registry</p>
+              </a>
+              <a href="https://github.com/distribution/distribution" target="_blank" rel="noopener noreferrer" class="service-product" title="Docker Registry">
+                Docker Registry
+                <svg viewBox="0 0 16 16" width="9" height="9" aria-hidden="true">
+                  <path fill="currentColor" d="M10 1v2h2.3L7.7 7.6l1.4 1.4L13.7 4.4V7h2V1h-5.7zM3 3v10h10V8h-2v3H5V5h3V3H3z"/>
+                </svg>
+              </a>
+            </li>
+            <li class="service" data-endpoint="home_searxng">
+              <a href="https://search.${DOMAIN}" target="_blank" rel="noopener" class="service-main">
+                <div class="service-icon">🔍</div>
+                <div class="service-name">Search</div>
+                <p class="service-description">Privacy-respecting meta-search across many engines</p>
+              </a>
+              <a href="https://searxng.org/" target="_blank" rel="noopener noreferrer" class="service-product" title="SearXNG">
+                SearXNG
+                <svg viewBox="0 0 16 16" width="9" height="9" aria-hidden="true">
+                  <path fill="currentColor" d="M10 1v2h2.3L7.7 7.6l1.4 1.4L13.7 4.4V7h2V1h-5.7zM3 3v10h10V8h-2v3H5V5h3V3H3z"/>
+                </svg>
+              </a>
+            </li>
+            <li class="service" data-endpoint="home_librespeed">
+              <a href="https://speed-home.${DOMAIN}" target="_blank" rel="noopener" class="service-main">
+                <div class="service-icon">🚀</div>
+                <div class="service-name">Speed</div>
+                <p class="service-description">Network speed test for bandwidth and latency</p>
+              </a>
+              <a href="https://librespeed.org/" target="_blank" rel="noopener noreferrer" class="service-product" title="LibreSpeed">
+                LibreSpeed
+                <svg viewBox="0 0 16 16" width="9" height="9" aria-hidden="true">
+                  <path fill="currentColor" d="M10 1v2h2.3L7.7 7.6l1.4 1.4L13.7 4.4V7h2V1h-5.7zM3 3v10h10V8h-2v3H5V5h3V3H3z"/>
+                </svg>
+              </a>
+            </li>
+            <li class="service" data-endpoint="home_syncthing">
+              <a href="https://sync-home.${DOMAIN}" target="_blank" rel="noopener" class="service-main">
+                <div class="service-icon">🔄</div>
+                <div class="service-name">Sync</div>
+                <p class="service-description">Peer-to-peer file sync between devices and servers</p>
+              </a>
+              <a href="https://syncthing.net/" target="_blank" rel="noopener noreferrer" class="service-product" title="Syncthing">
+                Syncthing
+                <svg viewBox="0 0 16 16" width="9" height="9" aria-hidden="true">
+                  <path fill="currentColor" d="M10 1v2h2.3L7.7 7.6l1.4 1.4L13.7 4.4V7h2V1h-5.7zM3 3v10h10V8h-2v3H5V5h3V3H3z"/>
+                </svg>
+              </a>
+            </li>
+            <li class="service" data-endpoint="home_mirotalk">
+              <a href="https://talk.${DOMAIN}" target="_blank" rel="noopener" class="service-main">
+                <div class="service-icon">📹</div>
+                <div class="service-name">Talk</div>
+                <p class="service-description">Browser-based WebRTC video calls and conferencing</p>
+              </a>
+              <a href="https://mirotalk.org/" target="_blank" rel="noopener noreferrer" class="service-product" title="Mirotalk">
+                Mirotalk
+                <svg viewBox="0 0 16 16" width="9" height="9" aria-hidden="true">
+                  <path fill="currentColor" d="M10 1v2h2.3L7.7 7.6l1.4 1.4L13.7 4.4V7h2V1h-5.7zM3 3v10h10V8h-2v3H5V5h3V3H3z"/>
+                </svg>
+              </a>
+            </li>
+            <li class="service" data-endpoint="home_traggo">
+              <a href="https://time.${DOMAIN}" target="_blank" rel="noopener" class="service-main">
+                <div class="service-icon">⏰</div>
+                <div class="service-name">Time Tracker</div>
+                <p class="service-description">Tag-based time tracking with reports and charts</p>
+              </a>
+              <a href="https://traggo.net/" target="_blank" rel="noopener noreferrer" class="service-product" title="Traggo">
+                Traggo
+                <svg viewBox="0 0 16 16" width="9" height="9" aria-hidden="true">
+                  <path fill="currentColor" d="M10 1v2h2.3L7.7 7.6l1.4 1.4L13.7 4.4V7h2V1h-5.7zM3 3v10h10V8h-2v3H5V5h3V3H3z"/>
+                </svg>
+              </a>
+            </li>
+            <li class="service" data-endpoint="home_omni-tools">
+              <a href="https://tools.${DOMAIN}" target="_blank" rel="noopener" class="service-main">
+                <div class="service-icon">🛠️</div>
+                <div class="service-name">Tools</div>
+                <p class="service-description">Web toolbox for developers — converters, generators, formatters</p>
+              </a>
+              <a href="https://omnitools.app/" target="_blank" rel="noopener noreferrer" class="service-product" title="Omni Tools">
+                Omni Tools
+                <svg viewBox="0 0 16 16" width="9" height="9" aria-hidden="true">
+                  <path fill="currentColor" d="M10 1v2h2.3L7.7 7.6l1.4 1.4L13.7 4.4V7h2V1h-5.7zM3 3v10h10V8h-2v3H5V5h3V3H3z"/>
+                </svg>
+              </a>
+            </li>
+            <li class="service" data-endpoint="home_transmission">
+              <a href="https://torrents.${DOMAIN}" target="_blank" rel="noopener" class="service-main">
+                <div class="service-icon">⬇️</div>
+                <div class="service-name">Torrents</div>
+                <p class="service-description">BitTorrent client with a lightweight web UI</p>
+              </a>
+              <a href="https://transmissionbt.com/" target="_blank" rel="noopener noreferrer" class="service-product" title="Transmission">
+                Transmission
+                <svg viewBox="0 0 16 16" width="9" height="9" aria-hidden="true">
+                  <path fill="currentColor" d="M10 1v2h2.3L7.7 7.6l1.4 1.4L13.7 4.4V7h2V1h-5.7zM3 3v10h10V8h-2v3H5V5h3V3H3z"/>
+                </svg>
+              </a>
+            </li>
+            <li class="service" data-endpoint="home_traefik">
+              <a href="https://proxy-home.${DOMAIN}" target="_blank" rel="noopener" class="service-main">
+                <div class="service-icon">🚦</div>
+                <div class="service-name">Traefik</div>
+                <p class="service-description">Reverse proxy and TLS termination dashboard</p>
+              </a>
+              <a href="https://traefik.io/" target="_blank" rel="noopener noreferrer" class="service-product" title="Traefik">
+                Traefik
+                <svg viewBox="0 0 16 16" width="9" height="9" aria-hidden="true">
+                  <path fill="currentColor" d="M10 1v2h2.3L7.7 7.6l1.4 1.4L13.7 4.4V7h2V1h-5.7zM3 3v10h10V8h-2v3H5V5h3V3H3z"/>
+                </svg>
+              </a>
+            </li>
+            <li class="service" data-endpoint="home_gatus">
+              <a href="https://uptime-home.${DOMAIN}" target="_blank" rel="noopener" class="service-main">
+                <div class="service-icon">⏱️</div>
+                <div class="service-name">Uptime</div>
+                <p class="service-description">Health and status monitoring for every service</p>
+              </a>
+              <a href="https://gatus.io/" target="_blank" rel="noopener noreferrer" class="service-product" title="Gatus">
+                Gatus
+                <svg viewBox="0 0 16 16" width="9" height="9" aria-hidden="true">
+                  <path fill="currentColor" d="M10 1v2h2.3L7.7 7.6l1.4 1.4L13.7 4.4V7h2V1h-5.7zM3 3v10h10V8h-2v3H5V5h3V3H3z"/>
+                </svg>
+              </a>
+            </li>
+            <li class="service" data-endpoint="home_piped">
+              <a href="https://piped.${DOMAIN}" target="_blank" rel="noopener" class="service-main">
+                <div class="service-icon">📺</div>
+                <div class="service-name">YouTube</div>
+                <p class="service-description">Privacy-friendly YouTube frontend, no ads or tracking</p>
+              </a>
+              <a href="https://github.com/TeamPiped/Piped" target="_blank" rel="noopener noreferrer" class="service-product" title="Piped">
+                Piped
+                <svg viewBox="0 0 16 16" width="9" height="9" aria-hidden="true">
+                  <path fill="currentColor" d="M10 1v2h2.3L7.7 7.6l1.4 1.4L13.7 4.4V7h2V1h-5.7zM3 3v10h10V8h-2v3H5V5h3V3H3z"/>
+                </svg>
+              </a>
+            </li>
+            <li class="service" data-endpoint="home_metube">
+              <a href="https://metube.${DOMAIN}" target="_blank" rel="noopener" class="service-main">
+                <div class="service-icon">📺</div>
+                <div class="service-name">YouTube DL</div>
+                <p class="service-description">Download videos from YouTube and 1000+ supported sites</p>
+              </a>
+              <a href="https://github.com/alexta69/metube" target="_blank" rel="noopener noreferrer" class="service-product" title="MeTube">
+                MeTube
+                <svg viewBox="0 0 16 16" width="9" height="9" aria-hidden="true">
+                  <path fill="currentColor" d="M10 1v2h2.3L7.7 7.6l1.4 1.4L13.7 4.4V7h2V1h-5.7zM3 3v10h10V8h-2v3H5V5h3V3H3z"/>
+                </svg>
+              </a>
+            </li>
+          </ul>
+        </section>
+
+        <section class="section" data-server="cloud">
+          <div class="section-header">
+            <h2 class="section-title">Cloud</h2>
+            <div class="section-stats">
+              <span class="pill pill-counter" data-counter>
+                <span data-healthy>0</span><span>/</span><span data-total>0</span> healthy
+              </span>
+              <span class="pill pill-uptime" data-uptime>—</span>
+            </div>
+          </div>
+          <ul class="grid">
+            <li class="service" data-endpoint="cloud_healthchecks">
+              <a href="https://healthchecks.${DOMAIN}" target="_blank" rel="noopener" class="service-main">
+                <div class="service-icon">✅</div>
+                <div class="service-name">Healthchecks</div>
+                <p class="service-description">Cron job and scheduled task monitoring with alerts</p>
+              </a>
+              <a href="https://healthchecks.io/" target="_blank" rel="noopener noreferrer" class="service-product" title="Healthchecks">
+                Healthchecks
+                <svg viewBox="0 0 16 16" width="9" height="9" aria-hidden="true">
+                  <path fill="currentColor" d="M10 1v2h2.3L7.7 7.6l1.4 1.4L13.7 4.4V7h2V1h-5.7zM3 3v10h10V8h-2v3H5V5h3V3H3z"/>
+                </svg>
+              </a>
+            </li>
+            <li class="service" data-endpoint="cloud_ntfy">
+              <a href="https://ntfy-cloud.${DOMAIN}" target="_blank" rel="noopener" class="service-main">
+                <div class="service-icon">🔔</div>
+                <div class="service-name">Notifications</div>
+                <p class="service-description">Pub/sub push notifications for the cloud server</p>
+              </a>
+              <a href="https://ntfy.sh/" target="_blank" rel="noopener noreferrer" class="service-product" title="ntfy">
+                ntfy
+                <svg viewBox="0 0 16 16" width="9" height="9" aria-hidden="true">
+                  <path fill="currentColor" d="M10 1v2h2.3L7.7 7.6l1.4 1.4L13.7 4.4V7h2V1h-5.7zM3 3v10h10V8h-2v3H5V5h3V3H3z"/>
+                </svg>
+              </a>
+            </li>
+            <li class="service" data-endpoint="cloud_mail-(https)">
+              <a href="https://mail.${DOMAIN}" target="_blank" rel="noopener" class="service-main">
+                <div class="service-icon">📧</div>
+                <div class="service-name">Mail, Calendar &amp; Contacts</div>
+                <p class="service-description">Email server: SMTP, IMAP, JMAP, plus CalDAV / CardDAV calendar and address book sync</p>
+              </a>
+              <a href="https://stalw.art/" target="_blank" rel="noopener noreferrer" class="service-product" title="Stalwart">
+                Stalwart
+                <svg viewBox="0 0 16 16" width="9" height="9" aria-hidden="true">
+                  <path fill="currentColor" d="M10 1v2h2.3L7.7 7.6l1.4 1.4L13.7 4.4V7h2V1h-5.7zM3 3v10h10V8h-2v3H5V5h3V3H3z"/>
+                </svg>
+              </a>
+            </li>
+            <li class="service" data-endpoint="cloud_bulwark">
+              <a href="https://webmail.${DOMAIN}" target="_blank" rel="noopener" class="service-main">
+                <div class="service-icon">📨</div>
+                <div class="service-name">Webmail</div>
+                <p class="service-description">Modern JMAP email client with a clean UI</p>
+              </a>
+              <a href="https://github.com/jordan-wright/bulwark" target="_blank" rel="noopener noreferrer" class="service-product" title="Bulwark">
+                Bulwark
+                <svg viewBox="0 0 16 16" width="9" height="9" aria-hidden="true">
+                  <path fill="currentColor" d="M10 1v2h2.3L7.7 7.6l1.4 1.4L13.7 4.4V7h2V1h-5.7zM3 3v10h10V8h-2v3H5V5h3V3H3z"/>
+                </svg>
+              </a>
+            </li>
+            <!-- Cloud section: Mail Admin — REMOVED: duplicates Stalwart (same product, same /admin URL). -->
+            <li class="service" data-endpoint="cloud_librespeed">
+              <a href="https://speed-cloud.${DOMAIN}" target="_blank" rel="noopener" class="service-main">
+                <div class="service-icon">🚀</div>
+                <div class="service-name">Speed</div>
+                <p class="service-description">Network speed test from the cloud server</p>
+              </a>
+              <a href="https://librespeed.org/" target="_blank" rel="noopener noreferrer" class="service-product" title="LibreSpeed">
+                LibreSpeed
+                <svg viewBox="0 0 16 16" width="9" height="9" aria-hidden="true">
+                  <path fill="currentColor" d="M10 1v2h2.3L7.7 7.6l1.4 1.4L13.7 4.4V7h2V1h-5.7zM3 3v10h10V8h-2v3H5V5h3V3H3z"/>
+                </svg>
+              </a>
+            </li>
+            <li class="service" data-endpoint="cloud_syncthing">
+              <a href="https://sync-cloud.${DOMAIN}" target="_blank" rel="noopener" class="service-main">
+                <div class="service-icon">🔄</div>
+                <div class="service-name">Sync</div>
+                <p class="service-description">Peer-to-peer file sync for the cloud server</p>
+              </a>
+              <a href="https://syncthing.net/" target="_blank" rel="noopener noreferrer" class="service-product" title="Syncthing">
+                Syncthing
+                <svg viewBox="0 0 16 16" width="9" height="9" aria-hidden="true">
+                  <path fill="currentColor" d="M10 1v2h2.3L7.7 7.6l1.4 1.4L13.7 4.4V7h2V1h-5.7zM3 3v10h10V8h-2v3H5V5h3V3H3z"/>
+                </svg>
+              </a>
+            </li>
+            <li class="service" data-endpoint="cloud_traefik">
+              <a href="https://proxy-cloud.${DOMAIN}" target="_blank" rel="noopener" class="service-main">
+                <div class="service-icon">🚦</div>
+                <div class="service-name">Traefik</div>
+                <p class="service-description">Reverse proxy and TLS termination dashboard</p>
+              </a>
+              <a href="https://traefik.io/" target="_blank" rel="noopener noreferrer" class="service-product" title="Traefik">
+                Traefik
+                <svg viewBox="0 0 16 16" width="9" height="9" aria-hidden="true">
+                  <path fill="currentColor" d="M10 1v2h2.3L7.7 7.6l1.4 1.4L13.7 4.4V7h2V1h-5.7zM3 3v10h10V8h-2v3H5V5h3V3H3z"/>
+                </svg>
+              </a>
+            </li>
+            <li class="service" data-endpoint="cloud_gatus">
+              <a href="https://uptime-cloud.${DOMAIN}" target="_blank" rel="noopener" class="service-main">
+                <div class="service-icon">⏱️</div>
+                <div class="service-name">Uptime</div>
+                <p class="service-description">Cross-server health and status monitoring</p>
+              </a>
+              <a href="https://gatus.io/" target="_blank" rel="noopener noreferrer" class="service-product" title="Gatus">
+                Gatus
+                <svg viewBox="0 0 16 16" width="9" height="9" aria-hidden="true">
+                  <path fill="currentColor" d="M10 1v2h2.3L7.7 7.6l1.4 1.4L13.7 4.4V7h2V1h-5.7zM3 3v10h10V8h-2v3H5V5h3V3H3z"/>
+                </svg>
+              </a>
+            </li>
+          </ul>
+        </section>
+
+        <section class="section" data-server="offsite">
+          <div class="section-header">
+            <h2 class="section-title">Offsite</h2>
+            <div class="section-stats">
+              <span class="pill pill-counter" data-counter>
+                <span data-healthy>0</span><span>/</span><span data-total>0</span> healthy
+              </span>
+              <span class="pill pill-uptime" data-uptime>—</span>
+            </div>
+          </div>
+          <ul class="grid">
+            <li class="service" data-endpoint="offsite_librespeed">
+              <a href="https://speed-offsite.${DOMAIN}" target="_blank" rel="noopener" class="service-main">
+                <div class="service-icon">🚀</div>
+                <div class="service-name">Speed</div>
+                <p class="service-description">Network speed test from the offsite server</p>
+              </a>
+              <a href="https://librespeed.org/" target="_blank" rel="noopener noreferrer" class="service-product" title="LibreSpeed">
+                LibreSpeed
+                <svg viewBox="0 0 16 16" width="9" height="9" aria-hidden="true">
+                  <path fill="currentColor" d="M10 1v2h2.3L7.7 7.6l1.4 1.4L13.7 4.4V7h2V1h-5.7zM3 3v10h10V8h-2v3H5V5h3V3H3z"/>
+                </svg>
+              </a>
+            </li>
+            <li class="service" data-endpoint="offsite_syncthing">
+              <a href="https://sync-offsite.${DOMAIN}" target="_blank" rel="noopener" class="service-main">
+                <div class="service-icon">🔄</div>
+                <div class="service-name">Syncthing</div>
+                <p class="service-description">Offsite peer-to-peer file sync — geographic redundancy</p>
+              </a>
+              <a href="https://syncthing.net/" target="_blank" rel="noopener noreferrer" class="service-product" title="Syncthing">
+                Syncthing
+                <svg viewBox="0 0 16 16" width="9" height="9" aria-hidden="true">
+                  <path fill="currentColor" d="M10 1v2h2.3L7.7 7.6l1.4 1.4L13.7 4.4V7h2V1h-5.7zM3 3v10h10V8h-2v3H5V5h3V3H3z"/>
+                </svg>
+              </a>
+            </li>
+            <li class="service" data-endpoint="offsite_traefik">
+              <a href="https://proxy-offsite.${DOMAIN}" target="_blank" rel="noopener" class="service-main">
+                <div class="service-icon">🚦</div>
+                <div class="service-name">Traefik</div>
+                <p class="service-description">Reverse proxy and TLS termination dashboard</p>
+              </a>
+              <a href="https://traefik.io/" target="_blank" rel="noopener noreferrer" class="service-product" title="Traefik">
+                Traefik
+                <svg viewBox="0 0 16 16" width="9" height="9" aria-hidden="true">
+                  <path fill="currentColor" d="M10 1v2h2.3L7.7 7.6l1.4 1.4L13.7 4.4V7h2V1h-5.7zM3 3v10h10V8h-2v3H5V5h3V3H3z"/>
+                </svg>
+              </a>
+            </li>
+          </ul>
+        </section>
+
+        <section class="section" data-server="portable">
+          <div class="section-header">
+            <h2 class="section-title">Portable</h2>
+            <div class="section-stats">
+              <span class="pill pill-counter" data-counter>
+                <span data-healthy>0</span><span>/</span><span data-total>0</span> healthy
+              </span>
+            </div>
+          </div>
+          <ul class="grid">
+            <li class="service" data-endpoint="home_home-assistant">
+              <a href="https://home.${DOMAIN}" target="_blank" rel="noopener" class="service-main">
+                <div class="service-icon">🏠</div>
+                <div class="service-name">Home Assistant</div>
+                <p class="service-description">Smart-home automation hub — lights, sensors, automations</p>
+              </a>
+              <a href="https://www.home-assistant.io/" target="_blank" rel="noopener noreferrer" class="service-product" title="Home Assistant">
+                Home Assistant
+                <svg viewBox="0 0 16 16" width="9" height="9" aria-hidden="true">
+                  <path fill="currentColor" d="M10 1v2h2.3L7.7 7.6l1.4 1.4L13.7 4.4V7h2V1h-5.7zM3 3v10h10V8h-2v3H5V5h3V3H3z"/>
+                </svg>
+              </a>
+            </li>
+            <li class="service" data-endpoint="portable_opencode-web">
+              <a href="https://code2.${DOMAIN}" target="_blank" rel="noopener" class="service-main">
+                <div class="service-icon">💻</div>
+                <div class="service-name">OpenCode Web</div>
+                <p class="service-description">AI coding assistant — secondary instance on portable</p>
+              </a>
+              <a href="https://opencode.ai/" target="_blank" rel="noopener noreferrer" class="service-product" title="OpenCode">
+                OpenCode
+                <svg viewBox="0 0 16 16" width="9" height="9" aria-hidden="true">
+                  <path fill="currentColor" d="M10 1v2h2.3L7.7 7.6l1.4 1.4L13.7 4.4V7h2V1h-5.7zM3 3v10h10V8h-2v3H5V5h3V3H3z"/>
+                </svg>
+              </a>
+            </li>
+          </ul>
+        </section>
+      </main>
+
+      <footer class="footer">
+        Generated ${GENERATED_AT} · <a href="https://uptime-cloud.${DOMAIN}" target="_blank" rel="noopener">uptime</a>
+      </footer>
+    </div>
+
+    <script src="health.js"></script>
+    <script>
+      (function () {
+        "use strict";
+
+        // --- Search ---
+        var search = document.getElementById("search");
+        var noResults = document.getElementById("noResults");
+        var sections = document.querySelectorAll(".section");
+
+        function escapeRegex(s) {
+          return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+        }
+
+        function buildMatcher(query) {
+          if (!query) return function () { return true };
+          if (query.length <= 2) {
+            var re = new RegExp("\\b" + escapeRegex(query), "i");
+            return function (text) { return re.test(text) };
+          }
+          return function (text) {
+            return text.toLowerCase().indexOf(query) !== -1;
+          };
+        }
+
+        function runSearch() {
+          var q = search.value.trim();
+          var matcher = buildMatcher(q);
+          var anyVisible = false;
+          sections.forEach(function (section) {
+            var items = section.querySelectorAll(".service");
+            var has = false;
+            items.forEach(function (it) {
+              var match = matcher(it.textContent);
+              it.style.display = match ? "" : "none";
+              if (match) has = true;
+            });
+            section.classList.toggle("hidden", !has);
+            if (has) anyVisible = true;
+          });
+          noResults.classList.toggle("visible", !anyVisible && q !== "");
+        }
+
+        search.addEventListener("input", runSearch);
+
+        // --- Health status from health.js ---
+        var health = (window.__dashHealth && window.__dashHealth.services) || {};
+
+        var counters = {};
+        var maxUptime = {};
+
+        document.querySelectorAll(".section").forEach(function (section) {
+          var server = section.getAttribute("data-server");
+          if (!server) return;
+          counters[server] = { total: 0, healthy: 0 };
+          section.querySelectorAll(".service").forEach(function (el) {
+            var endpoint = el.getAttribute("data-endpoint");
+            if (!endpoint) return;
+
+            var status = health[endpoint];
+            var main = el.querySelector(".service-main");
+
+            if (status && status.healthy === false) {
+              el.classList.add("service--down");
+              if (status.uptimeUrl) {
+                main.setAttribute("href", status.uptimeUrl);
+                main.setAttribute("title", "Down — open uptime page");
+              }
+            }
+
+            counters[server].total += 1;
+            if (!status || status.healthy !== false) {
+              counters[server].healthy += 1;
+            }
+
+            if (status && typeof status.uptime30d === "number") {
+              if (maxUptime[server] === undefined || status.uptime30d > maxUptime[server]) {
+                maxUptime[server] = status.uptime30d;
+              }
+            }
+          });
+        });
+
+        document.querySelectorAll(".section").forEach(function (section) {
+          var server = section.getAttribute("data-server");
+          if (!server) return;
+          var c = counters[server];
+          var u = maxUptime[server];
+
+          var counter = section.querySelector("[data-counter]");
+          var uptimeEl = section.querySelector("[data-uptime]");
+
+          if (c && counter) {
+            var healthyEl = section.querySelector("[data-healthy]");
+            var totalEl = section.querySelector("[data-total]");
+            if (healthyEl) healthyEl.textContent = String(c.healthy);
+            if (totalEl) totalEl.textContent = String(c.total);
+            counter.classList.toggle("pill-healthy", c.healthy === c.total);
+            counter.classList.toggle("pill-degraded", c.healthy < c.total);
+          }
+
+          if (uptimeEl && u !== undefined) {
+            uptimeEl.textContent = u.toFixed(2) + "% · 30d";
+          }
+        });
+
+        // --- Search autofocus on load (best effort) ---
+        var interacted = false;
+        function markInteracted() { interacted = true; }
+        document.addEventListener("mousedown", markInteracted, { once: true, passive: true });
+        document.addEventListener("keydown", function (e) {
+          if (e.key !== "/" && e.key !== "Escape" && !e.metaKey && !e.ctrlKey) {
+            markInteracted();
+          }
+        }, { passive: true });
+        document.addEventListener("touchstart", markInteracted, { once: true, passive: true });
+        document.addEventListener("scroll", markInteracted, { once: true, passive: true });
+
+        function tryFocus() {
+          if (!interacted && document.activeElement === document.body) {
+            search.focus({ preventScroll: true });
+          }
+        }
+
+        if (document.readyState === "complete") {
+          tryFocus();
+        } else {
+          window.addEventListener("load", function () {
+            setTimeout(tryFocus, 50);
+          });
+        }
+
+        // --- Keyboard shortcuts ---
+        document.addEventListener("keydown", function (e) {
+          // "/" to focus search (unless already typing)
+          if (e.key === "/" && document.activeElement !== search && !e.metaKey && !e.ctrlKey) {
+            e.preventDefault();
+            search.focus();
+            search.select();
+          }
+          // Esc to clear + blur
+          if (e.key === "Escape" && document.activeElement === search) {
+            search.value = "";
+            runSearch();
+            search.blur();
+          }
+        });
+      })();
+    </script>
+  </body>
+</html>
