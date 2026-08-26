@@ -1,0 +1,65 @@
+name: ${PROJECT}
+
+networks:
+  proxy:
+    external: true
+
+services:
+  # Oko (Russian: око = eye) — server-rendered homelab dashboard.
+  #
+  # Replaces the previous static nginx-dash stack. The Go app fetches
+  # gatus badge SVGs in parallel at request time (60s in-memory cache),
+  # parses out health + 30d uptime, and renders the full HTML page.
+  # No client-side JS beyond a ~30-line filter for the search box.
+  #
+  # PWA (manifest.json + sw.js + icons) was dropped in the rewrite — the
+  # dashboard is server-rendered, not a static site. Add back only if a
+  # concrete "install on phone" use case appears.
+  oko:
+    container_name: hl-oko
+    image: ghcr.io/spy4x/oko:latest
+    restart: unless-stopped
+    # Vars come from ${pathApps}/.env via the deploy script's
+    # `--env-file=.env` flag. Don't use `env_file:` here — it resolves
+    # relative to the compose project root (${pathApps}), so an
+    # unqualified `.env` would point at ${pathApps}/stacks/oko/.env.
+    environment:
+      - DOMAIN=${DOMAIN}
+      - UPTIME_HOSTS=${UPTIME_HOSTS}
+      - PORT=8080
+      - CACHE_TTL_SECS=60
+      - UPTIME_TIMEOUT_SECS=5
+    deploy:
+      resources:
+        limits:
+          # ~12 MB binary + ~10 MB RSS baseline + cache map + ~36 entry Status structs.
+          # Network fan-out (8 endpoints × 2 badges) is the upper bound on transient memory.
+          memory: 96M
+          cpus: "0.10"
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp
+    volumes:
+      # Catalog JSON — the entire source of truth for what services to
+      # render and how to look up their gatus status. Mtime-cached by
+      # oko, so editing this file picks up the change on the next request
+      # without a container restart. Deploy syncs it from
+      # servers/home/configs/oko/config.json on the homelab repo.
+      - ${PATH_APPS}/configs/oko/config.json:/app/config.json:ro
+    networks:
+      - proxy
+    # Self-probe healthcheck inherited from the image (oko -healthcheck).
+    # Distroless-static has no shell, no wget — using the binary's own
+    # flag avoids baking a heavier base image just for health.
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=proxy"
+      - "traefik.http.services.hl-oko.loadbalancer.server.port=8080"
+      - "traefik.http.routers.hl-oko.rule=Host(`dash.${DOMAIN}`)"
+      - "traefik.http.routers.hl-oko.entrypoints=websecure"
+      - "traefik.http.routers.hl-oko.tls=true"
+      - "traefik.http.routers.hl-oko.tls.certresolver=myresolver"
+      # Public-facing dashboard; allow SEO indexing.
+      - "traefik.http.routers.hl-oko.middlewares=allow-index@file"

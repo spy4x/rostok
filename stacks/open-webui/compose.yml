@@ -55,8 +55,8 @@ services:
       - OPENAI_API_KEYS=${OPENAI_API_KEYS}
       - OPENAI_API_BASE_URLS=${OPENAI_API_BASE_URLS}
       # Whitelist models per provider to keep the selector clean
-      # Index 0 = DeepSeek, Index 1 = OpenAI, Index 2 = MiniMax
-      - "OPENAI_API_CONFIGS={\"0\":{\"model_ids\":[\"deepseek-v4-flash\",\"deepseek-v4-pro\"]},\"1\":{\"model_ids\":[\"gpt-5.4-mini\"]},\"2\":{\"model_ids\":[\"MiniMax-M3\"]}}"
+      # Index 0 = OpenAI, Index 1 = MiniMax (DeepSeek dropped)
+      - "OPENAI_API_CONFIGS={\"0\":{\"model_ids\":[\"gpt-5.4-mini\"]},\"1\":{\"model_ids\":[\"MiniMax-M3\"]}}"
 
       # --- Ollama Local LLM ---
       - ENABLE_OLLAMA_API=${ENABLE_OLLAMA_API:-true}
@@ -64,7 +64,7 @@ services:
       - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://ollama:11434}
 
       # --- Default Model Settings ---
-      - DEFAULT_MODELS=MiniMax-M3,deepseek-v4-flash,deepseek-v4-pro,gemma4:e4b,gpt-5.4-mini
+      - DEFAULT_MODELS=MiniMax-M3,gemma4:e4b,gpt-5.4-mini
       - "DEFAULT_MODEL_METADATA={\"capabilities\":{\"vision\":true,\"file_upload\":true,\"file_context\":true,\"web_search\":true,\"image_generation\":true,\"code_interpreter\":true},\"defaultFeatureIds\":[\"image_generation\"]}"
       - DEFAULT_USER_ROLE=${DEFAULT_USER_ROLE:-user}
       - ENABLE_SIGNUP=${ENABLE_SIGNUP:-false}
