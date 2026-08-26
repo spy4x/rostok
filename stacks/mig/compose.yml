@@ -1,0 +1,51 @@
+name: ${PROJECT}
+
+networks:
+  proxy:
+    external: true
+
+services:
+  # mig — Tiny self-hosted meeting scheduler (миг = moment).
+  # One owner, one URL, one feature: book a time slot.
+  mig:
+    container_name: hl-mig
+    image: ghcr.io/spy4x/mig:latest
+    restart: unless-stopped
+    env_file:
+      - ${PATH_APPS}/configs/mig.env
+    volumes:
+      - ${VOLUMES_PATH}/mig:/data:z
+    healthcheck:
+      test: ["CMD-SHELL", "wget --spider -q http://localhost:8080/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    deploy:
+      resources:
+        limits:
+          # 128M was too tight: deno's V8 heap + Fresh render state
+          # thrashes cgroup memory and slows the first request after
+          # boot by ~3s (3-15x slower). 256M keeps it consistently
+          # fast without going overboard for a 1-page SSR app.
+          memory: 256M
+          # cpus: 0.2 was too tight on a busy host — deno's SSR
+          # render takes ~3-4s under that share. 0.5 brought it
+          # to ~700ms. 1.0 keeps it under 300ms with headroom for
+          # the booking form POST + email send path.
+          cpus: "1"
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - proxy
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=proxy"
+      - "traefik.http.services.hl-mig.loadbalancer.server.port=8080"
+      - "traefik.http.routers.hl-mig.rule=Host(\`meet.${DOMAIN}\`)"
+      - "traefik.http.routers.hl-mig.entrypoints=websecure"
+      - "traefik.http.routers.hl-mig.tls=true"
+      - "traefik.http.routers.hl-mig.tls.certresolver=myresolver"
+      - "traefik.http.routers.hl-mig.middlewares=security-headers@file,compression@file"
+      # robots-deny — booking page isn't index-worthy
+      - "traefik.http.routers.hl-mig.middlewares=security-headers@file,compression@file,robots-deny@file"
