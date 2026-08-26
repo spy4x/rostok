@@ -40,8 +40,6 @@ DB = "/app/backend/data/webui.db"
 # Models that appear in the model selector (UI + /api/v1/models)
 WHITELIST = [
     "MiniMax-M3",
-    "deepseek-v4-flash",
-    "deepseek-v4-pro",
     "gemma4:e4b",
     "gpt-5.4-mini",
 ]
