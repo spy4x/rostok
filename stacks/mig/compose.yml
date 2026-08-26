@@ -24,7 +24,11 @@ services:
     deploy:
       resources:
         limits:
-          memory: 128M
+          # 128M is too tight: deno's V8 heap + Fresh render state
+          # thrashes cgroup memory and slows the first request after
+          # boot by ~3s (3-15x slower). 256M keeps it consistently
+          # fast without going overboard for a 1-page SSR app.
+          memory: 256M
           cpus: "0.2"
     security_opt:
       - no-new-privileges:true
