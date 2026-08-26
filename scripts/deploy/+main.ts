@@ -209,19 +209,11 @@ try {
     )
     if (hasServerBeforeDeploy) {
       log(`Running server-specific before.deploy.ts for ${deployAs}...`)
-      // Allow network access to the gatus servers so before.deploy.ts
-      // hooks (e.g. dash) can fetch current health/uptime badges.
-      const domain = targetEnv["DOMAIN"] || ""
-      const netAllow = [
-        "localhost",
-        domain && `uptime-cloud.${domain}`,
-        domain && `uptime-home.${domain}`,
-      ].filter(Boolean).join(",")
       const proc = new Deno.Command(Deno.execPath(), {
         args: [
           "run",
           "--allow-run=htpasswd,ssh,docker,bash,mkdir,chown,test,rm,printf,wget,cp,mv,ln",
-          `--allow-net=${netAllow}`,
+          "--allow-net=localhost",
           "-R",
           "-W",
           "-E",
