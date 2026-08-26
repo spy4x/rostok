@@ -29,6 +29,13 @@ services:
       # - WOODPECKER_GITLAB_CLIENT=${WOODPECKER_GITLAB_CLIENT}
       # - WOODPECKER_GITLAB_SECRET=${WOODPECKER_GITLAB_SECRET}
       - WOODPECKER_ADMIN=${WOODPECKER_ADMIN}
+      # Comma-separated list of plugins allowed to run in privileged mode.
+      # Required since v3.0+ — the docker buildx plugin needs `--privileged`
+      # to spin up the buildkit container (nested docker-in-docker). Without
+      # this, pipelines that use `image: woodpeckerci/plugin-docker-buildx`
+      # fail at task start with "no longer privileged by default".
+      # Comma-separated, supports globs (e.g. `woodpeckerci/plugin-*`).
+      - WOODPECKER_PLUGINS_PRIVILEGED=woodpeckerci/plugin-docker-buildx
     volumes:
       - ${VOLUMES_PATH}/woodpecker-server:/var/lib/woodpecker:z
     restart: unless-stopped
