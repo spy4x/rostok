@@ -6,14 +6,18 @@ in-memory cache, single-flight). No client-side JS beyond a ~30-line
 filter for the search box.
 
 ```
-browser ─────► │  oko (Go) :8080             │
-   GET /        │  1. cache hit? return       │
-                │  2. fetch gatus badges ════╪══════► uptime-cloud.${DOMAIN}
-                │     in parallel            ║ uptime-home.${DOMAIN}
-                │  3. parse SVG fill + %     ║
-                │  4. render HTML            ║
-                │  5. cache 60s              ║
-                └────────────────────────────║ ◄══ (SVG responses)
+ browser ──GET /──► oko (Go) :8080
+                     │
+                     ├─ 1. cache hit? return
+                     ├─ 2. fetch gatus badges in parallel
+                     │     ├─► uptime-cloud.${DOMAIN}
+                     │     └─► uptime-home.${DOMAIN}
+                     ├─ 3. parse SVG fill + %
+                     ├─ 4. render HTML
+                     └─ 5. cache 60s
+                                      ▲
+                                      │
+                                  (SVG responses)
 ```
 
 ## Why a Go app
