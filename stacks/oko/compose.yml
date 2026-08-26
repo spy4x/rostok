@@ -41,6 +41,13 @@ services:
     read_only: true
     tmpfs:
       - /tmp
+    volumes:
+      # Catalog JSON — the entire source of truth for what services to
+      # render and how to look up their gatus status. Mtime-cached by
+      # oko, so editing this file picks up the change on the next request
+      # without a container restart. Deploy syncs it from
+      # servers/home/configs/oko/config.json on the homelab repo.
+      - ${PATH_APPS}/configs/oko/config.json:/app/config.json:ro
     networks:
       - proxy
     # Self-probe healthcheck inherited from the image (oko -healthcheck).
