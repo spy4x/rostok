@@ -42,7 +42,7 @@ services:
       - "traefik.enable=true"
       - "traefik.docker.network=proxy"
       - "traefik.http.services.hl-mig.loadbalancer.server.port=8080"
-      - "traefik.http.routers.hl-mig.rule=Host(`schedule.${DOMAIN}`)"
+      - "traefik.http.routers.hl-mig.rule=Host(\`meet.${DOMAIN}\`)"
       - "traefik.http.routers.hl-mig.entrypoints=websecure"
       - "traefik.http.routers.hl-mig.tls=true"
       - "traefik.http.routers.hl-mig.tls.certresolver=myresolver"
