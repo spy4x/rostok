@@ -43,6 +43,11 @@ services:
           memory: 2048M
           cpus: "2"
     security_opt:
+      # Pin SELinux MCS label to s0. Without this, docker assigns a random
+      # category pair on every container restart, leaving the /config bind
+      # mount with stale labels that the new container process can't read
+      # (MLS constraint denial → setroubleshootd spam). Fedora/RHEL only.
       - no-new-privileges:true
+      - label=level:s0
     environment:
       - TZ=${TZ:-Europe/Berlin}
