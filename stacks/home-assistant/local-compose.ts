@@ -31,9 +31,9 @@ const composePath = fromFileUrl(new URL("./compose.local.yml", import.meta.url))
 const result = await new Deno.Command("docker", {
   args: ["compose", "-f", composePath, ...actions[action]],
   env: {
-    ...Deno.env.toObject(),
     HOME_ASSISTANT_DATA_PATH: dataPath,
     ZIGBEE_DEVICE_PATH: devicePath,
+    PATH: Deno.env.get("PATH") || "",
   },
   stdin: "inherit",
   stdout: "inherit",

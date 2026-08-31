@@ -29,10 +29,22 @@
       "command": "PATH_APPS=$PWD deno run --env-file=.env.root --env-file=servers/home/.env --env-file=stacks/home-assistant/.env -A ./scripts/backup/+main.ts home-assistant",
       "description": "💾 Back up the local Home Assistant data path"
     },
-    "home-assistant:local:up": "deno run --env-file=stacks/home-assistant/.env -A stacks/home-assistant/local-compose.ts up",
-    "home-assistant:local:down": "deno run --env-file=stacks/home-assistant/.env -A stacks/home-assistant/local-compose.ts down",
-    "home-assistant:local:stop": "deno run --env-file=stacks/home-assistant/.env -A stacks/home-assistant/local-compose.ts stop",
-    "home-assistant:local:config": "deno run --env-file=stacks/home-assistant/.env -A stacks/home-assistant/local-compose.ts config",
+    "home-assistant:local:up": {
+      "command": "deno run --env-file=stacks/home-assistant/.env -A stacks/home-assistant/local-compose.ts up",
+      "description": "🏠 Start local Home Assistant"
+    },
+    "home-assistant:local:down": {
+      "command": "deno run --env-file=stacks/home-assistant/.env -A stacks/home-assistant/local-compose.ts down",
+      "description": "🏠 Stop and remove local Home Assistant containers"
+    },
+    "home-assistant:local:stop": {
+      "command": "deno run --env-file=stacks/home-assistant/.env -A stacks/home-assistant/local-compose.ts stop",
+      "description": "🏠 Stop local Home Assistant containers"
+    },
+    "home-assistant:local:config": {
+      "command": "deno run --env-file=stacks/home-assistant/.env -A stacks/home-assistant/local-compose.ts config",
+      "description": "🏠 Render local Home Assistant compose configuration"
+    },
     "backup:restore": {
       "command": "deno run -A ./scripts/backup/restore.ts",
       "description": "📥 Restore service data from backup (interactive)"
