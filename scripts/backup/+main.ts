@@ -3,6 +3,7 @@ import { getEnvVar, PATH_APPS, USER } from "./src/+lib.ts"
 import { BackupConfigProcessor } from "./src/config.ts"
 import { BackupOperations } from "./src/operations.ts"
 import { BackupReporter } from "./src/reporting.ts"
+import { selectBackupConfigurations } from "./src/selection.ts"
 import { BackupConfigState, BackupContext, BackupResult, BackupStatus } from "./src/types.ts"
 
 /**
@@ -26,9 +27,6 @@ class BackupRunner {
     const startTime = Date.now()
     log(`[${new Date().toISOString()}] Starting backup process for: ${this.context.serverName}`)
 
-    // Send /start signal to healthchecks (if configured)
-    await this.reporter.sendStartSignal()
-
     try {
       // Load and validate configurations
       const backups = await this.loadConfigurations()
@@ -38,6 +36,9 @@ class BackupRunner {
         await this.reporter.sendNotification(this.createEmptyResult(0))
         Deno.exit(1)
       }
+
+      // Send /start only after requested backup names are validated.
+      await this.reporter.sendStartSignal()
 
       // Process each backup
       await this.processBackups(backups)
@@ -91,10 +92,13 @@ class BackupRunner {
    * Loads all backup configurations from stacks and server configs
    */
   private async loadConfigurations(): Promise<BackupConfigState[]> {
-    return await BackupConfigProcessor.loadConfigurations(
+    const backups = await BackupConfigProcessor.loadConfigurations(
       this.context.stacksPath,
       this.context.configsPath,
+      Deno.args,
     )
+
+    return selectBackupConfigurations(backups, Deno.args)
   }
 
   /**

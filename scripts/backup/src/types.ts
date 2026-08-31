@@ -7,6 +7,7 @@ export enum BackupStatus {
 }
 
 export type BackupConfigState = BackupConfig & {
+  discoveryName?: string
   fileName: string
   status: BackupStatus
   error?: string

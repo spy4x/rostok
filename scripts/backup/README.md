@@ -49,6 +49,15 @@ deno run -A +main.ts
 # With environment file
 deno run --env-file=/path/to/.env -A +main.ts
 
+# Back up only selected configurations
+deno task backup -- home-assistant
+```
+
+Selection names are stack directory names or server-config filenames
+without the `.backup.ts` suffix. Modules are imported only after the
+filter passes, so unrelated backup configs do not run their module bodies.
+
+```bash
 # Check TypeScript compilation
 deno check +main.ts
 ```

@@ -1,5 +1,4 @@
-import { absPath, error } from "../../+lib.ts"
-import { USER, VOLUMES_PATH } from "./+lib.ts"
+import { absPath, error, getEnvVar } from "../../+lib.ts"
 import { BackupConfigState, BackupStatus } from "./types.ts"
 
 export class BackupConfigProcessor {
@@ -47,14 +46,14 @@ export class BackupConfigProcessor {
    * Gets default source paths for a backup configuration
    */
   private static getDefaultSourcePaths(backup: BackupConfigState): string[] {
-    return [`${VOLUMES_PATH}/${backup.name}`]
+    return [`${getEnvVar("VOLUMES_PATH")}/${backup.name}`]
   }
 
   /**
    * Checks if a path exists and is accessible
    */
   private static checkPathExists(config: BackupConfigState, path: string): boolean {
-    const absolutePath = absPath(path, USER)
+    const absolutePath = absPath(path, getEnvVar("USER"))
     try {
       const stat = Deno.statSync(absolutePath)
       if (!stat) {
@@ -84,6 +83,7 @@ export class BackupConfigProcessor {
   private static async loadConfigsFromDir(
     dirPath: string,
     filePattern: string = ".backup.ts",
+    requestedNames: Set<string> = new Set(),
   ): Promise<BackupConfigState[]> {
     const backups: BackupConfigState[] = []
 
@@ -93,6 +93,7 @@ export class BackupConfigProcessor {
       for (const entry of entries) {
         if (entry.isFile && entry.name.endsWith(filePattern)) {
           const name = entry.name.replace(filePattern, "")
+          if (requestedNames.size > 0 && !requestedNames.has(name)) continue
           try {
             const configModule = await import(`${dirPath}/${entry.name}`)
 
@@ -111,6 +112,7 @@ export class BackupConfigProcessor {
 
             const backup: BackupConfigState = {
               ...configModule.default,
+              discoveryName: name,
               fileName: entry.name,
               status: BackupStatus.IN_PROGRESS,
             }
@@ -128,6 +130,7 @@ export class BackupConfigProcessor {
             backups.push(backup)
           }
         } else if (entry.isDirectory) {
+          if (requestedNames.size > 0 && !requestedNames.has(entry.name)) continue
           // For stack directories, look for backup.ts inside
           const stackBackupPath = `${dirPath}/${entry.name}/backup.ts`
           try {
@@ -151,6 +154,7 @@ export class BackupConfigProcessor {
 
                 const backup: BackupConfigState = {
                   ...configModule.default,
+                  discoveryName: entry.name,
                   fileName: `${entry.name}/backup.ts`,
                   status: BackupStatus.IN_PROGRESS,
                 }
@@ -187,15 +191,17 @@ export class BackupConfigProcessor {
   static async loadConfigurations(
     stacksPath: string,
     serverConfigsPath: string,
+    requestedNames: string[] = [],
   ): Promise<BackupConfigState[]> {
     const backups: BackupConfigState[] = []
+    const requested = new Set(requestedNames)
 
     // Load from stacks directory (each stack may have a backup.ts file)
-    const stackBackups = await this.loadConfigsFromDir(stacksPath, "")
+    const stackBackups = await this.loadConfigsFromDir(stacksPath, "", requested)
     backups.push(...stackBackups)
 
     // Load from server configs/backup directory (for non-service backups)
-    const serverBackups = await this.loadConfigsFromDir(serverConfigsPath, ".backup.ts")
+    const serverBackups = await this.loadConfigsFromDir(serverConfigsPath, ".backup.ts", requested)
     backups.push(...serverBackups)
 
     return backups

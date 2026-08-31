@@ -19,7 +19,7 @@ export class BackupReporter {
     try {
       const response = await fetch(url, {
         method: "POST",
-        body: `Backup started for ${this.context.serverName}`,
+        body: "Backup started",
       })
 
       if (response.ok) {
@@ -27,8 +27,8 @@ export class BackupReporter {
       } else {
         error(`healthchecks start signal failed: ${response.status} ${response.statusText}`)
       }
-    } catch (err) {
-      error(`Failed to send healthchecks start signal: ${err}`)
+    } catch {
+      error("Failed to send healthchecks start signal")
     }
   }
 
@@ -55,7 +55,7 @@ export class BackupReporter {
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
       const ntfySuccess = await this.sendNtfyNotification(result)
       if (ntfySuccess) {
-        log("ntfy notification sent successfully to " + this.context.ntfyUrl)
+        log("ntfy notification sent successfully")
         return
       }
 
@@ -69,7 +69,7 @@ export class BackupReporter {
       }
     }
 
-    error(`ntfy notification failed after ${maxRetries} attempts to ` + this.context.ntfyUrl)
+    error(`ntfy notification failed after ${maxRetries} attempts`)
   }
 
   /**
@@ -102,8 +102,8 @@ export class BackupReporter {
         } else {
           error(`healthchecks ping failed: ${response.status} ${response.statusText}`)
         }
-      } catch (err) {
-        error(`Failed to send healthchecks ping: ${err}`)
+      } catch {
+        error("Failed to send healthchecks ping")
       }
 
       if (attempt < maxRetries) {
@@ -134,8 +134,7 @@ export class BackupReporter {
       : `${durationSeconds}s`
 
     // Header with summary
-    let message = `Server: ${this.context.serverName}\n`
-    message += `Success: ${successCount}/${totalCount} (${successRate}%)\n`
+    let message = `Success: ${successCount}/${totalCount} (${successRate}%)\n`
     message += `Total Size: ${totalSizeGB.toFixed(2)} GB\n`
     message += `Duration: ${durationText}\n`
     message += "\n"
@@ -162,8 +161,7 @@ export class BackupReporter {
       message += "\nError Details:\n"
       for (const backup of failedBackups) {
         const errorStep = backup.errorAtStep ? `[${backup.errorAtStep.toUpperCase()}]` : ""
-        const errorMsg = backup.error || "unknown error"
-        message += `- ${backup.name}: ${errorStep} ${errorMsg}\n`
+        message += `- ${backup.name}: ${errorStep || "[UNKNOWN]"}\n`
       }
     }
 
@@ -179,8 +177,7 @@ export class BackupReporter {
       const successRate = totalCount > 0 ? ((successCount / totalCount) * 100).toFixed(0) : "0"
 
       // Headers must be ASCII-only (no emojis)
-      const title =
-        `Backup report, server "${this.context.serverName}": ${successCount}/${totalCount} (${successRate}%)`
+      const title = `Backup report: ${successCount}/${totalCount} (${successRate}%)`
       const message = this.buildNtfyMessage(result)
 
       const headers: Record<string, string> = {
@@ -200,12 +197,11 @@ export class BackupReporter {
       })
 
       log(`ntfy response status: ${response.status}`)
-      const responseBody = await response.text()
-      log(`ntfy response body: ${responseBody}`)
+      await response.body?.cancel()
 
       return response.ok
-    } catch (err) {
-      error(`Failed to send ntfy notification: ${err}`)
+    } catch {
+      error("Failed to send ntfy notification")
       return false
     }
   }
@@ -246,9 +242,8 @@ export class BackupReporter {
     if (failedBackups.length > 0) {
       message += "\n⚠️ Errors:\n"
       for (const backup of failedBackups) {
-        if (backup.error) {
-          message += `• ${backup.name}: ${backup.error}\n`
-        }
+        const errorStep = backup.errorAtStep?.toUpperCase() || "UNKNOWN"
+        message += `• ${backup.name}: [${errorStep}]\n`
       }
     }
 
@@ -383,10 +378,8 @@ export class BackupReporter {
 
     let errorDetails = "\n*Error Details:*\n"
     for (const backup of failedBackups) {
-      if (backup.error) {
-        errorDetails +=
-          `• *${backup.name}*: [${backup.errorAtStep?.toUpperCase()}] ${backup.error}\n`
-      }
+      const errorStep = backup.errorAtStep?.toUpperCase() || "UNKNOWN"
+      errorDetails += `• *${backup.name}*: [${errorStep}]\n`
     }
 
     return errorDetails
