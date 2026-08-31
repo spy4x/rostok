@@ -38,8 +38,9 @@ reachable from the LAN; keep it on a trusted network.
 
 This is the path to take when you want to pair and test Zigbee devices
 locally before moving the stack to the production `home` server. The Zigbee
-USB dongle is passed through to the container, and config is stored under
-`./.volumes/home-assistant` (gitignored).
+USB dongle is passed through to the container. Config uses the absolute
+`HOME_ASSISTANT_DATA_PATH` from local `.env`, outside the repo, so removing a
+branch or worktree cannot remove live state.
 
 ### Prerequisites
 
@@ -47,7 +48,7 @@ USB dongle is passed through to the container, and config is stored under
 2. The Zigbee USB dongle is visible to the host:
    ```bash
    ls -l /dev/serial/by-id/
-   # Expect: usb-Itead_Sonoff_Zigbee_3.0_USB_Dongle_Plus_V2_<unique-suffix>-if00-port0
+   # Expect a stable usb-<vendor>_<model>_<unique-suffix>-if00-port0 path.
    ```
    The symlink survives reboots and USB re-enumeration, unlike
    `/dev/ttyUSB0` (which can shift to `/dev/ttyUSB1` when other serial
@@ -63,25 +64,30 @@ USB dongle is passed through to the container, and config is stored under
 
 ### Run
 
-From this directory:
+From repo root, use the validating wrapper:
 
 ```bash
-docker compose -f compose.local.yml up -d
+deno task home-assistant:local:up
 open http://localhost:8123
 ```
 
-State persists in `./.volumes/home-assistant/`. To stop and wipe:
+State persists in `${HOME_ASSISTANT_DATA_PATH}`. Stop without deleting data:
 
 ```bash
-docker compose -f compose.local.yml down        # stop, keep data
-rm -rf ./.volumes/home-assistant               # nuke (irreversible)
+deno task home-assistant:local:down
 ```
 
-If your timezone is not `Europe/Berlin`, drop a local `.env` (gitignored)
-next to `compose.local.yml`:
+Data deletion is intentionally not scripted. Confirm the rendered mount with
+`deno task home-assistant:local:config` before any manual deletion. The wrapper
+rejects repo-contained or symlinked data paths and non-serial device paths.
+
+Drop a local `.env` (gitignored) next to `compose.local.yml` to override the
+timezone, stable data path, or Zigbee device path:
 
 ```bash
-echo 'TZ=Europe/Berlin' > .env
+TZ=Europe/Berlin
+HOME_ASSISTANT_DATA_PATH=/absolute/path/to/home-assistant
+ZIGBEE_DEVICE_PATH=/dev/serial/by-id/usb-vendor_model_unique-id-if00-port0
 ```
 
 ### Zigbee: ZHA vs Zigbee2MQTT
@@ -112,52 +118,32 @@ Two integration options inside Home Assistant:
   Common cause: wrong device path (always use the `/dev/serial/by-id/...`
   symlink, never the raw `/dev/ttyUSB*` node).
 
-### Restore from Restic backup
+### Back up and restore
 
-The `home-assistant` Restic repo lives at
-`~/sync/backups/home-assistant/` (per `.env.root` `BACKUP_PATHS`). Snapshots
-are taken on the production `home` server; this restores them onto the local
-mini-pc instance.
+The local data path must stay identical between Compose and Restic. The
+dedicated task loads the same local `.env` and selects only this stack:
 
 ```bash
-# From the repo root, with .env.root decrypted (deno task env:decrypt):
-BACKUPS_PASSWORD=$(grep ^BACKUPS_PASSWORD= .env.root | cut -d= -f2)
-TMPDIR=/tmp/ha-restore-$$
-mkdir -p "$TMPDIR"
-RESTIC_PASSWORD="$BACKUPS_PASSWORD" restic -r ~/sync/backups/home-assistant snapshots --json \
-  | python3 -c "import json,sys; [print(f\"{s['short_id']}  {s['time']}\") for s in sorted(json.load(sys.stdin), key=lambda x:x['time'], reverse=True)]"
-
-# Pick a snapshot id (e.g. 05dc0372), then:
-RESTIC_PASSWORD="$BACKUPS_PASSWORD" restic -r ~/sync/backups/home-assistant restore <SNAP> --target "$TMPDIR"
-
-# Stop the container, wipe the volume, flatten the snapshot into it.
-docker compose -f stacks/home-assistant/compose.local.yml stop
-docker run --rm -v "$TMPDIR:/src:ro" -v "$(pwd)/stacks/home-assistant/.volumes:/dst" \
-  --user root --privileged alpine:latest sh -c "
-    rm -rf /dst/home-assistant
-    mkdir -p /dst/home-assistant
-    cp -a /src/home/spy4x/ssd-2tb/apps/.volumes/home-assistant/. /dst/home-assistant/
-    chmod -R a+rX /dst/home-assistant
-    rm -f /dst/home-assistant/.ha_run.lock
-  "
-rm -rf "$TMPDIR"
-
-docker compose -f stacks/home-assistant/compose.local.yml up -d
-open http://localhost:8123
+deno task backup:home-assistant:local
 ```
 
-Why the `--privileged` alpine and not a plain `cp`: on Fedora the bind-mount
-SELinux context on `.volumes/` denies rootless-container root from writing
-into pre-existing dirs. `--privileged` lifts that. The container is
-short-lived and only mounts the two paths above — no host exposure beyond
-what the `cp` does.
+Run it from root's scheduled backup job: Home Assistant stores some files as
+container root. Both Compose and backup tasks load the same ignored
+`stacks/home-assistant/.env`; keep `HOME_ASSISTANT_DATA_PATH` absolute and
+dedicated to Home Assistant.
+
+Test restoration quarterly into a temporary directory. Restic preserves the
+absolute source path beneath that directory; verify the restored subtree
+before stopping Home Assistant and replacing live data. No automated in-place
+restore is provided because cross-filesystem copies and interrupted promotion
+need operator-controlled rollback.
 
 Things to expect on first boot after a restore:
 
-- A `Recorder` warning: `sqlite3 database ... was shutdown cleanly` — normal,
-  the DB was copied mid-flight. HA will repair on first write.
-- Integrations that point at external hosts from the old network (e.g.
-  `aqs.antonshubin.com`) will log 404s until you fix or remove them.
+- Legacy snapshots taken without stopping Home Assistant may require Recorder
+  recovery on first boot. Current backup workflow stops the container first.
+- Integrations that point at hosts from an old network may fail until you fix
+  or remove them.
 - Bluetooth adapter logs `Missing NET_ADMIN/NET_RAW capabilities` — cosmetic,
   only affects BT recovery. Add `cap_add: [NET_ADMIN, NET_RAW]` to
   `compose.local.yml` if you actually need BT.

@@ -10,6 +10,8 @@ node_modules
 .env
 .env.*
 *.env
+!*.env.age
+!.env.root.age
 !.env.example
 !*.env.example
 !.env.root.example

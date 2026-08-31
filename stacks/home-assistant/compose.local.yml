@@ -11,7 +11,7 @@
 #   open http://localhost:8123
 #
 # Storage:
-#   ./.volumes/home-assistant (gitignored) — HA config + state.
+#   Set HOME_ASSISTANT_DATA_PATH to an absolute path outside this repo.
 
 services:
   home-assistant:
@@ -26,7 +26,7 @@ services:
     # firewall rule, and never on a public-facing host.
     network_mode: host
     volumes:
-      - ./.volumes/home-assistant:/config:z
+      - ${HOME_ASSISTANT_DATA_PATH:?Set HOME_ASSISTANT_DATA_PATH in .env}:/config:z
       - /etc/localtime:/etc/localtime:ro,z
     devices:
       # Sonoff Zigbee 3.0 USB Dongle Plus V2 (TI CC2652P).
@@ -35,7 +35,7 @@ services:
       # devices are plugged in (we have a CH340 on ttyUSB1 as well).
       # If your device path differs, run `ls -l /dev/serial/by-id/` and
       # update the path below.
-      - /dev/serial/by-id/usb-Itead_Sonoff_Zigbee_3.0_USB_Dongle_Plus_V2_beaf822a4a4fef11955648b3174bec31-if00-port0:/dev/ttyUSB0
+      - ${ZIGBEE_DEVICE_PATH:?Set ZIGBEE_DEVICE_PATH in .env}:/dev/ttyUSB0
     restart: unless-stopped
     deploy:
       resources:

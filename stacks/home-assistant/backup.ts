@@ -1,12 +1,5 @@
-import { BackupConfig } from "@scripts/backup"
+import { createHomeAssistantBackupConfig } from "./+lib.ts"
 
-const backupConfig: BackupConfig = {
-  name: "home-assistant",
-  sourcePaths: "default",
-  pathsToChangeOwnership: "default",
-  containers: {
-    stop: "default",
-  },
-}
+const backupConfig = createHomeAssistantBackupConfig(Deno.env.get("HOME_ASSISTANT_DATA_PATH"))
 
 export default backupConfig
