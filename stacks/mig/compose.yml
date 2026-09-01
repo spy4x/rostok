@@ -46,6 +46,5 @@ services:
       - "traefik.http.routers.hl-mig.entrypoints=websecure"
       - "traefik.http.routers.hl-mig.tls=true"
       - "traefik.http.routers.hl-mig.tls.certresolver=myresolver"
-      - "traefik.http.routers.hl-mig.middlewares=security-headers@file,compression@file"
       # robots-deny — booking page isn't index-worthy
       - "traefik.http.routers.hl-mig.middlewares=security-headers@file,compression@file,robots-deny@file"

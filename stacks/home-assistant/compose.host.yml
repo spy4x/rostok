@@ -1,0 +1,15 @@
+# Host-network variant — use together with compose.yml:
+#   docker compose -f compose.yml -f compose.host.yml up -d
+#
+# Host networking enables mDNS/SSDP/DHCP discovery of IoT devices (Zigbee
+# bulbs, smart plugs, sensors) that don't work through Docker bridge networks.
+# Reachable on http://localhost:8123 and http://<lan-ip>:8123.
+#
+# Note: with host networking, HA binds 0.0.0.0:8123 and is reachable from the
+# whole LAN. Fine on a trusted home network — but do not run this on an
+# untrusted network without a host firewall rule, and never on a public-facing
+# host.
+
+services:
+  home-assistant:
+    network_mode: host

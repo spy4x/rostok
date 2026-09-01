@@ -1,17 +1,24 @@
-networks:
-  proxy:
-    external: true
-  default:
-    external: true
-    name: proxy
+# Base Home Assistant compose — shared config for all deploy variants.
+#
+# Add a variant file via -f to enable specific features:
+#   compose.traefik.yml — public HTTPS via Traefik + Authelia
+#   compose.host.yml    — host networking for mDNS/SSDP/DHCP discovery
+#
+# Examples:
+#   docker compose -f compose.yml -f compose.traefik.yml up -d
+#   docker compose -f compose.yml -f compose.host.yml up -d
+#
+# Local data lives at ${VOLUMES_PATH}/home-assistant (gitignored).
 
 services:
-  # Home Assistant is a home automation platform that focuses on privacy and local control.
-  # It allows you to control all your devices from a single, mobile-friendly interface.
   home-assistant:
     container_name: hl-home-assistant
     image: ghcr.io/home-assistant/home-assistant:stable
     volumes:
+      # Absolute path: docker compose v2 sets the project's working dir to
+      # the first compose file's directory, so any relative path here would
+      # resolve against that dir — not the user's cwd. Anchoring on the
+      # canonical deploy data dir keeps the same compose file portable.
       - ${VOLUMES_PATH}/home-assistant:/config:z
       - /etc/localtime:/etc/localtime:ro,z
     devices:
@@ -26,13 +33,8 @@ services:
           cpus: "2"
     security_opt:
       - no-new-privileges:true
-    networks:
-      - proxy
-    labels:
-      - "traefik.enable=true"
-      - "traefik.docker.network=proxy"
-      - "traefik.http.services.hl-home-assistant.loadbalancer.server.port=8123"
-      - "traefik.http.routers.hl-home-assistant.rule=Host(`home.${DOMAIN}`)"
-      - "traefik.http.routers.hl-home-assistant.entrypoints=websecure"
-      - "traefik.http.routers.hl-home-assistant.tls=true"
-      - "traefik.http.routers.hl-home-assistant.tls.certresolver=myresolver"
+      # Pin SELinux MCS label to s0 (Fedora/RHEL only). Without this, docker
+      # assigns a random category pair on every restart, leaving the /config
+      # bind mount with stale labels the new container process can't read
+      # (MLS constraint denial → setroubleshootd spam).
+      - label=level:s0

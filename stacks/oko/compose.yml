@@ -19,10 +19,10 @@ services:
     container_name: hl-oko
     image: ghcr.io/spy4x/oko:latest
     restart: unless-stopped
-    # Vars come from ${pathApps}/.env via the deploy script's
+    # Vars come from ${PATH_APPS}/.env via the deploy script's
     # `--env-file=.env` flag. Don't use `env_file:` here — it resolves
-    # relative to the compose project root (${pathApps}), so an
-    # unqualified `.env` would point at ${pathApps}/stacks/oko/.env.
+    # relative to the compose project root (${PATH_APPS}), so an
+    # unqualified `.env` would point at ${PATH_APPS}/stacks/oko/.env.
     environment:
       - DOMAIN=${DOMAIN}
       - UPTIME_HOSTS=${UPTIME_HOSTS}
@@ -45,8 +45,8 @@ services:
       # Catalog JSON — the entire source of truth for what services to
       # render and how to look up their gatus status. Mtime-cached by
       # oko, so editing this file picks up the change on the next request
-      # without a container restart. Deploy syncs it from
-      # servers/home/configs/oko/config.json on the homelab repo.
+      # without a container restart. The deploy script syncs it from the
+      # canonical config path.
       - ${PATH_APPS}/configs/oko/config.json:/app/config.json:ro
     networks:
       - proxy
