@@ -111,13 +111,13 @@ if anyof (
 Stalwart exposes the full Sieve management API over JMAP, but the method
 names use the `SieveScript*` prefix (not `Sieve*`):
 
-| Intent                  | Method                  |
-|-------------------------|-------------------------|
-| Upload the script       | `Blob/upload`           |
-| Find existing scripts   | `SieveScript/query`     |
-| Delete a script         | `SieveScript/set` (destroy) |
-| Activate a script       | `SieveScript/set` (create `{blobId, name, isActive: true}`) |
-| Validate                | not exposed via JMAP — validate by reading error logs after activation |
+| Intent                | Method                                                                 |
+| --------------------- | ---------------------------------------------------------------------- |
+| Upload the script     | `Blob/upload`                                                          |
+| Find existing scripts | `SieveScript/query`                                                    |
+| Delete a script       | `SieveScript/set` (destroy)                                            |
+| Activate a script     | `SieveScript/set` (create `{blobId, name, isActive: true}`)            |
+| Validate              | not exposed via JMAP — validate by reading error logs after activation |
 
 Every method call needs a client id (the third tuple element). Without
 it Stalwart rejects the request as `notRequest`.

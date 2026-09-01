@@ -21,7 +21,7 @@ Environment (passed via `docker exec -e` or compose env):
                           {"0": {"model_ids": [...]}, "2": {"model_ids": ["MiniMax-M3"]}}
 
 Manual usage from host:
-  ssh homelab "docker cp stacks/open-webui/init-models.py hl-open-webui:/tmp/ && \\
+  ssh <server> "docker cp stacks/open-webui/init-models.py hl-open-webui:/tmp/ && \\
                docker exec -i -e OPENAI_API_KEYS=... -e OPENAI_API_BASE_URLS=... \\
                  -e OPENAI_API_CONFIGS=... \\
                  hl-open-webui python3 /tmp/init-models.py"

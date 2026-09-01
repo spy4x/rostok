@@ -23,13 +23,13 @@ Bookings persist as a JSON file in the bind-mounted `/data` volume.
 
 ## Configuration
 
-All config via env vars in `<PATH_APPS>/configs/mig.env`:
+All config via env vars in `${PATH_APPS}/configs/mig.env`:
 
 ```bash
 # Required
 HOST_NAME="Jane Doe"
 HOST_EMAIL="jane@example.com"
-HOST_TZ="Europe/Berlin"
+HOST_TZ="UTC"
 MEETING_URL="https://meet.google.com/abc-defg-hij"
 WEEKLY_AVAILABILITY="MON-FRI 09:00-17:00"
 SLOT_DURATION_MIN=30
@@ -67,7 +67,7 @@ snapshot.
 
 ## Maintenance
 
-- **Read all bookings**: `ssh home docker exec hl-mig cat /data/bookings.json | jq`
+- **Read all bookings**: `docker exec hl-mig cat /data/bookings.json | jq`
 - **Manually trigger backup**: `deno task backup`
 - **Update**: `deno task deploy` (pulls new image, restarts)
 - **Rotate `CANCEL_SECRET`**: edit `mig.env`, `deno task env:encrypt`,
