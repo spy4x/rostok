@@ -172,7 +172,8 @@
       "!stacks/vaultwarden/+meta.ts",
       "!stacks/jellyfin/+meta.ts",
       "!stacks/filebrowser/+meta.ts",
-      "!stacks/librespeed/+meta.ts"
+      "!stacks/librespeed/+meta.ts",
+      "!stacks/deepseek-harness/+meta.ts"
     ]
   },
   "exclude": [

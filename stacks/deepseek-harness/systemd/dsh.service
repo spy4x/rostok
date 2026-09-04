@@ -1,0 +1,26 @@
+[Unit]
+Description=DeepSeek Harness (dsh) — AI agent web UI
+Documentation=https://github.com/deepseek-ai/deepseek-harness
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# DSH_HOME holds profile patches, model credentials, and the plugin
+# cache. ~/.local/share/dsh is the user-local convention; back it up
+# via the per-stack backup.ts (which targets the same path).
+Environment=DSH_HOME=%h/.local/share/dsh
+Environment=DSH_TELEMETRY_DISABLED=1
+Environment=HOME=%h
+# npm prefix path so `dsh` (installed with `npm install --prefix ~/.local -g`)
+# resolves on PATH inside the unit. Matches the install recipe in README.
+Environment=PATH=%h/.local/bin:/usr/local/bin:/usr/bin
+# dsh-web-app's startup.js rejects `--host 0.0.0.0` by design (the agent
+# can execute code). Bind to loopback — the dsh-proxy.service sidecar
+# forwards LAN traffic from 0.0.0.0:3080 to this loopback bind.
+ExecStart=%h/.local/bin/dsh web --no-open --host 127.0.0.1 --port 3080
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=default.target
