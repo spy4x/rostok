@@ -21,7 +21,7 @@ services:
       service: nvenc # set to one of [nvenc, quicksync, rkmpp, vaapi, vaapi-wsl] for accelerated transcoding
     volumes:
       - ${PATH_PHOTOS}:/usr/src/app/upload:z
-      - /etc/localtime:/etc/localtime:ro,z
+      - /etc/localtime:/etc/localtime:ro
     networks:
       - proxy
       - default
