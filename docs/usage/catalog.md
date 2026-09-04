@@ -100,6 +100,8 @@ The catalog is what the `rostok` CLI bundles. Users browse it with
 - [mirotalk](../../stacks/mirotalk/README.md) — WebRTC video calls
 - [omni-tools](../../stacks/omni-tools/README.md) — web developer
   toolbox
+- [deepseek-harness](../../stacks/deepseek-harness/README.md) — AI
+  agent harness with plugin-based web UI (DeepSeek)
 
 ### Infrastructure
 

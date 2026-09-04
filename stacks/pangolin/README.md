@@ -63,13 +63,29 @@ Service (e.g. opencode-web:8002)
      /tmp/newt | sha256sum --check
    install -Dm755 /tmp/newt ~/.local/bin/newt
    ```
-   Run newt with the site ID/secret and endpoint
-   `https://tunnel-cloud.antonshubin.com`.
-7. **Resources** → Create: subdomain `code2`, mode `http`, no auth (Badger
-   middleware handles auth for the site). **Targets** → Add: site `k11`, IP
-   `127.0.0.1`, port `8002`, method `http`.
-8. Open `https://code2.antonshubin.com/` — should serve the K11 service
-   (opencode-web).
+7. Drop the site `id` and `secret` into `newt.env`:
+   ```bash
+   cat > /etc/newt/newt.env << EOF
+   PANGOLIN_ENDPOINT=https://<tunnel-cloud>.<your-domain>
+   NEWT_ID=<from step 5>
+   NEWT_SECRET=<from step 5>
+   EOF
+   chmod 600 /etc/newt/newt.env
+   ```
+8. Install + start the systemd user unit
+   (`servers/portable/configs/systemd/user/newt.service` on this host,
+   or wherever the credentials live):
+   ```bash
+   mkdir -p ~/.config/systemd/user
+   cp servers/portable/configs/systemd/user/newt.service ~/.config/systemd/user/
+   systemctl --user daemon-reload
+   systemctl --user enable --now newt
+   ```
+9. **Resources** → Create: subdomain `<subdomain>`, mode `http`, no auth
+   (Badger middleware handles auth for the site). **Targets** → Add: site
+   `<site-name>`, IP `127.0.0.1`, port `<port>`, method `http`.
+10. Open `https://<subdomain>.<your-domain>/` — should serve the service
+    on the Newt-connected host.
 
 ## Routing via main hl-traefik (SNI passthrough)
 

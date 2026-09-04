@@ -27,6 +27,7 @@ import vaultwarden from "../stacks/vaultwarden/+meta.ts"
 import jellyfin from "../stacks/jellyfin/+meta.ts"
 import filebrowser from "../stacks/filebrowser/+meta.ts"
 import librespeed from "../stacks/librespeed/+meta.ts"
+import deepseekHarness from "../stacks/deepseek-harness/+meta.ts"
 
 // A second batch is already shipping in stacks/ but their +meta.ts isn't
 // written yet — Phase 4 shipped the first 6. The remaining ~40 stacks
@@ -40,6 +41,7 @@ const STACK_META: Record<string, StackMeta> = {
   jellyfin,
   filebrowser,
   librespeed,
+  "deepseek-harness": deepseekHarness,
 }
 
 const ENTRIES: CatalogEntry[] = Object.entries(STACK_META)

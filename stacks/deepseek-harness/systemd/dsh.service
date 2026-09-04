@@ -1,0 +1,35 @@
+[Unit]
+Description=DeepSeek Harness (dsh) — AI agent web UI
+Documentation=https://github.com/deepseek-ai/deepseek-harness
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# DSH_HOME holds profile patches, model credentials, and the plugin
+# cache. ~/.local/share/dsh is the user-local convention; back it up
+# via the per-stack backup.ts (which targets the same path).
+Environment=DSH_HOME=%h/.local/share/dsh
+Environment=DSH_TELEMETRY_DISABLED=1
+Environment=HOME=%h
+# npm prefix path so `dsh` (installed with `npm install --prefix ~/.local -g`)
+# resolves on PATH inside the unit. Matches the install recipe in README.
+Environment=PATH=%h/.local/bin:/usr/local/bin:/usr/bin
+# dsh-web-app's startup.js rejects `--host 0.0.0.0` by design (the agent
+# can execute code). Bind to loopback and front it with a public reverse
+# proxy (Pangolin on cloud, or any TLS terminator) for external access.
+#
+# `--trusted-host` whitelists authorities the /api browser-trust fence
+# accepts. Without it, requests originating from a public hostname
+# reach over the loopback trust fence → 403 on every privileged API
+# call (host.pickDirectory, settings.*, credentials.*, llm.discoverModels).
+# Repeat the flag once per public hostname pointing here, e.g.:
+#   --trusted-host <dsh-hostname>.<your-domain>
+# See README "Cloud prerequisites for HTTPS via Pangolin" for the
+# why-this-is-required background.
+ExecStart=%h/.local/bin/dsh web --no-open --host 127.0.0.1 --port 3080 --trusted-host <dsh-hostname>.<your-domain>
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=default.target
