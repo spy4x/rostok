@@ -20,7 +20,7 @@ services:
       # resolve against that dir — not the user's cwd. Anchoring on the
       # canonical deploy data dir keeps the same compose file portable.
       - ${VOLUMES_PATH}/home-assistant:/config:z
-      - /etc/localtime:/etc/localtime:ro,z
+      - /etc/localtime:/etc/localtime:ro
     devices:
       - /dev/ttyUSB0:/dev/ttyUSB0 # Zigbee USB dongle
     environment:
