@@ -14,8 +14,8 @@ node_modules
 !*.env.example
 !.env.root.example
 
-# Personal homelab deploy tree (per-server .env + configs). Never tracked —
-# this repo is a public catalog; deploy state lives elsewhere.
+# Personal homelab deploy tree (per-server .env + configs) — kept
+# locally on the owner's machine, gitignored. Move out before sharing.
 servers/
 
 # Age encryption keys (never commit!)

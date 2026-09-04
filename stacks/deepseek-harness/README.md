@@ -21,23 +21,12 @@ host, not in a Docker container. Two reasons:
    bridge network, the only safe way to reach it from another
    container is to bind `0.0.0.0`, which the gate forbids.
 2. On the host there is no bridge network isolation to lose — dsh
-   binds `127.0.0.1:3080` (its safe default), and a tiny `socat`
-   sidecar (`dsh-proxy.service`) forwards LAN traffic from
-   `0.0.0.0:3081` to that loopback bind. No source patches, no
+   binds `127.0.0.1:3080` (its safe default). No source patches, no
    `--patch` overlays, no bind-mount juggling.
 
-### Why port 3081 for the LAN proxy, not 3080
-
-Linux kernel semantics: binding `0.0.0.0:3080` while anything holds
-`127.0.0.1:3080` is a hard conflict (the IPv4 wildcard covers the
-loopback range). So the LAN proxy listens on `0.0.0.0:3081` and
-forwards to `127.0.0.1:3080` — the offset is documented and stable.
-If you'd rather expose on `:3080`, run Traefik on the host (which
-can bind any port) and let it do the listening + TLS termination.
-
 For HTTPS from the public internet, run Traefik on the host (rostok
-catalog `traefik`) and let it forward to `127.0.0.1:3080` — disable
-`dsh-proxy.service` in that case.
+catalog `traefik`) or terminate TLS elsewhere (Pangolin on cloud, a
+LAN nginx, etc.) and forward to `127.0.0.1:3080`.
 
 ## Install (user-local, no sudo required)
 
@@ -46,13 +35,11 @@ catalog `traefik`) and let it forward to `127.0.0.1:3080` — disable
 npm install --prefix ~/.local -g "@deepseek-ai/dsh@${DSH_VERSION:-0.1.1-rc.2}"
 ~/.local/bin/dsh --version    # sanity check
 
-# 2. Copy systemd units + enable
+# 2. Copy systemd unit + enable
 mkdir -p ~/.config/systemd/user
-cp stacks/deepseek-harness/systemd/dsh.service       ~/.config/systemd/user/
-cp stacks/deepseek-harness/systemd/dsh-proxy.service ~/.config/systemd/user/
+cp stacks/deepseek-harness/systemd/dsh.service ~/.config/systemd/user/
 systemctl --user daemon-reload
 systemctl --user enable --now dsh.service
-systemctl --user enable --now dsh-proxy.service    # optional — LAN HTTP
 
 # 3. Make it survive logout (so it runs without an active session)
 loginctl enable-linger "$USER"
@@ -60,37 +47,44 @@ loginctl enable-linger "$USER"
 
 ## Access
 
-| Path                | URL                             | Backing             |
-| ------------------- | ------------------------------- | ------------------- |
-| Localhost (always)  | `http://127.0.0.1:3080`         | `dsh.service`       |
-| LAN HTTP (optional) | `http://<host-ip>:3081`         | `dsh-proxy.service` |
-| HTTPS (recommended) | `https://code3.antonshubin.com` | Pangolin (cloud)    |
+| Path                | URL                                 | Backing          |
+| ------------------- | ----------------------------------- | ---------------- |
+| Localhost (always)  | `http://127.0.0.1:3080`             | `dsh.service`    |
+| HTTPS (recommended) | `https://<hostname>` (set up below) | Pangolin (cloud) |
 
 HTTPS goes through Pangolin (cloud) → Newt (this host) → dsh
-`127.0.0.1:3080`. The Newt client is already running on this host (the
-`mini-pc` site), so no extra client setup is needed — just register
-the Pangolin Resource pointing at `127.0.0.1:3080` and Pangolin's HTTP
-provider picks it up.
-
-The LAN HTTP proxy (`dsh-proxy.service` on `:3081`) is included for
-quick LAN-only access without going through Pangolin. With Pangolin
-handling external HTTPS, the proxy is optional — disable it with
-`systemctl --user disable --now dsh-proxy.service` if you don't need
-LAN HTTP.
+`127.0.0.1:3080`. Pick a hostname you own (e.g. `<dsh>.<your-domain>`)
+and an unused Newt site, then register the Pangolin
+Resource pointing at `127.0.0.1:3080` so the HTTP provider picks it up.
 
 ### Cloud prerequisites for HTTPS via Pangolin
 
-Already wired (in `servers/cloud/configs/traefik/dynamic/02-pangolin.yml`):
+The shape (placeholders — replace `<...>` with your own values):
 
-- Cloudflare A record `code3.antonshubin.com` → `23.88.101.28` (orange
-  proxy; same shape as `code2`).
-- SNI passthrough on cloud's main hl-traefik for `code3.antonshubin.com`
-  → `hl-gerbil:443`. File lives in `servers/cloud/configs/traefik/dynamic/`
-  (gitignored — `stacks/traefik/before.deploy.ts` merges it into the
-  cloud's `stacks/traefik/dynamic/` at deploy time).
-- Pangolin Resource `code3` → target `mini-pc` site, `127.0.0.1:3080`,
-  mode `http`. Create via Pangolin UI on
-  `https://tunnel-cloud.antonshubin.com/`.
+- **DNS** — Cloudflare A record `<dsh>.<your-domain>` → cloud server IP.
+  Cloud proxy off (grey cloud) is fine; Pangolin terminates TLS.
+- **SNI passthrough** — `servers/cloud/configs/traefik/dynamic/<dsh>-pangolin.yml`
+  on the cloud's main hl-traefik, routes `HostSNI(<dsh>.<your-domain>)`
+  → `hl-gerbil:443` with `tls.passthrough: true`. Lives at
+  `servers/cloud/configs/traefik/dynamic/` (gitignored — the
+  `stacks/traefik/before.deploy.ts` hook merges it into the cloud
+  server's `stacks/traefik/dynamic/` at deploy time).
+- **Pangolin Resource** — name `<dsh>`, target the Newt site,
+  destination `127.0.0.1:3080`, mode `http`. Create in Pangolin UI on
+  `<tunnel-cloud>.<your-domain>` (your Pangolin dashboard URL).
+- **Host/Origin header rewrite on hl-pangolin-traefik** — dsh's
+  browser-trust fence rejects privileged methods
+  (`host.pickDirectory`, `settings.*`, `credentials.*`,
+  `llm.discoverModels`) unless `Host` AND `Origin` equal the bind
+  authority (loopback-only by design — see
+  `node_modules/@deepseek-ai/dsh-client-connection/lib/index.js`
+  `PRIVILEGED_METHODS`). The fix is a Traefik middleware that rewrites
+  those headers to `127.0.0.1:3080` for `<dsh>.<your-domain>`
+  requests. Lives at `servers/cloud/configs/pangolin/traefik/dynamic_config.yml`
+  in the deploy tree, not in the Pangolin catalog stack (per-host
+  config). After editing, `ssh <cloud> touch
+  ~/apps/rostok/configs/pangolin/traefik/dynamic_config.yml` triggers
+  a reload.
 
 ## First-run setup
 
@@ -136,9 +130,9 @@ are still recorded by the wizard but unused by these systemd units.
   permission policy treats as approval-required (shell, file writes
   outside the workspace). Default profile is conservative; tighten
   by editing `~/.local/share/dsh/cordis.patch.yml`.
-- **Loopback bind** — dsh binds `127.0.0.1:3080` only. LAN access
-  goes through `socat` (`dsh-proxy.service`), which is a plain TCP
-  forwarder (no TLS). For HTTPS, terminate TLS at Traefik.
+- **Loopback bind** — dsh binds `127.0.0.1:3080` only. For HTTPS,
+  terminate TLS at a reverse proxy on the host (Traefik catalog) or
+  forward through a tunnel broker (Pangolin catalog).
 - **Telemetry** — `DSH_TELEMETRY_DISABLED=1` in the systemd unit.
 
 ## Upgrading
@@ -159,10 +153,6 @@ preserved across upgrades.
 - **Web UI loads but workspaces are empty** — confirm the
   workspace path is one your user account can read/write (no
   permission surprises; `dsh.service` runs as `$USER`).
-- **`dsh-proxy.service` fails to start** — almost always means
-  `dsh.service` isn't up yet. `systemctl --user status dsh`
-  should be `active`. Port 3080 already in use elsewhere? Check
-  `ss -lntp | grep 3080`.
 - **403 from DeepSeek API** — bad/missing key in
   Settings → Models. Curl from the host:
   `curl -s https://api.deepseek.com` to confirm egress works.

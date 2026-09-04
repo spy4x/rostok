@@ -4,7 +4,6 @@ Guidelines for AI agents and humans maintaining the **rostok** repo:
 the catalog of self-hosted services and the CLI tool that scaffolds
 users' projects.
 
-The repo's own `servers/` is gone. There is no personal homelab here.
 What lives here is a **catalog** (`stacks/`) and the **CLI source**
 (`scripts/encryption/`, `scripts/hooks/`, plus the new `cli/` package
 in development).
@@ -14,28 +13,59 @@ in development).
 ## 🟢 Repository layout
 
 ```
-rostok/
-├── stacks/                   # the catalog — one dir per service
+rostok/                          [tracked]
+├── stacks/                      # the catalog — one dir per service
 │   └── <stack>/
-│       ├── compose.yml       # Docker Compose (must use `hl-` prefix)
-│       ├── backup.ts         # backup config (skip for stateless)
-│       ├── +meta.ts          # CLI schema (READY-TO-IMPLEMENT, see docs/design/v1-cli.md)
-│       └── README.md         # what the stack does, how to configure
-├── cli/                      # the rostok CLI source (added in v1 phase 2)
+│       ├── compose.yml          # Docker Compose (must use `hl-` prefix)
+│       ├── backup.ts            # backup config (skip for stateless)
+│       ├── +meta.ts             # CLI schema (READY-TO-IMPLEMENT, see docs/design/v1-cli.md)
+│       └── README.md            # what the stack does, how to configure
+├── cli/                         # the rostok CLI source (added in v1 phase 2)
 ├── scripts/
-│   ├── encryption/           # age64 — encrypt/decrypt .env ↔ .env.age
-│   ├── backup/               # Restic backup system (per-stack backup.ts)
-│   └── hooks/                # git hooks (post-checkout, post-merge, pre-commit)
-├── docs/                     # CLI docs, catalog, design notes
-├── deno.jsonc                # tasks + deps
-├── README.md                 # public landing page
+│   ├── encryption/              # age64 — encrypt/decrypt .env ↔ .env.age
+│   ├── backup/                  # Restic backup system (per-stack backup.ts)
+│   └── hooks/                   # git hooks (post-checkout, post-merge, pre-commit)
+├── docs/                        # CLI docs, catalog, design notes
+├── deno.jsonc                   # tasks + deps
+├── README.md                    # public landing page
 ├── LICENSE
-└── AGENTS.md                 # this file
+└── AGENTS.md                    # this file
+
+rostok/                          [gitignored, personal — see below]
+├── .env.root                    # plaintext deploy env vars
+├── .env.root.age                # age64-encrypted .env.root
+└── servers/
+    └── <server>/                # one dir per real server (cloud, home, offsite, portable)
+        ├── .env                 # plaintext per-server env
+        ├── .env.age             # age64-encrypted per-server env
+        ├── config.json          # server-level config
+        └── configs/             # per-service configs (dash PWA, gatus, etc.)
 ```
 
 `stacks/` is the catalog — every entry is reusable by any user. Never
 hardcode a real domain, IP, or hostname in a stack. The catalog travels
 through JSR; it's read by every `rostok` invocation.
+
+---
+
+## 🔒 Personal deploy state (kept locally, gitignored — never committed)
+
+The repo's **tracked** tree is the public catalog only. The owner's
+personal homelab deploy state lives here locally but is **never
+committed** — all gitignored under `.gitignore`:
+
+- `.env.root`, `.env.root.age` — root-level deploy env vars
+  (caught by `.gitignore` patterns `.env` / `.env.*`)
+- `servers/<server>/.env`, `.env.age` — per-server env vars
+- `servers/<server>/config.json`, `configs/...` — per-server configs
+
+**Why gitignored:** the repo travels through JSR; any tracked
+personal data leaks the owner's infra to every consumer.
+
+**Plan:** move this state to a separate location (e.g.
+`~/apps/homelab/`) and out of the rostok repo entirely. Until then,
+`deno task check` works as-is and the personal files don't
+interfere with the catalog.
 
 ---
 
