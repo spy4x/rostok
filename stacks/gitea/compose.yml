@@ -59,7 +59,7 @@ services:
       - GITEA__mailer__FROM=${SMTP_FROM}
     volumes:
       - ${VOLUMES_PATH}/gitea/data:/data:z
-      - /etc/localtime:/etc/localtime:ro,z
+      - /etc/localtime:/etc/localtime:ro
       - ./public:/data/gitea/public:ro,z
     networks:
       - proxy
