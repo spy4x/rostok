@@ -44,8 +44,8 @@ which is acceptable for personal 1-on-1 use.
 
 To enable TURN-TLS later: add a `traefik-certs-dumper` sidecar that extracts
 the Let's Encrypt cert from Traefik's `acme.json` to on-disk PEM files, then
-bind-mount those into the coturn container and uncomment `tls-listening-port`
-in `turnserver.conf`.
+bind-mount those into the coturn container and add `--tls-listening-port=5349`,
+`--cert`, `--pkey` to the `command:` list.
 
 ## Usage
 
