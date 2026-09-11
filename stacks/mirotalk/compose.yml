@@ -20,7 +20,7 @@ services:
     environment:
       - TZ=${TIMEZONE:-UTC}
       - TURN_SERVER_ENABLED=true
-      - TURN_SERVER_URL=turn:${DOMAIN}:3478
+      - TURN_SERVER_URL=turns:${DOMAIN}:5349
       - TURN_SERVER_USERNAME=${TURN_SERVER_USERNAME}
       - TURN_SERVER_CREDENTIAL=${TURN_SERVER_CREDENTIAL}
     restart: unless-stopped
@@ -46,7 +46,12 @@ services:
   # coturn — TURN relay for MiroTalk WebRTC ICE.
   # network_mode: host is REQUIRED: Traefik cannot proxy UDP TURN traffic.
   # All config via command-line args so docker-compose env interpolation works.
-  # Public inbound ports on the host: 3478/udp, 3478/tcp, 10000-20000/udp.
+  # Public inbound ports on the host:
+  #   3478/udp        — STUN/TURN (UDP)
+  #   5349/tcp        — TURN over TLS (fallback for networks blocking UDP)
+  #   10000-20000/udp — TURN relay port range
+  # Browsers advertise turns://...:5349 first; MiroTalk config (single URL)
+  # limits us to one TURN endpoint per the upstream app.
   mirotalk-coturn:
     container_name: hl-mirotalk-coturn
     image: coturn/coturn:latest
@@ -55,6 +60,7 @@ services:
       - -n
       - --log-file=stdout
       - --listening-port=3478
+      - --tls-listening-port=5349
       - --min-port=10000
       - --max-port=20000
       - --realm=${DOMAIN}
@@ -66,7 +72,14 @@ services:
       - --user=${TURN_SERVER_USERNAME}:${TURN_SERVER_CREDENTIAL}
       - --total-quota=500
       - --stale-nonce=600
+      - --cert=/certs/talk.${DOMAIN}.crt
+      - --pkey=/certs/talk.${DOMAIN}.key
+    volumes:
+      - coturn-certs:/certs:ro
     restart: unless-stopped
+    depends_on:
+      mirotalk-cert-extract:
+        condition: service_started
     deploy:
       resources:
         limits:
@@ -74,3 +87,39 @@ services:
           cpus: "0.3"
     security_opt:
       - no-new-privileges:true
+
+  # Sidecar: extract ${talk.DOMAIN} cert from Traefik's acme.json and write
+  # PEM files to the coturn-certs volume. Polls every 5 min so LE renewals
+  # propagate to coturn automatically.
+  mirotalk-cert-extract:
+    container_name: hl-mirotalk-cert-extract
+    image: python:3-alpine
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+          apk add --no-cache tzdata >/dev/null
+          pip install --no-cache-dir --break-system-packages >/dev/null
+          exec python3 /script/cert-extract.py
+    working_dir: /script
+    volumes:
+      - ./cert-extract.py:/script/cert-extract.py:ro
+      - ${VOLUMES_PATH}/traefik/letsencrypt/acme.json:/acme.json:ro
+      - coturn-certs:/certs
+    environment:
+      - ACME_PATH=/acme.json
+      - CERTS_DIR=/certs
+      - DOMAIN=${DOMAIN}
+      - POLL_INTERVAL=300
+      - TZ=${TIMEZONE:-UTC}
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 64M
+          cpus: "0.1"
+    security_opt:
+      - no-new-privileges:true
+
+volumes:
+  coturn-certs:
+    name: ${PROJECT}-mirotalk-coturn-certs
