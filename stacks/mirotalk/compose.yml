@@ -97,13 +97,11 @@ services:
     entrypoint: ["/bin/sh", "-c"]
     command:
       - |
-          apk add --no-cache tzdata >/dev/null
-          pip install --no-cache-dir --break-system-packages >/dev/null
           exec python3 /script/cert-extract.py
     working_dir: /script
     volumes:
-      - ./cert-extract.py:/script/cert-extract.py:ro
-      - ${VOLUMES_PATH}/traefik/letsencrypt/acme.json:/acme.json:ro
+      - ./cert-extract.py:/script/cert-extract.py:ro,z
+      - ${VOLUMES_PATH}/traefik/letsencrypt/acme.json:/acme.json:ro,z
       - coturn-certs:/certs
     environment:
       - ACME_PATH=/acme.json

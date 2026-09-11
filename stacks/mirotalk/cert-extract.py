@@ -46,8 +46,10 @@ def extract():
                     return False
                 crt_path.write_text(pem)
                 key_path.write_text(key)
+                # 0644 for both: coturn runs as `nobody` inside the container
+                # and refuses to start the TLS listener if the key is not readable.
                 os.chmod(crt_path, 0o644)
-                os.chmod(key_path, 0o640)
+                os.chmod(key_path, 0o644)
                 print(f"[{time.strftime('%H:%M:%S')}] wrote {crt_path} ({len(pem)} bytes)")
                 return True
     print(f"[{time.strftime('%H:%M:%S')}] no cert for {target} in acme.json yet")
