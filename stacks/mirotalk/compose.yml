@@ -19,12 +19,16 @@ services:
       start_period: 40s
     environment:
       - TZ=${TIMEZONE:-UTC}
+      - TURN_SERVER_ENABLED=true
+      - TURN_SERVER_URL=turn:${DOMAIN}:3478
+      - TURN_SERVER_USERNAME=${TURN_SERVER_USERNAME}
+      - TURN_SERVER_CREDENTIAL=${TURN_SERVER_CREDENTIAL}
     restart: unless-stopped
     deploy:
       resources:
         limits:
-          memory: 256M
-          cpus: "0.3"
+          memory: 512M
+          cpus: "0.5"
     security_opt:
       - no-new-privileges:true
     networks:
@@ -38,3 +42,35 @@ services:
       - "traefik.http.routers.hl-mirotalk.entrypoints=websecure"
       - "traefik.http.routers.hl-mirotalk.tls=true"
       - "traefik.http.routers.hl-mirotalk.tls.certresolver=myresolver"
+
+  # coturn — TURN relay for MiroTalk WebRTC ICE.
+  # network_mode: host is REQUIRED: Traefik cannot proxy UDP TURN traffic.
+  # All config via command-line args so docker-compose env interpolation works.
+  # Public inbound ports on the host: 3478/udp, 3478/tcp, 10000-20000/udp.
+  mirotalk-coturn:
+    container_name: hl-mirotalk-coturn
+    image: coturn/coturn:latest
+    network_mode: host
+    command:
+      - -n
+      - --log-file=stdout
+      - --listening-port=3478
+      - --min-port=10000
+      - --max-port=20000
+      - --realm=${DOMAIN}
+      - --server-name=${DOMAIN}
+      - --external-ip=${PUBLIC_IP}/${PUBLIC_IP}
+      - --relay-ip=${PUBLIC_IP}
+      - --fingerprint
+      - --lt-cred-mech
+      - --user=${TURN_SERVER_USERNAME}:${TURN_SERVER_CREDENTIAL}
+      - --total-quota=500
+      - --stale-nonce=600
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+          cpus: "0.3"
+    security_opt:
+      - no-new-privileges:true
