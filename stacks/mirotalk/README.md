@@ -30,22 +30,25 @@ Web UI: `https://talk.${DOMAIN}`
 coturn uses `network_mode: host` so it binds directly on the host interface.
 Public-inbound ports required:
 
-- `3478/udp`, `3478/tcp` — TURN control + relay
-- `10000-20000/udp` — relay port range (per upstream `turnserver.template.conf`)
+- `3478/udp` — STUN + TURN control + UDP relay
+- `5349/tcp` — TURN over TLS (fallback for networks blocking UDP)
+- `10000-20000/udp` — relay port range
 
 On Hetzner Cloud, add these to the server's firewall in the Cloud Console (or
 via the API). On hosts running `firewalld`/`nftables`, allow the same.
 
-## TURN TLS (not enabled)
+## TURN over TLS
 
-Currently plain UDP/TCP only — no `turns://` on 5349. Media itself stays
-DTLS-SRTP encrypted regardless; only the TURN _control_ channel is plaintext,
-which is acceptable for personal 1-on-1 use.
+The browser advertises `turns://${DOMAIN}:5349` to peers. The
+`mirotalk-cert-extract` sidecar watches Traefik's `acme.json` and writes
+PEM files to a shared volume that coturn mounts — so Let's Encrypt
+renewals propagate automatically.
 
-To enable TURN-TLS later: add a `traefik-certs-dumper` sidecar that extracts
-the Let's Encrypt cert from Traefik's `acme.json` to on-disk PEM files, then
-bind-mount those into the coturn container and add `--tls-listening-port=5349`,
-`--cert`, `--pkey` to the `command:` list.
+Why this matters: peer-to-peer WebRTC tries direct UDP first, falls back
+to TURN-over-UDP when symmetric NAT blocks it. When the peer's network
+blocks UDP entirely (corporate firewalls, some hotel/captive WiFi), the
+browser needs `turns://` on TCP 5349. Without it the call hangs
+indefinitely with both peers "connected" but no media.
 
 ## Usage
 
