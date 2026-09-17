@@ -9,7 +9,13 @@ services:
   # One owner, one URL, one feature: book a time slot.
   mig:
     container_name: hl-mig
-    image: ghcr.io/spy4x/mig:latest
+    # Built locally from /home/spy4x/mig-src on cloud. Source repo:
+    # /home/spy4x/sync/code/mig (local dev path). Build before deploy:
+    #   cd /home/spy4x/mig-src && \
+    #     docker build --build-arg MIG_VERSION=$(git rev-parse --short HEAD) -t mig:latest .
+    # ghcr.io/spy4x/mig:latest is unauthorized (private repo, no deploy
+    # token configured). Local image sidesteps that.
+    image: mig:latest
     restart: unless-stopped
     env_file:
       - ${PATH_APPS}/configs/mig.env
