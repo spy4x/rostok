@@ -14,6 +14,11 @@ services:
   healthchecks:
     container_name: hl-healthchecks
     image: healthchecks/healthchecks:latest
+    # Fix perms on /data before uwsgi starts. Deploy script chowns volumes
+    # to HOMELAB_USER (UID 1000 on cloud), but this container runs as
+    # UID 999 — without this chown sqlite is read-only and /docs/ returns
+    # 500. `|| true` so a fresh empty bind mount doesn't error.
+    entrypoint: ["/bin/sh", "/opt/healthchecks/docker-entrypoint.sh"]
     expose:
       - "8000"
     healthcheck:
@@ -46,6 +51,7 @@ services:
       - DB_NAME=/data/hc.sqlite
     volumes:
       - ${VOLUMES_PATH}/healthchecks:/data:z
+      - ./entrypoint.sh:/opt/healthchecks/docker-entrypoint.sh:z
     restart: unless-stopped
     deploy:
       resources:
