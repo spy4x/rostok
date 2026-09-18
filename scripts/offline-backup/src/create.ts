@@ -218,7 +218,21 @@ export async function create(envVars: Record<string, string>): Promise<void> {
     console.log("\n" + "=".repeat(60))
     console.log("📊 BACKUP SUMMARY")
     console.log("=".repeat(60))
-    console.log(`\n✅ Backup completed successfully!`)
+    // Banner reflects whether verification actually passed. An earlier
+    // version printed "✅ Backup completed successfully!" unconditionally,
+    // masking real failures that only showed up in the saved log filename.
+    const backupSucceeded = syncSuccess && verifyResults.failed === 0
+    if (backupSucceeded) {
+      console.log(`\n✅ Backup completed successfully!`)
+    } else {
+      const failedNames = verifyResults.details
+        .filter((d) => d.status === "failed")
+        .map((d) => d.name)
+      console.log(`\n❌ Backup FAILED — ${verifyResults.failed} repository verification(s) failed:`)
+      for (const name of failedNames) {
+        console.log(`     - ${name}`)
+      }
+    }
     console.log(`   Total Duration: ${Math.floor(totalDuration / 60)}m ${totalDuration % 60}s`)
     if (timings.rsync?.duration) {
       const rsyncSec = Math.round(timings.rsync.duration / 1000)
@@ -344,8 +358,17 @@ export async function create(envVars: Record<string, string>): Promise<void> {
     await unmountDrive(partition, MOUNT_POINT)
     await ejectDrive(device)
 
-    console.log("\n🔔 BACKUP COMPLETE!")
-    Deno.stdout.write(new TextEncoder().encode("\x07"))
+    if (backupSucceeded) {
+      console.log("\n🔔 BACKUP COMPLETE!")
+      Deno.stdout.write(new TextEncoder().encode("\x07"))
+    } else {
+      // Cleanup succeeded; exit non-zero so the operator (or any wrapper
+      // script, cron job, etc.) sees the failure. The log has already
+      // been saved with success=false.
+      console.log("\n🔔 BACKUP FINISHED WITH FAILURES (see summary above).")
+      Deno.stdout.write(new TextEncoder().encode("\x07"))
+      Deno.exit(1)
+    }
   } catch (error) {
     console.error(`\n❌ Error during backup: ${error}`)
     logger.stop()
