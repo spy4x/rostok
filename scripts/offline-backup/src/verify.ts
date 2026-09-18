@@ -15,13 +15,20 @@ export async function hasPasswordlessSudo(): Promise<boolean> {
 }
 
 /**
- * Returns true when the SMART preflight succeeded (passwordless sudo
- * is available). Pure predicate — kept separate from I/O so it can be
- * unit-tested without root. Both branches finish non-interactively:
- * success returns true, any failure returns false with no prompt.
+ * Builds the two-line message printed when the SMART test is skipped
+ * because passwordless sudo is unavailable. Extracted so the manual
+ * `smartctl` command can be unit-tested for the right `checkType` and
+ * device — the whole rest of the skip path is I/O (sudo + smartctl)
+ * and only review-tested.
  */
-export function shouldRunSmartTest(preflightOk: boolean): boolean {
-  return preflightOk
+export function formatSmartSkipMessage(
+  checkType: "short" | "long",
+  device: string,
+): string[] {
+  return [
+    "\n⚠️  SMART test skipped — passwordless sudo is unavailable in this session.",
+    `   Run manually with: sudo smartctl -t ${checkType} ${device}`,
+  ]
 }
 
 export async function getBackupSize(path: string): Promise<{ bytes: number; human: string }> {
@@ -185,12 +192,10 @@ export async function runSmartCheck(
   // when stdin has no TTY. Skip the SMART test cleanly and surface the
   // manual command instead of entering the 4-minute wait loop with no
   // chance of ever getting credentials.
-  const preflightOk = await hasPasswordlessSudo()
-  if (!shouldRunSmartTest(preflightOk)) {
-    console.log(
-      "\n⚠️  SMART test skipped — passwordless sudo is unavailable in this session.",
-    )
-    console.log(`   Run manually with: sudo smartctl -t ${checkType} ${device}`)
+  if (!(await hasPasswordlessSudo())) {
+    for (const line of formatSmartSkipMessage(checkType, device)) {
+      console.log(line)
+    }
     return ""
   }
 
