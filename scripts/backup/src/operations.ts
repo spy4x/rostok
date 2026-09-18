@@ -1,5 +1,6 @@
 import { absPath, error, log } from "../../+lib.ts"
 import { USER } from "./+lib.ts"
+import { hasNonEmptyResticSubdir } from "./repo-guard.ts"
 import {
   BackupConfigState,
   BackupStatus,
@@ -321,6 +322,24 @@ export class BackupOperations {
       lastError.includes("no such file or directory")
 
     if (!isMissingRepo) {
+      return false
+    }
+
+    // Guard against silent re-init: an earlier incarnation's `keys/`,
+    // `data/`, `index/`, or `snapshots/` left behind at this path means
+    // the directory already holds restic artefacts. Re-running `init`
+    // here would write a new `config` next to an orphan key file whose
+    // master key no longer matches it, producing a repo that fails
+    // every subsequent `check` with "config or key <id> is damaged:
+    // ciphertext verification failed" (restic does not try the
+    // remaining keys). Refuse and point the operator at the recovery
+    // flow, which removes the directory before init.
+    if (await hasNonEmptyResticSubdir(repoPath)) {
+      const msg = `Refusing to re-initialize non-empty restic directory ${repoPath}. ` +
+        `The path already contains keys/, data/, index/, or snapshots/ ` +
+        `from an earlier repository incarnation. Run the recovery flow ` +
+        `(scripts/backup/recover.ts) to clear the directory before init.`
+      this.markBackupFailed(config, msg, "init")
       return false
     }
 

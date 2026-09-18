@@ -65,6 +65,11 @@ export async function syncBackups(
         "--exclude=.sync*",
         "--exclude=*.tmp",
         "--exclude=.stfolder",
+        // Syncthing's trashcan/version archive. Not a restic repo and
+        // redundant on the offline drive, so exclude it from new syncs.
+        // --delete-excluded is intentionally NOT used so any existing
+        // drive-side copies are not removed.
+        "--exclude=.stversions",
         source,
         target,
       ],

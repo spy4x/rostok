@@ -117,6 +117,25 @@ async function main() {
       volumesPath = volumesPath.replace("~/", `${homeDir}/`)
     }
 
+    // Repo checkout location for the backup cron. The backup script and
+    // its root env file live in the source checkout (`scripts/backup/`
+    // and `.env.root`), not in the deployed apps dir (`apps_path` is
+    // typically a Synced deploy target that only carries `.env`,
+    // `stacks/`, and `.volumes/`). Hardcoding the cron to `apps_path`
+    // broke silently when the repo dir was renamed; let each host pin
+    // its checkout via `REPO_PATH` in `servers/<server>/.env`, with a
+    // `${PATH_SYNC}/code/rostok` fallback for hosts that use Syncthing
+    // to mirror the repo under `PATH_SYNC`.
+    let repoPath = env.REPO_PATH || `${env.PATH_SYNC || "~/sync"}/code/rostok`
+    if (repoPath.startsWith("~/")) {
+      repoPath = repoPath.replace("~/", `${homeDir}/`)
+    }
+
+    // Default to root for backward compatibility with hosts whose cron
+    // already runs as root; portable/portable-like hosts can override
+    // via `BACKUP_CRON_USER` in `servers/<server>/.env`.
+    const backupCronUser = env.BACKUP_CRON_USER || "root"
+
     const backupLogPath = `${homeDir}/backup.log`
     const envFilePath = `${appsPath}/.env`
     const rootEnvFilePath = `${appsPath}/.env.root`
@@ -138,6 +157,8 @@ async function main() {
       env_file_path: envFilePath,
       root_env_file_path: rootEnvFilePath,
       backups_path: backupsPath,
+      repo_path: repoPath,
+      backup_cron_user: backupCronUser,
     }
   }
 

@@ -1,6 +1,36 @@
 import { runCommand } from "../../+lib.ts"
 import type { BackupPath, VerifyResults } from "./types.ts"
 
+/**
+ * Returns true if the current user can run sudo without a password
+ * prompt. Runs `sudo -n true` which fails immediately (no prompt, no
+ * hang) when sudo would require authentication. Used to gate the
+ * SMART test, which needs sudo and previously hung for ~5 minutes
+ * waiting for a password that the offline-backup script could not
+ * enter (no TTY for stdin in non-interactive runs).
+ */
+export async function hasPasswordlessSudo(): Promise<boolean> {
+  const result = await runCommand(["-n", "true"], { sudo: true })
+  return result.success
+}
+
+/**
+ * Builds the two-line message printed when the SMART test is skipped
+ * because passwordless sudo is unavailable. Extracted so the manual
+ * `smartctl` command can be unit-tested for the right `checkType` and
+ * device — the whole rest of the skip path is I/O (sudo + smartctl)
+ * and only review-tested.
+ */
+export function formatSmartSkipMessage(
+  checkType: "short" | "long",
+  device: string,
+): string[] {
+  return [
+    "\n⚠️  SMART test skipped — passwordless sudo is unavailable in this session.",
+    `   Run manually with: sudo smartctl -t ${checkType} ${device}`,
+  ]
+}
+
 export async function getBackupSize(path: string): Promise<{ bytes: number; human: string }> {
   const result = await runCommand(["du", "-sb", path])
   if (!result.success) {
@@ -24,8 +54,10 @@ export async function getBackupSize(path: string): Promise<{ bytes: number; huma
 }
 
 export async function refreshSudo(): Promise<boolean> {
-  const result = await runCommand(["-v"], { sudo: true })
-  return result.success
+  // Non-interactive preflight. `sudo -n true` exits non-zero immediately
+  // when a password would be required, so this never hangs even when the
+  // caller has no TTY available.
+  return await hasPasswordlessSudo()
 }
 
 export async function verifyBackups(
@@ -155,9 +187,15 @@ export async function runSmartCheck(
   const estimatedMinutes = checkType === "short" ? 2 : 390
   console.log(`   Estimated duration: ~${estimatedMinutes} minutes`)
 
-  if (!(await refreshSudo())) {
-    console.log("\n⚠️  Warning: Could not start SMART test — sudo authentication failed")
-    console.log("   Check manually with: sudo smartctl -t " + checkType + " " + device)
+  // Non-interactive preflight: `sudo -n true` exits non-zero immediately if
+  // a password would be required, so we never block on a password prompt
+  // when stdin has no TTY. Skip the SMART test cleanly and surface the
+  // manual command instead of entering the 4-minute wait loop with no
+  // chance of ever getting credentials.
+  if (!(await hasPasswordlessSudo())) {
+    for (const line of formatSmartSkipMessage(checkType, device)) {
+      console.log(line)
+    }
     return ""
   }
 

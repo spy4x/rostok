@@ -171,7 +171,15 @@ export async function verify(envVars: Record<string, string>): Promise<void> {
     await unmountDrive(partition, MOUNT_POINT)
     await ejectDrive(device)
 
-    console.log("\n✅ Verification complete. Drive safely ejected.")
+    if (verifyResults.failed === 0) {
+      console.log("\n✅ Verification complete. Drive safely ejected.")
+    } else {
+      // Same exit-code fix as create.ts: verifications failed must
+      // surface as a non-zero exit so the operator (or any wrapper) sees
+      // the failure rather than silently seeing a "complete" run.
+      console.log("\n⚠️  Verification finished with failures. Drive safely ejected.")
+      Deno.exit(1)
+    }
   } catch (error) {
     console.error(`\n❌ Error during verification: ${error}`)
 

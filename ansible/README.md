@@ -134,6 +134,26 @@ Variables specific to each server:
 - File paths (apps, media, backups)
 - Service-specific settings
 
+#### Backup-cron specific overrides
+
+The backup cron job runs the **repo checkout's** `scripts/backup/+main.ts`
+with `--env-file=<repo checkout>/.env.root --env-file=<deployed
+apps>/.env`. The repo checkout is **not** the deployed apps dir
+(`apps_path` is a Syncthing target that only carries `.env`,
+`stacks/`, and `.volumes/`, not the source).
+
+Each host can pin its checkout and the user the cron runs as via
+`servers/<server}/.env`:
+
+- `REPO_PATH` — absolute path to the rostok repo checkout. Defaults to
+  `${PATH_SYNC}/code/rostok` (expanded against the user's home).
+- `BACKUP_CRON_USER` — user the cron entry is installed for. Defaults
+  to `root` (the historical behaviour); set to your homelab user on
+  hosts where the cron should run unprivileged.
+
+These surface in Ansible as the `repo_path` and `backup_cron_user`
+hostvars and are used by `backup-cronjob.yml`.
+
 ### Server Metadata (`servers/{server}/config.json`)
 
 Structured configuration for:
