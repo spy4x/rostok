@@ -1,7 +1,11 @@
 ---
 # Playbook: Setup Backup Cronjob
-# This playbook configures the automated backup system to run daily via cron
-# It sets up the cron job as root to allow ownership changes without password prompts
+# This playbook configures the automated backup system to run daily via cron.
+# The script (`scripts/backup/+main.ts`) and the root env file
+# (`.env.root`) live in the **repo checkout** (`repo_path`). The
+# per-server env (`env_file_path`) and the deployed app data
+# (`apps_path`) live elsewhere — the cron needs both: `repo_path` for
+# the code, `env_file_path` for the server's secrets and `BACKUP_PATHS`.
 
 - name: Setup Backup Cronjob
   hosts: homelab_servers
@@ -14,22 +18,32 @@
     backup_cron_minute: "{{ lookup('env', 'BACKUP_CRON_MINUTE') | default('0', true) }}"
 
   tasks:
-    - name: Ensure backup script exists
+    - name: Ensure backup script exists in the repo checkout
       ansible.builtin.stat:
-        path: "{{ apps_path }}/scripts/backup/+main.ts"
+        path: "{{ repo_path }}/scripts/backup/+main.ts"
       register: backup_script
 
     - name: Fail if backup script doesn't exist
       ansible.builtin.fail:
-        msg: "Backup script not found at {{ apps_path }}/scripts/backup/+main.ts"
+        msg: "Backup script not found at {{ repo_path }}/scripts/backup/+main.ts (set REPO_PATH in servers/<server>/.env to the repo checkout)"
       when: not backup_script.stat.exists
 
-    - name: Ensure .env file exists
+    - name: Ensure repo root env file exists
+      ansible.builtin.stat:
+        path: "{{ repo_path }}/.env.root"
+      register: root_env_file
+
+    - name: Fail if repo root env file doesn't exist
+      ansible.builtin.fail:
+        msg: ".env.root not found at {{ repo_path }}/.env.root (the cron needs it for shared secrets)"
+      when: not root_env_file.stat.exists
+
+    - name: Ensure server env file exists
       ansible.builtin.stat:
         path: "{{ env_file_path }}"
       register: env_file
 
-    - name: Fail if .env file doesn't exist
+    - name: Fail if server env file doesn't exist
       ansible.builtin.fail:
         msg: ".env file not found at {{ env_file_path }}"
       when: not env_file.stat.exists
@@ -67,13 +81,13 @@
         modification_time: preserve
         access_time: preserve
 
-    - name: Setup backup cronjob in root's crontab
+    - name: Setup backup cronjob
       ansible.builtin.cron:
         name: "Homelab Backup"
-        user: root
+        user: "{{ backup_cron_user }}"
         minute: "{{ backup_cron_minute }}"
         hour: "{{ backup_cron_hour }}"
-        job: "USER={{ homelab_user }} {{ deno_install_path }}/bin/deno run --env-file={{ root_env_file_path }} --env-file={{ env_file_path }} -A {{ apps_path }}/scripts/backup/+main.ts >> {{ backup_log_path }} 2>&1"
+        job: "USER={{ homelab_user }} {{ deno_install_path }}/bin/deno run --env-file={{ repo_path }}/.env.root --env-file={{ env_file_path }} -A {{ repo_path }}/scripts/backup/+main.ts >> {{ backup_log_path }} 2>&1"
         state: present
 
     - name: Display cronjob info
@@ -83,4 +97,4 @@
           - "Schedule: Daily at {{ backup_cron_hour }}:{{ '%02d' | format(backup_cron_minute | int) }}"
           - "Log file: {{ backup_log_path }}"
           - "To view logs: tail -f {{ backup_log_path }}"
-          - "To test manually: sudo -u root USER={{ homelab_user }} {{ deno_install_path }}/bin/deno run --env-file={{ root_env_file_path }} --env-file={{ env_file_path }} -A {{ apps_path }}/scripts/backup/+main.ts"
+          - "To test manually: sudo -u {{ backup_cron_user }} USER={{ homelab_user }} {{ deno_install_path }}/bin/deno run --env-file={{ repo_path }}/.env.root --env-file={{ env_file_path }} -A {{ repo_path }}/scripts/backup/+main.ts"
