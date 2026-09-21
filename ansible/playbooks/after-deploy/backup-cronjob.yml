@@ -9,7 +9,7 @@
 
 - name: Setup Backup Cronjob
   hosts: homelab_servers
-  become: true # Run as root since cron needs to be in root's crontab
+  become: true # Root is needed to write another user's crontab and /etc/sudoers.d
 
   vars:
     # Backup scheduling configuration

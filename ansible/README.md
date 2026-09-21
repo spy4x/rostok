@@ -143,7 +143,7 @@ apps>/.env`. The repo checkout is **not** the deployed apps dir
 `stacks/`, and `.volumes/`, not the source).
 
 Each host can pin its checkout and the user the cron runs as via
-`servers/<server}/.env`:
+`servers/{server}/.env`:
 
 - `REPO_PATH` — absolute path to the rostok repo checkout. Defaults to
   `${PATH_SYNC}/code/rostok` (expanded against the user's home).
