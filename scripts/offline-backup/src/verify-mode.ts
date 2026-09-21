@@ -10,6 +10,7 @@ import {
 } from "./drive.ts"
 import { formatBytes, parseBackupPaths } from "./helpers.ts"
 import { getBackupSize, runSmartCheck, verifyBackups } from "./verify.ts"
+import { classifyBackupOutcome, exitCodeFor, formatOutcomeBanner } from "./outcome.ts"
 
 export async function verify(envVars: Record<string, string>): Promise<void> {
   const backupPathsJson = envVars.BACKUP_PATHS
@@ -155,12 +156,9 @@ export async function verify(envVars: Record<string, string>): Promise<void> {
     console.log("📊 VERIFICATION COMPLETE")
     console.log("=".repeat(60))
 
-    if (verifyResults.failed === 0) {
-      console.log("\n✅ All checks passed! Backup drive is healthy.")
-    } else {
-      console.log("\n⚠️  Some verification checks failed. Review the results above.")
-    }
-
+    // An unconditional "All checks passed! Backup drive is healthy." used
+    // to sit here and contradicted the verdict below on a run that
+    // checked nothing. The verdict is printed once, after the eject.
     if (smartTestResults) {
       console.log("\n🔍 SMART check completed (see results above)")
     }
@@ -171,14 +169,20 @@ export async function verify(envVars: Record<string, string>): Promise<void> {
     await unmountDrive(partition, MOUNT_POINT)
     await ejectDrive(device)
 
-    if (verifyResults.failed === 0) {
-      console.log("\n✅ Verification complete. Drive safely ejected.")
-    } else {
-      // Same exit-code fix as create.ts: verifications failed must
-      // surface as a non-zero exit so the operator (or any wrapper) sees
-      // the failure rather than silently seeing a "complete" run.
-      console.log("\n⚠️  Verification finished with failures. Drive safely ejected.")
-      Deno.exit(1)
+    // Verify mode always requests verification, so "nothing checked" is
+    // an unverified run, not a success. `failed === 0` alone used to
+    // report "Verification complete" for a drive where restic had been
+    // waived or no repository was found.
+    const outcome = classifyBackupOutcome(true, true, verifyResults)
+    for (const line of formatOutcomeBanner(outcome, verifyResults, "Verification")) {
+      console.log(line)
+    }
+    console.log("   Drive safely ejected.")
+    const exitCode = exitCodeFor(outcome)
+    if (exitCode !== 0) {
+      // Non-zero so the operator (or any wrapper) sees the failure
+      // rather than a silently "complete" run.
+      Deno.exit(exitCode)
     }
   } catch (error) {
     console.error(`\n❌ Error during verification: ${error}`)

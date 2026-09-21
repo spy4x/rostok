@@ -11,6 +11,7 @@ import {
   mountDrive,
   unmountDrive,
 } from "./drive.ts"
+import { classifyBackupOutcome, exitCodeFor, formatOutcomeBanner } from "./outcome.ts"
 import { checkDeletedRepos, syncBackups } from "./sync.ts"
 import { getBackupSize, runSmartCheck, verifyBackups } from "./verify.ts"
 import { ConsoleLogger, parseBackupPaths, saveBackupLog, writeReadme } from "./helpers.ts"
@@ -218,20 +219,18 @@ export async function create(envVars: Record<string, string>): Promise<void> {
     console.log("\n" + "=".repeat(60))
     console.log("📊 BACKUP SUMMARY")
     console.log("=".repeat(60))
-    // Banner reflects whether verification actually passed. An earlier
-    // version printed "✅ Backup completed successfully!" unconditionally,
-    // masking real failures that only showed up in the saved log filename.
-    const backupSucceeded = syncSuccess && verifyResults.failed === 0
-    if (backupSucceeded) {
-      console.log(`\n✅ Backup completed successfully!`)
-    } else {
-      const failedNames = verifyResults.details
-        .filter((d) => d.status === "failed")
-        .map((d) => d.name)
-      console.log(`\n❌ Backup FAILED — ${verifyResults.failed} repository verification(s) failed:`)
-      for (const name of failedNames) {
-        console.log(`     - ${name}`)
-      }
+    // Banner reflects what the run actually proved. Two earlier versions
+    // got this wrong: the first printed "✅ Backup completed successfully!"
+    // unconditionally, the second treated `failed === 0` as success even
+    // when verification had checked nothing at all.
+    const outcome = classifyBackupOutcome(syncSuccess, !skipVerification, verifyResults)
+    // The saved log's name (`_success` / `_failed`) is what the operator
+    // greps months later, so it tracks the exit code rather than a
+    // stricter notion of success: a deliberately unverified run exits
+    // zero and must not be filed as a failure.
+    const backupSucceeded = exitCodeFor(outcome) === 0
+    for (const line of formatOutcomeBanner(outcome, verifyResults)) {
+      console.log(line)
     }
     console.log(`   Total Duration: ${Math.floor(totalDuration / 60)}m ${totalDuration % 60}s`)
     if (timings.rsync?.duration) {
@@ -342,7 +341,7 @@ export async function create(envVars: Record<string, string>): Promise<void> {
       await saveBackupLog(
         MOUNT_POINT,
         completeLog.join("\n"),
-        syncSuccess && verifyResults.failed === 0,
+        backupSucceeded,
       )
       console.log(`✅ Log saved to drive`)
     } catch (error) {
@@ -358,16 +357,19 @@ export async function create(envVars: Record<string, string>): Promise<void> {
     await unmountDrive(partition, MOUNT_POINT)
     await ejectDrive(device)
 
-    if (backupSucceeded) {
+    const exitCode = exitCodeFor(outcome)
+    if (exitCode === 0) {
       console.log("\n🔔 BACKUP COMPLETE!")
-      Deno.stdout.write(new TextEncoder().encode("\x07"))
     } else {
-      // Cleanup succeeded; exit non-zero so the operator (or any wrapper
-      // script, cron job, etc.) sees the failure. The log has already
-      // been saved with success=false.
       console.log("\n🔔 BACKUP FINISHED WITH FAILURES (see summary above).")
-      Deno.stdout.write(new TextEncoder().encode("\x07"))
-      Deno.exit(1)
+    }
+    // Await the bell: Deno.exit() below would drop an unawaited write.
+    await Deno.stdout.write(new TextEncoder().encode("\x07"))
+    if (exitCode !== 0) {
+      // Cleanup already succeeded and the log is saved with success=false;
+      // exit non-zero so the operator (or any wrapper script or cron job)
+      // sees the failure.
+      Deno.exit(exitCode)
     }
   } catch (error) {
     console.error(`\n❌ Error during backup: ${error}`)
