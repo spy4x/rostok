@@ -23,10 +23,13 @@ export const RESTIC_REPO_SUBDIRS = ["keys", "data", "index", "snapshots"] as con
  * check fails).
  *
  * A non-existent or empty path returns false so the normal init flow
- * proceeds. Pure with respect to its inputs (only reads the FS via the
- * injected `stat`/`readDir`) so it can be tested without restic and
- * without booting the full backup module (which loads env vars at
- * init time).
+ * proceeds. A subdirectory that exists but cannot be listed returns
+ * true: it cannot be proved empty, and refusing init is safer than
+ * letting the listing error abort the run.
+ *
+ * Pure with respect to its inputs (only reads the FS via the injected
+ * `stat`/`readDir`) so it can be tested without restic and without
+ * booting the full backup module (which loads env vars at init time).
  */
 export async function hasNonEmptyResticSubdir(
   repoPath: string,
@@ -41,11 +44,19 @@ export async function hasNonEmptyResticSubdir(
     const subStat = await statFn(`${repoPath}/${sub}`)
     if (subStat && subStat.isDirectory) {
       let hasEntry = false
-      // One entry is enough — an empty subdirectory isn't a real restic
-      // artefact. ReadDir iterates lazily; we break on the first hit.
-      for await (const _ of readDirFn(`${repoPath}/${sub}`)) {
+      try {
+        // One entry is enough — an empty subdirectory isn't a real restic
+        // artefact. ReadDir iterates lazily; we break on the first hit.
+        for await (const _ of readDirFn(`${repoPath}/${sub}`)) {
+          hasEntry = true
+          break
+        }
+      } catch {
+        // The directory exists but cannot be listed (permissions, I/O).
+        // Treat it as occupied: refusing init and pointing the operator
+        // at the recovery flow is safer than letting the error escape
+        // and abort the whole backup run with a stack trace.
         hasEntry = true
-        break
       }
       if (hasEntry) {
         return true

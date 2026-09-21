@@ -176,3 +176,28 @@ Deno.test({
     assertEquals(await hasNonEmptyResticSubdir("/repo", fs.statFn, fs.readDirFn), false)
   },
 })
+
+Deno.test({
+  // An existing but unreadable keys/ (permissions, failing disk) used to
+  // let the readDir error escape the guard and abort the whole backup
+  // run through the top-level catch, losing the guard's own message.
+  // Unreadable means "cannot prove it is empty", so it counts as
+  // occupied and init is refused.
+  name: "hasNonEmptyResticSubdir refuses init when a restic subdir cannot be listed",
+  async fn() {
+    const statFn = (path: string) =>
+      Promise.resolve(
+        path === "/repo" || path === "/repo/keys" ? ({ isDirectory: true } as Deno.FileInfo) : null,
+      )
+    const readDirFn = (_path: string): AsyncIterable<Deno.DirEntry> => ({
+      [Symbol.asyncIterator]() {
+        return {
+          next(): Promise<IteratorResult<Deno.DirEntry>> {
+            return Promise.reject(new Deno.errors.PermissionDenied("keys"))
+          },
+        }
+      },
+    })
+    assertEquals(await hasNonEmptyResticSubdir("/repo", statFn, readDirFn), true)
+  },
+})
