@@ -91,7 +91,15 @@
       "description": "🔍 Check for linting issues"
     },
     "ts:check": {
-      "command": "deno check **/*.ts",
+      // Bare `deno check` resolves files itself and honours the top-level
+      // "exclude" list, and Deno's walker skips node_modules on its own.
+      // The previous `**/*.ts` was expanded by the task shell instead,
+      // which follows symlinks: on a checkout with servers/ synced, the
+      // pnpm store under servers/portable/configs/dsh/profiles/node_modules
+      // turns 132 checked files into ~20k paths and the launch fails with
+      // "Argument list too long" — at the exit code, indistinguishable
+      // from a type error.
+      "command": "deno check",
       "description": "📘 Type-check TypeScript files"
     },
     "test": {
@@ -177,6 +185,11 @@
     ]
   },
   "exclude": [
+    // Per-host configs and secrets, gitignored. `deno fmt` and `deno lint`
+    // skip gitignored paths on their own, but `deno check` does not, so
+    // without this line the four *.ts files under servers/ would join the
+    // type-check set on any machine that syncs them — and nowhere else.
+    "servers",
     "**/.vite/*",
     "**/.cache/*",
     "**/dist/*",
