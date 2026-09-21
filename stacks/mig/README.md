@@ -19,7 +19,75 @@ Bookings persist as a JSON file in the bind-mounted `/data` volume.
 
 - Booking page: `https://meet.${DOMAIN}`
 - Health (Gatus): `https://meet.${DOMAIN}/health`
-- Embed variant: `https://meet.${DOMAIN}/embed` (no header, iframe-ready)
+- Embed variant: `https://meet.${DOMAIN}/embed` (no header; needs the
+  setup below before any browser will show it in an iframe)
+
+## Embedding in your own site
+
+Out of the box every browser refuses to show mig in an iframe. The
+Traefik stack applies `security-headers@file` to every response on the
+`websecure` entrypoint (`stacks/traefik/compose.yml`), and mig's router
+lists it again; it sends `X-Frame-Options: DENY`. That is the right
+default: nobody can frame your booking page to trick a visitor into
+clicking it.
+
+A router cannot remove that header, because the entrypoint middleware
+runs last on the way out and sets it again. What a router can do is add
+a `Content-Security-Policy: frame-ancestors` header naming your site.
+Browsers that see both headers follow `frame-ancestors` and ignore
+`X-Frame-Options`: the Content Security Policy specification recommends
+it and every current engine does it. Checked with both headers on one response in Chromium 153,
+Firefox 155 and WebKitGTK 2.52 (the engine Safari uses; Safari itself
+was not tested): the named site can frame the page, any other origin is
+refused, and with `X-Frame-Options` alone everyone is refused.
+
+1. Add a server-specific Traefik file,
+   `servers/<server>/configs/traefik/dynamic/03-mig-embed.yml`:
+
+   ```yaml
+   http:
+     middlewares:
+       mig-frame-ancestors:
+         headers:
+           customResponseHeaders:
+             Content-Security-Policy: "frame-ancestors 'self' https://example.com https://www.example.com"
+   ```
+
+   The other security headers keep coming from the entrypoint, so this
+   file holds nothing else. `customResponseHeaders` replaces the header
+   rather than adding to it: mig sends no Content Security Policy of its
+   own today, but if a later release does, merge the two policies here,
+   or this middleware silently deletes the application's.
+
+2. Point the router at it in `servers/<server>/.env`:
+
+   ```bash
+   MIG_MIDDLEWARES=mig-frame-ancestors@file,compression@file,robots-deny@file
+   ```
+
+3. Deploy `traefik` first, then `mig`. The order is mandatory. The
+   traefik stack's `before.deploy.ts` is what copies
+   `configs/traefik/dynamic/*.yml` to the server, so deploying `mig`
+   alone never installs the file. A router that names a middleware
+   Traefik does not know is disabled, and the booking page answers 404
+   until the file arrives.
+
+4. Check:
+
+   ```bash
+   curl -sI https://meet.example.com/embed | grep -iE "x-frame|content-security"
+   # content-security-policy: frame-ancestors 'self' https://example.com https://www.example.com
+   # x-frame-options: DENY     <- still there, from the entrypoint; browsers ignore it
+   ```
+
+   Then open a page on your site that frames `/embed` and click a date.
+
+The policy has to cover the whole host, not only `/embed`. The embed
+page has no client-side routing: its date and slot links lead to
+`/?date=…`, so the frame leaves `/embed` at the first click. A router
+that allowed framing on `/embed` alone would show the calendar and then
+a refused frame. The cost is that the frame shows the full page, header
+and footer included, from the second step on.
 
 ## Configuration
 

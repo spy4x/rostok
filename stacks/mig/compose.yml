@@ -52,5 +52,12 @@ services:
       - "traefik.http.routers.hl-mig.entrypoints=websecure"
       - "traefik.http.routers.hl-mig.tls=true"
       - "traefik.http.routers.hl-mig.tls.certresolver=myresolver"
-      # robots-deny — booking page isn't index-worthy
-      - "traefik.http.routers.hl-mig.middlewares=security-headers@file,compression@file,robots-deny@file"
+      # robots-deny — booking page isn't index-worthy.
+      # MIG_MIDDLEWARES replaces the whole chain. With the default, no site
+      # can show mig in an iframe: security-headers sends X-Frame-Options:
+      # DENY, here and again on the websecure entrypoint. To embed the
+      # scheduler in your own site, add a server-specific middleware that
+      # sends `frame-ancestors`, which browsers follow instead — see
+      # README.md § "Embedding in your own site". Deploy traefik before mig:
+      # a router naming a middleware that does not exist yet answers 404.
+      - "traefik.http.routers.hl-mig.middlewares=${MIG_MIDDLEWARES:-security-headers@file,compression@file,robots-deny@file}"
