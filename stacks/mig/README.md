@@ -19,7 +19,66 @@ Bookings persist as a JSON file in the bind-mounted `/data` volume.
 
 - Booking page: `https://meet.${DOMAIN}`
 - Health (Gatus): `https://meet.${DOMAIN}/health`
-- Embed variant: `https://meet.${DOMAIN}/embed` (no header, iframe-ready)
+- Embed variant: `https://meet.${DOMAIN}/embed` (no header; needs the
+  setup below before any browser will show it in an iframe)
+
+## Embedding in your own site
+
+Out of the box every browser refuses to show mig in an iframe. The
+default middleware chain includes `security-headers@file`, which sends
+`X-Frame-Options: DENY`. That is the right default: nobody can frame
+your booking page to trick a visitor into clicking it.
+
+To allow your own site, and only your own site, to frame it:
+
+1. Add a server-specific Traefik file,
+   `servers/<server>/configs/traefik/dynamic/03-mig-embed.yml`. It is a
+   copy of `security-headers` from `stacks/traefik/dynamic/00-base.yml`
+   with `frameDeny` replaced by a `frame-ancestors` policy:
+
+   ```yaml
+   http:
+     middlewares:
+       mig-embed-headers:
+         headers:
+           contentTypeNosniff: true
+           referrerPolicy: strict-origin-when-cross-origin
+           stsSeconds: 15552000
+           stsIncludeSubdomains: true
+           stsPreload: true
+           permissionsPolicy: >-
+             camera=(self), microphone=(self), clipboard-read=(self), clipboard-write=(self),
+             geolocation=(), payment=(), usb=(),
+             interest-cohort=(), browsing-topics=(), accelerometer=(),
+             gyroscope=(), magnetometer=()
+           customResponseHeaders:
+             Access-Control-Allow-Origin: "*"
+             Content-Security-Policy: "frame-ancestors 'self' https://example.com https://www.example.com"
+   ```
+
+2. Point the router at it in `servers/<server>/.env`:
+
+   ```bash
+   MIG_MIDDLEWARES=mig-embed-headers@file,compression@file,robots-deny@file
+   ```
+
+3. Deploy `traefik`, then `mig`, and check:
+
+   ```bash
+   curl -sI https://meet.example.com/embed | grep -iE "x-frame|content-security"
+   # content-security-policy: frame-ancestors 'self' https://example.com https://www.example.com
+   # and no x-frame-options line
+   ```
+
+The policy has to cover the whole host, not only `/embed`. The embed
+page has no client-side code: its date and slot links lead to
+`/?date=…`, so the frame leaves `/embed` at the first click. A router
+that allowed framing on `/embed` alone would show the calendar and then
+a refused frame. The cost is that the frame shows the full page, header
+and footer included, from the second step on.
+
+Never drop `security-headers` without putting a `frame-ancestors`
+policy in its place: a page with neither can be framed by anyone.
 
 ## Configuration
 
