@@ -35,8 +35,8 @@ A router cannot remove that header, because the entrypoint middleware
 runs last on the way out and sets it again. What a router can do is add
 a `Content-Security-Policy: frame-ancestors` header naming your site.
 Browsers that see both headers follow `frame-ancestors` and ignore
-`X-Frame-Options`, as the Content Security Policy specification
-requires. Checked with both headers on one response in Chromium 153,
+`X-Frame-Options`: the Content Security Policy specification recommends
+it and every current engine does it. Checked with both headers on one response in Chromium 153,
 Firefox 155 and WebKitGTK 2.52 (the engine Safari uses; Safari itself
 was not tested): the named site can frame the page, any other origin is
 refused, and with `X-Frame-Options` alone everyone is refused.
