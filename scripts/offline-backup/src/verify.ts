@@ -159,7 +159,14 @@ export async function verifyBackups(
     }
   }
 
-  console.log("\n✅ Verification complete")
+  // No verdict here: `verifyBackups` only reports what it found, and the
+  // caller's summary decides what that means. This line used to be an
+  // unconditional "✅ Verification complete" even when the tally was
+  // empty, which is the same false green the summary was just fixed for.
+  console.log(
+    `\n🔍 Verification finished — ${results.passed} passed, ${results.failed} failed, ` +
+      `${results.skipped} skipped.`,
+  )
 
   if (results.failed > 0) {
     console.warn(
