@@ -11,7 +11,7 @@ import {
   assertThrows,
 } from "@std/assert"
 import { Command } from "@cliffy/command"
-import { buildCommand } from "./+main.ts"
+import { buildCommand, parseStackFlags, parseVarFlags } from "./+main.ts"
 import { DESCRIPTION, NAME, VERSION } from "./version.ts"
 
 Deno.test("buildCommand: returns a fresh Command on every call", () => {
@@ -86,39 +86,15 @@ Deno.test("--help: nested subcommands are registered with descriptions", () => {
 })
 
 // ─────────────────────────────────────────────────────────────────────
-// parseVarFlags regression tests (Phase 5)
+// parseVarFlags / parseStackFlags regression tests (Phase 5)
 //
 // cliffy's `<kv...:string[]>` with `collect: true` produces a CIRCULAR
 // structure: the last slot is a back-reference to the root array. The
-// walker must detect cycles or `rostok --var A=1 --var B=2` throws
-// `Maximum call stack size exceeded`. Keep these tests in sync with the
-// walker in cli/+main.ts:parseVarFlags.
+// shared walker (flattenCliffyCollect in cli/+main.ts) must detect
+// cycles or `rostok --var A=1 --var B=2` throws "Maximum call stack
+// size exceeded". Both flag parsers are exported so these tests exercise
+// the real implementation, not a mirror.
 // ─────────────────────────────────────────────────────────────────────
-
-// Mirror of the walker in cli/+main.ts. If you change the walker, change this too.
-function parseVarFlags(flags: unknown): Record<string, string> {
-  const out: Record<string, string> = {}
-  if (!flags) return out
-  const flat: string[] = []
-  const seen = new WeakSet<object>()
-  const walk = (v: unknown, depth: number) => {
-    if (typeof v === "string") {
-      flat.push(v)
-      return
-    }
-    if (depth > 4 || v === null || typeof v !== "object") return
-    if (seen.has(v as object)) return
-    seen.add(v as object)
-    if (Array.isArray(v)) { for (const x of v) walk(x, depth + 1) }
-  }
-  walk(flags, 0)
-  for (const f of flat) {
-    const eq = f.indexOf("=")
-    if (eq < 0) throw new Error(`--var requires KEY=VAL form, got: ${f}`)
-    out[f.slice(0, eq)] = f.slice(eq + 1)
-  }
-  return out
-}
 
 Deno.test("parseVarFlags: single --var → one entry", async () => {
   let captured: Record<string, string> = {}
@@ -157,4 +133,41 @@ Deno.test("parseVarFlags: rejects --var without KEY=VAL form", () => {
 
 Deno.test("parseVarFlags: undefined input returns empty record", () => {
   assertEquals(parseVarFlags(undefined), {})
+})
+
+Deno.test("parseStackFlags: multiple --stack flags don't infinite-loop on circular cliffy output", async () => {
+  let captured: string[] = []
+  const cmd = new Command()
+    .option("--stack <name...:string[]>", "repeatable", { collect: true })
+    .action((options) => {
+      captured = parseStackFlags(options.stack)
+    })
+    .throwErrors()
+  await cmd.parse(["--stack", "traefik", "--stack", "gatus"])
+  assertEquals(captured, ["traefik", "gatus"])
+})
+
+Deno.test("parseStackFlags: undefined input returns empty array", () => {
+  assertEquals(parseStackFlags(undefined), [])
+})
+
+// ─────────────────────────────────────────────────────────────────────
+// #209 — --help documents the server --var keys (env-style + aliases).
+// ─────────────────────────────────────────────────────────────────────
+
+Deno.test("--help: root command lists server --var keys", () => {
+  const cmd = buildCommand()
+  const help = cmd.getHelp()
+  assertStringIncludes(help, "SSH_ADDRESS")
+  assertStringIncludes(help, "CONTACT_EMAIL")
+  assertStringIncludes(help, "legacy aliases")
+  assertStringIncludes(help, "sshTarget")
+})
+
+Deno.test("--help: server create lists its --var option", () => {
+  const cmd = buildCommand()
+  const createCmd = cmd.getCommand("server")!.getCommand("create")
+  assertExists(createCmd)
+  assertEquals(createCmd.hasOption("var"), true)
+  assertStringIncludes(createCmd.getDescription(), "SSH_ADDRESS")
 })
