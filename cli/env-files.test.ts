@@ -4,6 +4,7 @@ import { assertEquals, assertRejects } from "@std/assert"
 import { join } from "@std/path"
 import {
   mergeEnv,
+  migrateSshUserKey,
   parseEnv,
   readEnvFile,
   serializeEnv,
@@ -43,10 +44,29 @@ Deno.test("mergeEnv: incoming wins on collision, preserves existing extras", () 
   const incoming = [{ key: "A", value: "new-a" }, { key: "C", value: "c-new" }]
   const merged = mergeEnv(existing, incoming)
   assertEquals(merged, [
+    { key: "A", value: "new-a" }, // incoming wins, but keeps A's original position
     { key: "B", value: "b-only" }, // existing-only, preserved
-    { key: "A", value: "new-a" }, // incoming wins, kept in incoming order
-    { key: "C", value: "c-new" }, // incoming-only
+    { key: "C", value: "c-new" }, // incoming-only, appended
   ])
+})
+
+Deno.test("mergeEnv: an updated value stays in its original position, doesn't jump to the end", () => {
+  const existing = [
+    { key: "FIRST", value: "1" },
+    { key: "MIDDLE", value: "old" },
+    { key: "LAST", value: "3" },
+  ]
+  const incoming = [{ key: "MIDDLE", value: "new" }]
+  assertEquals(mergeEnv(existing, incoming), [
+    { key: "FIRST", value: "1" },
+    { key: "MIDDLE", value: "new" },
+    { key: "LAST", value: "3" },
+  ])
+})
+
+Deno.test("mergeEnv: re-running with identical values is a no-op (same order, same values)", () => {
+  const existing = [{ key: "A", value: "1" }, { key: "B", value: "2" }]
+  assertEquals(mergeEnv(existing, existing), existing)
 })
 
 Deno.test("readEnvFile: returns [] for missing file", async () => {
@@ -61,6 +81,35 @@ Deno.test("writeEnvFile + readEnvFile: round-trip via tmp", async () => {
   await Deno.remove(tmp, { recursive: true })
 })
 
+// Security review — .env files hold secrets; they must never be
+// group/world readable.
+
+Deno.test("writeEnvFile: sets file mode 0600", async () => {
+  const tmp = await Deno.makeTempDir()
+  try {
+    const path = join(tmp, ".env")
+    await writeEnvFile(path, [{ key: "SECRET", value: "shh" }])
+    const info = await Deno.stat(path)
+    assertEquals((info.mode ?? 0) & 0o777, 0o600)
+  } finally {
+    await Deno.remove(tmp, { recursive: true })
+  }
+})
+
+Deno.test("writeEnvFile: tightens permissions on rewrite of a looser-mode existing file", async () => {
+  const tmp = await Deno.makeTempDir()
+  try {
+    const path = join(tmp, ".env")
+    await Deno.writeTextFile(path, "OLD=1\n")
+    await Deno.chmod(path, 0o644)
+    await writeEnvFile(path, [{ key: "NEW", value: "2" }])
+    const info = await Deno.stat(path)
+    assertEquals((info.mode ?? 0) & 0o777, 0o600)
+  } finally {
+    await Deno.remove(tmp, { recursive: true })
+  }
+})
+
 Deno.test("writeEnvFile: atomic via .tmp rename", async () => {
   const tmp = await Deno.makeTempDir()
   const path = join(tmp, ".env")
@@ -70,6 +119,54 @@ Deno.test("writeEnvFile: atomic via .tmp rename", async () => {
   // No .tmp leftover
   await assertRejects(async () => await Deno.stat(`${path}.tmp`))
   await Deno.remove(tmp, { recursive: true })
+})
+
+// ─────────────────────────────────────────────────────────────────────
+// migrateSshUserKey — #206: rename a legacy remote-user key to SSH_USER.
+// ─────────────────────────────────────────────────────────────────────
+
+Deno.test("migrateSshUserKey: renames USER to SSH_USER", () => {
+  const result = migrateSshUserKey([
+    { key: "PROJECT", value: "hl" },
+    { key: "USER", value: "deploy" },
+  ])
+  assertEquals(result.renamedFrom, "USER")
+  assertEquals(result.entries, [
+    { key: "PROJECT", value: "hl" },
+    { key: "SSH_USER", value: "deploy" },
+  ])
+})
+
+Deno.test("migrateSshUserKey: renames HOMELAB_USER to SSH_USER", () => {
+  const result = migrateSshUserKey([{ key: "HOMELAB_USER", value: "deploy" }])
+  assertEquals(result.renamedFrom, "HOMELAB_USER")
+  assertEquals(result.entries, [{ key: "SSH_USER", value: "deploy" }])
+})
+
+Deno.test("migrateSshUserKey: HOMELAB_USER wins over USER when both are present", () => {
+  const result = migrateSshUserKey([
+    { key: "USER", value: "from-user" },
+    { key: "HOMELAB_USER", value: "from-homelab" },
+  ])
+  assertEquals(result.renamedFrom, "HOMELAB_USER")
+  assertEquals(result.entries, [
+    { key: "USER", value: "from-user" },
+    { key: "SSH_USER", value: "from-homelab" },
+  ])
+})
+
+Deno.test("migrateSshUserKey: no-op when SSH_USER is already present", () => {
+  const entries = [{ key: "SSH_USER", value: "deploy" }, { key: "USER", value: "stale" }]
+  const result = migrateSshUserKey(entries)
+  assertEquals(result.renamedFrom, undefined)
+  assertEquals(result.entries, entries)
+})
+
+Deno.test("migrateSshUserKey: no-op when neither legacy key is present", () => {
+  const entries = [{ key: "PROJECT", value: "hl" }]
+  const result = migrateSshUserKey(entries)
+  assertEquals(result.renamedFrom, undefined)
+  assertEquals(result.entries, entries)
 })
 
 Deno.test("serverContextFromRoot: produces a usable ServerContext shape", () => {

@@ -37,26 +37,26 @@ export function serializeEnv(entries: EnvEntry[]): string {
 
 /**
  * Merge `incoming` into `existing`:
- *   - keys in `incoming` overwrite keys in `existing`
- *   - keys in `existing` not in `incoming` are preserved
- * Order: incoming wins on collision; existing keys come first, then any
- * incoming-only keys appended.
+ *   - a key present in both keeps its position from `existing`, value
+ *     updated to `incoming`'s — so re-running with the same values is a
+ *     byte-for-byte no-op, and a changed value doesn't jump to the
+ *     bottom of the file (which would needlessly re-encrypt neighboring
+ *     lines and churn the diff)
+ *   - a key only in `existing` is preserved untouched
+ *   - a key only in `incoming` is appended, in `incoming`'s order
  */
 export function mergeEnv(existing: EnvEntry[], incoming: EnvEntry[]): EnvEntry[] {
-  const out: EnvEntry[] = []
+  const incomingByKey = new Map(incoming.map((e) => [e.key, e.value]))
   const seen = new Set<string>()
-  for (const e of existing) {
-    if (incoming.some((i) => i.key === e.key)) {
-      // skip — will be replaced by the incoming entry
-      continue
-    }
-    out.push(e)
+  const out: EnvEntry[] = existing.map((e) => {
     seen.add(e.key)
-  }
-  // Preserve order of incoming, then append any extras not yet seen.
+    const value = incomingByKey.get(e.key)
+    return value !== undefined ? { key: e.key, value } : e
+  })
   for (const e of incoming) {
-    out.push(e)
+    if (seen.has(e.key)) continue
     seen.add(e.key)
+    out.push(e)
   }
   return out
 }
@@ -72,11 +72,44 @@ export async function readEnvFile(path: string): Promise<EnvEntry[]> {
   }
 }
 
-/** Write .env atomically: write to .tmp then rename. */
+/**
+ * Write .env atomically: write to .tmp then rename. `.env` files hold
+ * secrets — chmod both the tmp file and the final path to 0600 (owner
+ * read/write only) explicitly, rather than relying only on `mode` in
+ * `writeTextFile` (which only applies when the OS creates a new inode,
+ * so it wouldn't tighten a `.tmp` left over with looser permissions
+ * from before this fix) or on `rename` carrying the tmp file's mode
+ * onto `path` (true on Linux, not guaranteed by POSIX in general).
+ */
 export async function writeEnvFile(path: string, entries: EnvEntry[]): Promise<void> {
   const tmp = `${path}.tmp`
-  await Deno.writeTextFile(tmp, serializeEnv(entries))
+  await Deno.writeTextFile(tmp, serializeEnv(entries), { mode: 0o600 })
+  await Deno.chmod(tmp, 0o600)
   await Deno.rename(tmp, path)
+  await Deno.chmod(path, 0o600)
+}
+
+/** Legacy remote-user keys, in fallback order (see cli/server-keys.ts SSH_USER). */
+const LEGACY_USER_KEYS = ["HOMELAB_USER", "USER"] as const
+
+/**
+ * Rename a legacy remote-user key (`HOMELAB_USER`, then `USER`) to
+ * `SSH_USER` in a parsed `.env`, if `SSH_USER` isn't already present.
+ *
+ * `USER` is what the pre-1.0.4 wizard wrote; `HOMELAB_USER` is what
+ * deploy, ansible and syncthing read. `SSH_USER` replaces both — see
+ * `cli/server-keys.ts`. Reading `USER` from the process environment
+ * would pick up the shell's own variable, so this only ever looks at
+ * the parsed file.
+ */
+export function migrateSshUserKey(
+  entries: EnvEntry[],
+): { entries: EnvEntry[]; renamedFrom?: string } {
+  if (entries.some((e) => e.key === "SSH_USER")) return { entries }
+  const legacyKey = LEGACY_USER_KEYS.find((k) => entries.some((e) => e.key === k))
+  if (!legacyKey) return { entries }
+  const out = entries.map((e) => e.key === legacyKey ? { key: "SSH_USER", value: e.value } : e)
+  return { entries: out, renamedFrom: legacyKey }
 }
 
 /**
