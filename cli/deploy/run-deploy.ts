@@ -18,8 +18,15 @@
 //   - Stops rsyncing `./scripts` and `./deno.jsonc` — only `.env`,
 //     `.env.root`, `configs/`, `compose-override/` and the deployed
 //     stacks' files are sent.
+//
+// Kept from the old script: a server can override a stack's before-hook
+// with `servers/<server>/configs/<deployAs>/before.deploy.ts`, run after
+// the stack's own before-hook. That file only ever exists locally in the
+// project (it's never shipped), so it still satisfies the hook
+// contract's "run from source, never a copy" rule the same way a stack's
+// own hook does.
 
-import { dirname, join } from "@std/path"
+import { dirname, join, toFileUrl } from "@std/path"
 import { parseEnv, readEnvFile } from "../env-files.ts"
 import { serverDirFor } from "../server-keys.ts"
 import { UserError } from "../errors.ts"
@@ -158,6 +165,22 @@ export async function runDeploy(opts: DeployOptions): Promise<DeployRunResult> {
         stagingDir,
         ctx,
       )
+
+      // Server-specific override hook, run after the stack's own
+      // before-hook: servers/<server>/configs/<deployAs>/before.deploy.ts.
+      // Unlike a stack's own hook, this file only ever exists locally in
+      // the project (it's never shipped), so "its source location" is
+      // simply that path — never a staging copy, same as any other hook.
+      const serverHookPath = join(cwd, "servers", server, "configs", deployAs, "before.deploy.ts")
+      if (await pathExists(serverHookPath)) {
+        await runHook(
+          "before",
+          `${stackConfig.name} (server override)`,
+          toFileUrl(serverHookPath).href,
+          stagingDir,
+          ctx,
+        )
+      }
     }
 
     // Snapshot checksums of watched config files before rsync.

@@ -238,6 +238,72 @@ Deno.test("e2e: rostok deploy ../escaped refuses before reading anything (#208)"
   }
 })
 
+Deno.test("e2e: server-specific hook overrides run from source, after the stack's own hook", async () => {
+  const f = await setupFixture()
+  try {
+    // A local (non-catalog) stack — keeps this test independent of any
+    // catalog stack's own before.deploy.ts. Its before-hook appends
+    // "stack" to SERVER_HOOK_LOG.
+    const stackDir = join(f.projectDir, "stacks", "custom-stack")
+    await Deno.mkdir(stackDir, { recursive: true })
+    await Deno.writeTextFile(
+      join(stackDir, "compose.yml"),
+      "name: ${PROJECT}\nservices:\n  custom:\n    image: busybox\n",
+    )
+    await Deno.writeTextFile(
+      join(stackDir, "before.deploy.ts"),
+      `const logPath = Deno.env.get("SERVER_HOOK_LOG")!
+await Deno.writeTextFile(logPath, "stack\\n", { append: true })
+`,
+    )
+
+    // servers/test/configs/custom-stack/before.deploy.ts — the
+    // server-specific override. It self-checks that the stack's own
+    // hook already ran (the log already contains "stack"), and records
+    // its own cwd + the contract env keys for the test to assert on.
+    const serverHookDir = join(f.projectDir, "servers", "test", "configs", "custom-stack")
+    await Deno.mkdir(serverHookDir, { recursive: true })
+    await Deno.writeTextFile(
+      join(serverHookDir, "before.deploy.ts"),
+      `const logPath = Deno.env.get("SERVER_HOOK_LOG")!
+const priorContent = await Deno.readTextFile(logPath).catch(() => "")
+const env = Deno.env.toObject()
+const record = {
+  ranAfterStackHook: priorContent.includes("stack"),
+  cwd: Deno.cwd(),
+  deployAs: env.DEPLOY_AS,
+  sshAddress: env.SSH_ADDRESS,
+  sshUser: env.SSH_USER,
+  pathApps: env.PATH_APPS,
+}
+await Deno.writeTextFile(logPath, "server:" + JSON.stringify(record) + "\\n", { append: true })
+`,
+    )
+
+    await writeServer(f.projectDir, [], ["custom-stack"])
+
+    const hookLog = join(f.remoteDir, "server-hook.json")
+    const result = await runDeployCli(f, ["deploy", "test"], { SERVER_HOOK_LOG: hookLog })
+    if (!result.success) console.error(result.stderr)
+    assertEquals(result.success, true)
+
+    const lines = (await Deno.readTextFile(hookLog)).trim().split("\n")
+    assertEquals(lines[0], "stack")
+    assertStringIncludes(lines[1], "server:")
+    const record = JSON.parse(lines[1].slice("server:".length))
+    assertEquals(record.ranAfterStackHook, true)
+    // cwd is the staging dir (Deno.makeTempDir({ prefix: "rostok-deploy-" })),
+    // never a copy of the hook itself.
+    assertStringIncludes(record.cwd, "rostok-deploy-")
+    assertEquals(record.deployAs, "custom-stack")
+    assertEquals(record.sshAddress, "deploy@remote.test")
+    assertEquals(record.sshUser, "deploy")
+    assertEquals(record.pathApps, "/srv/apps")
+  } finally {
+    await teardownFixture(f)
+  }
+})
+
 async function assertNotExists(path: string): Promise<void> {
   let exists = true
   try {
