@@ -35,8 +35,8 @@ TRAEFIK_BASIC_AUTH_PASSWORD=...         # Dashboard auth (default: generated, 24
 `TRAEFIK_BASIC_AUTH_USER`/`TRAEFIK_BASIC_AUTH_PASSWORD` are the only
 credential keys read; a server whose `.env` still carries the pre-#210
 `BASIC_AUTH_USER`/`BASIC_AUTH_BASE64`/`BASIC_AUTH_PASSWORD` must rename
-them — see the "drop legacy env key names" PR for the full old → new
-key table.
+them — see [PR #224](https://github.com/spy4x/rostok/pull/224) for the
+full old → new key table.
 
 ## Access
 
