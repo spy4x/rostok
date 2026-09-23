@@ -233,3 +233,110 @@ export default {
     assertEquals(env.find((e) => e.key === "CONTACT_EMAIL")?.value, "ops@example.com")
   })
 })
+
+// ─────────────────────────────────────────────────────────────────────
+// Review fix #3 — ${SERVER_NAME} is the one reference the design doc
+// guarantees resolves; it must not always fail the unresolved-reference
+// check. Also: that check must only apply to a value resolved *this
+// run* from a default, not to whatever was already sitting in .env.
+// ─────────────────────────────────────────────────────────────────────
+
+const SERVER_NAME_STACK_META = `
+import type { StackMeta } from "@rostok/cli"
+export default {
+  name: "namedstack",
+  description: "fixture",
+  variables: [
+    { key: "NAMEDSTACK_LABEL", default: "\${SERVER_NAME}-namedstack", required: true },
+  ],
+} satisfies StackMeta
+`
+
+Deno.test("a \${SERVER_NAME} default resolves to the server being added to", async () => {
+  await withTmpDir(async (dir) => {
+    const catalogDir = join(dir, "catalog")
+    await writeCatalog(catalogDir, { namedstack: SERVER_NAME_STACK_META })
+    await seedServer(dir, "test", { PROJECT: "hl", DOMAIN: "example.com" })
+
+    const result = await stackAdd("namedstack", "test", {
+      cwd: dir,
+      catalogDir,
+      nonInteractive: true,
+    })
+    assertEquals(
+      result.writtenEntries.find((e) => e.key === "NAMEDSTACK_LABEL")?.value,
+      "test-namedstack",
+    )
+  })
+})
+
+Deno.test("an unresolved \${...} already sitting in .env is left alone, not rejected", async () => {
+  await withTmpDir(async (dir) => {
+    const catalogDir = join(dir, "catalog")
+    await writeCatalog(catalogDir, { badstack: UNRESOLVED_STACK_META })
+    // Simulate stale hand-edited data: the key badstack declares already
+    // has a literal, never-resolved reference sitting in .env from
+    // before. stack add must not touch or reject it — only a value it
+    // resolves itself this run is checked.
+    await seedServer(dir, "test", {
+      PROJECT: "hl",
+      DOMAIN: "example.com",
+      BADSTACK_PATH_MEDIA: "\${PATH_MEDIA}/badstack",
+    })
+
+    const result = await stackAdd("badstack", "test", {
+      cwd: dir,
+      catalogDir,
+      nonInteractive: true,
+    })
+    assertEquals(result.keptCount, 1)
+    assertEquals(
+      result.writtenEntries.find((e) => e.key === "BADSTACK_PATH_MEDIA")?.value,
+      "\${PATH_MEDIA}/badstack",
+    )
+  })
+})
+
+// ─────────────────────────────────────────────────────────────────────
+// Review fix #5 — migrateSshUserKey runs inside stack add too, not just
+// server create.
+// ─────────────────────────────────────────────────────────────────────
+
+Deno.test("stack add migrates a legacy USER key to SSH_USER", async () => {
+  await withTmpDir(async (dir) => {
+    const catalogDir = join(dir, "catalog")
+    await writeCatalog(catalogDir, { demo: IMAGE_STACK_META("demo", "1.0") })
+    await seedServer(dir, "test", { PROJECT: "hl", DOMAIN: "example.com", USER: "deploy" })
+
+    await stackAdd("demo", "test", { cwd: dir, catalogDir, nonInteractive: true })
+
+    const env = await readEnvFile(join(dir, "servers", "test", ".env"))
+    assertEquals(env.some((e) => e.key === "USER"), false)
+    assertEquals(env.find((e) => e.key === "SSH_USER")?.value, "deploy")
+  })
+})
+
+// ─────────────────────────────────────────────────────────────────────
+// Review fix #9 — a --var equal to the existing value is "kept", not "new".
+// ─────────────────────────────────────────────────────────────────────
+
+Deno.test("a --var matching the existing value counts as kept, not new", async () => {
+  await withTmpDir(async (dir) => {
+    const catalogDir = join(dir, "catalog")
+    await writeCatalog(catalogDir, { secretstack: SECRET_STACK_META })
+    await seedServer(dir, "test", {
+      PROJECT: "hl",
+      DOMAIN: "example.com",
+      SECRETSTACK_PASSWORD: "unchanged",
+    })
+
+    const result = await stackAdd("secretstack", "test", {
+      cwd: dir,
+      catalogDir,
+      nonInteractive: true,
+      providedVars: { SECRETSTACK_PASSWORD: "unchanged" },
+    })
+    assertEquals(result.newCount, 0)
+    assertEquals(result.keptCount, 1)
+  })
+})

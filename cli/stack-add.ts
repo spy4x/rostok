@@ -4,8 +4,10 @@
 //
 //   1. Pick a stack from the bundled catalog.
 //   2. Run that stack's variable flow (for each VariableSpec: --var
-//      override > existing .env value > server-level value > function
-//      default > string default > prompt-or-skip).
+//      override > existing .env value (this covers a stack-declared key
+//      that's also a server key, e.g. CONTACT_EMAIL, once server create
+//      has written it) > function default > string default >
+//      prompt-or-skip).
 //
 // Writes `servers/<name>/.env` and updates `servers/<name>/config.json`.
 // Re-encrypts `.env` to `.env.age` at the end.
@@ -33,7 +35,7 @@ import { resolveVariable } from "./defaults.ts"
 import { normalizeVariableSpec } from "./stack-meta.ts"
 import type { VariableSpec } from "./stack-meta.ts"
 import { promptValue } from "./prompts.ts"
-import { isServerKey, serverDirFor } from "./server-keys.ts"
+import { serverDirFor } from "./server-keys.ts"
 import { UserError } from "./errors.ts"
 
 /** Result of a stack-add invocation. */
@@ -97,8 +99,13 @@ export async function stackAdd(
   const existingByKey = new Map(existing.map((e) => [e.key, e.value]))
 
   // Build server context from `servers/<server>/.env` (per-server vars),
-  // for `${DOMAIN}`-style substitution in string defaults.
-  const ctx = opts.skipServerPropagation ? null : serverContextFromRoot(existing)
+  // for `${DOMAIN}`-style substitution in string defaults. SERVER_NAME
+  // isn't a key any `.env` ever stores (it's the directory name), so it's
+  // added explicitly — otherwise the one reference the design doc
+  // guarantees (`${SERVER_NAME}`) could never resolve.
+  const ctx = opts.skipServerPropagation
+    ? null
+    : { ...serverContextFromRoot(existing), SERVER_NAME: serverName }
 
   const writtenEntries: EnvEntry[] = []
   const skippedKeys: string[] = []
@@ -109,36 +116,30 @@ export async function stackAdd(
     const normalized = normalizeVariableSpec(spec)
     const key = normalized.key
     const providedValue = opts.providedVars?.[key]
+    const existingValue = existingByKey.get(key)
 
-    // 1. --var always wins, even over an existing value.
+    // 1. --var always wins, even over an existing value. A --var that
+    //    happens to match what's already there is "kept", not "new" —
+    //    it's not adding a value, just confirming one.
     if (providedValue !== undefined) {
       writtenEntries.push({ key, value: providedValue })
-      newCount++
+      if (providedValue === existingValue) keptCount++
+      else newCount++
       continue
     }
 
     // 2. Keep whatever is already in .env — never clobber another
-    //    stack's key, never regenerate a secret on re-run.
-    const existingValue = existingByKey.get(key)
+    //    stack's key, never regenerate a secret on re-run. This also
+    //    covers a stack-declared key that's also a server key (e.g.
+    //    traefik's CONTACT_EMAIL): server create already wrote it, so
+    //    it's "existing" by the time any stack add runs.
     if (existingValue !== undefined) {
       writtenEntries.push({ key, value: existingValue })
       keptCount++
       continue
     }
 
-    // 3. A stack-declared key that is also a server key (e.g. traefik's
-    //    CONTACT_EMAIL, or a shared PATH_* key) defaults to the server's
-    //    value instead of prompting with an empty default.
-    if (ctx && isServerKey(key)) {
-      const serverValue = (ctx as unknown as Record<string, unknown>)[key]
-      if (typeof serverValue === "string" && serverValue !== "") {
-        writtenEntries.push({ key, value: serverValue })
-        newCount++
-        continue
-      }
-    }
-
-    // 4. Function/string default, or prompt/skip. Only reached when the
+    // 3. Function/string default, or prompt/skip. Only reached when the
     //    key has no value anywhere yet, so `() => generatePassword()`
     //    only runs on first add.
     const resolved = ctx
@@ -164,17 +165,17 @@ export async function stackAdd(
       continue
     }
 
+    // #210 + review: an unresolved `${...}` left after default
+    // resolution is an error naming the key — checked only for a value
+    // this run just resolved from a default, not for whatever was
+    // already sitting in .env (step 2 above never reaches here).
+    const bad = value.match(/\$\{[^}]*\}/)
+    if (bad) {
+      throw new UserError(`unresolved reference in ${key}: ${bad[0]}`)
+    }
+
     writtenEntries.push({ key, value })
     newCount++
-  }
-
-  // #210: after resolution, an unresolved `${...}` reference is an error
-  // naming the key — never write a literal placeholder to .env.
-  for (const e of writtenEntries) {
-    const bad = e.value.match(/\$\{[^}]*\}/)
-    if (bad) {
-      throw new UserError(`unresolved reference in ${e.key}: ${bad[0]}`)
-    }
   }
 
   // Write servers/<server>/.env. `existing` is the base so hand-edits to
