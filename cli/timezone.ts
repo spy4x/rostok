@@ -5,30 +5,55 @@
 // macOS (no `/etc/timezone`) it fell straight to `UTC`, even when the
 // local shell's own zone — or the remote server's — was known.
 //
-// Detection order, first non-empty value wins:
-//   1. `Intl.DateTimeFormat().resolvedOptions().timeZone` (local, always
-//      available in Deno — no shell-out, works on every OS).
-//   2. `/etc/timezone` (local file, Debian/Ubuntu).
-//   3. `timedatectl show -p Timezone --value` over the SSH target the
+// TIMEZONE configures containers *on the server*, so the server's own
+// zone wins whenever it's knowable. Detection order, first valid,
+// non-empty value wins:
+//   1. `timedatectl show -p Timezone --value` over the SSH target the
 //      wizard already probed (#207) — only attempted when that probe
 //      reached the server, so a dead/unreachable target doesn't add a
 //      second hanging SSH round trip.
+//   2. `Intl.DateTimeFormat().resolvedOptions().timeZone` (local, always
+//      available in Deno — no shell-out, works on every OS).
+//   3. `/etc/timezone` (local file, Debian/Ubuntu).
 //   4. `UTC`.
+//
+// Every candidate — remote or local — is validated as a real IANA zone
+// name before it's accepted: an empty answer, a truncated `timedatectl`
+// line, or garbage from a misbehaving shell profile on the remote end
+// must fall through to the next source, not become TIMEZONE's value.
 //
 // Each source is injectable so tests can check the exact order without
 // shelling out or touching the filesystem.
 
 export interface TimezoneSources {
-  /** Local `Intl` zone. Defaults to the real `Intl.DateTimeFormat`. */
-  local?: () => string | undefined
-  /** Local `/etc/timezone` contents. Defaults to a real file read. */
-  etcTimezone?: () => Promise<string | undefined>
   /**
    * Remote `timedatectl` over the SSH target already probed for #207.
    * Defaults to a no-op (undefined) — callers pass a real implementation
    * only when they already know the target is reachable.
    */
   remote?: () => Promise<string | undefined>
+  /** Local `Intl` zone. Defaults to the real `Intl.DateTimeFormat`. */
+  local?: () => string | undefined
+  /** Local `/etc/timezone` contents. Defaults to a real file read. */
+  etcTimezone?: () => Promise<string | undefined>
+}
+
+/** True when `Intl.DateTimeFormat` accepts `tz` as a timeZone — the standard way to validate an IANA name without a lookup table. */
+function isValidTimezone(tz: string): boolean {
+  try {
+    new Intl.DateTimeFormat(undefined, { timeZone: tz })
+    return true
+  } catch {
+    return false
+  }
+}
+
+/** Accept `candidate` only when it's non-empty (after trimming) and a valid IANA zone name; otherwise treat the source as unavailable. */
+function validCandidate(candidate: string | undefined): string | undefined {
+  if (candidate === undefined) return undefined
+  const trimmed = candidate.trim()
+  if (!trimmed || !isValidTimezone(trimmed)) return undefined
+  return trimmed
 }
 
 /** Real local `Intl` zone — never throws; Deno always has *some* resolved zone. */
@@ -51,23 +76,24 @@ async function defaultEtcTimezone(): Promise<string | undefined> {
 }
 
 /**
- * Detect a timezone default, trying each source in order and returning
- * the first non-empty value. Falls back to `"UTC"` when every source is
- * empty or missing.
+ * Detect a timezone default, trying each source in order — remote
+ * server first, since TIMEZONE configures containers running there —
+ * and returning the first valid, non-empty value. Falls back to
+ * `"UTC"` when every source is empty, invalid, or missing.
  */
 export async function detectTimezone(sources: TimezoneSources = {}): Promise<string> {
+  const remote = sources.remote ?? (() => Promise.resolve(undefined))
   const local = sources.local ?? defaultLocal
   const etcTimezone = sources.etcTimezone ?? defaultEtcTimezone
-  const remote = sources.remote ?? (() => Promise.resolve(undefined))
 
-  const fromLocal = local()
+  const fromRemote = validCandidate(await remote())
+  if (fromRemote) return fromRemote
+
+  const fromLocal = validCandidate(local())
   if (fromLocal) return fromLocal
 
-  const fromEtc = await etcTimezone()
+  const fromEtc = validCandidate(await etcTimezone())
   if (fromEtc) return fromEtc
-
-  const fromRemote = await remote()
-  if (fromRemote) return fromRemote
 
   return "UTC"
 }
@@ -78,7 +104,9 @@ export async function detectTimezone(sources: TimezoneSources = {}): Promise<str
  * stall the wizard. Only meant to be called when the caller already
  * knows SSH reached the server (e.g. the #207 probe succeeded) — it does
  * not retry or report failures, it just returns `undefined` on any of
- * them so `detectTimezone` falls through to the next source.
+ * them so `detectTimezone` falls through to the next source. The raw
+ * output isn't validated here — `detectTimezone`'s `validCandidate`
+ * does that for every source uniformly.
  */
 export async function remoteTimedatectlTimezone(
   target: string,
