@@ -11,7 +11,7 @@ services:
     container_name: hl-woodpecker-server
     image: woodpeckerci/woodpecker-server:v3.11.0
     environment:
-      - WOODPECKER_OPEN=true
+      - WOODPECKER_OPEN=false
       - WOODPECKER_HOST=https://ci.${DOMAIN}
       - WOODPECKER_AGENT_SECRET=${WOODPECKER_AGENT_SECRET}
       # GitHub integration (comment out if using Gitea/GitLab)
