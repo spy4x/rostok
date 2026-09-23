@@ -6,7 +6,8 @@ one deploy variant, chosen via `-f`.
 ## Deploy variants
 
 ```bash
-# Public HTTPS via Traefik + Authelia
+# Public HTTPS via Traefik. No auth middleware: Home Assistant's own
+# login is the only protection
 docker compose -f compose.yml -f compose.traefik.yml up -d
 
 # Host networking — mDNS/SSDP/DHCP discovery of IoT devices (Zigbee

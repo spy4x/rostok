@@ -379,7 +379,7 @@ extra manifest file.
 
 When CLI writes `servers/<n>/.env`:
 - Keys declared by stack X → written/updated by stack X's setup
-- Keys declared by `server create` (PROJECT, SSH_ADDRESS, USER, DOMAIN,
+- Keys declared by `server create` (PROJECT, SERVER_NAME, SSH_ADDRESS, SSH_USER, DOMAIN,
   CONTACT_EMAIL, DOCKER_GROUP_ID, TIMEZONE, PUID, PGID, VOLUMES_PATH,
   PATH_*) → written/updated by server-create; not clobbered by stack-add
   (stack-add's merge preserves them)

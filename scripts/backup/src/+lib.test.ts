@@ -10,14 +10,14 @@
 // top-level const, resolved once at module evaluation, so re-importing
 // with different env vars needs a fresh module instance.
 
-import { assertEquals } from "@std/assert"
+import { assertEquals, assertRejects } from "@std/assert"
 
 async function importLibWith(env: Record<string, string>) {
   const previous = new Map<string, string | undefined>()
   for (const key of Object.keys(env)) previous.set(key, Deno.env.get(key))
   try {
     for (const [key, value] of Object.entries(env)) Deno.env.set(key, value)
-    return await import(`./+lib.ts?bust=${Math.random()}`)
+    return await import(`./+lib.ts?bust=${crypto.randomUUID()}`)
   } finally {
     for (const [key, value] of previous) {
       value === undefined ? Deno.env.delete(key) : Deno.env.set(key, value)
@@ -35,4 +35,25 @@ Deno.test("scripts/backup/src/+lib.ts: USER reads SSH_USER, not the legacy USER 
     SERVER_NAME: "home",
   })
   assertEquals(mod.USER, "deploy")
+})
+
+Deno.test("scripts/backup/src/+lib.ts: USER alone is not a remote user", async () => {
+  const previous = Deno.env.get("SSH_USER")
+  Deno.env.delete("SSH_USER")
+  try {
+    await assertRejects(
+      () =>
+        importLibWith({
+          USER: "legacy",
+          PATH_APPS: "/srv/apps",
+          VOLUMES_PATH: "/srv/volumes",
+          PATH_SYNC: "/srv/sync",
+          SERVER_NAME: "home",
+        }),
+      Error,
+      "SSH_USER",
+    )
+  } finally {
+    if (previous !== undefined) Deno.env.set("SSH_USER", previous)
+  }
 })

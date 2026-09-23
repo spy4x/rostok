@@ -483,16 +483,21 @@ function matchAllHostVarKeys(text: string): string[] {
 }
 
 /**
- * Every bare, quoted identifier in `text` — `"KEY"` or `'KEY'` — the
- * form a key name takes in `Deno.env.get("KEY")`, a hook's own
+ * Every bare, quoted identifier in `text` — `"KEY"`, `'KEY'` or `` `KEY` ``
+ * — the form a key name takes in `Deno.env.get("KEY")`, a hook's own
  * `getEnv("KEY")` wrapper, ansible's `lookup('env', 'KEY')`, or a plain
- * string-literal array. Case-insensitive at the token level (the caller
- * decides what counts as banned) so it also catches `homelab_user`.
+ * string-literal array, plus every `.KEY` property read in upper snake
+ * case (`env.KEY`, `Deno.env.toObject().KEY`). Case-insensitive at the
+ * token level for quoted names (the caller decides what counts as banned)
+ * so it also catches `homelab_user`. A text scan, not a parser: a name
+ * assembled at runtime (`"BASIC_" + "AUTH_USER"`) still gets through.
  */
 function matchAllQuotedIdentifiers(text: string): string[] {
   const out: string[] = []
-  const re = /["']([A-Za-z][A-Za-z0-9_]*)["']/g
-  for (const match of text.matchAll(re)) out.push(match[1])
+  const quoted = /["'`]([A-Za-z][A-Za-z0-9_]*)["'`]/g
+  for (const match of text.matchAll(quoted)) out.push(match[1])
+  const property = /\.([A-Z][A-Z0-9_]*)\b/g
+  for (const match of text.matchAll(property)) out.push(match[1])
   return out
 }
 
@@ -534,6 +539,15 @@ export function findLegacyEnvKeyUsages(text: string): string[] {
   }
   return found
 }
+
+Deno.test("findLegacyEnvKeyUsages: flags backtick strings and property reads", () => {
+  assertEquals(findLegacyEnvKeyUsages("getEnv(`BASIC_AUTH_USER`)"), ["BASIC_AUTH_USER"])
+  assertEquals(findLegacyEnvKeyUsages("const p = env.VPN_PEERS"), ["VPN_PEERS"])
+  assertEquals(
+    findLegacyEnvKeyUsages("Deno.env.toObject().BASIC_AUTH_USER"),
+    ["BASIC_AUTH_USER"],
+  )
+})
 
 Deno.test("findLegacyEnvKeyUsages: flags HOMELAB_USER and homelab_user", () => {
   assertEquals(findLegacyEnvKeyUsages("owner: {{ HOMELAB_USER }}"), ["HOMELAB_USER"])
@@ -660,15 +674,19 @@ Deno.test("repo: no ansible/scripts/cli/stacks file references a banned legacy e
  */
 export function findDeployTsHostKeys(text: string): string[] {
   const out: string[] = []
-  const getRe = /\b(?:Deno\.env\.get|getEnv)\(\s*["']([A-Z][A-Z0-9_]*)["']\s*[,)]/g
+  const getRe = /\b(?:Deno\.env\.get|getEnv)\(\s*["'`]([A-Z][A-Z0-9_]*)["'`]\s*[,)]/g
   for (const m of text.matchAll(getRe)) out.push(m[1])
   const arrMatch = /const\s+keys\s*=\s*\[([^\]]*)\]/.exec(text)
   if (arrMatch) {
-    const litRe = /["']([A-Z][A-Z0-9_]*)["']/g
+    const litRe = /["'`]([A-Z][A-Z0-9_]*)["'`]/g
     for (const m of arrMatch[1].matchAll(litRe)) out.push(m[1])
   }
   return out
 }
+
+Deno.test("findDeployTsHostKeys: reads a backtick-quoted key", () => {
+  assertEquals(findDeployTsHostKeys("const x = Deno.env.get(`ACME_TOKEN`)"), ["ACME_TOKEN"])
+})
 
 Deno.test("findDeployTsHostKeys: reads Deno.env.get(...) calls", () => {
   assertEquals(
