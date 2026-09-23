@@ -5,12 +5,16 @@
 //
 // Variable shape:
 //   - GATUS_DOMAIN: single var, default `uptime.${DOMAIN}`. The dashboard
-//     sits behind Traefik's basicauth middleware (or authelia) — gatus's
-//     own BASIC_AUTH_BASE64 option is intentionally not exposed (Phase 4
-//     user feedback: traefik/authelia owns auth).
-//   - GATUS_CONFIG_PATH: removed. Phase 5 wizard writes the config to
-//     ./servers/<server>/configs/gatus.yml — fixed convention, no need
-//     to expose this through the schema.
+//     sits behind Traefik's basicauth middleware (or authelia) if the
+//     operator adds it — gatus's own BASIC_AUTH_BASE64 option is
+//     intentionally not exposed (Phase 4 user feedback: traefik/authelia
+//     owns auth).
+//   - GATUS_NTFY_*: optional. `stack add gatus -n` (no ntfy configured)
+//     still deploys a working container — alerts are just off until these
+//     are set. GATUS_CONFIG_PATH is gone: the stack ships a starter
+//     config (stacks/gatus/config.yml, zero endpoints) that
+//     `before.deploy.ts` replaces with `servers/<server>/configs/gatus.yml`
+//     when the operator writes one. See the stack README.
 
 import type { StackMeta } from "@rostok/cli"
 
@@ -20,7 +24,7 @@ export default {
   category: "monitoring",
   variables: [
     {
-      key: "IMAGE_TAG",
+      key: "GATUS_IMAGE_TAG",
       default: "latest",
       required: false,
     },
@@ -31,21 +35,22 @@ export default {
       required: true,
     },
     {
-      key: "NTFY_URL",
-      question: "ntfy server URL (e.g. https://ntfy.example.com)?",
-      // Not marked secret: public URL. Auth goes in NTFY_TOKEN_UPTIME.
-      required: true,
+      key: "GATUS_NTFY_URL",
+      question: "ntfy server URL for alerts (e.g. https://ntfy.example.com)? Leave blank to skip",
+      // Optional: omitted from .env when blank, so `stack add gatus -n`
+      // still deploys — alerting is just off until this is set.
+      required: false,
     },
     {
-      key: "NTFY_TOPIC_UPTIME",
+      key: "GATUS_NTFY_TOPIC_UPTIME",
       question: "ntfy topic name for uptime alerts?",
       default: "alerts",
       required: true,
     },
     {
-      key: "NTFY_TOKEN_UPTIME",
-      question: "ntfy access token for posting alerts?",
-      required: true,
+      key: "GATUS_NTFY_TOKEN_UPTIME",
+      question: "ntfy access token for posting alerts? Leave blank to skip",
+      required: false,
       secret: true,
     },
     {

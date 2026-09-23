@@ -13,16 +13,22 @@ services:
   # https://github.com/TwiN/gatus
   gatus:
     container_name: hl-gatus
-    image: twinproduction/gatus:latest
+    image: twinproduction/gatus:${GATUS_IMAGE_TAG:-latest}
     user: "${PUID:-1000}:${PGID:-1000}"
     environment:
-      - NTFY_URL=${NTFY_URL}
-      - NTFY_TOPIC=${NTFY_TOPIC_UPTIME}
-      - NTFY_TOKEN=${NTFY_TOKEN_UPTIME}
-      - BASIC_AUTH_BASE64=${BASIC_AUTH_BASE64}
+      # Blank defaults: GATUS_NTFY_URL/TOKEN are optional (+meta.ts) — a
+      # server that hasn't configured ntfy still deploys, alerts are just
+      # off. Gatus itself substitutes these into config.yaml.
+      - NTFY_URL=${GATUS_NTFY_URL:-}
+      - NTFY_TOPIC=${GATUS_NTFY_TOPIC_UPTIME:-alerts}
+      - NTFY_TOKEN=${GATUS_NTFY_TOKEN_UPTIME:-}
       - DOMAIN=${DOMAIN}
     volumes:
-      - ${GATUS_CONFIG_PATH}:/config/config.yaml:ro,z
+      # ./config.yml resolves relative to this compose file's directory
+      # (stacks/gatus/). before.deploy.ts overwrites it with
+      # configs/gatus.yml when the server provides one; otherwise the
+      # shipped starter (zero endpoints) is used as-is.
+      - ./config.yml:/config/config.yaml:ro,z
       - ${VOLUMES_PATH}/gatus/data:/data:z
     restart: unless-stopped
     deploy:
@@ -38,7 +44,7 @@ services:
       - "traefik.enable=true"
       - "traefik.docker.network=proxy"
       - "traefik.http.services.hl-gatus.loadbalancer.server.port=8080"
-      - "traefik.http.routers.hl-gatus.rule=Host(`${GATUS_SUBDOMAIN}.${DOMAIN}`)"
+      - "traefik.http.routers.hl-gatus.rule=Host(`${GATUS_DOMAIN}`)"
       - "traefik.http.routers.hl-gatus.middlewares=robots-deny@file"
       - "traefik.http.routers.hl-gatus.entrypoints=websecure"
       - "traefik.http.routers.hl-gatus.tls=true"

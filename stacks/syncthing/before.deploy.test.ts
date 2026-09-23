@@ -8,6 +8,7 @@ import {
   collectHostPaths,
   ConfigError,
   expandHome,
+  getUser,
   type Mount,
   resolveFolderHostPath,
   validateConfig,
@@ -226,6 +227,71 @@ Deno.test("collectHostPaths: includes data_dir, mount roots, folder subdirs", ()
       `/home/${USER}/hdd/backups`,
     ]),
   )
+})
+
+Deno.test({
+  name: "getUser: prefers SSH_USER over HOMELAB_USER",
+  fn() {
+    const prevSsh = Deno.env.get("SSH_USER")
+    const prevHomelab = Deno.env.get("HOMELAB_USER")
+    const restore = () => {
+      prevSsh === undefined ? Deno.env.delete("SSH_USER") : Deno.env.set("SSH_USER", prevSsh)
+      prevHomelab === undefined
+        ? Deno.env.delete("HOMELAB_USER")
+        : Deno.env.set("HOMELAB_USER", prevHomelab)
+    }
+    try {
+      Deno.env.set("SSH_USER", "deploy")
+      Deno.env.set("HOMELAB_USER", "homelab")
+      assertEquals(getUser(), "deploy")
+    } finally {
+      restore()
+    }
+  },
+})
+
+Deno.test({
+  name: "getUser: falls back to HOMELAB_USER when SSH_USER is unset",
+  fn() {
+    const prevSsh = Deno.env.get("SSH_USER")
+    const prevHomelab = Deno.env.get("HOMELAB_USER")
+    const restore = () => {
+      prevSsh === undefined ? Deno.env.delete("SSH_USER") : Deno.env.set("SSH_USER", prevSsh)
+      prevHomelab === undefined
+        ? Deno.env.delete("HOMELAB_USER")
+        : Deno.env.set("HOMELAB_USER", prevHomelab)
+    }
+    try {
+      Deno.env.delete("SSH_USER")
+      Deno.env.set("HOMELAB_USER", "homelab")
+      assertEquals(getUser(), "homelab")
+    } finally {
+      restore()
+    }
+  },
+})
+
+Deno.test({
+  name: "getUser: throws when neither SSH_USER nor HOMELAB_USER is set",
+  fn() {
+    const prevSsh = Deno.env.get("SSH_USER")
+    const prevHomelab = Deno.env.get("HOMELAB_USER")
+    const restore = () => {
+      prevSsh === undefined ? Deno.env.delete("SSH_USER") : Deno.env.set("SSH_USER", prevSsh)
+      prevHomelab === undefined
+        ? Deno.env.delete("HOMELAB_USER")
+        : Deno.env.set("HOMELAB_USER", prevHomelab)
+    }
+    try {
+      Deno.env.delete("SSH_USER")
+      Deno.env.delete("HOMELAB_USER")
+      // No hardcoded fallback user — a server missing both keys must
+      // fail loudly, not silently create paths owned by someone else.
+      assertThrows(() => getUser(), Error, "SSH_USER is not set")
+    } finally {
+      restore()
+    }
+  },
 })
 
 Deno.test({

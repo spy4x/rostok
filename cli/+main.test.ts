@@ -11,8 +11,10 @@ import {
   assertThrows,
 } from "@std/assert"
 import { Command } from "@cliffy/command"
-import { buildCommand } from "./+main.ts"
+import { join } from "@std/path"
+import { buildCommand, parseStackFlags, parseVarFlags } from "./+main.ts"
 import { DESCRIPTION, NAME, VERSION } from "./version.ts"
+import { readEnvFile } from "./env-files.ts"
 
 Deno.test("buildCommand: returns a fresh Command on every call", () => {
   // Important for tests — sharing one Command across cases would mutate state.
@@ -86,39 +88,15 @@ Deno.test("--help: nested subcommands are registered with descriptions", () => {
 })
 
 // ─────────────────────────────────────────────────────────────────────
-// parseVarFlags regression tests (Phase 5)
+// parseVarFlags / parseStackFlags regression tests (Phase 5)
 //
 // cliffy's `<kv...:string[]>` with `collect: true` produces a CIRCULAR
 // structure: the last slot is a back-reference to the root array. The
-// walker must detect cycles or `rostok --var A=1 --var B=2` throws
-// `Maximum call stack size exceeded`. Keep these tests in sync with the
-// walker in cli/+main.ts:parseVarFlags.
+// shared walker (flattenCliffyCollect in cli/+main.ts) must detect
+// cycles or `rostok --var A=1 --var B=2` throws "Maximum call stack
+// size exceeded". Both flag parsers are exported so these tests exercise
+// the real implementation, not a mirror.
 // ─────────────────────────────────────────────────────────────────────
-
-// Mirror of the walker in cli/+main.ts. If you change the walker, change this too.
-function parseVarFlags(flags: unknown): Record<string, string> {
-  const out: Record<string, string> = {}
-  if (!flags) return out
-  const flat: string[] = []
-  const seen = new WeakSet<object>()
-  const walk = (v: unknown, depth: number) => {
-    if (typeof v === "string") {
-      flat.push(v)
-      return
-    }
-    if (depth > 4 || v === null || typeof v !== "object") return
-    if (seen.has(v as object)) return
-    seen.add(v as object)
-    if (Array.isArray(v)) { for (const x of v) walk(x, depth + 1) }
-  }
-  walk(flags, 0)
-  for (const f of flat) {
-    const eq = f.indexOf("=")
-    if (eq < 0) throw new Error(`--var requires KEY=VAL form, got: ${f}`)
-    out[f.slice(0, eq)] = f.slice(eq + 1)
-  }
-  return out
-}
 
 Deno.test("parseVarFlags: single --var → one entry", async () => {
   let captured: Record<string, string> = {}
@@ -157,4 +135,101 @@ Deno.test("parseVarFlags: rejects --var without KEY=VAL form", () => {
 
 Deno.test("parseVarFlags: undefined input returns empty record", () => {
   assertEquals(parseVarFlags(undefined), {})
+})
+
+Deno.test("parseStackFlags: multiple --stack flags don't infinite-loop on circular cliffy output", async () => {
+  let captured: string[] = []
+  const cmd = new Command()
+    .option("--stack <name...:string[]>", "repeatable", { collect: true })
+    .action((options) => {
+      captured = parseStackFlags(options.stack)
+    })
+    .throwErrors()
+  await cmd.parse(["--stack", "traefik", "--stack", "gatus"])
+  assertEquals(captured, ["traefik", "gatus"])
+})
+
+Deno.test("parseStackFlags: undefined input returns empty array", () => {
+  assertEquals(parseStackFlags(undefined), [])
+})
+
+// ─────────────────────────────────────────────────────────────────────
+// #209 — --help documents the server --var keys (env-style + aliases).
+// ─────────────────────────────────────────────────────────────────────
+
+Deno.test("--help: root command lists server --var keys", () => {
+  const cmd = buildCommand()
+  const help = cmd.getHelp()
+  assertStringIncludes(help, "SSH_ADDRESS")
+  assertStringIncludes(help, "CONTACT_EMAIL")
+  assertStringIncludes(help, "legacy aliases")
+  assertStringIncludes(help, "sshTarget")
+})
+
+Deno.test("--help: server create lists its --var option", () => {
+  const cmd = buildCommand()
+  const createCmd = cmd.getCommand("server")!.getCommand("create")
+  assertExists(createCmd)
+  assertEquals(createCmd.hasOption("var"), true)
+  assertStringIncludes(createCmd.getDescription(), "SSH_ADDRESS")
+})
+
+// ─────────────────────────────────────────────────────────────────────
+// Review fix #5 — a real wiring test for `rostok server create --var`:
+// drive it through buildCommand().parse(), the same entry point the
+// binary uses, instead of only calling serverCreate() directly. Removing
+// the --var registration or the option→providedVars wiring in +main.ts
+// would leave this red.
+// ─────────────────────────────────────────────────────────────────────
+
+/** Write a fake `ssh` on its own PATH entry, prepended for the duration of `fn`. */
+async function withFakeSsh<T>(fn: () => Promise<T>): Promise<T> {
+  const dir = await Deno.makeTempDir({ prefix: "rostok-fakessh-" })
+  const scriptPath = join(dir, "ssh")
+  await Deno.writeTextFile(
+    scriptPath,
+    `#!/bin/sh
+echo "DOCKER_GID=988"
+echo "SSH_UID=1000"
+echo "SSH_GID=1000"
+echo "SSH_USER=deploy"
+`,
+  )
+  await Deno.chmod(scriptPath, 0o755)
+  const oldPath = Deno.env.get("PATH") ?? ""
+  Deno.env.set("PATH", `${dir}${Deno.build.os === "windows" ? ";" : ":"}${oldPath}`)
+  try {
+    return await fn()
+  } finally {
+    Deno.env.set("PATH", oldPath)
+    await Deno.remove(dir, { recursive: true })
+  }
+}
+
+Deno.test("wiring: `server create --var` reaches serverCreate through buildCommand().parse()", async () => {
+  await withFakeSsh(async () => {
+    const tmp = await Deno.makeTempDir({ prefix: "rostok-main-server-create-" })
+    const originalCwd = Deno.cwd()
+    try {
+      Deno.chdir(tmp)
+      await buildCommand().parse([
+        "server",
+        "create",
+        "home",
+        "-n",
+        "--var",
+        "SSH_ADDRESS=root@192.0.2.1",
+        "--var",
+        "DOMAIN=example.com",
+        "--var",
+        "CONTACT_EMAIL=a@example.com",
+      ])
+      const env = await readEnvFile(join(tmp, "servers", "home", ".env"))
+      assertEquals(env.find((e) => e.key === "DOMAIN")?.value, "example.com")
+      assertEquals(env.find((e) => e.key === "SSH_USER")?.value, "root")
+    } finally {
+      Deno.chdir(originalCwd)
+      await Deno.remove(tmp, { recursive: true }).catch(() => {})
+    }
+  })
 })

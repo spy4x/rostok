@@ -35,6 +35,7 @@
     "jsr:@std/text@^1.0.19": "1.0.19",
     "npm:arktype@*": "2.2.3",
     "npm:arktype@^2.2.3": "2.2.3",
+    "npm:bcryptjs@3.0.3": "3.0.3",
     "npm:imapflow@1": "1.3.3",
     "npm:mailparser@3": "3.9.8",
     "npm:nodemailer@6": "6.10.1",
@@ -241,6 +242,10 @@
     },
     "atomic-sleep@1.0.0": {
       "integrity": "sha512-kNOjDqAh7px0XWNI+4QbzoiR/nTkHAWNud2uvnJquD1/x5a7EQZMJT0AczqK0Qn67oY/TTQ1LbUKajZpp3I9tQ=="
+    },
+    "bcryptjs@3.0.3": {
+      "integrity": "sha512-GlF5wPWnSa/X5LKM1o0wz0suXIINz1iHRLvTS+sLyi7XPbe5ycmYI3DlZqVGZZtDgl4DmasFg7gOB3JYbphV5g==",
+      "bin": true
     },
     "deepmerge@4.3.1": {
       "integrity": "sha512-3sUqbMEc77XqpdNO7FRyRog+eW3ph+GYCbj+rK+uYyRMuwsVy0rMiVtPn+QJlKFvWP/1PYpapqYn0Me2knFn+A=="

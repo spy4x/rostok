@@ -32,7 +32,7 @@ LAN nginx, etc.) and forward to `127.0.0.1:3080`.
 
 ```bash
 # 1. Install dsh to ~/.local (no /usr/local write access needed)
-npm install --prefix ~/.local -g "@deepseek-ai/dsh@${DSH_VERSION:-0.1.1-rc.2}"
+npm install --prefix ~/.local -g "@deepseek-ai/dsh@${DEEPSEEK_HARNESS_VERSION:-0.1.1-rc.2}"
 ~/.local/bin/dsh --version    # sanity check
 
 # 2. Copy systemd unit + enable
@@ -101,9 +101,9 @@ The shape (placeholders — replace `<...>` with your own values):
 Variables (informational — host install doesn't use compose env
 loading; the wizard records them in `servers/<server>/.env`):
 
-| Key           | Default      | Purpose                                |
-| ------------- | ------------ | -------------------------------------- |
-| `DSH_VERSION` | `0.1.1-rc.2` | npm dist-tag used in the install line. |
+| Key                        | Default      | Purpose                                |
+| -------------------------- | ------------ | -------------------------------------- |
+| `DEEPSEEK_HARNESS_VERSION` | `0.1.1-rc.2` | npm dist-tag used in the install line. |
 
 Server-level vars (`DOMAIN`, `TIMEZONE`, `PUID`, `PGID`, `PATH_*`)
 are still recorded by the wizard but unused by these systemd units.

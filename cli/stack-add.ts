@@ -4,20 +4,26 @@
 //
 //   1. Pick a stack from the bundled catalog.
 //   2. Run that stack's variable flow (for each VariableSpec: --var
-//      override > function default > string default > prompt-or-skip).
+//      override > existing .env value (this covers a stack-declared key
+//      that's also a server key, e.g. CONTACT_EMAIL, once server create
+//      has written it) > function default > string default >
+//      prompt-or-skip).
 //
 // Writes `servers/<name>/.env` and updates `servers/<name>/config.json`.
 // Re-encrypts `.env` to `.env.age` at the end.
 //
-// Server-level vars (.env.root) propagate to the stack's .env so docker
-// compose sees them. This is the v1 implementation of "server-level vars
-// resolved before stack vars" (docs/v1-cli.md §4).
+// #210: all stacks on a server share one `.env`. A value already there
+// (written by an earlier `stack add`, or by `server create`) is kept
+// unless the caller passes `--var` for that key — so re-running never
+// clobbers another stack's key and never rotates an existing secret
+// (`() => generatePassword()` only runs when the key is absent).
 
-import { join } from "@std/path"
+import { join, relative } from "@std/path"
 import { encryptEnvFiles } from "./encrypt.ts"
 import {
   type EnvEntry,
   mergeEnv,
+  migrateSshUserKey,
   readEnvFile,
   serverContextFromRoot,
   writeEnvFile,
@@ -29,6 +35,8 @@ import { resolveVariable } from "./defaults.ts"
 import { normalizeVariableSpec } from "./stack-meta.ts"
 import type { VariableSpec } from "./stack-meta.ts"
 import { promptValue } from "./prompts.ts"
+import { serverDirFor } from "./server-keys.ts"
+import { UserError } from "./errors.ts"
 
 /** Result of a stack-add invocation. */
 export interface StackAddResult {
@@ -38,6 +46,10 @@ export interface StackAddResult {
   writtenEntries: EnvEntry[]
   /** Variables that were skipped (required:false, no default). */
   skippedKeys: string[]
+  /** Keys written for the first time by this run. */
+  newCount: number
+  /** Keys that already had a value, kept unchanged. */
+  keptCount: number
 }
 
 export interface StackAddOptions {
@@ -64,23 +76,75 @@ export async function stackAdd(
   opts: StackAddOptions = {},
 ): Promise<StackAddResult> {
   const cwd = opts.cwd ?? Deno.cwd()
+
+  // #208: validate the server name before touching the filesystem.
+  const serverDir = serverDirFor(cwd, serverName)
+  const envPath = join(serverDir, ".env")
+
+  // #210: a missing server fails loudly and writes nothing — stack add
+  // never creates a server implicitly.
+  const serverExists = await Deno.stat(envPath).then((s) => s.isFile).catch(() => false)
+  if (!serverExists) {
+    throw new UserError(`server "${serverName}" not found: run rostok server create ${serverName}`)
+  }
+
   const catalog = await resolveCatalog(opts.catalogDir)
   const entry = findStack(catalog, stackName)
 
-  // Build server context from `servers/<server>/.env` (per-server vars).
-  // Phase 5: server-create writes there; .env.root is cross-server only.
+  const existingRaw = await readEnvFile(envPath)
+  const { entries: existing, renamedFrom } = migrateSshUserKey(existingRaw)
+  if (renamedFrom) {
+    console.log(`rostok: renamed ${renamedFrom} to SSH_USER in ${relative(cwd, envPath)}`)
+  }
+  const existingByKey = new Map(existing.map((e) => [e.key, e.value]))
+
+  // Build server context from `servers/<server>/.env` (per-server vars),
+  // for `${DOMAIN}`-style substitution in string defaults. SERVER_NAME
+  // isn't a key any `.env` ever stores (it's the directory name), so it's
+  // added explicitly — otherwise the one reference the design doc
+  // guarantees (`${SERVER_NAME}`) could never resolve.
   const ctx = opts.skipServerPropagation
     ? null
-    : serverContextFromRoot(await readEnvFile(join(cwd, "servers", serverName, ".env")))
+    : { ...serverContextFromRoot(existing), SERVER_NAME: serverName }
 
   const writtenEntries: EnvEntry[] = []
   const skippedKeys: string[] = []
+  let newCount = 0
+  let keptCount = 0
 
   for (const spec of entry.meta.variables) {
     const normalized = normalizeVariableSpec(spec)
+    const key = normalized.key
+    const providedValue = opts.providedVars?.[key]
+    const existingValue = existingByKey.get(key)
+
+    // 1. --var always wins, even over an existing value. A --var that
+    //    happens to match what's already there is "kept", not "new" —
+    //    it's not adding a value, just confirming one.
+    if (providedValue !== undefined) {
+      writtenEntries.push({ key, value: providedValue })
+      if (providedValue === existingValue) keptCount++
+      else newCount++
+      continue
+    }
+
+    // 2. Keep whatever is already in .env — never clobber another
+    //    stack's key, never regenerate a secret on re-run. This also
+    //    covers a stack-declared key that's also a server key (e.g.
+    //    traefik's CONTACT_EMAIL): server create already wrote it, so
+    //    it's "existing" by the time any stack add runs.
+    if (existingValue !== undefined) {
+      writtenEntries.push({ key, value: existingValue })
+      keptCount++
+      continue
+    }
+
+    // 3. Function/string default, or prompt/skip. Only reached when the
+    //    key has no value anywhere yet, so `() => generatePassword()`
+    //    only runs on first add.
     const resolved = ctx
-      ? resolveVariable(normalized, opts.providedVars?.[normalized.key], ctx)
-      : resolvedSkipContext(normalized, opts.providedVars?.[normalized.key])
+      ? resolveVariable(normalized, undefined, ctx)
+      : resolvedSkipContext(normalized, undefined)
 
     const decision = decidePrompt(normalized, resolved?.value)
     let value: string | undefined
@@ -88,53 +152,36 @@ export async function stackAdd(
     if (decision === "use-resolved" && resolved) {
       value = resolved.value
     } else if (decision === "prompt") {
-      const fallback = typeof normalized.default === "function"
-        ? normalized.default()
-        : normalized.default
+      const fallback = typeof normalized.default === "function" ? undefined : normalized.default
       value = await promptValue({
-        label: normalized.question ?? normalized.key,
+        key,
+        label: normalized.question ?? key,
         fallback,
         secret: normalized.secret,
         nonInteractive: !!opts.nonInteractive,
       })
     } else {
-      // skip
-      skippedKeys.push(normalized.key)
+      skippedKeys.push(key)
       continue
     }
 
-    writtenEntries.push({ key: normalized.key, value })
-  }
-
-  // Write servers/<server>/.env. Merge with any existing entries so
-  // hand-edits to non-managed keys are preserved (per docs/v1-cli.md §7).
-  const serverDir = join(cwd, "servers", serverName)
-  const envPath = join(serverDir, ".env")
-  await Deno.mkdir(serverDir, { recursive: true })
-  const existing = await readEnvFile(envPath)
-
-  // Propagate every server-level var from .env.root into the stack's .env
-  // (minus keys the stack already declared — those win via the merge).
-  // filebrowser/+meta.ts:11 documents this: "Phase 5 wizard propagates
-  // them to each stack's .env". Iterating all keys (instead of a
-  // hardcoded allow-list) catches PATH_*, PATH_APPS, and any future
-  // server-level var without code changes.
-  const stackKeys = new Set(writtenEntries.map((e) => e.key))
-  const propagated: EnvEntry[] = []
-  if (ctx && !opts.skipServerPropagation) {
-    for (const [key, value] of Object.entries(ctx)) {
-      if (typeof value !== "string" || value === "") continue
-      if (stackKeys.has(key)) continue
-      propagated.push({ key, value })
+    // #210 + review: an unresolved `${...}` left after default
+    // resolution is an error naming the key — checked only for a value
+    // this run just resolved from a default, not for whatever was
+    // already sitting in .env (step 2 above never reaches here).
+    const bad = value.match(/\$\{[^}]*\}/)
+    if (bad) {
+      throw new UserError(`unresolved reference in ${key}: ${bad[0]}`)
     }
+
+    writtenEntries.push({ key, value })
+    newCount++
   }
 
-  // `existing` is the base (hand-edits survive); propagated server vars
-  // + the stack's written entries are the incoming layer. mergeEnv keeps
-  // existing keys that aren't in incoming, then appends incoming in order
-  // — stack-declared keys override server-level values on collision, and
-  // hand-edited keys (not in incoming) are preserved untouched.
-  const merged = mergeEnv(existing, propagated.concat(writtenEntries))
+  // Write servers/<server>/.env. `existing` is the base so hand-edits to
+  // non-declared keys survive; `writtenEntries` (existing values kept as-
+  // is, plus anything new) is the incoming layer.
+  const merged = mergeEnv(existing, writtenEntries)
   await writeEnvFile(envPath, merged)
 
   // Update servers/<server>/config.json with the stack list.
@@ -143,11 +190,18 @@ export async function stackAdd(
   // Re-encrypt servers/<server>/.env → .env.age (non-fatal).
   await encryptEnvFiles(cwd)
 
+  const valueWord = newCount === 1 ? "value" : "values"
+  console.log(
+    `added ${stackName} to ${serverName}: ${newCount} new ${valueWord}, ${keptCount} kept`,
+  )
+
   return {
     stackName,
     serverName,
     writtenEntries,
     skippedKeys,
+    newCount,
+    keptCount,
   }
 }
 

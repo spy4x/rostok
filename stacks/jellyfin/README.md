@@ -12,7 +12,15 @@ Media server for movies, TV shows, and music.
 
 ## Access
 
-Web UI: `https://movies.${DOMAIN}`
+Web UI: `https://${JELLYFIN_DOMAIN}` (default `https://movies.${DOMAIN}`)
+
+## Configuration
+
+`PATH_MEDIA`, `PATH_VIDEOS` and `PATH_MUSIC` are host directories
+mounted into the container (default `${VOLUMES_PATH}/media`,
+`${VOLUMES_PATH}/videos`, `${VOLUMES_PATH}/music`). They're server-level
+keys — filebrowser declares the same three and both stacks share one
+value per key.
 
 ## Clients
 

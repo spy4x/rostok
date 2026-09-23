@@ -12,9 +12,19 @@ Health monitoring with HTTP/TCP checks and alerts.
 
 ## Configuration
 
-Edit `servers/{server}/configs/gatus.yml`:
+The stack ships a starter `config.yml` with a single self-check
+endpoint (Gatus refuses to start with zero endpoints), so
+`rostok stack add gatus -n` plus deploy gives a container that starts
+with no manual config step. To add checks, write
+`servers/{server}/configs/gatus.yml` — `before.deploy.ts` copies it over
+the starter at deploy time (falls back to the starter when the file is
+absent):
 
 ```yaml
+storage:
+  type: sqlite
+  path: /data/data.db
+
 endpoints:
   - name: MyService
     url: "https://myservice.yourdomain.com"
@@ -27,11 +37,27 @@ endpoints:
         failure-threshold: 2
         success-threshold: 2
         send-on-resolved: true
+
+alerting:
+  ntfy:
+    url: ${NTFY_URL}
+    topic: ${NTFY_TOPIC}
+    token: ${NTFY_TOKEN}
 ```
+
+`NTFY_URL`, `NTFY_TOPIC` and `NTFY_TOKEN` above are Gatus's own
+env-var expansion — they come from this stack's `GATUS_NTFY_URL`,
+`GATUS_NTFY_TOPIC_UPTIME` and `GATUS_NTFY_TOKEN_UPTIME` (set with
+`rostok stack add gatus`). Leave `GATUS_NTFY_URL`/`GATUS_NTFY_TOKEN_UPTIME`
+unset to run without alerting.
+
+The dashboard has no auth of its own — put it behind Traefik's
+basic-auth or Authelia middleware if it shouldn't be public. Its router
+already carries `robots-deny@file` to keep it out of search indexes.
 
 ## Access
 
-Dashboard: `https://uptime.${DOMAIN}`
+Dashboard: `https://${GATUS_DOMAIN}` (default `https://uptime.${DOMAIN}`)
 
 ## Cross-Server Monitoring
 

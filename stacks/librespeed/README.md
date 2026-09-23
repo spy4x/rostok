@@ -11,7 +11,7 @@ Self-hosted internet speed test — no Flash, no Java, no client-side install.
 
 ## Access
 
-Web UI: `https://speed.${DOMAIN}`
+Web UI: `https://${LIBRESPEED_DOMAIN}` (default `https://speedtest.${DOMAIN}`)
 
 ## Configuration
 

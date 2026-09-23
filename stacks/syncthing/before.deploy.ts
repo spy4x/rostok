@@ -242,8 +242,23 @@ export function collectHostPaths(
 
 // ── Shell helpers (tested via integration) ────────────────────────────
 
-function getUser(): string {
-  return Deno.env.get("HOMELAB_USER") ?? "spy4x"
+/**
+ * Remote user owning the host paths Syncthing needs. `SSH_USER` is the
+ * current key (#206); `HOMELAB_USER` is what older `servers/<n>/.env`
+ * files still carry. Throws when neither is set — no hardcoded fallback
+ * user, so a server missing both fails loudly instead of silently
+ * creating paths owned by someone else's account. Exported for tests
+ * covering all three cases.
+ */
+export function getUser(): string {
+  const user = Deno.env.get("SSH_USER") ?? Deno.env.get("HOMELAB_USER")
+  if (!user) {
+    throw new Error(
+      "SSH_USER is not set (HOMELAB_USER isn't either) — before.deploy.ts needs a remote " +
+        "user to own the host paths it creates for Syncthing.",
+    )
+  }
+  return user
 }
 
 /**
