@@ -13,7 +13,7 @@
 // (or run-deploy.ts fails to stage one), the corresponding assertion
 // below fails.
 
-import { assertEquals, assertStringIncludes } from "@std/assert"
+import { assertEquals, assertExists, assertStringIncludes } from "@std/assert"
 import { join } from "@std/path"
 
 const FAKE_SSH = `#!/usr/bin/env -S deno run --allow-read --allow-write --allow-env
@@ -408,6 +408,36 @@ await Deno.writeTextFile("stacks/hash-stack/hash-output.txt", value)
   }
 })
 
+Deno.test("e2e: config.json envs resolves a \${VAR} defined only in .env.root", async () => {
+  // Same class of bug as the VOLUMES_PATH regression below: applyStackEnvs
+  // used to look up config.json's `${VAR}` references in the raw server
+  // .env alone. A var declared only in .env.root would fail with
+  // "environment variable '...' not found" instead of resolving.
+  const f = await setupFixture()
+  try {
+    await writeServer(f.projectDir, [], ["librespeed"])
+    await writeRootEnv(f.projectDir, ["EXTRA_FROM_ROOT=root-only-value"])
+
+    // config.json's `envs` — writeServer doesn't support this shape, so
+    // overwrite the file it wrote with one that adds it.
+    await Deno.writeTextFile(
+      join(f.projectDir, "servers", "test", "config.json"),
+      JSON.stringify({
+        stacks: [{ name: "librespeed", envs: { INJECTED_KEY: "${EXTRA_FROM_ROOT}" } }],
+      }),
+    )
+
+    const result = await runDeployCli(f, ["deploy", "test"])
+    if (!result.success) console.error(result.stderr)
+    assertEquals(result.success, true)
+
+    const shippedEnv = await Deno.readTextFile(join(f.remoteDir, "srv", "apps", ".env"))
+    assertStringIncludes(shippedEnv, "INJECTED_KEY=root-only-value")
+  } finally {
+    await teardownFixture(f)
+  }
+})
+
 Deno.test("e2e: VOLUMES_PATH declared only in .env.root still resolves real volume paths", async () => {
   // Regression: run-deploy.ts used to extract volume paths from the
   // server .env alone. With VOLUMES_PATH only in .env.root, the
@@ -490,9 +520,15 @@ Deno.test("e2e: a failed staging cleanup logs a warning instead of swallowing it
     // Rejects, matching the real Deno.remove's async failure mode (not a
     // synchronous throw) — a `.catch(() => {})` on the old code would
     // actually catch this, so the mutation check below has to fail the
-    // same way production would: silently.
-    Deno.remove = () =>
-      Promise.reject(new Deno.errors.PermissionDenied("simulated: staging cleanup denied"))
+    // same way production would: silently. Records the path it was
+    // asked to remove — the mock blocks run-deploy.ts's own genuine
+    // cleanup attempt, so this test has to remove that real staging
+    // directory itself afterwards, or it leaks into /tmp on every run.
+    let stagingDirToClean: string | URL | undefined
+    Deno.remove = (path) => {
+      stagingDirToClean = path
+      return Promise.reject(new Deno.errors.PermissionDenied("simulated: staging cleanup denied"))
+    }
 
     try {
       await runDeploy({ cwd: f.projectDir, server: "test" })
@@ -502,12 +538,25 @@ Deno.test("e2e: a failed staging cleanup logs a warning instead of swallowing it
       Deno.env.set("PATH", previousPath)
       Deno.env.delete("FAKE_REMOTE_DIR")
       Deno.env.delete("FAKE_SSH_LOG")
+      if (stagingDirToClean !== undefined) {
+        await Deno.remove(stagingDirToClean, { recursive: true })
+      }
     }
 
     const warned = errorLines.some((line) =>
       line.includes("Warning: failed to remove staging directory")
     )
     assertEquals(warned, true, `expected a cleanup warning, got: ${errorLines.join(" | ")}`)
+
+    // The mocked Deno.remove blocked run-deploy.ts's own attempt; this
+    // test's real cleanup above must have actually removed the
+    // directory, or it leaks into /tmp on every run.
+    assertExists(stagingDirToClean, "test bug: the mock never recorded a path")
+    const stillThere = await Deno.stat(stagingDirToClean).then(() => true).catch((err) => {
+      if (err instanceof Deno.errors.NotFound) return false
+      throw err
+    })
+    assertEquals(stillThere, false, `staging dir ${stagingDirToClean} was not cleaned up`)
   } finally {
     await teardownFixture(f)
   }
