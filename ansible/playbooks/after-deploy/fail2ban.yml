@@ -87,7 +87,7 @@
 
     - name: Ensure home directory is accessible for log file access
       ansible.builtin.file:
-        path: "/home/{{ homelab_user }}"
+        path: "/home/{{ ssh_user }}"
         mode: "0755"
         state: directory
       when: fail2ban_docker_jails is defined and 'traefik-auth' in fail2ban_docker_jails | map(attribute='name')

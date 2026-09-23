@@ -11,24 +11,24 @@ Actions, code search, users, and more. Used by OpenWebUI and OpenCode Web.
 
 ## Setup
 
-1. Add `GITHUB_TOKEN` to `servers/home/.env`:
+1. Add `GITHUB_MCP_TOKEN` to `servers/home/.env`:
    ```
-   GITHUB_TOKEN=github_pat_YOUR_TOKEN
+   GITHUB_MCP_TOKEN=github_pat_YOUR_TOKEN
    ```
 2. The stack is registered in `servers/home/config.json` and will be deployed
    automatically.
 
 ## Environment Variables
 
-| Variable             | Required | Default  | Description                                                                            |
-| -------------------- | -------- | -------- | -------------------------------------------------------------------------------------- |
-| `GITHUB_TOKEN`       | Yes      | —        | GitHub Personal Access Token (from `servers/home/.env`)                                |
-| `GITHUB_MCP_VERSION` | No       | `v1.5.0` | GitHub MCP server release tag                                                          |
-| `GITHUB_TOOLSETS`    | No       | `*`      | Tool groups to enable (repos,issues,pull_requests,actions,code_security,users,context) |
+| Variable              | Required | Default  | Description                                                                            |
+| --------------------- | -------- | -------- | -------------------------------------------------------------------------------------- |
+| `GITHUB_MCP_TOKEN`    | Yes      | —        | GitHub Personal Access Token (from `servers/home/.env`)                                |
+| `GITHUB_MCP_VERSION`  | No       | `v1.5.0` | GitHub MCP server release tag                                                          |
+| `GITHUB_MCP_TOOLSETS` | No       | `*`      | Tool groups to enable (repos,issues,pull_requests,actions,code_security,users,context) |
 
 ## Tool Groups
 
-Control which GitHub APIs are exposed via `GITHUB_TOOLSETS`:
+Control which GitHub APIs are exposed via `GITHUB_MCP_TOOLSETS`:
 
 - `repos` — list, create, update repos; get content, commits, branches
 - `issues` — search, create, update, comment on issues

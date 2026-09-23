@@ -1,7 +1,7 @@
 # Base Home Assistant compose — shared config for all deploy variants.
 #
 # Add a variant file via -f to enable specific features:
-#   compose.traefik.yml — public HTTPS via Traefik + Authelia
+#   compose.traefik.yml — public HTTPS via Traefik (no auth middleware)
 #   compose.host.yml    — host networking for mDNS/SSDP/DHCP discovery
 #
 # Examples:

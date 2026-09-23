@@ -235,7 +235,7 @@
               delaycompress
               missingok
               notifempty
-              create 0644 {{ homelab_user }} {{ homelab_user }}
+              create 0644 {{ ssh_user }} {{ ssh_user }}
           }
 
           /var/log/fail2ban.log {

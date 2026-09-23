@@ -37,46 +37,56 @@ async function withServerEnv(envLines: string[], fn: (projectDir: string) => Pro
   }
 }
 
-Deno.test("inventory: homelab_user is populated from the resolved SSH_USER (legacy HOMELAB_USER)", async () => {
+Deno.test("inventory: ssh_user is populated from the resolved SSH_USER", async () => {
+  await withServerEnv(
+    ["SSH_ADDRESS=homelab-alias", "SSH_USER=deploy"],
+    async (projectDir) => {
+      const inventory = await runInventory(projectDir)
+      const hostvars = inventory._meta.hostvars.home
+      // Playbooks reference {{ ssh_user }} directly. Before this PR it
+      // was a group var, `"{{ lookup('env', 'HOMELAB_USER') }}"` —
+      // Ansible's lookup('env', ...) returns an empty string for an
+      // unset var, not an error, so playbooks silently ran with
+      // ssh_user="" instead of failing loudly. Per-host and resolved
+      // from SSH_USER now, so that doesn't happen.
+      assertEquals(hostvars.ssh_user, "deploy")
+      assertEquals(hostvars.ansible_user, "deploy")
+    },
+  )
+})
+
+Deno.test("inventory: a .env with only HOMELAB_USER (no SSH_USER) has no remote user", async () => {
   await withServerEnv(
     ["SSH_ADDRESS=homelab-alias", "HOMELAB_USER=legacyuser"],
     async (projectDir) => {
       const inventory = await runInventory(projectDir)
       const hostvars = inventory._meta.hostvars.home
-      // Playbooks reference {{ homelab_user }} directly. Before this PR
-      // it was a group var, `"{{ lookup('env', 'HOMELAB_USER') }}"` —
-      // Ansible's lookup('env', ...) returns an empty string for an
-      // unset var, not an error, so playbooks silently ran with
-      // homelab_user="" instead of failing loudly. (Dropping the var
-      // entirely, briefly, during this PR's own history is what
-      // produced a literal "'homelab_user' is undefined" — not the
-      // original code.) Per-host and resolved from SSH_USER now, so
-      // neither happens.
-      assertEquals(hostvars.homelab_user, "legacyuser")
-      assertEquals(hostvars.ansible_user, "legacyuser")
+      // HOMELAB_USER is no longer read — falls back to the "homelab"
+      // default, same as no key set at all.
+      assertEquals(hostvars.ssh_user, "homelab")
     },
   )
 })
 
-Deno.test("inventory: homelab_user prefers the user@host parsed from SSH_ADDRESS", async () => {
+Deno.test("inventory: ssh_user prefers the user@host parsed from SSH_ADDRESS", async () => {
   await withServerEnv(
     ["SSH_ADDRESS=deploy@example.com", "SSH_USER=should-be-overridden-by-address"],
     async (projectDir) => {
       const inventory = await runInventory(projectDir)
       const hostvars = inventory._meta.hostvars.home
-      assertEquals(hostvars.homelab_user, "deploy")
+      assertEquals(hostvars.ssh_user, "deploy")
       assertEquals(hostvars.ansible_host, "example.com")
     },
   )
 })
 
-Deno.test('inventory: homelab_user falls back to "homelab" with no key and no user@host', async () => {
+Deno.test('inventory: ssh_user falls back to "homelab" with no key and no user@host', async () => {
   await withServerEnv(
     ["SSH_ADDRESS=homelab-alias"],
     async (projectDir) => {
       const inventory = await runInventory(projectDir)
       const hostvars = inventory._meta.hostvars.home
-      assertEquals(hostvars.homelab_user, "homelab")
+      assertEquals(hostvars.ssh_user, "homelab")
     },
   )
 })

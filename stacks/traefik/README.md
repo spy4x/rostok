@@ -31,10 +31,12 @@ TRAEFIK_BASIC_AUTH_PASSWORD=...         # Dashboard auth (default: generated, 24
 ```
 
 `before.deploy.ts` bcrypt-hashes `TRAEFIK_BASIC_AUTH_PASSWORD` into
-`dynamic/.htpasswd` on every deploy — no manual `htpasswd` step. Servers
-whose `.env` still carries the pre-#210 `BASIC_AUTH_USER` +
-`BASIC_AUTH_BASE64` (or an already-hashed `BASIC_AUTH_PASSWORD`) keep
-working: the hook falls back to those when the new keys are absent.
+`dynamic/.htpasswd` on every deploy — no manual `htpasswd` step.
+`TRAEFIK_BASIC_AUTH_USER`/`TRAEFIK_BASIC_AUTH_PASSWORD` are the only
+credential keys read; a server whose `.env` still carries the pre-#210
+`BASIC_AUTH_USER`/`BASIC_AUTH_BASE64`/`BASIC_AUTH_PASSWORD` must rename
+them — see [PR #224](https://github.com/spy4x/rostok/pull/224) for the
+full old → new key table.
 
 ## Access
 
@@ -43,12 +45,17 @@ working: the hook falls back to those when the new keys are absent.
 
 ## Middleware
 
-Add [middlewares](https://doc.traefik.io/traefik/middlewares/http/overview/) for authentication, rate limiting, etc:
+Add [middlewares](https://doc.traefik.io/traefik/middlewares/http/overview/) for authentication, rate limiting, etc. For basic auth, reuse the
+existing file-defined `dashboard-auth` middleware (`dynamic/00-base.yml`)
+instead of inventing a new one — it already points at the hook-generated
+`.htpasswd`, which a docker label can't reference directly (the label
+would need a bcrypt hash built at deploy time, not the plaintext
+`TRAEFIK_BASIC_AUTH_PASSWORD`). The `@file` suffix is required — it's
+defined in a file provider, not this service's own docker labels:
 
 ```yaml
 labels:
-  - "traefik.http.routers.myservice.middlewares=auth"
-  - "traefik.http.middlewares.auth.basicauth.users=${BASIC_AUTH_USER}:${BASIC_AUTH_PASSWORD}"
+  - "traefik.http.routers.myservice.middlewares=dashboard-auth@file"
 ```
 
 ## Resources

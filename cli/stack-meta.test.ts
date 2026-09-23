@@ -11,7 +11,7 @@ const validStack = {
   variables: [
     { key: "IMAGE_TAG", default: "3.5", required: false },
     {
-      key: "BASIC_AUTH_PASSWORD",
+      key: "TRAEFIK_BASIC_AUTH_PASSWORD",
       question: "Password?",
       default: () => "x",
       required: true,

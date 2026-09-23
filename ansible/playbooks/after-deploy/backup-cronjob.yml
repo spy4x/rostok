@@ -66,17 +66,17 @@
           # Allow homelab user to change ownership for backup operations
           # This is needed because backup runs as root but needs to fix ownership
           # for volumes and backup repositories for user access
-          {{ homelab_user }} ALL=(ALL) NOPASSWD: /usr/bin/chown -R {{ homelab_user }}\:{{ homelab_user }} {{ volumes_path }}/*
-          {{ homelab_user }} ALL=(ALL) NOPASSWD: /usr/bin/chown -R {{ homelab_user }}\:{{ homelab_user }} {{ backup_log_path }}
-          {{ homelab_user }} ALL=(ALL) NOPASSWD: /usr/bin/chown -R {{ homelab_user }}\:{{ homelab_user }} {{ backups_path }}/*
+          {{ ssh_user }} ALL=(ALL) NOPASSWD: /usr/bin/chown -R {{ ssh_user }}\:{{ ssh_user }} {{ volumes_path }}/*
+          {{ ssh_user }} ALL=(ALL) NOPASSWD: /usr/bin/chown -R {{ ssh_user }}\:{{ ssh_user }} {{ backup_log_path }}
+          {{ ssh_user }} ALL=(ALL) NOPASSWD: /usr/bin/chown -R {{ ssh_user }}\:{{ ssh_user }} {{ backups_path }}/*
         validate: "visudo -cf %s"
 
     - name: Create backup log file if it doesn't exist
       ansible.builtin.file:
         path: "{{ backup_log_path }}"
         state: touch
-        owner: "{{ homelab_user }}"
-        group: "{{ homelab_user }}"
+        owner: "{{ ssh_user }}"
+        group: "{{ ssh_user }}"
         mode: "0644"
         modification_time: preserve
         access_time: preserve
@@ -87,7 +87,11 @@
         user: "{{ backup_cron_user }}"
         minute: "{{ backup_cron_minute }}"
         hour: "{{ backup_cron_hour }}"
-        job: "USER={{ homelab_user }} {{ deno_install_path }}/bin/deno run --env-file={{ repo_path }}/.env.root --env-file={{ env_file_path }} -A {{ repo_path }}/scripts/backup/+main.ts >> {{ backup_log_path }} 2>&1"
+        # SSH_USER= belt-and-suspenders alongside the server .env
+        # (--env-file={{ env_file_path }}), which also carries SSH_USER —
+        # cron's own environment is otherwise minimal and this keeps the
+        # job correct even if the file load order ever changes.
+        job: "SSH_USER={{ ssh_user }} {{ deno_install_path }}/bin/deno run --env-file={{ repo_path }}/.env.root --env-file={{ env_file_path }} -A {{ repo_path }}/scripts/backup/+main.ts >> {{ backup_log_path }} 2>&1"
         state: present
 
     - name: Display cronjob info
@@ -97,4 +101,4 @@
           - "Schedule: Daily at {{ backup_cron_hour }}:{{ '%02d' | format(backup_cron_minute | int) }}"
           - "Log file: {{ backup_log_path }}"
           - "To view logs: tail -f {{ backup_log_path }}"
-          - "To test manually: sudo -u {{ backup_cron_user }} USER={{ homelab_user }} {{ deno_install_path }}/bin/deno run --env-file={{ repo_path }}/.env.root --env-file={{ env_file_path }} -A {{ repo_path }}/scripts/backup/+main.ts"
+          - "To test manually: sudo -u {{ backup_cron_user }} SSH_USER={{ ssh_user }} {{ deno_install_path }}/bin/deno run --env-file={{ repo_path }}/.env.root --env-file={{ env_file_path }} -A {{ repo_path }}/scripts/backup/+main.ts"

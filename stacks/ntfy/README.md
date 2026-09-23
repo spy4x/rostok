@@ -12,9 +12,10 @@ Push notification delivery for alerts and monitoring.
 ## Configuration
 
 ```bash
-NTFY_AUTH_USER=admin           # Admin user
-NTFY_AUTH_PASSWORD=...         # Generated password
-NTFY_TOPIC=homelab-alerts      # Topic name
+NTFY_DOMAIN=ntfy.example.com # Full host for the Traefik rule + NTFY_BASE_URL
+NTFY_AUTH_USER=admin            # Admin user
+NTFY_AUTH_PASSWORD=...          # Generated password
+NTFY_TOPIC=homelab-alerts       # Topic name
 ```
 
 ## Usage
@@ -30,7 +31,7 @@ NTFY_TOPIC=homelab-alerts      # Topic name
 ```bash
 curl -H "Authorization: Bearer $NTFY_AUTH_TOKEN" \
   -d "Test message" \
-  https://ntfy.yourdomain.com/homelab-alerts
+  https://ntfy.example.com/homelab-alerts
 ```
 
 ## Integration
@@ -41,13 +42,14 @@ Gatus uses ntfy for alerting. Configure in `gatus.yml`:
 alerting:
   ntfy:
     topic: homelab-alerts
-    url: https://ntfy.yourdomain.com
+    url: https://ntfy.example.com
     token: ${NTFY_AUTH_TOKEN}
 ```
 
 ## Access
 
-Web UI: `https://ntfy.${DOMAIN}`
+Web UI: `https://${NTFY_DOMAIN}` — no default yet (no `+meta.ts` wizard
+for this stack); set it in `servers/<server>/.env`, e.g. `ntfy.${DOMAIN}`.
 
 ## Resources
 

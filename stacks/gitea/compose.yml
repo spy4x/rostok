@@ -52,11 +52,11 @@ services:
       - GITEA__session__PROVIDER=file
       - GITEA__mailer__ENABLED=true
       - GITEA__mailer__PROTOCOL=smtp
-      - GITEA__mailer__SMTP_ADDR=${SMTP_HOST}
-      - GITEA__mailer__SMTP_PORT=${SMTP_PORT}
-      - GITEA__mailer__USER=${SMTP_USERNAME}
-      - GITEA__mailer__PASSWD=${SMTP_PASSWORD}
-      - GITEA__mailer__FROM=${SMTP_FROM}
+      - GITEA__mailer__SMTP_ADDR=${GITEA_SMTP_HOST}
+      - GITEA__mailer__SMTP_PORT=${GITEA_SMTP_PORT}
+      - GITEA__mailer__USER=${GITEA_SMTP_USERNAME}
+      - GITEA__mailer__PASSWD=${GITEA_SMTP_PASSWORD}
+      - GITEA__mailer__FROM=${GITEA_SMTP_FROM}
     volumes:
       - ${VOLUMES_PATH}/gitea/data:/data:z
       - /etc/localtime:/etc/localtime:ro

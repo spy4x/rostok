@@ -14,8 +14,10 @@
 //
 // Environment (auto-loaded by deploy script):
 //   SSH_ADDRESS, PATH_APPS    from deploy context
-//   OPENAI_API_KEYS, OPENAI_API_BASE_URLS, OPENAI_API_CONFIGS
+//   OPEN_WEBUI_OPENAI_API_KEYS, OPEN_WEBUI_OPENAI_API_BASE_URLS
 //                            from .env via --env-file=.env
+//   (OPENAI_API_CONFIGS is hardcoded directly in compose.yml, not read
+//   from .env — see the comment near its declaration below)
 //
 // On failure: exit non-zero so deploy fails loudly. Provider sync is
 // not optional — without it, the service is functionally broken.
@@ -24,8 +26,11 @@ import { error, log, runCommand, success } from "../../scripts/+lib.ts"
 
 const SSH = Deno.env.get("SSH_ADDRESS")
 const PATH_APPS = Deno.env.get("PATH_APPS")
-const OPENAI_API_KEYS = Deno.env.get("OPENAI_API_KEYS")
-const OPENAI_API_BASE_URLS = Deno.env.get("OPENAI_API_BASE_URLS")
+// Container-side names (OPENAI_API_KEYS/OPENAI_API_BASE_URLS, exported
+// below into the container's own shell) are unaffected by the host .env
+// prefix — only the host-side read changes.
+const OPENAI_API_KEYS = Deno.env.get("OPEN_WEBUI_OPENAI_API_KEYS")
+const OPENAI_API_BASE_URLS = Deno.env.get("OPEN_WEBUI_OPENAI_API_BASE_URLS")
 
 if (!SSH || !PATH_APPS) {
   error("after.deploy.ts: SSH_ADDRESS and PATH_APPS must be set")
@@ -33,7 +38,7 @@ if (!SSH || !PATH_APPS) {
 }
 if (!OPENAI_API_KEYS || !OPENAI_API_BASE_URLS) {
   error(
-    "after.deploy.ts: OPENAI_API_KEYS and OPENAI_API_BASE_URLS must be set in .env",
+    "after.deploy.ts: OPEN_WEBUI_OPENAI_API_KEYS and OPEN_WEBUI_OPENAI_API_BASE_URLS must be set in .env",
   )
   Deno.exit(1)
 }

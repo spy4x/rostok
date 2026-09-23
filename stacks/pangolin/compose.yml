@@ -42,7 +42,7 @@ services:
   # Runs beside Pangolin as its server-side tunnel and relay endpoint.
   gerbil:
     image: fosrl/gerbil:1.4.3
-    container_name: ${GERBIL_CONTAINER_NAME:-hl-gerbil}
+    container_name: ${PANGOLIN_GERBIL_CONTAINER_NAME:-hl-gerbil}
     restart: unless-stopped
     # Wait only for container start; API readiness is checked independently.
     depends_on:
@@ -72,7 +72,7 @@ services:
   # remove it when deploying the main traefik stack.
   traefik:
     image: traefik:v3.7.6
-    container_name: ${TRAEFIK_PANGOLIN_CONTAINER_NAME:-hl-pangolin-traefik}
+    container_name: ${PANGOLIN_TRAEFIK_CONTAINER_NAME:-hl-pangolin-traefik}
     restart: unless-stopped
     network_mode: service:gerbil
     depends_on:
@@ -91,4 +91,4 @@ volumes:
 networks:
   proxy:
     external: true
-    name: ${NETWORK:-proxy}
+    name: ${PANGOLIN_NETWORK:-proxy}

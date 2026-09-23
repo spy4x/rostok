@@ -82,40 +82,18 @@ Deno.test("resolveHtpasswdCredential: nothing set — throws instead of silently
   )
 })
 
-Deno.test("resolveHtpasswdCredential: legacy BASIC_AUTH_USER + BASIC_AUTH_BASE64", () => {
-  const base64 = btoa("legacyadmin:legacyPass1")
-  const cred = resolveHtpasswdCredential(envFrom({
-    BASIC_AUTH_USER: "legacyadmin",
-    BASIC_AUTH_BASE64: base64,
-  }))
-  assertEquals(cred.user, "legacyadmin")
-  assertEquals(compareSync("legacyPass1", cred.hash), true)
-})
-
-Deno.test("resolveHtpasswdCredential: legacy BASIC_AUTH_USER + already-hashed BASIC_AUTH_PASSWORD", () => {
-  const existingHash = hashPassword("whatever")
-  const cred = resolveHtpasswdCredential(envFrom({
-    BASIC_AUTH_USER: "legacyadmin",
-    BASIC_AUTH_PASSWORD: existingHash,
-  }))
-  assertEquals(cred.user, "legacyadmin")
-  // Written verbatim, not re-hashed.
-  assertEquals(cred.hash, existingHash)
-})
-
-Deno.test("resolveHtpasswdCredential: legacy BASIC_AUTH_USER + plaintext BASIC_AUTH_PASSWORD", () => {
-  const cred = resolveHtpasswdCredential(envFrom({
-    BASIC_AUTH_USER: "legacyadmin",
-    BASIC_AUTH_PASSWORD: "plaintextpass",
-  }))
-  assertEquals(cred.user, "legacyadmin")
-  assertEquals(compareSync("plaintextpass", cred.hash), true)
-})
-
-Deno.test("resolveHtpasswdCredential: legacy USER set but no password source — names TRAEFIK_BASIC_AUTH_PASSWORD", () => {
+Deno.test("resolveHtpasswdCredential: legacy BASIC_AUTH_USER/PASSWORD is not read — throws", () => {
+  // The pre-#210 legacy branch (BASIC_AUTH_USER + BASIC_AUTH_BASE64 /
+  // an already-hashed BASIC_AUTH_PASSWORD) is gone. Setting only the
+  // legacy keys must throw the same "nothing set" error as setting
+  // nothing at all — not silently succeed with a stale credential.
   assertThrows(
-    () => resolveHtpasswdCredential(envFrom({ BASIC_AUTH_USER: "legacyadmin" })),
+    () =>
+      resolveHtpasswdCredential(envFrom({
+        BASIC_AUTH_USER: "legacyadmin",
+        BASIC_AUTH_PASSWORD: "plaintextpass",
+      })),
     Error,
-    "TRAEFIK_BASIC_AUTH_PASSWORD instead",
+    "No basic-auth credentials set",
   )
 })

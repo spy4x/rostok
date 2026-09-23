@@ -25,7 +25,7 @@ services:
     # unqualified `.env` would point at ${PATH_APPS}/stacks/oko/.env.
     environment:
       - DOMAIN=${DOMAIN}
-      - UPTIME_HOSTS=${UPTIME_HOSTS}
+      - UPTIME_HOSTS=${OKO_UPTIME_HOSTS}
       - PORT=8080
       - CACHE_TTL_SECS=60
       - UPTIME_TIMEOUT_SECS=5

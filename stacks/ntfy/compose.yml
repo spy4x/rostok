@@ -23,7 +23,7 @@ services:
       - serve
     environment:
       - TZ=${TIMEZONE:-UTC}
-      - NTFY_BASE_URL=https://${NTFY_SUBDOMAIN}.${DOMAIN}
+      - NTFY_BASE_URL=https://${NTFY_DOMAIN}
       - NTFY_UPSTREAM_BASE_URL=https://ntfy.sh
       - NTFY_CACHE_FILE=/var/lib/ntfy/cache.db
       - NTFY_AUTH_FILE=/var/lib/ntfy/auth.db
@@ -50,7 +50,7 @@ services:
       - "traefik.enable=true"
       - "traefik.docker.network=proxy"
       - "traefik.http.services.hl-ntfy.loadbalancer.server.port=80"
-      - "traefik.http.routers.hl-ntfy.rule=Host(`${NTFY_SUBDOMAIN}.${DOMAIN}`)"
+      - "traefik.http.routers.hl-ntfy.rule=Host(`${NTFY_DOMAIN}`)"
       - "traefik.http.routers.hl-ntfy.middlewares=robots-deny@file"
       - "traefik.http.routers.hl-ntfy.entrypoints=websecure"
       - "traefik.http.routers.hl-ntfy.tls=true"

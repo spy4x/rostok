@@ -7,8 +7,7 @@
 # Required env (in server .env):
 #   SYNCTHING_API_KEY     — STGUIAPIKEY; same value persisted in
 #                           /var/syncthing/config/config.xml
-#   SYNCTHING_SUBDOMAIN   — Traefik host rule
-#   DOMAIN                — base domain
+#   SYNCTHING_DOMAIN      — full host for the Traefik rule (e.g. sync.${DOMAIN})
 #
 # ── First deploy ────────────────────────────────────────────────────
 # Generate the API key yourself before the first deploy. Do NOT leave the
@@ -72,7 +71,7 @@ services:
       - "traefik.enable=true"
       - "traefik.docker.network=proxy"
       - "traefik.http.services.hl-syncthing.loadbalancer.server.port=8384"
-      - "traefik.http.routers.hl-syncthing.rule=Host(`${SYNCTHING_SUBDOMAIN}.${DOMAIN}`)"
+      - "traefik.http.routers.hl-syncthing.rule=Host(`${SYNCTHING_DOMAIN}`)"
       - "traefik.http.routers.hl-syncthing.middlewares=robots-deny@file"
       - "traefik.http.routers.hl-syncthing.entrypoints=websecure"
       - "traefik.http.routers.hl-syncthing.tls=true"

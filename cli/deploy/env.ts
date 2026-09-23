@@ -1,11 +1,5 @@
-// Legacy key fallbacks deploy applies before enforcing DEPLOY_REQUIRED_KEYS
+// Key fallbacks deploy applies before enforcing DEPLOY_REQUIRED_KEYS
 // (#206 deploy side).
-//
-// SSH_USER replaces HOMELAB_USER (read by the old deploy/ansible scripts)
-// and USER (written by the wizard). Readers fall back HOMELAB_USER, then
-// USER — read only from the parsed `.env` file, never from the process
-// environment, where USER is the shell's own variable — and print a
-// one-line notice so the operator renames the key.
 //
 // PATH_APPS falls back to DEFAULT_PATH_APPS (`/srv/apps`), and PUID/PGID
 // fall back to `1000` (rostok's own default — docs/design/v1-cli.md §3.1,
@@ -39,22 +33,13 @@ export interface ResolvedValue {
   notice?: string
 }
 
-/** SSH_USER ← HOMELAB_USER ← USER, read only from `env` (never Deno.env). */
-export function resolveSshUser(env: Record<string, string>, envPath: string): ResolvedValue {
-  if (env.SSH_USER) return { value: env.SSH_USER }
-  if (env.HOMELAB_USER) {
-    return {
-      value: env.HOMELAB_USER,
-      notice: `${envPath}: HOMELAB_USER is deprecated — rename it to SSH_USER.`,
-    }
-  }
-  if (env.USER) {
-    return {
-      value: env.USER,
-      notice: `${envPath}: USER is deprecated — rename it to SSH_USER.`,
-    }
-  }
-  return { value: "" }
+/**
+ * SSH_USER, read only from `env` (never Deno.env, where USER is the
+ * shell's own variable). No fallback and never a notice — unlike
+ * PATH_APPS/PUID/PGID below, there's no safe default for a remote user.
+ */
+export function resolveSshUser(env: Record<string, string>): string {
+  return env.SSH_USER ?? ""
 }
 
 /** PATH_APPS ← DEFAULT_PATH_APPS. */
@@ -104,8 +89,7 @@ export function resolveDeployEnv(
 ): ResolvedDeployEnv {
   const notices: string[] = []
 
-  const sshUser = resolveSshUser(env, envPath)
-  if (sshUser.notice) notices.push(sshUser.notice)
+  const sshUser = resolveSshUser(env)
   const pathApps = resolvePathApps(env)
   if (pathApps.notice) notices.push(pathApps.notice)
   const puid = resolvePuid(env)
@@ -115,7 +99,7 @@ export function resolveDeployEnv(
 
   const resolved: Record<string, string> = {
     ...env,
-    ...(sshUser.value ? { SSH_USER: sshUser.value } : {}),
+    ...(sshUser ? { SSH_USER: sshUser } : {}),
     PATH_APPS: pathApps.value,
     PUID: puid.value,
     PGID: pgid.value,

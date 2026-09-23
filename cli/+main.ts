@@ -148,7 +148,7 @@ Examples:
     rostok stack add traefik -s home -n                 # non-interactive, defaults only
     rostok stack add traefik -s home \\
         --var DOMAIN=example.com \\
-        --var BASIC_AUTH_USER=admin                     # pre-supply variables`,
+        --var TRAEFIK_BASIC_AUTH_USER=admin              # pre-supply variables`,
           )
           .action(async (options, name: string) => {
             const catalogDir = options.catalog ?? undefined

@@ -20,9 +20,9 @@ Web UI: `https://talk.${DOMAIN}`
 
 ## Required env vars
 
-- `TURN_SERVER_USERNAME` — long random string (coturn credential user)
-- `TURN_SERVER_CREDENTIAL` — long random string (coturn credential password)
-- `PUBLIC_IP` — host's external IPv4. coturn hardcodes this in `external-ip=`;
+- `MIROTALK_TURN_SERVER_USERNAME` — long random string (coturn credential user)
+- `MIROTALK_TURN_SERVER_CREDENTIAL` — long random string (coturn credential password)
+- `MIROTALK_PUBLIC_IP` — host's external IPv4. coturn hardcodes this in `external-ip=`;
   required because cloud VPS interfaces don't carry the public IP directly.
 
 ## Host firewall

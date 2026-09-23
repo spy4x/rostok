@@ -97,7 +97,7 @@
 
     - name: Add user to docker group
       ansible.builtin.user:
-        name: "{{ homelab_user }}"
+        name: "{{ ssh_user }}"
         groups: docker
         append: yes
 
@@ -158,24 +158,24 @@
         curl -fsSL https://deno.land/install.sh | sh
       environment:
         DENO_INSTALL: "{{ deno_install_path }}"
-      become_user: "{{ homelab_user }}"
+      become_user: "{{ ssh_user }}"
       when: not deno_installed.stat.exists
 
     - name: Add Deno to PATH in .bashrc
       ansible.builtin.lineinfile:
-        path: "/home/{{ homelab_user }}/.bashrc"
+        path: "/home/{{ ssh_user }}/.bashrc"
         line: 'export PATH="{{ deno_install_path }}/bin:$PATH"'
         state: present
         create: yes
-      become_user: "{{ homelab_user }}"
+      become_user: "{{ ssh_user }}"
 
     - name: Add Deno to PATH in .zshrc
       ansible.builtin.lineinfile:
-        path: "/home/{{ homelab_user }}/.zshrc"
+        path: "/home/{{ ssh_user }}/.zshrc"
         line: 'export PATH="{{ deno_install_path }}/bin:$PATH"'
         state: present
         create: yes
-      become_user: "{{ homelab_user }}"
+      become_user: "{{ ssh_user }}"
       ignore_errors: yes # User might not use zsh
 
     # ===== System Configuration =====
@@ -221,8 +221,8 @@
       ansible.builtin.file:
         path: "{{ item }}"
         state: directory
-        owner: "{{ homelab_user }}"
-        group: "{{ homelab_user }}"
+        owner: "{{ ssh_user }}"
+        group: "{{ ssh_user }}"
         mode: "0755"
       loop:
         - "{{ apps_path }}"
@@ -239,7 +239,7 @@
       ansible.builtin.command: "{{ deno_install_path }}/bin/deno --version"
       register: deno_version
       changed_when: false
-      become_user: "{{ homelab_user }}"
+      become_user: "{{ ssh_user }}"
 
     - name: Build summary message
       ansible.builtin.set_fact:
@@ -253,7 +253,7 @@
           - ""
           - "Configured:"
           - "{{ '  - Raspberry Pi boot partition fixed' if (ansible_os_family == 'Debian' and boot_firmware.stat.exists | default(false)) else '' }}"
-          - "  - User '{{ homelab_user }}' added to docker group"
+          - "  - User '{{ ssh_user }}' added to docker group"
           - "  - Deno added to PATH"
           - "  - Apps directory created at {{ apps_path }}"
           - "  - Swap disabled"

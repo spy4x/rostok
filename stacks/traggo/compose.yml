@@ -22,8 +22,8 @@ services:
     deploy:
       resources:
         limits:
-          memory: ${TIMETRACKER_MEM_LIMIT:-128M}
-          cpus: ${TIMETRACKER_CPU_LIMIT:-0.2}
+          memory: ${TRAGGO_MEM_LIMIT:-128M}
+          cpus: ${TRAGGO_CPU_LIMIT:-0.2}
     security_opt:
       - no-new-privileges:true
     networks:

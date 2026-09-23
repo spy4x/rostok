@@ -23,6 +23,9 @@ services:
       - NTFY_TOPIC=${GATUS_NTFY_TOPIC_UPTIME:-alerts}
       - NTFY_TOKEN=${GATUS_NTFY_TOKEN_UPTIME:-}
       - DOMAIN=${DOMAIN}
+      # Optional — operator-written configs/gatus.yml checks reference
+      # this to probe an endpoint behind Traefik basic auth.
+      - GATUS_BASIC_AUTH_BASE64=${GATUS_BASIC_AUTH_BASE64:-}
     volumes:
       # ./config.yml resolves relative to this compose file's directory
       # (stacks/gatus/). before.deploy.ts overwrites it with

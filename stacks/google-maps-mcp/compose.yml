@@ -14,12 +14,12 @@ services:
       dockerfile: Dockerfile
       args:
         # Pin a release tag for reproducibility. Bump deliberately.
-        MCP_GOOGLE_MAP_VERSION: ${MCP_GOOGLE_MAP_VERSION:-v0.0.52}
+        MCP_GOOGLE_MAP_VERSION: ${GOOGLE_MAPS_MCP_VERSION:-v0.0.52}
     restart: unless-stopped
     environment:
       # --- API key ---
       # Get one at https://console.cloud.google.com → enable Places API (New) + Routes API
-      - GOOGLE_MAPS_API_KEY=${GOOGLE_MAPS_API_KEY}
+      - GOOGLE_MAPS_API_KEY=${GOOGLE_MAPS_MCP_API_KEY}
 
       # --- HTTP transport (Streamable HTTP) ---
       - MCP_SERVER_HOST=0.0.0.0
@@ -29,7 +29,7 @@ services:
       # Default: all 18 tools enabled.
       # Common subset for "search places" use case:
       #   maps_search_places,maps_place_details,maps_geocode,maps_search_nearby
-      - GOOGLE_MAPS_ENABLED_TOOLS=${GOOGLE_MAPS_ENABLED_TOOLS:-*}
+      - GOOGLE_MAPS_ENABLED_TOOLS=${GOOGLE_MAPS_MCP_ENABLED_TOOLS:-*}
     deploy:
       resources:
         limits:

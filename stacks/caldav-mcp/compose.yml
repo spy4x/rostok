@@ -15,9 +15,9 @@ services:
       dockerfile: Dockerfile
     restart: unless-stopped
     environment:
-      - CALDAV_URL=${CALDAV_SERVER_URL}
-      - CALDAV_USERNAME=${CALDAV_USERNAME}
-      - CALDAV_PASSWORD=${CALDAV_PASSWORD}
+      - CALDAV_URL=${CALDAV_MCP_SERVER_URL}
+      - CALDAV_USERNAME=${CALDAV_MCP_USERNAME}
+      - CALDAV_PASSWORD=${CALDAV_MCP_PASSWORD}
       - MCP_BEARER_TOKEN=mcpo-local
       - PORT=3000
       - LOG_LEVEL=info

@@ -6,9 +6,13 @@
 // Variable shape:
 //   - GATUS_DOMAIN: single var, default `uptime.${DOMAIN}`. The dashboard
 //     sits behind Traefik's basicauth middleware (or authelia) if the
-//     operator adds it — gatus's own BASIC_AUTH_BASE64 option is
-//     intentionally not exposed (Phase 4 user feedback: traefik/authelia
-//     owns auth).
+//     operator adds it — gatus's own dashboard auth is intentionally not
+//     exposed (Phase 4 user feedback: traefik/authelia owns auth).
+//   - GATUS_BASIC_AUTH_BASE64: optional. Used by operator-written
+//     `configs/gatus.yml` checks that probe an endpoint sitting behind
+//     Traefik basic auth — Gatus sends it verbatim as
+//     `Authorization: Basic ${GATUS_BASIC_AUTH_BASE64}`. Not gatus's own
+//     dashboard auth (see above); base64 of `user:password`.
 //   - GATUS_NTFY_*: optional. `stack add gatus -n` (no ntfy configured)
 //     still deploys a working container — alerts are just off until these
 //     are set. GATUS_CONFIG_PATH is gone: the stack ships a starter
@@ -33,6 +37,13 @@ export default {
       question: "Public domain for the status page?",
       default: "uptime.${DOMAIN}",
       required: true,
+    },
+    {
+      key: "GATUS_BASIC_AUTH_BASE64",
+      question:
+        "Base64 of user:password for checks that probe an endpoint behind Traefik basic auth? Leave blank to skip",
+      required: false,
+      secret: true,
     },
     {
       key: "GATUS_NTFY_URL",

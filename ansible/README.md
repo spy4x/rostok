@@ -188,7 +188,7 @@ The dynamic inventory script (`scripts/ansible/inventory.ts`) generates JSON inv
         },
         "vars": {
           "ansible_python_interpreter": "/usr/bin/python3",
-          "homelab_user": "spy4x"
+          "ssh_user": "spy4x"
         }
       }
     }

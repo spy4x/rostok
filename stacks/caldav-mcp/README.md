@@ -21,9 +21,9 @@ Internal MCP server — no external web UI. Two access modes:
 ## Configuration
 
 ```bash
-CALDAV_URL=<caldav-server-url>      # or CALDAV_SERVER_URL
-CALDAV_USERNAME=<username>
-CALDAV_PASSWORD=<password>
+CALDAV_MCP_SERVER_URL=<caldav-server-url>
+CALDAV_MCP_USERNAME=<username>
+CALDAV_MCP_PASSWORD=<password>
 ```
 
 For Stalwart on `mail.${DOMAIN}`, the URL is `https://mail.${DOMAIN}/dav/cal/`.
@@ -41,7 +41,7 @@ launcher script:
 ```
 ~/sync/code/mcps/
 └── caldav/
-    ├── .env         # CALDAV_SERVER_URL/USERNAME/PASSWORD (synced, not git)
+    ├── .env         # CALDAV_MCP_SERVER_URL/USERNAME/PASSWORD (synced, not git)
     └── start.sh     # launcher: sources env, execs `deno run -A main.ts`
 ```
 

@@ -18,11 +18,11 @@ services:
       - ENABLE_RAG_LOCAL_WEB_FETCH=true
 
       # --- Web Search via SearXNG ---
-      - ENABLE_WEB_SEARCH=${ENABLE_WEB_SEARCH:-true}
-      - WEB_SEARCH_ENGINE=${WEB_SEARCH_ENGINE:-searxng}
-      - SEARXNG_QUERY_URL=${SEARXNG_QUERY_URL:-http://searxng:8080/search?format=json}
-      - WEB_SEARCH_RESULT_COUNT=${WEB_SEARCH_RESULT_COUNT:-3}
-      - BYPASS_WEB_SEARCH_EMBEDDING_AND_RETRIEVAL=${BYPASS_WEB_SEARCH_EMBEDDING_AND_RETRIEVAL:-true}
+      - ENABLE_WEB_SEARCH=${OPEN_WEBUI_ENABLE_WEB_SEARCH:-true}
+      - WEB_SEARCH_ENGINE=${OPEN_WEBUI_WEB_SEARCH_ENGINE:-searxng}
+      - SEARXNG_QUERY_URL=${OPEN_WEBUI_SEARXNG_QUERY_URL:-http://searxng:8080/search?format=json}
+      - WEB_SEARCH_RESULT_COUNT=${OPEN_WEBUI_WEB_SEARCH_RESULT_COUNT:-3}
+      - BYPASS_WEB_SEARCH_EMBEDDING_AND_RETRIEVAL=${OPEN_WEBUI_BYPASS_WEB_SEARCH_EMBEDDING_AND_RETRIEVAL:-true}
 
       # --- Native Mode (Agentic Mode) for all models ---
       # Unlocks built-in system tools: time, calendar, memory, fetch, web search, etc.
@@ -49,33 +49,33 @@ services:
       - USER_PERMISSIONS_FEATURES_DIRECT_TOOL_SERVERS=true
 
       # --- HuggingFace ---
-      - HF_TOKEN=${HF_TOKEN}
+      - HF_TOKEN=${OPEN_WEBUI_HF_TOKEN}
 
       # --- LLM Providers (OpenAI-compatible) ---
-      - OPENAI_API_KEYS=${OPENAI_API_KEYS}
-      - OPENAI_API_BASE_URLS=${OPENAI_API_BASE_URLS}
+      - OPENAI_API_KEYS=${OPEN_WEBUI_OPENAI_API_KEYS}
+      - OPENAI_API_BASE_URLS=${OPEN_WEBUI_OPENAI_API_BASE_URLS}
       # Whitelist models per provider to keep the selector clean
       # Index 0 = OpenAI, Index 1 = MiniMax (DeepSeek dropped)
       - "OPENAI_API_CONFIGS={\"0\":{\"model_ids\":[\"gpt-5.4-mini\"]},\"1\":{\"model_ids\":[\"MiniMax-M3\"]}}"
 
       # --- Ollama Local LLM ---
-      - ENABLE_OLLAMA_API=${ENABLE_OLLAMA_API:-true}
-      - OLLAMA_API_BASE_URL=${OLLAMA_API_BASE_URL:-http://ollama:11434}
-      - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://ollama:11434}
+      - ENABLE_OLLAMA_API=${OPEN_WEBUI_ENABLE_OLLAMA_API:-true}
+      - OLLAMA_API_BASE_URL=${OPEN_WEBUI_OLLAMA_API_BASE_URL:-http://ollama:11434}
+      - OLLAMA_BASE_URL=${OPEN_WEBUI_OLLAMA_BASE_URL:-http://ollama:11434}
 
       # --- Default Model Settings ---
       - DEFAULT_MODELS=MiniMax-M3,gemma4:e4b,gpt-5.4-mini
       - "DEFAULT_MODEL_METADATA={\"capabilities\":{\"vision\":true,\"file_upload\":true,\"file_context\":true,\"web_search\":true,\"image_generation\":true,\"code_interpreter\":true},\"defaultFeatureIds\":[\"image_generation\"]}"
-      - DEFAULT_USER_ROLE=${DEFAULT_USER_ROLE:-user}
-      - ENABLE_SIGNUP=${ENABLE_SIGNUP:-false}
-      - ENABLE_LOGIN_FORM=${ENABLE_LOGIN_FORM:-true}
+      - DEFAULT_USER_ROLE=${OPEN_WEBUI_DEFAULT_USER_ROLE:-user}
+      - ENABLE_SIGNUP=${OPEN_WEBUI_ENABLE_SIGNUP:-false}
+      - ENABLE_LOGIN_FORM=${OPEN_WEBUI_ENABLE_LOGIN_FORM:-true}
 
       # --- RAG Document Extraction ---
-      - CONTENT_EXTRACTION_ENGINE=${CONTENT_EXTRACTION_ENGINE:-tika}
-      - TIKA_SERVER_URL=${TIKA_SERVER_URL:-http://tika:9998}
-      - RAG_TOP_K=${RAG_TOP_K:-10}
-      - RAG_FILE_MAX_COUNT=${RAG_FILE_MAX_COUNT:-10}
-      - RAG_FILE_MAX_SIZE=${RAG_FILE_MAX_SIZE:-52428800}
+      - CONTENT_EXTRACTION_ENGINE=${OPEN_WEBUI_CONTENT_EXTRACTION_ENGINE:-tika}
+      - TIKA_SERVER_URL=${OPEN_WEBUI_TIKA_SERVER_URL:-http://tika:9998}
+      - RAG_TOP_K=${OPEN_WEBUI_RAG_TOP_K:-10}
+      - RAG_FILE_MAX_COUNT=${OPEN_WEBUI_RAG_FILE_MAX_COUNT:-10}
+      - RAG_FILE_MAX_SIZE=${OPEN_WEBUI_RAG_FILE_MAX_SIZE:-52428800}
 
       # --- User Permissions ---
       - USER_PERMISSIONS_FEATURES_WEB_SEARCH=true
@@ -88,11 +88,11 @@ services:
 
       # --- Config persistence ---
       # Set to false to force env vars to override DB config
-      - ENABLE_PERSISTENT_CONFIG=${ENABLE_PERSISTENT_CONFIG:-false}
+      - ENABLE_PERSISTENT_CONFIG=${OPEN_WEBUI_ENABLE_PERSISTENT_CONFIG:-false}
 
       # --- Auth (if not using OAuth) ---
-      - WEBUI_NAME=${WEBUI_NAME:-Homelab AI}
-      - WEBUI_SECRET_KEY=${WEBUI_SECRET_KEY}
+      - WEBUI_NAME=${OPEN_WEBUI_WEBUI_NAME:-Homelab AI}
+      - WEBUI_SECRET_KEY=${OPEN_WEBUI_WEBUI_SECRET_KEY}
     volumes:
       - ${VOLUMES_PATH}/open-webui:/app/backend/data:z
     deploy:

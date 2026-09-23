@@ -60,12 +60,12 @@ services:
       # SMTP — uses shared mailserver on cloud (mail.${DOMAIN})
       # Resolves via Cloudflare DNS to cloud server (23.88.x.x).
       # STARTTLS cert is Let's Encrypt (CN=mail.${DOMAIN}), valid.
-      - EMAIL_FROM=${SMTP_FROM}
+      - EMAIL_FROM=${CALDIY_SMTP_FROM}
       - EMAIL_FROM_NAME=Cal.diy
-      - EMAIL_SERVER_HOST=${SMTP_HOST}
-      - EMAIL_SERVER_PORT=${SMTP_PORT}
-      - EMAIL_SERVER_USER=${SMTP_USERNAME}
-      - EMAIL_SERVER_PASSWORD=${SMTP_PASSWORD}
+      - EMAIL_SERVER_HOST=${CALDIY_SMTP_HOST}
+      - EMAIL_SERVER_PORT=${CALDIY_SMTP_PORT}
+      - EMAIL_SERVER_USER=${CALDIY_SMTP_USERNAME}
+      - EMAIL_SERVER_PASSWORD=${CALDIY_SMTP_PASSWORD}
       # Bypass TLS cert validation in case STARTTLS cert chain has issues.
       # Cert is valid LE, but Node.js sometimes rejects cross-signed chains.
       - NODE_TLS_REJECT_UNAUTHORIZED=0

@@ -20,13 +20,13 @@ import type { JmapCall, JmapResponse } from "./dkim.ts"
 
 const PASSWORD = Deno.env.get("STALWART_ADMIN_PASSWORD") ?? ""
 const DOMAIN = Deno.env.get("DOMAIN") ?? ""
-const NEATSOFT_DOMAIN = Deno.env.get("NEATSOFT_DOMAIN") ?? ""
+const NEATSOFT_DOMAIN = Deno.env.get("STALWART_NEATSOFT_DOMAIN") ?? ""
 const SSH = Deno.env.get("SSH_ADDRESS") ?? ""
 const INITIAL_DEPLOY = Deno.env.get("STALWART_INITIAL_DEPLOY") === "true"
 
 if (!PASSWORD || !DOMAIN || !NEATSOFT_DOMAIN || !SSH) {
   console.error(
-    "after.deploy.ts: STALWART_ADMIN_PASSWORD, DOMAIN, NEATSOFT_DOMAIN and SSH_ADDRESS must be set",
+    "after.deploy.ts: STALWART_ADMIN_PASSWORD, DOMAIN, STALWART_NEATSOFT_DOMAIN and SSH_ADDRESS must be set",
   )
   Deno.exit(1)
 }

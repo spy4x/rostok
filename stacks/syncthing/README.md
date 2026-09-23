@@ -23,7 +23,7 @@ Server C: ~/sync/backups/myservice
 
 ## Setup
 
-1. Access web UI: `https://sync.${DOMAIN}`
+1. Access web UI: `https://${SYNCTHING_DOMAIN}` (e.g. `sync.${DOMAIN}`)
 2. Add remote devices using their device IDs
 3. Share folders (typically `~/sync`)
 4. Accept shares on other servers
@@ -31,8 +31,9 @@ Server C: ~/sync/backups/myservice
 ## Environment Variables
 
 ```bash
-SYNCTHING_GUI_USER=admin      # Web UI username
-SYNCTHING_GUI_PASSWORD=...    # Generated password
+SYNCTHING_DOMAIN=sync.example.com  # Full host for the Traefik rule
+SYNCTHING_GUI_USER=admin              # Web UI username
+SYNCTHING_GUI_PASSWORD=...            # Generated password
 ```
 
 ## Folder Configuration

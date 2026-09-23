@@ -59,7 +59,7 @@ It has to be installed for root via `sudo crontab -e` to allow changing ownershi
 
 ```bash
 # Daily at 2:30am
-30 2 * * * USER=$USER /path/to/deno run --env-file=/path/to/.env -A /path/to/+main.ts >> /path/to/backup.log 2>&1
+30 2 * * * SSH_USER=$USER /path/to/deno run --env-file=/path/to/.env -A /path/to/+main.ts >> /path/to/backup.log 2>&1
 ```
 
 ## Environment Variables
@@ -69,7 +69,7 @@ Required environment variables:
 - `PATH_SYNC` - Base path for backup storage
 - `BACKUPS_PASSWORD` - Password for restic repositories
 - `PATH_APPS` - Path to applications directory
-- `USER` - Current user name for ownership changes
+- `SSH_USER` - Remote user name for ownership changes (read from the server `.env`, not the shell's own `$USER`)
 
 Optional environment variables:
 
