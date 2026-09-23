@@ -19,10 +19,13 @@ Big companies are out of scope. The repo stays small and homelab-shaped.
 ## Install
 
 ```bash
-deno install -A -n rostok jsr:@rostok/cli
+deno install -g -A -n rostok jsr:@rostok/cli
 ```
 
-Requires [Deno](https://deno.land) ≥ 2.0. `age` is optional but
+Requires [Deno](https://deno.land) ≥ 2.0 — `-g`/`--global` is required
+on Deno 2 for a named executable install (`deno install -A -n rostok
+...` alone errors with "the following required arguments were not
+provided: --global"). `age` is optional but
 endorsed — the wizard runs to completion without it, and your `.env`
 files stay plaintext (gitignored). Install `age` to enable encrypted
 `.env.age` files you can safely commit (the wizard offers to set this
