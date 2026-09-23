@@ -42,18 +42,31 @@
 // else from `.env`/`.env.root` is dropped, with a warning naming the
 // file (never the value).
 //
-// The deploying process's OWN real environment still wins on every
-// name it already has (Option B from the issue) — a hook's own tool
-// calls still resolve real binaries/caches through the process's real
-// PATH/HOME/DENO_DIR/etc., never a `.env`-supplied value.
-// DENIED_ENV_KEY_NAMES/PREFIXES is now a backstop that runs BEFORE the
+// Precedence between the deploying process's own environment and a
+// `.env`/`.env.root` value depends on WHICH key it is (third pass,
+// after review):
+//   - Denied or not-allowed (dropped either way): the parent's own
+//     value wins, if it has one — this is Option B's actual security
+//     intent, so a name the shell already configures for some tool
+//     can't be redirected by a value the hook isn't entitled to anyway.
+//   - Allowed (a server key, or the hook's own stack's prefix): the
+//     `.env`/`.env.root` value wins outright, even over a same-named
+//     parent variable — a shell that happens to export `DOMAIN` or
+//     `PROJECT` must not silently steer what a stack-owned key resolves
+//     to; the deploy-time value is authoritative for those.
+// DENIED_ENV_KEY_NAMES/PREFIXES is a backstop that runs BEFORE the
 // allowlist check: a stack whose own prefix happens to collide with a
 // dangerous name (a stack literally named "ld" → prefix "LD_" → would
 // otherwise allow "LD_PRELOAD") still gets it dropped.
+//
+// Also (per that same review): a hook run also SPAWNS under `setsid`
+// when this Deno build and OS support process-group signalling, so
+// SIGINT/SIGTERM reaches the hook's own children too — see
+// process-registry.ts and docs/contributing/adding-services.md.
 
 import { UserError } from "../errors.ts"
 import { isServerKey, stackKeyPrefix } from "../server-keys.ts"
-import { trackChild } from "./process-registry.ts"
+import { setsidAvailable, supportsProcessGroupKill, trackChild } from "./process-registry.ts"
 
 export interface HookContext {
   rootEnv: Record<string, string>
@@ -143,21 +156,38 @@ function isAllowedFileEnvKey(key: string, stackName: string): boolean {
 
 export interface HookEnvResult {
   env: Record<string, string>
-  /** One line per key dropped from `.env`/`.env.root`, naming the file it came from. */
+  /** Human-readable lines describing what was dropped, and from where — never a value. */
   warnings: string[]
+}
+
+/** Strip ASCII control characters (including DEL) from `s` before it goes into a log line or error message — a key name is untrusted input too. */
+function sanitizeForLog(s: string): string {
+  // deno-lint-ignore no-control-regex
+  return s.replace(/[\x00-\x1f\x7f]/g, "")
 }
 
 /**
  * Build the environment a hook subprocess runs with.
  *
- * Starts from the deploying process's own real environment (so a
- * hook's tool calls always resolve real binaries/caches — Option B).
- * Then, for each `.env.root`/server-`.env` key not already covered by
- * that real environment: drop it (with a warning naming the file) if
- * it's on the DENIED_ENV_KEY_NAMES/PREFIXES backstop, drop it (same
- * warning) if it isn't a plain-shell-named server key or `stackName`'s
- * own prefix, otherwise let it through. Finally the contract keys
- * (SSH_ADDRESS/SSH_USER/PATH_APPS/DEPLOY_AS) are set unconditionally.
+ * Starts from the deploying process's own real environment (a hook's
+ * tool calls always resolve real binaries/caches this way). Then, for
+ * each `.env.root`/server-`.env` key:
+ *
+ * - Denied (DENIED_ENV_KEY_NAMES/PREFIXES backstop) or not allowed
+ *   (not a plain-shell-named server key or `stackName`'s own prefix):
+ *   dropped. The PARENT PROCESS's own value for that name, if any,
+ *   still wins here — that's Option B's actual security intent: a name
+ *   the shell already configures (a tool's own env var, PATH, ...)
+ *   can never be redirected by a `.env`/`.env.root` value the hook
+ *   isn't entitled to anyway.
+ * - Allowed (a server key, or carries `stackName`'s own prefix): the
+ *   `.env`/`.env.root` VALUE WINS, even over a same-named parent
+ *   variable — a shell that happens to export `DOMAIN` or `PROJECT`
+ *   must not silently steer what stack-owned keys a hook sees; the
+ *   deploy-time value is authoritative there.
+ *
+ * The contract keys (SSH_ADDRESS/SSH_USER/PATH_APPS/DEPLOY_AS) are set
+ * last, unconditionally, from rostok's own validated values.
  */
 export function buildHookEnv(
   ctx: HookContext,
@@ -166,23 +196,42 @@ export function buildHookEnv(
 ): HookEnvResult {
   const fromFiles = { ...ctx.rootEnv, ...ctx.serverEnv }
   const resolved: Record<string, string> = { ...processEnv }
-  const warnings: string[] = []
+  const deniedWarnings: string[] = []
+  const droppedByFile = new Map<string, string[]>() // file path -> dropped key names
 
   for (const [key, value] of Object.entries(fromFiles)) {
-    if (key in processEnv) continue // the process's own real value already wins — nothing to drop or warn about
-
     const source = key in ctx.serverEnv ? ctx.envPath : ctx.rootEnvPath
     if (isDeniedEnvKey(key)) {
-      warnings.push(`Warning: dropping ${key} from ${source} — always denied.`)
+      // The parent's own value (if any) already wins via the initial
+      // spread above — only warn when this .env value would otherwise
+      // have been the only source (nothing to warn about if the real
+      // environment already had it, since the file's attempt changed
+      // nothing).
+      if (!(key in processEnv)) {
+        deniedWarnings.push(
+          `Warning: dropping ${sanitizeForLog(key)} from ${source} — always denied.`,
+        )
+      }
       continue
     }
     if (!isAllowedFileEnvKey(key, stackName)) {
-      warnings.push(
-        `Warning: dropping ${key} from ${source} — not a server key or stack '${stackName}''s own prefix.`,
-      )
+      if (!(key in processEnv)) {
+        const list = droppedByFile.get(source) ?? []
+        list.push(sanitizeForLog(key))
+        droppedByFile.set(source, list)
+      }
       continue
     }
+    // Allowed: the .env/.env.root value wins outright.
     resolved[key] = value
+  }
+
+  const warnings: string[] = [...deniedWarnings]
+  for (const [source, keys] of droppedByFile) {
+    warnings.push(
+      `Warning: dropped ${keys.length} key(s) from ${source} not meant for stack ` +
+        `'${sanitizeForLog(stackName)}': ${keys.join(", ")}`,
+    )
   }
 
   resolved.SSH_ADDRESS = ctx.sshAddress
@@ -197,6 +246,23 @@ export function buildHookEnv(
  * Run one hook script if `source` is defined (a stack without that hook
  * is a no-op). `source` is a file:// or https:// URL — `deno run -A`
  * accepts both directly.
+ *
+ * `stackName` is the CATALOG stack name — the only thing `buildHookEnv`
+ * uses to compute the allowlist prefix (`stackKeyPrefix`). `label` is
+ * what shows up in logs/errors, and defaults to `stackName`; a caller
+ * running a SERVER-SPECIFIC override of a stack's hook (run-deploy.ts)
+ * passes a distinguishing label like "traefik (server override)"
+ * while still passing the real stack name "traefik" — passing that
+ * label as `stackName` instead would compute the prefix for a
+ * nonexistent stack called "traefik (server override)" and silently
+ * drop every one of the real stack's own keys.
+ *
+ * Spawns the hook under `setsid` when available (and this Deno build's
+ * `Deno.kill` accepts a negative pid — see process-registry.ts) so the
+ * whole process TREE it starts can be signalled together on
+ * SIGINT/SIGTERM, not just this one process — see
+ * docs/contributing/adding-services.md for what a hook itself must do
+ * when that isn't available.
  */
 export async function runHook(
   kind: "before" | "after",
@@ -204,28 +270,39 @@ export async function runHook(
   source: string | undefined,
   stagingDir: string,
   ctx: HookContext,
+  label: string = stackName,
 ): Promise<void> {
   if (!source) return
 
   const { env, warnings } = buildHookEnv(ctx, stackName, Deno.env.toObject())
   for (const warning of warnings) {
-    console.error(`${warning} (${kind}.deploy.ts, stack '${stackName}')`)
+    console.error(`${warning} (${kind}.deploy.ts, stack '${label}')`)
   }
 
-  console.log(`Running ${kind}.deploy.ts for stack ${stackName}...`)
-  const command = new Deno.Command(Deno.execPath(), {
-    args: ["run", "-A", source],
-    cwd: stagingDir,
-    clearEnv: true,
-    env,
-    stdout: "inherit",
-    stderr: "inherit",
-  })
+  console.log(`Running ${kind}.deploy.ts for stack ${label}...`)
+  const useGroup = supportsProcessGroupKill() && await setsidAvailable()
+  const command = useGroup
+    ? new Deno.Command("setsid", {
+      args: [Deno.execPath(), "run", "-A", source],
+      cwd: stagingDir,
+      clearEnv: true,
+      env,
+      stdout: "inherit",
+      stderr: "inherit",
+    })
+    : new Deno.Command(Deno.execPath(), {
+      args: ["run", "-A", source],
+      cwd: stagingDir,
+      clearEnv: true,
+      env,
+      stdout: "inherit",
+      stderr: "inherit",
+    })
   const child = command.spawn()
-  trackChild(child)
+  trackChild(child, useGroup)
   const output = await child.output()
   if (!output.success) {
-    throw new UserError(`${kind}.deploy.ts failed for stack '${stackName}' (${source})`)
+    throw new UserError(`${kind}.deploy.ts failed for stack '${label}' (${source})`)
   }
-  console.log(`✓ ${kind}.deploy.ts for ${stackName}`)
+  console.log(`✓ ${kind}.deploy.ts for ${label}`)
 }
