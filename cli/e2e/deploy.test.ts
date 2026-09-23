@@ -642,7 +642,7 @@ Deno.test("e2e: staged .env and .env.root are chmod 0600", async () => {
   // the remote — a 0644 copy in PATH_APPS is readable by every user on a
   // shared box. The staging dir is private to runDeploy and gets removed
   // before the CLI subprocess exits, so this checks the mode from
-  // inside, at the point Deno.remove is about to delete it.
+  // inside, at the point Deno.removeSync is about to delete it.
   const { runDeploy } = await import("../deploy/run-deploy.ts")
 
   const f = await setupFixture()
@@ -654,21 +654,28 @@ Deno.test("e2e: staged .env and .env.root are chmod 0600", async () => {
     Deno.env.set("FAKE_REMOTE_DIR", f.remoteDir)
     Deno.env.set("FAKE_SSH_LOG", f.logPath)
 
-    const originalRemove = Deno.remove
+    const originalRemoveSync = Deno.removeSync
     let envMode: number | null | undefined
     let rootEnvMode: number | null | undefined
-    Deno.remove = async (path, options) => {
-      if (typeof path === "string") {
-        envMode = (await Deno.stat(join(path, ".env")).catch(() => undefined))?.mode
-        rootEnvMode = (await Deno.stat(join(path, ".env.root")).catch(() => undefined))?.mode
+    const modeOf = (path: string) => {
+      try {
+        return Deno.statSync(path).mode
+      } catch {
+        return undefined
       }
-      return await originalRemove(path, options)
+    }
+    Deno.removeSync = (path, options) => {
+      if (typeof path === "string") {
+        envMode = modeOf(join(path, ".env"))
+        rootEnvMode = modeOf(join(path, ".env.root"))
+      }
+      return originalRemoveSync(path, options)
     }
 
     try {
       await runDeploy({ cwd: f.projectDir, server: "test" })
     } finally {
-      Deno.remove = originalRemove
+      Deno.removeSync = originalRemoveSync
       Deno.env.set("PATH", previousPath)
       Deno.env.delete("FAKE_REMOTE_DIR")
       Deno.env.delete("FAKE_SSH_LOG")
@@ -699,29 +706,26 @@ Deno.test("e2e: a failed staging cleanup logs a warning instead of swallowing it
     Deno.env.set("FAKE_REMOTE_DIR", f.remoteDir)
     Deno.env.set("FAKE_SSH_LOG", f.logPath)
 
-    const originalRemove = Deno.remove
+    const originalRemoveSync = Deno.removeSync
     const originalConsoleError = console.error
     const errorLines: string[] = []
     console.error = (...args: unknown[]) => {
       errorLines.push(args.map(String).join(" "))
     }
-    // Rejects, matching the real Deno.remove's async failure mode (not a
-    // synchronous throw) — a `.catch(() => {})` on the old code would
-    // actually catch this, so the mutation check below has to fail the
-    // same way production would: silently. Records the path it was
-    // asked to remove — the mock blocks run-deploy.ts's own genuine
-    // cleanup attempt, so this test has to remove that real staging
-    // directory itself afterwards, or it leaks into /tmp on every run.
+    // Throws, matching the real Deno.removeSync's failure mode. Records
+    // the path it was asked to remove: the mock blocks run-deploy.ts's
+    // own cleanup, so this test removes that real staging directory
+    // itself afterwards, or it leaks into /tmp on every run.
     let stagingDirToClean: string | URL | undefined
-    Deno.remove = (path) => {
+    Deno.removeSync = (path) => {
       stagingDirToClean = path
-      return Promise.reject(new Deno.errors.PermissionDenied("simulated: staging cleanup denied"))
+      throw new Deno.errors.PermissionDenied("simulated: staging cleanup denied")
     }
 
     try {
       await runDeploy({ cwd: f.projectDir, server: "test" })
     } finally {
-      Deno.remove = originalRemove
+      Deno.removeSync = originalRemoveSync
       console.error = originalConsoleError
       Deno.env.set("PATH", previousPath)
       Deno.env.delete("FAKE_REMOTE_DIR")
@@ -1077,6 +1081,11 @@ Deno.test("e2e: runDeploy removes its signal listeners after finishing normally 
     Deno.env.set("PATH", `${f.binDir}:${previousPath}`)
     Deno.env.set("FAKE_REMOTE_DIR", f.remoteDir)
     Deno.env.set("FAKE_SSH_LOG", f.logPath)
+    // A private TMPDIR, so the spy below can see this deploy's staging dir.
+    const previousTmp = Deno.env.get("TMPDIR")
+    const tmpRoot = await Deno.makeTempDir({ prefix: "rostok-e2e-tmproot-" })
+    Deno.env.set("TMPDIR", tmpRoot)
+    const stagingLeftWhenListenersRemoved: string[][] = []
 
     const added: Array<[Deno.Signal, unknown]> = []
     const removed: Array<[Deno.Signal, unknown]> = []
@@ -1087,6 +1096,11 @@ Deno.test("e2e: runDeploy removes its signal listeners after finishing normally 
       return originalAdd(signal, handler)
     }
     Deno.removeSignalListener = (signal: Deno.Signal, handler: () => void) => {
+      stagingLeftWhenListenersRemoved.push(
+        [...Deno.readDirSync(tmpRoot)].map((e) => e.name).filter((n) =>
+          n.startsWith("rostok-deploy-")
+        ),
+      )
       removed.push([signal, handler])
       return originalRemove(signal, handler)
     }
@@ -1099,7 +1113,15 @@ Deno.test("e2e: runDeploy removes its signal listeners after finishing normally 
       Deno.env.set("PATH", previousPath)
       Deno.env.delete("FAKE_REMOTE_DIR")
       Deno.env.delete("FAKE_SSH_LOG")
+      if (previousTmp === undefined) Deno.env.delete("TMPDIR")
+      else Deno.env.set("TMPDIR", previousTmp)
+      await Deno.remove(tmpRoot, { recursive: true }).catch(() => {})
     }
+
+    // #219: staging (plaintext .env) must be gone before the listeners
+    // are, or a signal in between takes its default action mid-delete.
+    assertEquals(stagingLeftWhenListenersRemoved.length, 4)
+    for (const left of stagingLeftWhenListenersRemoved) assertEquals(left, [])
 
     assertEquals(added.length, 4, "expected exactly SIGHUP, SIGINT, SIGQUIT and SIGTERM")
     assertEquals(

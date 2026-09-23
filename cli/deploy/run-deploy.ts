@@ -461,14 +461,15 @@ export async function runDeploy(opts: DeployOptions): Promise<DeployRunResult> {
     console.log("Deployment script finished")
     return { deployedStacks: stacks.map((s) => s.name), results }
   } finally {
+    // Remove staging first, synchronously, and only then drop the signal
+    // listeners: with the listeners gone, a signal would take its default
+    // action, so an async removal in that order left a window where a
+    // Ctrl-C or closed terminal killed the process mid-delete with `.env`
+    // still on disk. A signal that arrives during this synchronous
+    // removal is handled right after it, by a handler whose own removal
+    // finds nothing left. removeStagingDirSync warns if it can't remove.
+    removeStagingDirSync(stagingDir)
     removeSignalCleanup()
-    // Staging holds a copy of .env (secrets) — a failed cleanup leaves
-    // that on disk, so warn instead of swallowing the error silently.
-    try {
-      await Deno.remove(stagingDir, { recursive: true })
-    } catch (err) {
-      console.error(`Warning: failed to remove staging directory ${stagingDir}: ${err}`)
-    }
   }
 }
 

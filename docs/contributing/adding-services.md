@@ -166,6 +166,13 @@ waits for them to finish (the common case — `docker`, `curl`, a
 one-shot script) needs no special handling; this only matters for a
 hook that starts something long-running and returns before it's done.
 
+**What an interrupted deploy leaves.** Deploy stages a plaintext copy
+of `.env` and `.env.root` in a private `rostok-deploy-*` folder under
+`$TMPDIR` and removes it on success, failure, Ctrl-C, `kill`, Ctrl-\\
+and a closed terminal. Nothing can run on `kill -9`, an out-of-memory
+kill or a power loss: the folder (mode 0700) stays until the system
+clears `$TMPDIR`, usually at the next reboot.
+
 **No terminal.** A hook in its own process group has no controlling
 terminal, so it can't prompt. An `ssh` call in a hook that would ask for
 a host key or a passphrase fails instead of asking: pass

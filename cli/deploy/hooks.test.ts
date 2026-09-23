@@ -647,3 +647,27 @@ Deno.test("killActiveChildren: SIGKILLs a child that ignores SIGTERM", async () 
     await child.status
   }
 })
+
+Deno.test("killActiveChildren: gives a child the grace period to exit on SIGTERM before SIGKILL", async () => {
+  // The child exits cleanly on SIGTERM. Without the grace period, the
+  // SIGKILL that follows at once would end it first.
+  const child = new Deno.Command("sh", {
+    args: ["-c", `trap 'kill $! 2>/dev/null; exit 0' TERM; sleep 30 & wait`],
+    stdout: "null",
+    stderr: "null",
+  }).spawn()
+  trackChild(child)
+  try {
+    await new Promise((r) => setTimeout(r, 200)) // let the trap install
+    killActiveChildren()
+    const status = await child.status
+    assertEquals(status.signal, null, "the child was killed before it could exit on SIGTERM")
+    assertEquals(status.code, 0)
+  } finally {
+    try {
+      child.kill("SIGKILL")
+    } catch {
+      // Already gone.
+    }
+  }
+})
