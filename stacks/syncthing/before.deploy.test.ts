@@ -272,6 +272,29 @@ Deno.test({
 })
 
 Deno.test({
+  name: "getUser: throws when neither SSH_USER nor HOMELAB_USER is set",
+  fn() {
+    const prevSsh = Deno.env.get("SSH_USER")
+    const prevHomelab = Deno.env.get("HOMELAB_USER")
+    const restore = () => {
+      prevSsh === undefined ? Deno.env.delete("SSH_USER") : Deno.env.set("SSH_USER", prevSsh)
+      prevHomelab === undefined
+        ? Deno.env.delete("HOMELAB_USER")
+        : Deno.env.set("HOMELAB_USER", prevHomelab)
+    }
+    try {
+      Deno.env.delete("SSH_USER")
+      Deno.env.delete("HOMELAB_USER")
+      // No hardcoded fallback user — a server missing both keys must
+      // fail loudly, not silently create paths owned by someone else.
+      assertThrows(() => getUser(), Error, "SSH_USER is not set")
+    } finally {
+      restore()
+    }
+  },
+})
+
+Deno.test({
   name: "assertUsableApiKey rejects unset, placeholder and short keys",
   fn() {
     const prev = Deno.env.get("SYNCTHING_API_KEY")
