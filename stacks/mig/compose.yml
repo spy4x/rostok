@@ -11,15 +11,20 @@ services:
     container_name: hl-mig
     # Published by mig's own CI (github.com/spy4x/mig) to Docker Hub on
     # every v* tag: a stable tag like v1.2.3 also moves `latest`, a
-    # pre-release tag like v1.2.3-rc.1 never does. Watchtower (this repo's
-    # `watchtower` stack, `--interval 86400 --cleanup`) polls every
-    # container daily and keeps `latest` current on its own.
-    # Deploy a new release right away instead of waiting for Watchtower:
-    #   deno task deploy <server> mig
+    # pre-release tag like v1.2.3-rc.1 never does. Deploying this stack
+    # (`deno task deploy <server> mig`) always pulls the tag below first
+    # (pull_policy: always — `docker compose up -d --build` on its own
+    # only pulls an image that's missing locally, and `--build` is a
+    # no-op here since this service has no `build:`) and recreates the
+    # container if the digest changed. Watchtower (this repo's
+    # `watchtower` stack, `--interval 86400 --cleanup`) also polls every
+    # container daily on its own, so a stable release mig's CI publishes
+    # goes live within a day with no human step either way.
     # Pin or roll back to a specific release by setting in the server's
-    # `.env`:
+    # `.env`, then `deno task env:encrypt` and deploy:
     #   MIG_IMAGE_TAG=v0.3.0
     image: antonshubin/mig:${MIG_IMAGE_TAG:-latest}
+    pull_policy: always
     # The image runs as a non-root user baked into it (uid 1993, `deno`,
     # from mig's v0.4.0). The deploy script (cli/deploy/volumes.ts)
     # chowns ${VOLUMES_PATH}/mig to PUID:PGID (default 1000:1000, see
@@ -27,9 +32,10 @@ services:
     # uid, so a freshly provisioned server's data dir is unwritable by
     # the container's default user. Running the container as the same
     # PUID:PGID the deploy script already chowns the volume to sidesteps
-    # that mismatch — the same fix stacks/vaultwarden, stacks/gatus,
-    # stacks/filebrowser, stacks/watchtower and stacks/woodpecker already
-    # use for the same reason.
+    # that mismatch — the same fix stacks/gatus, stacks/filebrowser,
+    # stacks/ntfy, stacks/traefik, stacks/vaultwarden,
+    # stacks/watchtower and stacks/woodpecker already use for the same
+    # reason.
     user: "${PUID:-1000}:${PGID:-1000}"
     restart: unless-stopped
     env_file:
