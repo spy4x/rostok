@@ -12,7 +12,7 @@
         msg:
           - "🏠 Starting Complete Homelab Setup"
           - "Target: {{ inventory_hostname }}"
-          - "User: {{ homelab_user }}"
+          - "User: {{ ssh_user }}"
           - ""
           - "This will:"
           - "  1. Configure server (initial-setup.yml)"

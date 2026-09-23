@@ -86,12 +86,10 @@ async function main() {
   for (const server of servers) {
     const env = await loadServerEnv(server)
     const _config = await loadServerConfig(server)
-    const envPath = `./servers/${server}/.env`
 
-    // SSH_USER ← HOMELAB_USER ← USER (read from the file, never the shell's
-    // own $USER — see cli/deploy/env.ts).
-    const resolvedUser = resolveSshUser(env, envPath)
-    if (resolvedUser.notice) console.error(resolvedUser.notice)
+    // SSH_USER, read from the file (never the shell's own $USER — see
+    // cli/deploy/env.ts).
+    const resolvedUser = resolveSshUser(env)
 
     // Parse SSH_ADDRESS for user@host format
     let user = resolvedUser.value || "homelab"
@@ -153,10 +151,10 @@ async function main() {
     inventory._meta.hostvars[server] = {
       ansible_host: host,
       ansible_user: user,
-      // Playbooks reference {{ homelab_user }} directly (predates
+      // Playbooks reference {{ ssh_user }} directly (predates
       // ansible_user); keep it populated with the same resolved value so
-      // they don't see "'homelab_user' is undefined".
-      homelab_user: user,
+      // they don't see "'ssh_user' is undefined".
+      ssh_user: user,
       ansible_ssh_private_key_file:
         "{{ lookup('env', 'SSH_PRIVATE_KEY_FILE') | default('~/.ssh/id_ed25519', true) }}",
       ssh_port: "{{ lookup('env', 'SSH_PORT') }}",

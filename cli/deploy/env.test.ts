@@ -11,27 +11,14 @@ import {
 const ROOT_ENV_PATH = ".env.root"
 
 Deno.test("resolveSshUser: uses SSH_USER when present, no notice", () => {
-  const result = resolveSshUser({ SSH_USER: "deploy" }, "servers/home/.env")
+  const result = resolveSshUser({ SSH_USER: "deploy" })
   assertEquals(result.value, "deploy")
   assertEquals(result.notice, undefined)
 })
 
-Deno.test("resolveSshUser: falls back to HOMELAB_USER with a rename notice", () => {
-  const result = resolveSshUser({ HOMELAB_USER: "homelab" }, "servers/home/.env")
-  assertEquals(result.value, "homelab")
-  assertStringIncludes(result.notice ?? "", "HOMELAB_USER is deprecated")
-  assertStringIncludes(result.notice ?? "", "servers/home/.env")
-})
-
-Deno.test("resolveSshUser: falls back to USER (from the file) with a rename notice", () => {
-  const result = resolveSshUser({ USER: "spy4x" }, "servers/home/.env")
-  assertEquals(result.value, "spy4x")
-  assertStringIncludes(result.notice ?? "", "USER is deprecated")
-})
-
-Deno.test("resolveSshUser: SSH_USER wins over HOMELAB_USER and USER", () => {
-  const result = resolveSshUser({ SSH_USER: "a", HOMELAB_USER: "b", USER: "c" }, "x")
-  assertEquals(result.value, "a")
+Deno.test("resolveSshUser: a .env with only HOMELAB_USER has no remote user", () => {
+  const result = resolveSshUser({ HOMELAB_USER: "homelab" })
+  assertEquals(result.value, "")
   assertEquals(result.notice, undefined)
 })
 
@@ -39,7 +26,7 @@ Deno.test("resolveSshUser: never reads the shell's own USER — only the given m
   const previous = Deno.env.get("USER")
   Deno.env.set("USER", "shell-user-should-be-ignored")
   try {
-    const result = resolveSshUser({}, "servers/home/.env")
+    const result = resolveSshUser({})
     assertEquals(result.value, "")
   } finally {
     if (previous === undefined) Deno.env.delete("USER")
@@ -100,19 +87,19 @@ Deno.test("resolveDeployEnv: succeeds and fills SSH_USER/PATH_APPS/PUID/PGID whe
   const { env, notices } = resolveDeployEnv(
     {
       SSH_ADDRESS: "root@example.com",
-      HOMELAB_USER: "homelab",
+      SSH_USER: "deploy",
       VOLUMES_PATH: "/srv/volumes",
       DOCKER_GROUP_ID: "988",
     },
     "servers/home/.env",
     ROOT_ENV_PATH,
   )
-  assertEquals(env.SSH_USER, "homelab")
+  assertEquals(env.SSH_USER, "deploy")
   assertEquals(env.PATH_APPS, "/srv/apps")
   assertEquals(env.PUID, "1000")
   assertEquals(env.PGID, "1000")
-  // HOMELAB_USER, PATH_APPS, PUID, PGID notices.
-  assertEquals(notices.length, 4)
+  // PATH_APPS, PUID, PGID notices.
+  assertEquals(notices.length, 3)
 })
 
 Deno.test("resolveDeployEnv: a key present only in .env.root satisfies the required-key check", () => {

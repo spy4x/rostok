@@ -89,29 +89,6 @@ export async function writeEnvFile(path: string, entries: EnvEntry[]): Promise<v
   await Deno.chmod(path, 0o600)
 }
 
-/** Legacy remote-user keys, in fallback order (see cli/server-keys.ts SSH_USER). */
-const LEGACY_USER_KEYS = ["HOMELAB_USER", "USER"] as const
-
-/**
- * Rename a legacy remote-user key (`HOMELAB_USER`, then `USER`) to
- * `SSH_USER` in a parsed `.env`, if `SSH_USER` isn't already present.
- *
- * `USER` is what the pre-1.0.4 wizard wrote; `HOMELAB_USER` is what
- * deploy, ansible and syncthing read. `SSH_USER` replaces both — see
- * `cli/server-keys.ts`. Reading `USER` from the process environment
- * would pick up the shell's own variable, so this only ever looks at
- * the parsed file.
- */
-export function migrateSshUserKey(
-  entries: EnvEntry[],
-): { entries: EnvEntry[]; renamedFrom?: string } {
-  if (entries.some((e) => e.key === "SSH_USER")) return { entries }
-  const legacyKey = LEGACY_USER_KEYS.find((k) => entries.some((e) => e.key === k))
-  if (!legacyKey) return { entries }
-  const out = entries.map((e) => e.key === legacyKey ? { key: "SSH_USER", value: e.value } : e)
-  return { entries: out, renamedFrom: legacyKey }
-}
-
 /**
  * Build a `ServerContext` for `resolveReferences` from the parsed entries
  * of `servers/<server>/.env`. Unknown keys are not added; the resolver

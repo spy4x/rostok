@@ -3,7 +3,7 @@ import { getEnvVar } from "../../+lib.ts"
 // Re-export getEnvVar for consumers that import from this module
 export { getEnvVar } from "../../+lib.ts"
 
-export const USER = getEnvVar("USER")
+export const USER = getEnvVar("SSH_USER")
 export const PATH_APPS = getEnvVar("PATH_APPS")
 export const VOLUMES_PATH = getEnvVar("VOLUMES_PATH")
 export const PATH_MEDIA = getEnvVar("PATH_MEDIA", true) // Optional - only on home server

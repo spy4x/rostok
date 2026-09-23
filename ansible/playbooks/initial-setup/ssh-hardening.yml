@@ -114,7 +114,7 @@
       ansible.builtin.lineinfile:
         path: /etc/ssh/sshd_config
         regexp: "^#?AllowUsers"
-        line: "AllowUsers {{ homelab_user }}"
+        line: "AllowUsers {{ ssh_user }}"
         state: present
         validate: "/usr/sbin/sshd -t -f %s"
       notify: restart sshd
@@ -163,7 +163,7 @@
           - "  • SSH Port: {{ ssh_port }}"
           - "  • Max auth attempts: 3"
           - "  • Login grace time: 30s"
-          - "  • Allowed users: {{ homelab_user }}"
+          - "  • Allowed users: {{ ssh_user }}"
           - "  • Strong ciphers and algorithms enforced"
           - ""
           - "⚠️  IMPORTANT: Keep your SSH key safe!"
@@ -175,7 +175,7 @@
           - "✅ Safe to re-run: This playbook is idempotent"
           - ""
           - "Test connection in a NEW terminal before closing this one:"
-          - "  ssh -p {{ ssh_port }} {{ homelab_user }}@{{ ansible_host }}"
+          - "  ssh -p {{ ssh_port }} {{ ssh_user }}@{{ ansible_host }}"
 
   handlers:
     - name: restart sshd

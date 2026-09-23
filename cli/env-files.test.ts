@@ -4,7 +4,6 @@ import { assertEquals, assertRejects } from "@std/assert"
 import { join } from "@std/path"
 import {
   mergeEnv,
-  migrateSshUserKey,
   parseEnv,
   readEnvFile,
   serializeEnv,
@@ -119,54 +118,6 @@ Deno.test("writeEnvFile: atomic via .tmp rename", async () => {
   // No .tmp leftover
   await assertRejects(async () => await Deno.stat(`${path}.tmp`))
   await Deno.remove(tmp, { recursive: true })
-})
-
-// ─────────────────────────────────────────────────────────────────────
-// migrateSshUserKey — #206: rename a legacy remote-user key to SSH_USER.
-// ─────────────────────────────────────────────────────────────────────
-
-Deno.test("migrateSshUserKey: renames USER to SSH_USER", () => {
-  const result = migrateSshUserKey([
-    { key: "PROJECT", value: "hl" },
-    { key: "USER", value: "deploy" },
-  ])
-  assertEquals(result.renamedFrom, "USER")
-  assertEquals(result.entries, [
-    { key: "PROJECT", value: "hl" },
-    { key: "SSH_USER", value: "deploy" },
-  ])
-})
-
-Deno.test("migrateSshUserKey: renames HOMELAB_USER to SSH_USER", () => {
-  const result = migrateSshUserKey([{ key: "HOMELAB_USER", value: "deploy" }])
-  assertEquals(result.renamedFrom, "HOMELAB_USER")
-  assertEquals(result.entries, [{ key: "SSH_USER", value: "deploy" }])
-})
-
-Deno.test("migrateSshUserKey: HOMELAB_USER wins over USER when both are present", () => {
-  const result = migrateSshUserKey([
-    { key: "USER", value: "from-user" },
-    { key: "HOMELAB_USER", value: "from-homelab" },
-  ])
-  assertEquals(result.renamedFrom, "HOMELAB_USER")
-  assertEquals(result.entries, [
-    { key: "USER", value: "from-user" },
-    { key: "SSH_USER", value: "from-homelab" },
-  ])
-})
-
-Deno.test("migrateSshUserKey: no-op when SSH_USER is already present", () => {
-  const entries = [{ key: "SSH_USER", value: "deploy" }, { key: "USER", value: "stale" }]
-  const result = migrateSshUserKey(entries)
-  assertEquals(result.renamedFrom, undefined)
-  assertEquals(result.entries, entries)
-})
-
-Deno.test("migrateSshUserKey: no-op when neither legacy key is present", () => {
-  const entries = [{ key: "PROJECT", value: "hl" }]
-  const result = migrateSshUserKey(entries)
-  assertEquals(result.renamedFrom, undefined)
-  assertEquals(result.entries, entries)
 })
 
 Deno.test("serverContextFromRoot: produces a usable ServerContext shape", () => {

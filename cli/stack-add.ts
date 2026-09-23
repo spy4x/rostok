@@ -18,12 +18,11 @@
 // clobbers another stack's key and never rotates an existing secret
 // (`() => generatePassword()` only runs when the key is absent).
 
-import { join, relative } from "@std/path"
+import { join } from "@std/path"
 import { encryptEnvFiles } from "./encrypt.ts"
 import {
   type EnvEntry,
   mergeEnv,
-  migrateSshUserKey,
   readEnvFile,
   serverContextFromRoot,
   writeEnvFile,
@@ -91,11 +90,7 @@ export async function stackAdd(
   const catalog = await resolveCatalog(opts.catalogDir)
   const entry = findStack(catalog, stackName)
 
-  const existingRaw = await readEnvFile(envPath)
-  const { entries: existing, renamedFrom } = migrateSshUserKey(existingRaw)
-  if (renamedFrom) {
-    console.log(`rostok: renamed ${renamedFrom} to SSH_USER in ${relative(cwd, envPath)}`)
-  }
+  const existing = await readEnvFile(envPath)
   const existingByKey = new Map(existing.map((e) => [e.key, e.value]))
 
   // Build server context from `servers/<server>/.env` (per-server vars),

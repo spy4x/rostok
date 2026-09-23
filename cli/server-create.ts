@@ -11,10 +11,8 @@
 //   (design §3.1 step 2). PATH_APPS/VOLUMES_PATH are validated with
 //   `validateRemotePath` for the same reason: they reach the remote
 //   shell through rsync/ssh.
-// - The remote user is written as `SSH_USER` (#206/#209) — it replaces
-//   `USER` (what the pre-1.0.4 wizard wrote) and `HOMELAB_USER` (what
-//   deploy/ansible/syncthing read). An existing `.env` with either
-//   legacy key gets migrated in place (env-files.ts:migrateSshUserKey).
+// - The remote user is written as `SSH_USER` (#206/#209) — it's the only
+//   remote-user key `.env` files carry.
 // - Every field also accepts the env-style name that lands in `.env`
 //   (SSH_ADDRESS, DOMAIN, ...) as a --var key, alongside the legacy
 //   camelCase alias (sshTarget, domain, ...) for 1.x compatibility.
@@ -33,15 +31,9 @@
 //   runs to completion; the user runs `rostok env encrypt` manually
 //   after installing age.
 
-import { join, relative } from "@std/path"
+import { join } from "@std/path"
 import { encryptEnvFiles } from "./encrypt.ts"
-import {
-  type EnvEntry,
-  mergeEnv,
-  migrateSshUserKey,
-  readEnvFile,
-  writeEnvFile,
-} from "./env-files.ts"
+import { type EnvEntry, mergeEnv, readEnvFile, writeEnvFile } from "./env-files.ts"
 import { promptValue } from "./prompts.ts"
 import { tryCaptureStdout } from "./shell.ts"
 import {
@@ -271,11 +263,7 @@ async function collectInput(
   // can't tell us on its own).
   const serverDir = serverDirFor(cwd, serverName)
   const envPath = join(serverDir, ".env")
-  const existingRaw = await readEnvFile(envPath)
-  const { entries: existing, renamedFrom } = migrateSshUserKey(existingRaw)
-  if (renamedFrom) {
-    console.log(`rostok: renamed ${renamedFrom} to SSH_USER in ${relative(cwd, envPath)}`)
-  }
+  const existing = await readEnvFile(envPath)
   const existingByKey = new Map(existing.map((e) => [e.key, e.value]))
 
   // SSH target — an ssh_config alias or user@host, validated against

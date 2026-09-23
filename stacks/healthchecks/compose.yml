@@ -15,7 +15,7 @@ services:
     container_name: hl-healthchecks
     image: healthchecks/healthchecks:latest
     # Fix perms on /data before uwsgi starts. Deploy script chowns volumes
-    # to HOMELAB_USER (UID 1000 on cloud), but this container runs as
+    # to SSH_USER (UID 1000 on cloud), but this container runs as
     # UID 999 — without this chown sqlite is read-only and /docs/ returns
     # 500. `|| true` so a fresh empty bind mount doesn't error.
     entrypoint: ["/bin/sh", "/opt/healthchecks/docker-entrypoint.sh"]
@@ -38,13 +38,13 @@ services:
       - SITE_ROOT=https://healthchecks.${DOMAIN}
       - SITE_NAME=Healthchecks
       - ALLOWED_HOSTS=localhost,hl-healthchecks,healthchecks.${DOMAIN}
-      - DEFAULT_FROM_EMAIL=${SMTP_FROM}
-      - EMAIL_HOST=${SMTP_HOST}
-      - EMAIL_PORT=${SMTP_PORT}
+      - DEFAULT_FROM_EMAIL=${HEALTHCHECKS_SMTP_FROM}
+      - EMAIL_HOST=${HEALTHCHECKS_SMTP_HOST}
+      - EMAIL_PORT=${HEALTHCHECKS_SMTP_PORT}
       - EMAIL_USE_TLS=True
       - EMAIL_USE_VERIFICATION=True
-      - EMAIL_HOST_USER=${SMTP_USERNAME}
-      - EMAIL_HOST_PASSWORD=${SMTP_PASSWORD}
+      - EMAIL_HOST_USER=${HEALTHCHECKS_SMTP_USERNAME}
+      - EMAIL_HOST_PASSWORD=${HEALTHCHECKS_SMTP_PASSWORD}
       - REGISTRATION_OPEN=False
       - DISCORD_CLIENT_ID=
       - DISCORD_CLIENT_SECRET=

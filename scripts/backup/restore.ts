@@ -112,7 +112,7 @@ class RestoreRunner {
         if (config.pathsToChangeOwnership && config.pathsToChangeOwnership.length > 0) {
           for (const path of config.pathsToChangeOwnership) {
             const actualPath = absPath(path, USER)
-            const user = getEnvVar("USER")
+            const user = getEnvVar("SSH_USER")
             log(`Fixing permissions for: ${actualPath}`)
             await this.runCommand("chown", ["-R", `${user}:${user}`, actualPath])
           }

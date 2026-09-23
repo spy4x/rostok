@@ -211,13 +211,11 @@ Deno.test("server create rejects a traversal server name and writes nothing", as
 })
 
 // ─────────────────────────────────────────────────────────────────────
-// #206 + review fix #1 — a legacy USER / HOMELAB_USER key gets renamed
-// to SSH_USER, and re-running server create on an existing server with
-// an alias target (no user in SSH_ADDRESS) keeps every existing value
+// Review fix #1 — re-running server create on an existing server with an
+// alias target (no user in SSH_ADDRESS) keeps every existing value
 // instead of resetting it to a static default. Regression: before the
-// fix, this printed "renamed USER to SSH_USER" and then immediately
-// overwrote it with the local `whoami`, and reset a hand-corrected
-// DOCKER_GROUP_ID back to 990.
+// fix, a failed probe overwrote SSH_USER with the local `whoami` and
+// reset a hand-corrected DOCKER_GROUP_ID back to 990.
 // ─────────────────────────────────────────────────────────────────────
 
 async function seedServerEnv(dir: string, name: string, text: string): Promise<void> {
@@ -237,7 +235,7 @@ Deno.test("re-running server create with an alias target keeps existing values (
         [
           "PROJECT=hl",
           "SSH_ADDRESS=myhomelab",
-          "USER=deploy", // legacy key — must migrate, not get overwritten by whoami
+          "SSH_USER=deploy",
           "DOMAIN=example.com",
           "CONTACT_EMAIL=a@example.com",
           "DOCKER_GROUP_ID=977", // hand-corrected — must survive a failed probe
@@ -261,9 +259,8 @@ Deno.test("re-running server create with an alias target keeps existing values (
       assertEquals(
         env.find((e) => e.key === "SSH_USER")?.value,
         "deploy",
-        "kept the migrated user instead of falling back to the local shell user",
+        "kept the existing SSH_USER instead of falling back to the local shell user",
       )
-      assertEquals(env.some((e) => e.key === "USER"), false)
       assertEquals(
         env.find((e) => e.key === "DOCKER_GROUP_ID")?.value,
         "977",

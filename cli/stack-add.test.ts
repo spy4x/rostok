@@ -298,25 +298,6 @@ Deno.test("an unresolved \${...} already sitting in .env is left alone, not reje
 })
 
 // ─────────────────────────────────────────────────────────────────────
-// Review fix #5 — migrateSshUserKey runs inside stack add too, not just
-// server create.
-// ─────────────────────────────────────────────────────────────────────
-
-Deno.test("stack add migrates a legacy USER key to SSH_USER", async () => {
-  await withTmpDir(async (dir) => {
-    const catalogDir = join(dir, "catalog")
-    await writeCatalog(catalogDir, { demo: IMAGE_STACK_META("demo", "1.0") })
-    await seedServer(dir, "test", { PROJECT: "hl", DOMAIN: "example.com", USER: "deploy" })
-
-    await stackAdd("demo", "test", { cwd: dir, catalogDir, nonInteractive: true })
-
-    const env = await readEnvFile(join(dir, "servers", "test", ".env"))
-    assertEquals(env.some((e) => e.key === "USER"), false)
-    assertEquals(env.find((e) => e.key === "SSH_USER")?.value, "deploy")
-  })
-})
-
-// ─────────────────────────────────────────────────────────────────────
 // Review fix #9 — a --var equal to the existing value is "kept", not "new".
 // ─────────────────────────────────────────────────────────────────────
 
