@@ -25,12 +25,28 @@ export interface PromptValueOptions {
   provided?: string
   /** Default value shown in the interactive prompt (and applied on Enter). */
   fallback?: string
-  /** Validator for the interactive input. Return `true` to accept, string to reject. */
+  /**
+   * Validator, checked against whichever value resolves — `provided`,
+   * `fallback` (non-interactive), or what the user types (interactive).
+   * Return `true` to accept, a string to reject. A `--var` or an
+   * existing `.env` value is just as untrusted as interactive input:
+   * skipping validation for them would let e.g. `--var
+   * SSH_ADDRESS=-oProxyCommand=...` through unchecked.
+   */
   validate?: (v: string) => true | string
   /** Hide input (use cliffy Secret.prompt). */
   secret?: boolean
   /** Skip the interactive prompt entirely; resolve from `fallback` or throw. */
   nonInteractive?: boolean
+}
+
+/** Run `validate` (if any) and throw a UserError naming `key` on rejection. */
+function assertValid(opts: PromptValueOptions, value: string): void {
+  if (!opts.validate) return
+  const result = opts.validate(value)
+  if (result !== true) {
+    throw new UserError(`invalid ${opts.key}: ${result}`)
+  }
 }
 
 /**
@@ -40,12 +56,19 @@ export interface PromptValueOptions {
  * In non-interactive mode (`nonInteractive: true`), this returns
  * `fallback` when one exists — matching "-n skips prompts, uses
  * defaults" — and throws a `UserError` only when neither `provided` nor
- * `fallback` exists.
+ * `fallback` exists. `validate` runs on the resolved value regardless of
+ * which path produced it.
  */
 export async function promptValue(opts: PromptValueOptions): Promise<string> {
-  if (opts.provided !== undefined) return opts.provided
+  if (opts.provided !== undefined) {
+    assertValid(opts, opts.provided)
+    return opts.provided
+  }
   if (opts.nonInteractive) {
-    if (opts.fallback !== undefined) return opts.fallback
+    if (opts.fallback !== undefined) {
+      assertValid(opts, opts.fallback)
+      return opts.fallback
+    }
     throw new UserError(`missing ${opts.key}: pass --var ${opts.key}=<value>`)
   }
   const base = {
@@ -53,6 +76,10 @@ export async function promptValue(opts: PromptValueOptions): Promise<string> {
     default: opts.fallback,
     validate: opts.validate,
   }
-  if (opts.secret) return await Secret.prompt(base)
-  return await Input.prompt(base)
+  const value = opts.secret ? await Secret.prompt(base) : await Input.prompt(base)
+  // cliffy's own prompt loop already re-asks on a failing `validate` —
+  // this is defense in depth for a non-TTY edge case where cliffy
+  // accepts a value it shouldn't (e.g. a piped default with no re-ask).
+  assertValid(opts, value)
+  return value
 }

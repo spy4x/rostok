@@ -27,3 +27,44 @@ Deno.test("promptValue: non-interactive with neither provided nor fallback throw
     "missing CONTACT_EMAIL: pass --var CONTACT_EMAIL=",
   )
 })
+
+// Security review — `validate` used to run only inside the interactive
+// cliffy prompt, so a --var value (or a non-interactive fallback) never
+// got checked at all. A caller-supplied SSH target or remote path is
+// just as untrusted as something typed interactively.
+
+const reject = () => "must be 'ok'"
+const isOk = (v: string) => v === "ok" ? true : reject()
+
+Deno.test("promptValue: validate runs against a provided (--var) value, not just interactive input", async () => {
+  await assertRejects(
+    () => promptValue({ key: "SSH_ADDRESS", label: "?", provided: "bad", validate: isOk }),
+    UserError,
+    "invalid SSH_ADDRESS: must be 'ok'",
+  )
+})
+
+Deno.test("promptValue: validate runs against the non-interactive fallback", async () => {
+  await assertRejects(
+    () =>
+      promptValue({
+        key: "SSH_ADDRESS",
+        label: "?",
+        fallback: "bad",
+        nonInteractive: true,
+        validate: isOk,
+      }),
+    UserError,
+    "invalid SSH_ADDRESS: must be 'ok'",
+  )
+})
+
+Deno.test("promptValue: a validate that passes doesn't affect the result", async () => {
+  const v = await promptValue({
+    key: "SSH_ADDRESS",
+    label: "?",
+    provided: "ok",
+    validate: isOk,
+  })
+  assertEquals(v, "ok")
+})
