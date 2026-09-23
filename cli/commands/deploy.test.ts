@@ -119,6 +119,31 @@ Deno.test("validateDeployArgs: error when requested stack not in config.json", a
   }
 })
 
+Deno.test("validateDeployArgs: rejects a path-traversal server name before reading anything", async () => {
+  const tmp = await fixture()
+  try {
+    // No servers/ dir at all — if validateDeployArgs read anything before
+    // validating the name, this would throw NotFound instead of returning
+    // a clean UserError-shaped result.
+    const result = await validateDeployArgs(tmp, "../escaped", undefined)
+    assertEquals(result.ok, false)
+    assertStringIncludes(result.error ?? "", "invalid server name")
+  } finally {
+    await Deno.remove(tmp, { recursive: true })
+  }
+})
+
+Deno.test("validateDeployArgs: rejects an absolute-path server name", async () => {
+  const tmp = await fixture()
+  try {
+    const result = await validateDeployArgs(tmp, "/etc/passwd", undefined)
+    assertEquals(result.ok, false)
+    assertStringIncludes(result.error ?? "", "invalid server name")
+  } finally {
+    await Deno.remove(tmp, { recursive: true })
+  }
+})
+
 Deno.test("validateDeployArgs: error when config.json is malformed JSON", async () => {
   const tmp = await fixture()
   try {
