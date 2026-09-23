@@ -94,6 +94,9 @@ Deno.test("server create with only required inputs writes a superset of DEPLOY_R
       assertEquals(env.find((e) => e.key === "SSH_USER")?.value, "root")
       // PATH_APPS defaults to DEFAULT_PATH_APPS.
       assertEquals(env.find((e) => e.key === "PATH_APPS")?.value, "/srv/apps")
+      // SERVER_NAME is the directory name — zond's compose.yml reads it
+      // directly, and nothing wrote it before this key existed.
+      assertEquals(env.find((e) => e.key === "SERVER_NAME")?.value, "home")
     }))
 })
 
