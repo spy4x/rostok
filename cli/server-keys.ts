@@ -113,15 +113,28 @@ function sshAddressError(value: string): UserError {
 const SSH_HOST_CHARS_PATTERN = /^[A-Za-z0-9_.:-]+$/
 
 /**
+ * Letters, digits, `.`, `_` and `-`, starting with a letter/digit/`_` —
+ * an ssh/system username. Excludes `:` (so `root:x@host` can't smuggle
+ * a second field into the user position), `$`/backtick/quotes (shell
+ * metacharacters) and whitespace/newlines.
+ */
+const SSH_USER_PATTERN = /^[A-Za-z0-9_][A-Za-z0-9._-]*$/
+
+/**
  * Parse `SSH_ADDRESS` into `{ user?, host, port? }`. Throws a UserError for
  * anything unsafe to hand to `ssh`/`rsync` as a target, or genuinely
  * ambiguous:
  *
- * - A leading `-` (`-oProxyCommand=…` would run a local command the
- *   moment ssh's own option parser read it — see runRemoteCommand's `--`
- *   for the second, independent guard).
+ * - A leading `-` on the whole value, or on the host part once a user
+ *   is split off (`root@-A`, `user@-oProxyCommand`) — either would be
+ *   read as an ssh option the moment ssh's own option parser saw it
+ *   (see runRemoteCommand's `--` for the second, independent guard).
+ * - A user containing anything outside SSH_USER_PATTERN — a space,
+ *   `$(...)`/backticks, a quote, or a `:` (`root:x@host`).
  * - An empty address, an empty user (`@host`) or an empty host (`user@`,
  *   `:2222`).
+ * - A newline anywhere — rejected by SSH_USER_PATTERN/SSH_HOST_CHARS_PATTERN,
+ *   neither of which includes it.
  * - A port outside 1–65535, or a non-numeric port.
  * - An unbracketed IPv6 address followed by what looks like a port
  *   (contains `::` and the text after the last `:` is all digits) — ssh
@@ -143,9 +156,10 @@ export function parseSshAddress(value: string): SshTarget {
   if (atIdx !== -1) {
     user = rest.slice(0, atIdx)
     rest = rest.slice(atIdx + 1)
-    if (user === "") throw sshAddressError(value)
+    if (user === "" || !SSH_USER_PATTERN.test(user)) throw sshAddressError(value)
   }
   if (rest === "") throw sshAddressError(value)
+  if (rest.startsWith("-")) throw sshAddressError(value)
 
   let host: string
   let portText: string | undefined

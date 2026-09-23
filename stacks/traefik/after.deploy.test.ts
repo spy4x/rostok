@@ -1,14 +1,21 @@
 // Tests for stacks/traefik/after.deploy.ts's pure helper.
 // (No shell interaction — that runs via the deploy script.)
+//
+// parseSshAddress itself is covered by the shared-table agreement test
+// in cli/server-keys.test.ts (proves this hook's inlined copy agrees
+// with cli's parser on every case); these tests are about
+// buildRestartCommand's own argv shape.
 
 import { assertEquals, assertThrows } from "@std/assert"
 import { buildRestartCommand } from "./after.deploy.ts"
 
-Deno.test("buildRestartCommand: valid address — ConnectTimeout then '--' precedes the address", () => {
+Deno.test("buildRestartCommand: valid address — ConnectTimeout, BatchMode then '--' precedes the address", () => {
   const args = buildRestartCommand("user@192.0.2.10", "hl-traefik")
   assertEquals(args, [
     "-o",
     "ConnectTimeout=10",
+    "-o",
+    "BatchMode=yes",
     "--",
     "user@192.0.2.10",
     "docker",
@@ -19,7 +26,17 @@ Deno.test("buildRestartCommand: valid address — ConnectTimeout then '--' prece
 
 Deno.test("buildRestartCommand: an ssh_config alias is accepted", () => {
   const args = buildRestartCommand("home", "hl-traefik")
-  assertEquals(args, ["-o", "ConnectTimeout=10", "--", "home", "docker", "restart", "hl-traefik"])
+  assertEquals(args, [
+    "-o",
+    "ConnectTimeout=10",
+    "-o",
+    "BatchMode=yes",
+    "--",
+    "home",
+    "docker",
+    "restart",
+    "hl-traefik",
+  ])
 })
 
 Deno.test("buildRestartCommand: carries the port from SSH_ADDRESS as -p", () => {
@@ -27,6 +44,8 @@ Deno.test("buildRestartCommand: carries the port from SSH_ADDRESS as -p", () => 
   assertEquals(args, [
     "-o",
     "ConnectTimeout=10",
+    "-o",
+    "BatchMode=yes",
     "-p",
     "2222",
     "--",
@@ -42,6 +61,8 @@ Deno.test("buildRestartCommand: a bare IPv6 address is accepted with no port", (
   assertEquals(args, [
     "-o",
     "ConnectTimeout=10",
+    "-o",
+    "BatchMode=yes",
     "--",
     "2001:db8::1",
     "docker",
@@ -55,6 +76,8 @@ Deno.test("buildRestartCommand: [IPv6]:port reaches ssh as a bare host + -p", ()
   assertEquals(args, [
     "-o",
     "ConnectTimeout=10",
+    "-o",
+    "BatchMode=yes",
     "-p",
     "2222",
     "--",
@@ -87,6 +110,14 @@ Deno.test("buildRestartCommand: rejects a value starting with '-'", () => {
 Deno.test("buildRestartCommand: rejects a bare '-flag'", () => {
   assertThrows(
     () => buildRestartCommand("--", "hl-traefik"),
+    Error,
+    "invalid SSH_ADDRESS",
+  )
+})
+
+Deno.test("buildRestartCommand: rejects a host starting with - even behind a user", () => {
+  assertThrows(
+    () => buildRestartCommand("user@-oProxyCommand", "hl-traefik"),
     Error,
     "invalid SSH_ADDRESS",
   )

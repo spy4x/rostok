@@ -15,14 +15,17 @@
 // which ssh's own argument parser would otherwise read as an option
 // (e.g. "-oProxyCommand=..." runs a local command).
 const SSH_HOST_CHARS_PATTERN = /^[A-Za-z0-9_.:-]+$/
+/** Same as cli/server-keys.ts's SSH_USER_PATTERN — see its comment. */
+const SSH_USER_PATTERN = /^[A-Za-z0-9_][A-Za-z0-9._-]*$/
 
-interface SshTarget {
+export interface SshTarget {
   user?: string
   host: string
   port?: number
 }
 
-function parseSshAddress(value: string): SshTarget {
+/** Same grammar as cli/server-keys.ts's parseSshAddress — kept in sync by a shared test table. Exported for tests. */
+export function parseSshAddress(value: string): SshTarget {
   if (value.startsWith("-")) throw new Error(`invalid SSH_ADDRESS "${value}"`)
 
   let rest = value
@@ -31,9 +34,12 @@ function parseSshAddress(value: string): SshTarget {
   if (atIdx !== -1) {
     user = rest.slice(0, atIdx)
     rest = rest.slice(atIdx + 1)
-    if (user === "") throw new Error(`invalid SSH_ADDRESS "${value}"`)
+    if (user === "" || !SSH_USER_PATTERN.test(user)) {
+      throw new Error(`invalid SSH_ADDRESS "${value}"`)
+    }
   }
   if (rest === "") throw new Error(`invalid SSH_ADDRESS "${value}"`)
+  if (rest.startsWith("-")) throw new Error(`invalid SSH_ADDRESS "${value}"`)
 
   let host: string
   let portText: string | undefined
@@ -88,15 +94,18 @@ function targetHost(target: SshTarget): string {
 }
 
 /**
- * Build the argv for `ssh -o ConnectTimeout=10 [-p <port>] -- <address>
- * docker restart <container>`. Throws when `sshAddress` doesn't parse.
- * "--" goes before the address as a second, independent guard: even a
- * value that somehow slipped past parsing can't be read as an ssh
- * option once "--" ends option parsing. Exported for tests — no I/O.
+ * Build the argv for `ssh -o ConnectTimeout=10 -o BatchMode=yes [-p
+ * <port>] -- <address> docker restart <container>`. Throws when
+ * `sshAddress` doesn't parse. `BatchMode=yes` is unconditional here —
+ * this hook's own `ssh` call is spawned with `stdin: "null"` below, so
+ * it can never answer an interactive prompt anyway. "--" goes before
+ * the address as a second, independent guard: even a value that
+ * somehow slipped past parsing can't be read as an ssh option once
+ * "--" ends option parsing. Exported for tests — no I/O.
  */
 export function buildRestartCommand(sshAddress: string, container: string): string[] {
   const target = parseSshAddress(sshAddress)
-  const args = ["-o", "ConnectTimeout=10"]
+  const args = ["-o", "ConnectTimeout=10", "-o", "BatchMode=yes"]
   if (target.port !== undefined) args.push("-p", String(target.port))
   args.push("--", targetHost(target), "docker", "restart", container)
   return args
@@ -119,6 +128,7 @@ if (import.meta.main) {
 
   const result = await new Deno.Command("ssh", {
     args,
+    stdin: "null",
     stdout: "inherit",
     stderr: "inherit",
   }).output()

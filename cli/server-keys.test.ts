@@ -15,6 +15,9 @@ import {
   validateServerName,
   validateSshAddress,
 } from "./server-keys.ts"
+import { SSH_ADDRESS_TEST_CASES } from "./deploy/ssh-address-test-cases.ts"
+import { parseSshAddress as parseSshAddressTraefik } from "../stacks/traefik/after.deploy.ts"
+import { parseSshAddress as parseSshAddressGatus } from "../stacks/gatus/after.deploy.ts"
 
 Deno.test("accepts ordinary server names", () => {
   for (const name of ["home", "cloud-1", "a", "0", "x".repeat(63)]) {
@@ -182,6 +185,41 @@ Deno.test("rejects a non-numeric or empty port", () => {
 Deno.test("rejects empty parts", () => {
   for (const v of ["@host", "user@", ":2222"]) {
     assertThrows(() => parseSshAddress(v), UserError, "invalid SSH_ADDRESS")
+  }
+})
+
+Deno.test("rejects an unsafe or malformed user", () => {
+  for (
+    const v of ["ro ot@host", "$(id)@host", "`id`@host", "us'er@host", "root:x@host"]
+  ) {
+    assertThrows(() => parseSshAddress(v), UserError, "invalid SSH_ADDRESS")
+  }
+})
+
+Deno.test("rejects a host starting with -, with or without a user", () => {
+  for (const v of ["root@-A", "user@-oProxyCommand"]) {
+    assertThrows(() => parseSshAddress(v), UserError, "invalid SSH_ADDRESS")
+  }
+})
+
+Deno.test("parseSshAddress and both hooks' inlined copies agree on every shared test case", () => {
+  for (const { input, expected } of SSH_ADDRESS_TEST_CASES) {
+    const parsers: [string, (v: string) => unknown][] = [
+      ["cli", parseSshAddress],
+      ["traefik hook", parseSshAddressTraefik],
+      ["gatus hook", parseSshAddressGatus],
+    ]
+    for (const [label, parse] of parsers) {
+      if (expected === undefined) {
+        assertThrows(() => parse(input), Error, undefined, `${label} should reject "${input}"`)
+      } else {
+        assertEquals(
+          parse(input),
+          { user: undefined, port: undefined, ...expected },
+          `${label} disagrees on "${input}"`,
+        )
+      }
+    }
   }
 })
 
