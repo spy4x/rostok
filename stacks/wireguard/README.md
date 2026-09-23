@@ -19,9 +19,9 @@ VPN for secure remote access to services.
 ## Configuration
 
 ```bash
-WG_HOST=your-server-public-ip      # Server public IP/domain
-WG_DEFAULT_DNS=1.1.1.1             # DNS for clients
-WG_ALLOWED_IPS=0.0.0.0/0           # Full tunnel (or specific ranges)
+WIREGUARD_DOMAIN=vpn.yourdomain.com          # Server public host/IP (→ SERVERURL)
+WIREGUARD_PEERS=phone,laptop                 # Peer names/count (→ PEERS)
+WIREGUARD_DNS=1.1.1.1,8.8.8.8,9.9.9.9         # DNS for clients (→ PEERDNS, has a default)
 ```
 
 ## Client Management

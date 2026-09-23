@@ -7,8 +7,7 @@
 # Required env (in server .env):
 #   SYNCTHING_API_KEY     — STGUIAPIKEY; same value persisted in
 #                           /var/syncthing/config/config.xml
-#   SYNCTHING_DOMAIN      — Traefik host rule
-#   DOMAIN                — base domain
+#   SYNCTHING_DOMAIN      — full host for the Traefik rule (e.g. sync.${DOMAIN})
 #
 # ── First deploy ────────────────────────────────────────────────────
 # Generate the API key yourself before the first deploy. Do NOT leave the

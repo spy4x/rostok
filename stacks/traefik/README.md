@@ -35,7 +35,8 @@ TRAEFIK_BASIC_AUTH_PASSWORD=...         # Dashboard auth (default: generated, 24
 `TRAEFIK_BASIC_AUTH_USER`/`TRAEFIK_BASIC_AUTH_PASSWORD` are the only
 credential keys read; a server whose `.env` still carries the pre-#210
 `BASIC_AUTH_USER`/`BASIC_AUTH_BASE64`/`BASIC_AUTH_PASSWORD` must rename
-them (see the repo's PR that dropped the fallback).
+them — see the "drop legacy env key names" PR for the full old → new
+key table.
 
 ## Access
 
@@ -44,12 +45,23 @@ them (see the repo's PR that dropped the fallback).
 
 ## Middleware
 
-Add [middlewares](https://doc.traefik.io/traefik/middlewares/http/overview/) for authentication, rate limiting, etc:
+Add [middlewares](https://doc.traefik.io/traefik/middlewares/http/overview/) for authentication, rate limiting, etc. For basic auth, point at the
+hook-generated `.htpasswd` (a docker label can't reference a bcrypt hash
+built at deploy time the way `dashboard-auth` in `dynamic/00-base.yml`
+does):
 
 ```yaml
 labels:
   - "traefik.http.routers.myservice.middlewares=auth"
-  - "traefik.http.middlewares.auth.basicauth.users=${TRAEFIK_BASIC_AUTH_USER}:${TRAEFIK_BASIC_AUTH_PASSWORD}"
+```
+
+```yaml
+# dynamic/*.yml (see dynamic/00-base.yml's dashboard-auth for the pattern)
+http:
+  middlewares:
+    auth:
+      basicAuth:
+        usersFile: /etc/traefik/dynamic/.htpasswd
 ```
 
 ## Resources
