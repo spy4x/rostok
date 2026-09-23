@@ -52,12 +52,37 @@ services:
       - "traefik.http.routers.hl-mig.entrypoints=websecure"
       - "traefik.http.routers.hl-mig.tls=true"
       - "traefik.http.routers.hl-mig.tls.certresolver=myresolver"
+      # Two routers share this one service, so each names it explicitly
+      # rather than relying on Traefik's single-service auto-match.
+      - "traefik.http.routers.hl-mig.service=hl-mig"
       # robots-deny — booking page isn't index-worthy.
-      # MIG_MIDDLEWARES replaces the whole chain. With the default, no site
-      # can show mig in an iframe: security-headers sends X-Frame-Options:
-      # DENY, here and again on the websecure entrypoint. To embed the
-      # scheduler in your own site, add a server-specific middleware that
-      # sends `frame-ancestors`, which browsers follow instead — see
-      # README.md § "Embedding in your own site". Deploy traefik before mig:
-      # a router naming a middleware that does not exist yet answers 404.
+      # MIG_MIDDLEWARES replaces the whole chain for every path outside
+      # /embed. With the default, no site can show mig in an iframe:
+      # security-headers sends X-Frame-Options: DENY, here and again on
+      # the websecure entrypoint. To embed the scheduler in your own
+      # site, set MIG_EMBED_MIDDLEWARES on the hl-mig-embed router below
+      # instead — see README.md § "Embedding in your own site". Deploy
+      # traefik before mig: a router naming a middleware that does not
+      # exist yet answers 404.
       - "traefik.http.routers.hl-mig.middlewares=${MIG_MIDDLEWARES:-security-headers@file,compression@file,robots-deny@file}"
+      # hl-mig-embed — same host, /embed only. Every step of the embed
+      # flow (mig#14) stays under /embed: /embed, /embed?date=…,
+      # /embed?date=…&slot=…, the booking POST to /embed/book,
+      # /embed/confirmed. Scoping the frame-ancestors policy to this
+      # router means the rest of the host (/, /confirmed, /health) keeps
+      # refusing to be framed. Traefik already prefers the longer rule on
+      # its own, but priority=1000 pins the order explicitly — well above
+      # any rule-length default — so it stays correct if either rule's
+      # length changes later.
+      # PathPrefix is a plain string prefix, so /embedded would match too;
+      # mig serves nothing there, so only a 404 page would carry the header.
+      - "traefik.http.routers.hl-mig-embed.rule=Host(`meet.${DOMAIN}`) && PathPrefix(`/embed`)"
+      - "traefik.http.routers.hl-mig-embed.priority=1000"
+      - "traefik.http.routers.hl-mig-embed.entrypoints=websecure"
+      - "traefik.http.routers.hl-mig-embed.tls=true"
+      - "traefik.http.routers.hl-mig-embed.tls.certresolver=myresolver"
+      - "traefik.http.routers.hl-mig-embed.service=hl-mig"
+      # MIG_EMBED_MIDDLEWARES falls back to whatever MIG_MIDDLEWARES
+      # resolves to (a server's whole-host override included), so a
+      # server that never set either variable sees no behavior change.
+      - "traefik.http.routers.hl-mig-embed.middlewares=${MIG_EMBED_MIDDLEWARES:-${MIG_MIDDLEWARES:-security-headers@file,compression@file,robots-deny@file}}"
