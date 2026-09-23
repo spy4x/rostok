@@ -9,10 +9,10 @@ services:
       - PUID=${PUID:-1000}
       - PGID=${PGID:-1000}
       - TZ=${TIMEZONE}
-      - SERVERURL=${VPN_SUBDOMAIN}.${DOMAIN}
+      - SERVERURL=${WIREGUARD_DOMAIN}
       - SERVERPORT=51820
-      - PEERS=${VPN_PEERS}
-      - PEERDNS=${VPN_DNS:-1.1.1.1,8.8.8.8,9.9.9.9}
+      - PEERS=${WIREGUARD_PEERS}
+      - PEERDNS=${WIREGUARD_DNS:-1.1.1.1,8.8.8.8,9.9.9.9}
       - LOG_CONFS=true
     volumes:
       - ${VOLUMES_PATH}/wireguard:/config:z

@@ -28,7 +28,7 @@ services:
       - "traefik.enable=true"
       - "traefik.docker.network=proxy"
       - "traefik.http.services.hl-omni-tools.loadbalancer.server.port=80"
-      - "traefik.http.routers.hl-omni-tools.rule=Host(`${OMNITOOLS_SUBDOMAIN}.${DOMAIN}`)"
+      - "traefik.http.routers.hl-omni-tools.rule=Host(`${OMNI_TOOLS_DOMAIN}`)"
       - "traefik.http.routers.hl-omni-tools.middlewares=robots-deny@file"
       - "traefik.http.routers.hl-omni-tools.entrypoints=websecure"
       - "traefik.http.routers.hl-omni-tools.tls=true"
