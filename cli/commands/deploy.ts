@@ -1,16 +1,21 @@
-// `rostok deploy <server> [stack]` — thin wrapper over `deno task deploy`.
+// `rostok deploy <server> [stack]` — deploys in-process (#203).
 //
-// Phase 7. The actual deploy logic lives in scripts/deploy/+main.ts (already
-// powers `deno task deploy`). This wrapper:
-//   1. Validates the server exists (servers/<server>/.env + config.json)
-//   2. If [stack] is given, validates it's listed in config.json
-//   3. Shells out to `deno task deploy <server> [stack]`
+// Runs the deploy logic (cli/deploy/run-deploy.ts) directly instead of
+// shelling out to `deno task deploy` — that task doesn't exist in a
+// project scaffolded by the published CLI (#203), and `scripts/` isn't
+// shipped in the JSR package anyway. `validateDeployArgs`:
+//   1. Validates the server name (#208 — before any file is read).
+//   2. Validates the server exists (servers/<server>/.env + config.json).
+//   3. If [stack] is given, validates it's listed in config.json.
 //
 // Pre-flight checks give the user a clear error message instead of the
-// raw deploy script's "SSH_ADDRESS must be set" confusion.
+// raw deploy failure's "SSH_ADDRESS must be set" confusion.
 
 import { Command } from "@cliffy/command"
 import { join } from "@std/path"
+import { serverDirFor } from "../server-keys.ts"
+import { UserError } from "../errors.ts"
+import { runDeploy } from "../deploy/run-deploy.ts"
 
 export interface DeployValidateResult {
   ok: boolean
@@ -28,7 +33,14 @@ export async function validateDeployArgs(
   server: string,
   stack: string | undefined,
 ): Promise<DeployValidateResult> {
-  const serverDir = join(cwd, "servers", server)
+  // #208: validate the server name before touching the filesystem.
+  let serverDir: string
+  try {
+    serverDir = serverDirFor(cwd, server)
+  } catch (err) {
+    if (err instanceof UserError) return { ok: false, error: err.message }
+    throw err
+  }
   const envPath = join(serverDir, ".env")
   const configPath = join(serverDir, "config.json")
 
@@ -89,10 +101,11 @@ export async function validateDeployArgs(
 /** `rostok deploy <server> [stack]` — the subcommand. */
 export const deployCommand = new Command()
   .description(
-    `Deploy a server (or one of its stacks) — thin wrapper over \`deno task deploy\`.
+    `Deploy a server (or one of its stacks) — rsyncs its files and runs
+docker compose on the remote host.
 
 Pre-flights servers/<server>/ + config.json so missing config produces a
-clear error before the underlying deploy script runs.
+clear error before the deploy runs.
 
 Examples:
 
@@ -107,15 +120,13 @@ Examples:
       console.error(`rostok deploy: ${result.error}`)
       Deno.exit(1)
     }
-    // Hand off to the existing deploy task. Pass stdout/stderr through
-    // so the user sees the actual deploy output live.
-    const args = ["task", "deploy", server, ...(stack ? [stack] : [])]
-    const cmd = new Deno.Command(Deno.execPath(), {
-      args,
-      cwd,
-      stdout: "inherit",
-      stderr: "inherit",
-    })
-    const out = await cmd.output()
-    Deno.exit(out.success ? 0 : (out.code ?? 1))
+    try {
+      await runDeploy({ cwd, server, stack })
+    } catch (err) {
+      if (err instanceof UserError) {
+        console.error(`rostok deploy: ${err.message}`)
+        Deno.exit(1)
+      }
+      throw err
+    }
   })

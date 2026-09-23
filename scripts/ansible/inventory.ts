@@ -4,6 +4,7 @@
 // Usage: ansible-playbook -i scripts/ansible/inventory.ts playbook.yml
 
 import { load } from "@std/dotenv"
+import { resolveSshUser } from "../../cli/deploy/env.ts"
 
 interface ServerConfig {
   server: string
@@ -78,7 +79,6 @@ async function main() {
       hosts: [] as string[],
       vars: {
         ansible_python_interpreter: "/usr/bin/python3",
-        homelab_user: "{{ lookup('env', 'HOMELAB_USER') }}",
       },
     },
   }
@@ -86,9 +86,15 @@ async function main() {
   for (const server of servers) {
     const env = await loadServerEnv(server)
     const _config = await loadServerConfig(server)
+    const envPath = `./servers/${server}/.env`
+
+    // SSH_USER ← HOMELAB_USER ← USER (read from the file, never the shell's
+    // own $USER — see cli/deploy/env.ts).
+    const resolvedUser = resolveSshUser(env, envPath)
+    if (resolvedUser.notice) console.error(resolvedUser.notice)
 
     // Parse SSH_ADDRESS for user@host format
-    let user = Deno.env.get("HOMELAB_USER") || "homelab"
+    let user = resolvedUser.value || "homelab"
     let host = env.SSH_ADDRESS || ""
     if (host.includes("@")) {
       const parts = host.split("@")
@@ -147,6 +153,10 @@ async function main() {
     inventory._meta.hostvars[server] = {
       ansible_host: host,
       ansible_user: user,
+      // Playbooks reference {{ homelab_user }} directly (predates
+      // ansible_user); keep it populated with the same resolved value so
+      // they don't see "'homelab_user' is undefined".
+      homelab_user: user,
       ansible_ssh_private_key_file:
         "{{ lookup('env', 'SSH_PRIVATE_KEY_FILE') | default('~/.ssh/id_ed25519', true) }}",
       ssh_port: "{{ lookup('env', 'SSH_PORT') }}",

@@ -19,10 +19,13 @@ Big companies are out of scope. The repo stays small and homelab-shaped.
 ## Install
 
 ```bash
-deno install -A -n rostok jsr:@rostok/cli
+deno install -g -A -n rostok jsr:@rostok/cli
 ```
 
-Requires [Deno](https://deno.land) ≥ 2.0. `age` is optional but
+Requires [Deno](https://deno.land) ≥ 2.0 — `-g`/`--global` is required
+on Deno 2 for a named executable install (`deno install -A -n rostok
+...` alone errors with "the following required arguments were not
+provided: --global"). `age` is optional but
 endorsed — the wizard runs to completion without it, and your `.env`
 files stay plaintext (gitignored). Install `age` to enable encrypted
 `.env.age` files you can safely commit (the wizard offers to set this
@@ -50,7 +53,7 @@ safe to commit.
 | `rostok server create [<name>]`              | Create a server (one of the wizard steps, standalone)                            |
 | `rostok stack add <name> --server=<name>`    | Add a stack to a server from the bundled catalog                                 |
 | `rostok stack list [--tree] [--format json]` | Browse the catalog. `--tree` indents under category, `--format json` for scripts |
-| `rostok deploy <server> [stack]`             | Deploy — thin wrapper over `deno task deploy`                                    |
+| `rostok deploy <server> [stack]`             | Deploy — rsyncs the server's files and runs `docker compose` over SSH            |
 | `rostok env encrypt`                         | Encrypt `.env` → `.env.age` (per-stack + root)                                   |
 | `rostok env decrypt`                         | Decrypt `.env.age` → `.env`                                                      |
 | `rostok env status`                          | Encryption posture + next steps                                                  |
