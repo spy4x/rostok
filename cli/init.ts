@@ -163,17 +163,50 @@ async function maybeOfferKeyGeneration(cwd: string): Promise<void> {
  * `.gitignore` for a rule that would cover it. Appends `.age/` and
  * prints a one-line notice when neither already covers it.
  *
+ * Security review: a gitignore rule does nothing for a key that's
+ * already tracked (staged or committed) — the secret is already in the
+ * repository, possibly its history, whether or not future `git add`
+ * would pick it up again. When that's the case, warn instead of
+ * silently making the project merely *look* fixed.
+ *
  * Exported so `rostok env setup` (cli/commands/env.ts) can run the same
  * check right before it writes a key, not just during init/wizard runs.
  */
-export async function ensureAgeIgnored(cwd: string): Promise<{ added: boolean }> {
-  if (await isAgeIgnored(cwd)) return { added: false }
+export async function ensureAgeIgnored(
+  cwd: string,
+): Promise<{ added: boolean; tracked?: boolean }> {
+  const tracked = await isAgeKeyTracked(cwd)
+  if (tracked) {
+    console.warn(
+      "rostok: .age/key.txt is already tracked by git — anyone with this repository (or its " +
+        "history) can already decrypt every .env.age. Run `git rm --cached .age/key.txt`, " +
+        "commit that removal, then delete .age/key.txt and run `rostok env setup` again to " +
+        "rotate the key. Adding a gitignore rule alone does not undo this.",
+    )
+  }
+  if (await isAgeIgnored(cwd)) return { added: false, tracked }
   await appendGitignoreRule(cwd, ".age/")
   console.info(
     "rostok: .age/key.txt wasn't gitignored — added `.age/` to .gitignore. " +
       "the encryption key must never be committed.",
   )
-  return { added: true }
+  return { added: true, tracked }
+}
+
+/** True when `.age/key.txt` is staged or committed in git — a gitignore rule can't undo that. */
+async function isAgeKeyTracked(cwd: string): Promise<boolean> {
+  if (!(await exists(join(cwd, ".git"))) || !(await isCommandOnPath("git"))) return false
+  try {
+    const cmd = new Deno.Command("git", {
+      args: ["ls-files", "--error-unmatch", ".age/key.txt"],
+      cwd,
+      stdout: "null",
+      stderr: "null",
+    })
+    return (await cmd.output()).success
+  } catch {
+    return false
+  }
 }
 
 async function isAgeIgnored(cwd: string): Promise<boolean> {

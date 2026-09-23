@@ -134,3 +134,65 @@ Deno.test("ensureAgeIgnored: appends the rule and reports added=true without git
     await Deno.remove(tmp, { recursive: true })
   }
 })
+
+// Security review — a gitignore rule can't undo a key that's already
+// tracked (staged or committed) by git; warn instead of silently
+// making the project merely look fixed.
+
+async function withGitCapture<T>(fn: () => Promise<T>): Promise<{ result: T; warnings: string[] }> {
+  const warnings: string[] = []
+  const originalWarn = console.warn
+  console.warn = (...args: unknown[]) => warnings.push(args.join(" "))
+  try {
+    const result = await fn()
+    return { result, warnings }
+  } finally {
+    console.warn = originalWarn
+  }
+}
+
+Deno.test("ensureAgeIgnored: warns when .age/key.txt is already tracked by git", async () => {
+  const tmp = await Deno.makeTempDir({ prefix: "rostok-init-age-" })
+  try {
+    await new Deno.Command("git", { args: ["init"], cwd: tmp, stdout: "null", stderr: "null" })
+      .output()
+    await Deno.mkdir(join(tmp, ".age"), { recursive: true })
+    await Deno.writeTextFile(join(tmp, ".age", "key.txt"), "AGE-SECRET-KEY-placeholder\n")
+    await new Deno.Command("git", {
+      args: ["add", ".age/key.txt"],
+      cwd: tmp,
+      stdout: "null",
+      stderr: "null",
+    }).output()
+
+    const { result, warnings } = await withGitCapture(() => ensureAgeIgnored(tmp))
+    assertEquals(result.tracked, true)
+    assertEquals(
+      warnings.some((w) => w.includes("git rm --cached")),
+      true,
+      warnings.join("\n"),
+    )
+    // Still backfills the rule so a future `git add .` can't re-track it.
+    const gitignore = await Deno.readTextFile(join(tmp, ".gitignore"))
+    assertExists(gitignore.match(/^\.age\/$/m))
+  } finally {
+    await Deno.remove(tmp, { recursive: true })
+  }
+})
+
+Deno.test("ensureAgeIgnored: no tracked-key warning for an untracked key", async () => {
+  const tmp = await Deno.makeTempDir({ prefix: "rostok-init-age-" })
+  try {
+    await new Deno.Command("git", { args: ["init"], cwd: tmp, stdout: "null", stderr: "null" })
+      .output()
+    await Deno.mkdir(join(tmp, ".age"), { recursive: true })
+    await Deno.writeTextFile(join(tmp, ".age", "key.txt"), "AGE-SECRET-KEY-placeholder\n")
+    // Note: never `git add`-ed — present on disk, not staged.
+
+    const { result, warnings } = await withGitCapture(() => ensureAgeIgnored(tmp))
+    assertEquals(result.tracked, false)
+    assertEquals(warnings.length, 0, warnings.join("\n"))
+  } finally {
+    await Deno.remove(tmp, { recursive: true })
+  }
+})
