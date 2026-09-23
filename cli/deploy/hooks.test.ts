@@ -1,11 +1,15 @@
-import { assertEquals, assertRejects, assertStringIncludes } from "@std/assert"
+import { assert, assertEquals, assertRejects, assertStringIncludes } from "@std/assert"
 import { join, toFileUrl } from "@std/path"
 import { UserError } from "../errors.ts"
-import { buildHookEnv, type HookContext, runHook } from "./hooks.ts"
+import { buildHookEnv, type HookContext, isDeniedEnvKey, runHook } from "./hooks.ts"
 
+// `test-stack`'s own prefix (stackKeyPrefix) is TEST_STACK_ — DOMAIN is
+// a real SERVER_KEYS entry. Both are allowed through by the new #217
+// allowlist; ROOT_KEY/SERVER_KEY (arbitrary names) are not, so real
+// keys stand in for them here.
 const BASE_CTX: HookContext = {
-  rootEnv: { ROOT_KEY: "root-value" },
-  serverEnv: { SERVER_KEY: "server-value" },
+  rootEnv: { DOMAIN: "example.com" },
+  serverEnv: { TEST_STACK_TOKEN: "server-value" },
   envPath: "servers/test/.env",
   rootEnvPath: ".env.root",
   sshAddress: "root@example.com",
@@ -13,6 +17,7 @@ const BASE_CTX: HookContext = {
   pathApps: "/srv/apps",
   deployAs: "test-stack",
 }
+const STACK_NAME = "test-stack"
 
 async function withDirs(fn: (stagingDir: string, hookDir: string) => Promise<void>) {
   const stagingDir = await Deno.makeTempDir({ prefix: "rostok-hook-staging-" })
@@ -31,9 +36,9 @@ async function withDirs(fn: (stagingDir: string, hookDir: string) => Promise<voi
  * Option B means the deploy process's own real value for a name always
  * wins — correctly — so a test that leaves an ambient SSH_ASKPASS (a
  * desktop dev box often has one, e.g. ksshaskpass) or BASH_ENV in place
- * can't tell whether the deny-list backstop actually fired: Option B
+ * can't tell whether the allowlist/deny-list actually fired: Option B
  * alone would already keep the real value safe either way. Clearing
- * the ambient value first makes the test exercise the backstop
+ * the ambient value first makes the test exercise the drop logic
  * specifically, deterministically, on any machine.
  */
 async function withoutAmbientEnv(keys: string[], fn: () => Promise<void>): Promise<void> {
@@ -49,16 +54,23 @@ async function withoutAmbientEnv(keys: string[], fn: () => Promise<void>): Promi
   }
 }
 
+/** True if a real `git` binary is on PATH — the GIT_CONFIG_* test below needs one. */
+const gitAvailable = await new Deno.Command("git", {
+  args: ["--version"],
+  stdout: "null",
+  stderr: "null",
+}).output().then((o) => o.success).catch(() => false)
+
 Deno.test("runHook: no-op when source is undefined", async () => {
   await withDirs(async (stagingDir) => {
     // Should not throw and should not touch the staging dir.
-    await runHook("before", "test-stack", undefined, stagingDir, BASE_CTX)
+    await runHook("before", STACK_NAME, undefined, stagingDir, BASE_CTX)
     const entries = [...Deno.readDirSync(stagingDir)]
     assertEquals(entries.length, 0)
   })
 })
 
-Deno.test("runHook: runs from cwd=staging with .env.root/.env keys + contract keys in env", async () => {
+Deno.test("runHook: runs from cwd=staging with allowed .env.root/.env keys + contract keys in env", async () => {
   await withDirs(async (stagingDir, hookDir) => {
     const hookPath = join(hookDir, "before.deploy.ts")
     await Deno.writeTextFile(
@@ -66,16 +78,23 @@ Deno.test("runHook: runs from cwd=staging with .env.root/.env keys + contract ke
       `await Deno.writeTextFile("hook-ran.json", JSON.stringify({ env: Deno.env.toObject() }))\n`,
     )
 
-    await runHook("before", "test-stack", toFileUrl(hookPath).href, stagingDir, BASE_CTX)
+    await runHook("before", STACK_NAME, toFileUrl(hookPath).href, stagingDir, BASE_CTX)
 
     const written = JSON.parse(await Deno.readTextFile(join(stagingDir, "hook-ran.json")))
-    assertEquals(written.env.ROOT_KEY, "root-value")
-    assertEquals(written.env.SERVER_KEY, "server-value")
+    assertEquals(written.env.DOMAIN, "example.com")
+    assertEquals(written.env.TEST_STACK_TOKEN, "server-value")
     assertEquals(written.env.SSH_ADDRESS, "root@example.com")
     assertEquals(written.env.SSH_USER, "deploy")
     assertEquals(written.env.PATH_APPS, "/srv/apps")
     assertEquals(written.env.DEPLOY_AS, "test-stack")
   })
+})
+
+Deno.test("isDeniedEnvKey: covers LD_/NPM_CONFIG_/DENO_/NODE_ (#7 — restoring coverage for the deny-list prefixes)", () => {
+  assert(isDeniedEnvKey("LD_PRELOAD"))
+  assert(isDeniedEnvKey("NPM_CONFIG_REGISTRY"))
+  assert(isDeniedEnvKey("DENO_DIR"))
+  assert(isDeniedEnvKey("NODE_OPTIONS"))
 })
 
 Deno.test("buildHookEnv: the process's own PATH/HOME/DENO_*/etc. always win, silently — no warning needed", () => {
@@ -97,19 +116,73 @@ Deno.test("buildHookEnv: the process's own PATH/HOME/DENO_*/etc. always win, sil
       DENO_DIR: "/tmp/evil-deno-cache",
     },
   }
-  const { env, warnings } = buildHookEnv(ctx, processEnv)
+  const { env, warnings } = buildHookEnv(ctx, STACK_NAME, processEnv)
   assertEquals(env.PATH, "/real/bin")
   assertEquals(env.HOME, "/real/home")
   assertEquals(env.DENO_DIR, "/real/deno-cache")
   assertEquals(warnings, [])
 })
 
-Deno.test("buildHookEnv: a name the process never set is dropped, with its own warning naming the file (#217)", () => {
-  // The gap #217 found: a deny-list of names ("PATH, HOME, LD_*, ...")
-  // missed BASH_ENV/SSH_ASKPASS*/GIT_SSH_COMMAND/RSYNC_RSH/PERL5*/
-  // PYTHONPATH — none of which the deploy process normally sets, so
-  // "the process's own value wins" alone (Option B) wouldn't drop
-  // them. Each still needs an explicit backstop.
+Deno.test("buildHookEnv: an unprefixed, unknown .env key is dropped, with a warning naming the file", () => {
+  // The new model (#217, second pass): a key from .env/.env.root only
+  // reaches the hook if it's a server key or carries the hook's own
+  // stack's prefix. RANDOM_UNKNOWN_KEY is neither.
+  const ctx: HookContext = {
+    ...BASE_CTX,
+    serverEnv: { ...BASE_CTX.serverEnv, RANDOM_UNKNOWN_KEY: "whatever" },
+  }
+  const { env, warnings } = buildHookEnv(ctx, STACK_NAME, {})
+  assertEquals("RANDOM_UNKNOWN_KEY" in env, false)
+  assertEquals(warnings.length, 1)
+  assertStringIncludes(warnings[0], "RANDOM_UNKNOWN_KEY")
+  assertStringIncludes(warnings[0], ctx.envPath)
+  assertStringIncludes(warnings[0], "not a server key")
+})
+
+Deno.test("buildHookEnv: a key carrying the stack's own prefix is let through — the prefix half of the allowlist", () => {
+  // Isolates the "carries the stack's own prefix" branch from
+  // "is a server key": TEST_STACK_TOKEN is neither a SERVER_KEYS entry
+  // nor a PATH_* key, so this only passes if the prefix check runs.
+  const { env, warnings } = buildHookEnv(BASE_CTX, STACK_NAME, {})
+  assertEquals(env.TEST_STACK_TOKEN, "server-value")
+  assertEquals(warnings, [])
+})
+
+Deno.test("buildHookEnv: a key that's neither a plain shell name nor free of stray characters is dropped", () => {
+  // A key carrying the stack's own prefix but with an unsafe character
+  // in it (here a `;`, as a stand-in for anything that isn't a plain
+  // identifier) must still be dropped — the allowlist isn't just a
+  // prefix match, the whole key has to be a plain shell name.
+  const ctx: HookContext = {
+    ...BASE_CTX,
+    serverEnv: { ...BASE_CTX.serverEnv, "TEST_STACK_FOO;evil": "value" },
+  }
+  const { env, warnings } = buildHookEnv(ctx, STACK_NAME, {})
+  assertEquals("TEST_STACK_FOO;evil" in env, false)
+  assertEquals(warnings.some((w) => w.includes("TEST_STACK_FOO;evil")), true)
+})
+
+Deno.test("buildHookEnv: the deny-list backstop drops a key even if it matches the stack's own prefix", () => {
+  // A stack literally named "ld" has stackKeyPrefix "LD_" — without the
+  // backstop running BEFORE the allowlist check, LD_PRELOAD would pass
+  // as "carries the stack's own prefix".
+  const ctx: HookContext = {
+    ...BASE_CTX,
+    serverEnv: { LD_PRELOAD: "/tmp/evil.so" },
+  }
+  const { env, warnings } = buildHookEnv(ctx, "ld", {})
+  assertEquals("LD_PRELOAD" in env, false)
+  assertEquals(warnings.length, 1)
+  assertStringIncludes(warnings[0], "LD_PRELOAD")
+  assertStringIncludes(warnings[0], "always denied")
+})
+
+Deno.test("buildHookEnv: names/prefixes .env can't run code via, each dropped with its own warning naming the file (#217)", () => {
+  // The gap the first pass of #217 found: a deny-list of names
+  // ("PATH, HOME, LD_*, ...") missed BASH_ENV/SSH_ASKPASS*/
+  // GIT_SSH_COMMAND/RSYNC_RSH/PERL5*/PYTHONPATH — none of which the
+  // deploy process normally sets, so "the process's own value wins"
+  // alone (Option B) wouldn't drop them.
   const ctx: HookContext = {
     ...BASE_CTX,
     rootEnv: { ...BASE_CTX.rootEnv, GIT_SSH_COMMAND: "/tmp/evil-git-ssh" },
@@ -121,7 +194,7 @@ Deno.test("buildHookEnv: a name the process never set is dropped, with its own w
     },
   }
   // processEnv deliberately has none of these set.
-  const { env, warnings } = buildHookEnv(ctx, {})
+  const { env, warnings } = buildHookEnv(ctx, STACK_NAME, {})
 
   assertEquals("BASH_ENV" in env, false)
   assertEquals("SSH_ASKPASS" in env, false)
@@ -162,7 +235,7 @@ Deno.test("runHook: BASH_ENV from .env can't run code when the hook itself start
       const originalConsoleError = console.error
       console.error = () => {}
       try {
-        await runHook("before", "test-stack", toFileUrl(hookPath).href, stagingDir, ctx)
+        await runHook("before", STACK_NAME, toFileUrl(hookPath).href, stagingDir, ctx)
       } finally {
         console.error = originalConsoleError
       }
@@ -171,6 +244,149 @@ Deno.test("runHook: BASH_ENV from .env can't run code when the hook itself start
       assertEquals(markerExists, false, "BASH_ENV from .env ran inside the hook's own bash call")
     })
   })
+})
+
+Deno.test(
+  "runHook: BASH_FUNC_true%%=touch marker from .env can't shadow a builtin when the hook starts bash (#217)",
+  async () => {
+    // Shellshock-era mechanism: bash imports a variable named
+    // `BASH_FUNC_<name>%%` from its environment as a function
+    // definition for <name>, shadowing any builtin/command of that
+    // name. A hook that runs `bash -c "true"` would silently run the
+    // attacker's function body instead of the real `true` builtin.
+    await withoutAmbientEnv(["BASH_FUNC_true%%"], async () => {
+      await withDirs(async (stagingDir, hookDir) => {
+        const markerPath = join(hookDir, "marker")
+
+        const hookPath = join(hookDir, "before.deploy.ts")
+        await Deno.writeTextFile(
+          hookPath,
+          `const result = await new Deno.Command("bash", { args: ["-c", "true"] }).output()\n` +
+            `if (!result.success) Deno.exit(1)\n`,
+        )
+
+        const ctx: HookContext = {
+          ...BASE_CTX,
+          serverEnv: {
+            ...BASE_CTX.serverEnv,
+            "BASH_FUNC_true%%": `() { touch '${markerPath}'\n}`,
+          },
+        }
+        const originalConsoleError = console.error
+        console.error = () => {}
+        try {
+          await runHook("before", STACK_NAME, toFileUrl(hookPath).href, stagingDir, ctx)
+        } finally {
+          console.error = originalConsoleError
+        }
+
+        const markerExists = await Deno.stat(markerPath).then(() => true).catch(() => false)
+        assertEquals(
+          markerExists,
+          false,
+          "BASH_FUNC_true%% from .env shadowed `true` inside the hook's own bash call",
+        )
+      })
+    })
+  },
+)
+
+Deno.test(
+  "runHook: SHELLOPTS=xtrace + PS4='$(touch marker)' from .env can't run code when the hook starts bash (#217)",
+  async () => {
+    // With `set -x` (xtrace) active, bash evaluates PS4 — including a
+    // command substitution inside it — before printing each traced
+    // line. SHELLOPTS=xtrace turns tracing on for every bash invocation
+    // without an explicit `set -x` in the script itself.
+    await withoutAmbientEnv(["SHELLOPTS", "PS4"], async () => {
+      await withDirs(async (stagingDir, hookDir) => {
+        const markerPath = join(hookDir, "marker")
+
+        const hookPath = join(hookDir, "before.deploy.ts")
+        await Deno.writeTextFile(
+          hookPath,
+          `const result = await new Deno.Command("bash", { args: ["-c", "echo hi"] }).output()\n` +
+            `if (!result.success) Deno.exit(1)\n`,
+        )
+
+        const ctx: HookContext = {
+          ...BASE_CTX,
+          serverEnv: {
+            ...BASE_CTX.serverEnv,
+            SHELLOPTS: "xtrace",
+            PS4: `$(touch '${markerPath}')`,
+          },
+        }
+        const originalConsoleError = console.error
+        console.error = () => {}
+        try {
+          await runHook("before", STACK_NAME, toFileUrl(hookPath).href, stagingDir, ctx)
+        } finally {
+          console.error = originalConsoleError
+        }
+
+        const markerExists = await Deno.stat(markerPath).then(() => true).catch(() => false)
+        assertEquals(
+          markerExists,
+          false,
+          "SHELLOPTS/PS4 from .env ran inside the hook's own bash call",
+        )
+      })
+    })
+  },
+)
+
+Deno.test({
+  name:
+    "runHook: GIT_CONFIG_COUNT/KEY_0/VALUE_0 from .env can't run code via git's core.sshCommand (#217)",
+  ignore: !gitAvailable,
+  fn: async () => {
+    // Git's environment-based config override (GIT_CONFIG_COUNT +
+    // GIT_CONFIG_KEY_<n>/VALUE_<n>, git >= 2.31) can set core.sshCommand,
+    // which git runs IN PLACE OF ssh for any ssh:// transport — no
+    // network access needed to prove it fires, since git substitutes it
+    // before ever trying to resolve the host.
+    await withoutAmbientEnv(
+      ["GIT_CONFIG_COUNT", "GIT_CONFIG_KEY_0", "GIT_CONFIG_VALUE_0"],
+      async () => {
+        await withDirs(async (stagingDir, hookDir) => {
+          const markerPath = join(hookDir, "marker")
+
+          const hookPath = join(hookDir, "before.deploy.ts")
+          await Deno.writeTextFile(
+            hookPath,
+            `await new Deno.Command("git", { ` +
+              `args: ["ls-remote", "ssh://example.invalid/x.git"], ` +
+              `stdout: "null", stderr: "null" }).output()\n`,
+          )
+
+          const ctx: HookContext = {
+            ...BASE_CTX,
+            serverEnv: {
+              ...BASE_CTX.serverEnv,
+              GIT_CONFIG_COUNT: "1",
+              GIT_CONFIG_KEY_0: "core.sshCommand",
+              GIT_CONFIG_VALUE_0: `touch ${markerPath}`,
+            },
+          }
+          const originalConsoleError = console.error
+          console.error = () => {}
+          try {
+            await runHook("before", STACK_NAME, toFileUrl(hookPath).href, stagingDir, ctx)
+          } finally {
+            console.error = originalConsoleError
+          }
+
+          const markerExists = await Deno.stat(markerPath).then(() => true).catch(() => false)
+          assertEquals(
+            markerExists,
+            false,
+            "GIT_CONFIG_* from .env set core.sshCommand inside the hook's own git call",
+          )
+        })
+      },
+    )
+  },
 })
 
 Deno.test(
@@ -221,7 +437,7 @@ Deno.test(
         const originalConsoleError = console.error
         console.error = () => {}
         try {
-          await runHook("before", "test-stack", toFileUrl(hookPath).href, stagingDir, ctx)
+          await runHook("before", STACK_NAME, toFileUrl(hookPath).href, stagingDir, ctx)
         } finally {
           console.error = originalConsoleError
           Deno.env.set("PATH", previousPath)
@@ -240,7 +456,7 @@ Deno.test("runHook: throws UserError naming the stack when the hook exits non-ze
     await Deno.writeTextFile(hookPath, `Deno.exit(1)\n`)
 
     const err = await assertRejects(
-      () => runHook("before", "test-stack", toFileUrl(hookPath).href, stagingDir, BASE_CTX),
+      () => runHook("before", STACK_NAME, toFileUrl(hookPath).href, stagingDir, BASE_CTX),
       UserError,
     )
     assertEquals(err.message.includes("test-stack"), true)

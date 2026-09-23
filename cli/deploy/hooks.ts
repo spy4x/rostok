@@ -5,9 +5,10 @@
 //   Deno scripts. Deploy runs them with `deno run -A` FROM THEIR SOURCE
 //   LOCATION — the file in a local `stacks/` folder, or the URL of the
 //   file inside the installed package — never from a staging copy, with
-//   cwd = the local staging directory. The hook receives every key of
-//   `.env.root` and the server `.env` (parsed by rostok, no `$`
-//   expansion), plus SSH_ADDRESS, SSH_USER, PATH_APPS and DEPLOY_AS.
+//   cwd = the local staging directory. The hook receives every KEY IT'S
+//   ENTITLED TO from `.env.root` and the server `.env` (parsed by
+//   rostok, no `$` expansion) — see the allowlist below — plus
+//   SSH_ADDRESS, SSH_USER, PATH_APPS and DEPLOY_AS.
 //
 // `-A` means a hook is FULLY TRUSTED CODE: read/write/net/run/env, no
 // sandbox. rostok runs it exactly the way it would run any other script
@@ -26,24 +27,33 @@
 // do: steer which binary or script a hook's own tool invocations run.
 // A shared `.env` with `PATH=/tmp/evil`, `BASH_ENV=configs/x.sh` or
 // `SSH_ASKPASS=configs/x` (plus `SSH_ASKPASS_REQUIRE=force`) would
-// silently redirect or hijack every subprocess a hook spawns —
-// starting `bash` runs whatever BASH_ENV names on every invocation;
-// SSH_ASKPASS_REQUIRE=force runs SSH_ASKPASS even without a TTY.
+// silently redirect or hijack every subprocess a hook spawns.
 //
-// A deny-list of names ("PATH, HOME, LD_*, DENO_*, ...") was tried
-// first and missed exactly this class — nobody had thought of
-// BASH_ENV/SSH_ASKPASS/GIT_SSH_COMMAND/RSYNC_RSH/PERL5OPT/PYTHONPATH
-// yet. The fix (#217, option B from the issue): the deploying
-// process's OWN environment wins on every name it already has —
-// `{ ...fromEnvFiles, ...Deno.env.toObject(), ...contractKeys }`. A
-// hook's own subprocess resolution then can't be redirected by any
-// name the deploy process's real environment already controls, known
-// or not. DENIED_ENV_KEY_NAMES below is only a backstop for names that
-// are USUALLY UNSET in the parent (so the "process wins" rule alone
-// wouldn't drop them) but still control what a hook's subprocess runs
-// or where it loads code from.
+// First fix: a deny-list of names ("PATH, HOME, LD_*, DENO_*, ...").
+// It missed BASH_ENV/SSH_ASKPASS/GIT_SSH_COMMAND/RSYNC_RSH/PERL5OPT/
+// PYTHONPATH — a list only ever covers the names someone thought of.
+//
+// Second fix (this one): flip a `.env`/`.env.root` key from
+// deny-listed to ALLOW-LISTED. A key from those files reaches the hook
+// only if it's a plain shell name AND it's a server key
+// (`isServerKey()`, cli/server-keys.ts) or carries the hook's own
+// stack's prefix (`stackKeyPrefix()`) — exactly the set #224 already
+// requires every catalog hook/compose file to read from. Everything
+// else from `.env`/`.env.root` is dropped, with a warning naming the
+// file (never the value).
+//
+// The deploying process's OWN real environment still wins on every
+// name it already has (Option B from the issue) — a hook's own tool
+// calls still resolve real binaries/caches through the process's real
+// PATH/HOME/DENO_DIR/etc., never a `.env`-supplied value.
+// DENIED_ENV_KEY_NAMES/PREFIXES is now a backstop that runs BEFORE the
+// allowlist check: a stack whose own prefix happens to collide with a
+// dangerous name (a stack literally named "ld" → prefix "LD_" → would
+// otherwise allow "LD_PRELOAD") still gets it dropped.
 
 import { UserError } from "../errors.ts"
+import { isServerKey, stackKeyPrefix } from "../server-keys.ts"
+import { trackChild } from "./process-registry.ts"
 
 export interface HookContext {
   rootEnv: Record<string, string>
@@ -59,14 +69,19 @@ export interface HookContext {
 }
 
 /**
- * Names usually unset in the deploy process's own environment, so
- * `{ ...fromEnvFiles, ...Deno.env.toObject() }` alone wouldn't drop
- * them if `.env`/`.env.root` set one. Each controls what a hook's own
- * subprocess runs (SSH_ASKPASS*, BASH_ENV, ENV, GIT_SSH*, RSYNC_RSH,
- * PERL5*, PYTHONPATH*, NODE_OPTIONS) or where it loads code/binaries
- * from (LD_*, DYLD_*, DENO_*, NPM_CONFIG_*) — plus PATH/HOME/USER/SHELL/
- * SSH_AUTH_SOCK/TMPDIR/NODE_* from the original deny-list, kept as a
- * second layer even though the deploy process always has those set.
+ * Names/prefixes always dropped from `.env`/`.env.root` before the
+ * allowlist check even runs — a backstop for the case where a stack's
+ * own prefix would otherwise have allowed one of these through (see
+ * the module comment). Each controls what a hook's own subprocess runs
+ * (SSH_ASKPASS*, BASH_ENV, ENV, GIT_SSH*, GIT_ASKPASS,
+ * GIT_PROXY_COMMAND, GIT_CONFIG_*, GIT_EXEC_PATH, RSYNC_RSH,
+ * RSYNC_CONNECT_PROG, PERL5*, PYTHON*, NODE_OPTIONS, SHELLOPTS,
+ * BASHOPTS, PS4, PROMPT_COMMAND, IFS, BASH_FUNC_*) or where it loads
+ * code/binaries/config from (LD_*, DYLD_*, DENO_*, NPM_CONFIG_*,
+ * DOCKER_HOST, DOCKER_CONFIG, XDG_CONFIG_HOME) — plus
+ * PATH/HOME/USER/SHELL/SSH_AUTH_SOCK/TMPDIR/NODE_* from the original
+ * deny-list, kept as a second layer even though the deploy process
+ * always has those set.
  */
 const DENIED_ENV_KEY_NAMES = new Set([
   "PATH",
@@ -79,48 +94,95 @@ const DENIED_ENV_KEY_NAMES = new Set([
   "SSH_ASKPASS_REQUIRE",
   "BASH_ENV",
   "ENV",
-  "GIT_SSH_COMMAND",
-  "GIT_SSH",
+  "GIT_ASKPASS",
+  "GIT_PROXY_COMMAND",
+  "GIT_EXEC_PATH",
   "RSYNC_RSH",
-  "PERL5OPT",
-  "PERL5LIB",
-  "PYTHONPATH",
-  "PYTHONSTARTUP",
+  "RSYNC_CONNECT_PROG",
   "NODE_OPTIONS",
+  "SHELLOPTS",
+  "BASHOPTS",
+  "PS4",
+  "PROMPT_COMMAND",
+  "IFS",
+  "DOCKER_HOST",
+  "DOCKER_CONFIG",
+  "XDG_CONFIG_HOME",
 ])
-const DENIED_ENV_KEY_PREFIXES = ["LD_", "DYLD_", "DENO_", "NPM_CONFIG_", "NODE_"]
+const DENIED_ENV_KEY_PREFIXES = [
+  "LD_",
+  "DYLD_",
+  "DENO_",
+  "NPM_CONFIG_",
+  "NODE_",
+  "PYTHON",
+  "PERL5",
+  "GIT_SSH",
+  "GIT_CONFIG_",
+  "BASH_FUNC_",
+]
 
-function isDeniedEnvKey(key: string): boolean {
+/** True for a name/prefix always dropped from `.env`/`.env.root`, checked before the allowlist. Exported for tests. */
+export function isDeniedEnvKey(key: string): boolean {
   return DENIED_ENV_KEY_NAMES.has(key) || DENIED_ENV_KEY_PREFIXES.some((p) => key.startsWith(p))
+}
+
+/** A plain shell identifier — nothing a shell, `exec.getenv`, etc. would read specially in the name itself. */
+const PLAIN_ENV_KEY_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/
+
+/**
+ * True when `key` may reach a hook from `.env`/`.env.root`: a plain
+ * shell name that's either a server key or carries `stackName`'s own
+ * prefix. #224 already requires every catalog compose file/hook to
+ * read only names in this set, so nothing legitimate is cut off.
+ */
+function isAllowedFileEnvKey(key: string, stackName: string): boolean {
+  if (!PLAIN_ENV_KEY_PATTERN.test(key)) return false
+  return isServerKey(key) || key.startsWith(stackKeyPrefix(stackName))
 }
 
 export interface HookEnvResult {
   env: Record<string, string>
-  /** One line per key the process's own environment kept, naming the file it would have come from. */
+  /** One line per key dropped from `.env`/`.env.root`, naming the file it came from. */
   warnings: string[]
 }
 
 /**
- * Build the environment a hook subprocess runs with: `.env.root` and the
- * server `.env` merged (server wins), overlaid by the deploy process's
- * own real environment (so any name it already controls wins outright —
- * #217 option B), then the contract keys the hook is promised
- * (SSH_ADDRESS/SSH_USER/PATH_APPS/DEPLOY_AS), then a final pass that
- * strips DENIED_ENV_KEY_NAMES/PREFIXES still holding a `.env`/`.env.root`
- * value (i.e. the process itself never set them) — see the module
- * comment for why that backstop exists.
+ * Build the environment a hook subprocess runs with.
+ *
+ * Starts from the deploying process's own real environment (so a
+ * hook's tool calls always resolve real binaries/caches — Option B).
+ * Then, for each `.env.root`/server-`.env` key not already covered by
+ * that real environment: drop it (with a warning naming the file) if
+ * it's on the DENIED_ENV_KEY_NAMES/PREFIXES backstop, drop it (same
+ * warning) if it isn't a plain-shell-named server key or `stackName`'s
+ * own prefix, otherwise let it through. Finally the contract keys
+ * (SSH_ADDRESS/SSH_USER/PATH_APPS/DEPLOY_AS) are set unconditionally.
  */
-export function buildHookEnv(ctx: HookContext, processEnv: Record<string, string>): HookEnvResult {
+export function buildHookEnv(
+  ctx: HookContext,
+  stackName: string,
+  processEnv: Record<string, string>,
+): HookEnvResult {
   const fromFiles = { ...ctx.rootEnv, ...ctx.serverEnv }
-  const resolved: Record<string, string> = { ...fromFiles, ...processEnv }
-
+  const resolved: Record<string, string> = { ...processEnv }
   const warnings: string[] = []
-  for (const key of Object.keys(fromFiles)) {
-    if (!isDeniedEnvKey(key)) continue
-    if (key in processEnv) continue // the process's own value already won above — nothing to drop
-    delete resolved[key]
+
+  for (const [key, value] of Object.entries(fromFiles)) {
+    if (key in processEnv) continue // the process's own real value already wins — nothing to drop or warn about
+
     const source = key in ctx.serverEnv ? ctx.envPath : ctx.rootEnvPath
-    warnings.push(`Warning: ignoring ${key} from ${source} — kept the deploy process's own value.`)
+    if (isDeniedEnvKey(key)) {
+      warnings.push(`Warning: dropping ${key} from ${source} — always denied.`)
+      continue
+    }
+    if (!isAllowedFileEnvKey(key, stackName)) {
+      warnings.push(
+        `Warning: dropping ${key} from ${source} — not a server key or stack '${stackName}''s own prefix.`,
+      )
+      continue
+    }
+    resolved[key] = value
   }
 
   resolved.SSH_ADDRESS = ctx.sshAddress
@@ -145,7 +207,7 @@ export async function runHook(
 ): Promise<void> {
   if (!source) return
 
-  const { env, warnings } = buildHookEnv(ctx, Deno.env.toObject())
+  const { env, warnings } = buildHookEnv(ctx, stackName, Deno.env.toObject())
   for (const warning of warnings) {
     console.error(`${warning} (${kind}.deploy.ts, stack '${stackName}')`)
   }
@@ -159,7 +221,9 @@ export async function runHook(
     stdout: "inherit",
     stderr: "inherit",
   })
-  const output = await command.output()
+  const child = command.spawn()
+  trackChild(child)
+  const output = await child.output()
   if (!output.success) {
     throw new UserError(`${kind}.deploy.ts failed for stack '${stackName}' (${source})`)
   }
