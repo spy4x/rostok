@@ -163,10 +163,37 @@ snapshot.
 
 - **Read all bookings**: `docker exec hl-mig cat /data/bookings.json | jq`
 - **Manually trigger backup**: `deno task backup`
-- **Update**: `deno task deploy` (pulls new image, restarts)
+- **Update**: `deno task deploy <server> mig` (pulls new image, restarts)
 - **Rotate `CANCEL_SECRET`**: edit `mig.env`, `deno task env:encrypt`,
   redeploy. ⚠️ WARNING: rotating `CANCEL_SECRET` invalidates every
   existing cancel link. Do this only if tokens have leaked.
+
+## Upgrading / rollback
+
+The image is `antonshubin/mig`, published by mig's own CI
+(github.com/spy4x/mig) to Docker Hub on every `v*` tag; a stable tag
+(`v1.2.3`) also moves `latest`, a pre-release tag (`v1.2.3-rc.1`) never
+does. `compose.yml` sets `pull_policy: always` on the mig service, so
+deploying this stack always pulls the tag currently configured and
+recreates the container if it changed — `docker compose up -d --build`
+would otherwise keep whatever image is already on disk, since
+`--build` is a no-op for a service with no `build:` and compose only
+pulls a missing image on its own. Watchtower also polls every
+container daily (`--cleanup`) and pulls `latest` on its own, so a
+stable release mig's CI publishes goes live within a day with no human
+step either way.
+
+- **Deploy a new release right away**, instead of waiting for
+  Watchtower: `deno task deploy <server> mig`.
+- **Pin or roll back** to a specific release: set `MIG_IMAGE_TAG=v0.3.0`
+  in the server's `.env`, `deno task env:encrypt`, then
+  `deno task deploy <server> mig`.
+
+The image runs as a non-root user baked in (uid 1993, `deno`, from
+v0.4.0 on). `compose.yml` sets `user: "${PUID:-1000}:${PGID:-1000}"` so
+the container runs as the same uid:gid the deploy script already chowns
+`${VOLUMES_PATH}/mig` to, rather than the image's built-in one — see the
+comment above `user:` in `compose.yml` for why.
 
 ## Architecture
 
