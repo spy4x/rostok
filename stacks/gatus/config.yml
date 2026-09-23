@@ -1,0 +1,16 @@
+# Starter Gatus config — ships with the stack so `docker compose up`
+# succeeds on a fresh install with zero endpoints configured.
+#
+# Override: write servers/<server>/configs/gatus.yml and
+# before.deploy.ts copies it over this file at deploy time. See the
+# stack README for the override workflow and an endpoint/alerting example.
+#
+# Gatus expands ${VAR} against its container environment — NTFY_URL,
+# NTFY_TOPIC and NTFY_TOKEN below come from GATUS_NTFY_URL,
+# GATUS_NTFY_TOPIC_UPTIME and GATUS_NTFY_TOKEN_UPTIME (compose.yml).
+
+storage:
+  type: sqlite
+  path: /data/data.db
+
+endpoints: []
