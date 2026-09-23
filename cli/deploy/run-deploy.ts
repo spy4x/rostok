@@ -176,26 +176,31 @@ export async function runDeploy(opts: DeployOptions): Promise<DeployRunResult> {
     stacks = filtered
   }
 
-  // #219: the staging dir holds a plaintext copy of `.env`/`.env.root`
-  // (secrets) — a Ctrl-C or `kill` mid-deploy skips the `finally` below
-  // entirely, leaving those on disk until the next reboot clears /tmp.
-  // A hook or an ssh/rsync call can also still be running at that
-  // moment — kill everything process-registry.ts is tracking FIRST
-  // (SIGKILL: none of these are expected to shut down gracefully mid
-  // deploy), so nothing outlives the staging dir it might be reading
-  // from. These listeners are removed in `finally` so a normal deploy
-  // leaves no listener behind.
+  // #219 (and a later review round): the staging dir holds a plaintext
+  // copy of `.env`/`.env.root` (secrets) — a Ctrl-C or `kill` mid-deploy
+  // skips the `finally` below entirely, leaving those on disk until the
+  // next reboot clears /tmp.
+  //
+  // The handler below is FULLY SYNCHRONOUS end to end — no `await`
+  // anywhere in it or in anything it calls (killActiveChildren,
+  // Deno.removeSync). An async handler yields the event loop between
+  // its own steps, which lets the main flow below keep running
+  // concurrently — observed for real: staging a ~1,500-file stack, a
+  // signal survived 3 times out of 5 with an async
+  // `killActiveChildren(); await Deno.remove(...)` handler, because the
+  // main loop's own `await fetchToFile(...)` calls kept creating new
+  // files in the same directory while the async removal was walking it.
+  // A synchronous function runs to completion without yielding, so
+  // nothing else can interleave with it — closing that window. `aborted`
+  // is also checked before every file write below, as a second,
+  // independent guard against the same class of race.
+  let aborted = false
   const stagingDir = await Deno.makeTempDir({ prefix: "rostok-deploy-" })
   const onSignal = (signal: "SIGINT" | "SIGTERM") => {
-    ;(async () => {
-      killActiveChildren()
-      try {
-        await Deno.remove(stagingDir, { recursive: true })
-      } catch (err) {
-        console.error(`Warning: failed to remove staging directory ${stagingDir}: ${err}`)
-      }
-      Deno.exit(signal === "SIGINT" ? 130 : 143)
-    })()
+    aborted = true
+    killActiveChildren()
+    removeStagingDirSync(stagingDir)
+    Deno.exit(signal === "SIGINT" ? 130 : 143)
   }
   const onSigint = () => onSignal("SIGINT")
   const onSigterm = () => onSignal("SIGTERM")
@@ -225,6 +230,12 @@ export async function runDeploy(opts: DeployOptions): Promise<DeployRunResult> {
       const resolved = await resolveStackFiles(cwd, stackConfig.name)
       stackFiles.set(stackConfig.name, resolved)
       for (const [rel, url] of resolved.files) {
+        // A second, independent guard against the staging race (see
+        // the signal handler's own comment above): even though the
+        // handler's cleanup is synchronous and should win any race on
+        // its own, stop writing more files into a directory a signal
+        // has already told us to delete.
+        if (aborted) break
         await fetchToFile(url, join(stagingDir, "stacks", stackConfig.name, rel))
       }
       console.log(
@@ -272,12 +283,18 @@ export async function runDeploy(opts: DeployOptions): Promise<DeployRunResult> {
       // staging's flat `configs/<x>/` + `stacks/<name>/` layout.
       const stagedServerHookPath = join(stagingDir, "configs", deployAs, "before.deploy.ts")
       if (await pathExists(stagedServerHookPath)) {
+        // The real stack name goes in as `stackName` (buildHookEnv uses
+        // it to compute the allowlist prefix — TRAEFIK_*, GATUS_*, ...);
+        // the descriptive label is separate, so the override doesn't
+        // lose access to its own stack's keys just because it's labeled
+        // differently in logs.
         await runHook(
           "before",
-          `${stackConfig.name} (server override)`,
+          stackConfig.name,
           toFileUrl(stagedServerHookPath).href,
           stagingDir,
           ctx,
+          `${stackConfig.name} (server override)`,
         )
       }
     }
@@ -499,6 +516,31 @@ async function applyStackEnvs(
     const current = await Deno.readTextFile(stagingEnvPath)
     if (!current.includes(`${key}=`)) {
       await Deno.writeTextFile(stagingEnvPath, `${current}\n${key}=${filled}\n`)
+    }
+  }
+}
+
+/**
+ * Remove `dir` synchronously, retrying up to 3 times on failure — the
+ * main deploy flow can still be mid-write to a file inside `dir` for a
+ * moment even after `aborted` is set (see the signal handler above), so
+ * a first `ENOTEMPTY`-style failure right after a signal isn't
+ * necessarily permanent. Never throws; logs a warning if it still
+ * can't remove the directory after every retry.
+ */
+function removeStagingDirSync(dir: string): void {
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      Deno.removeSync(dir, { recursive: true })
+      return
+    } catch (err) {
+      if (err instanceof Deno.errors.NotFound) return // already gone
+      if (attempt === 3) {
+        console.error(`Warning: failed to remove staging directory ${dir}: ${err}`)
+        return
+      }
+      const until = Date.now() + 50
+      while (Date.now() < until) { /* brief synchronous pause before retrying */ }
     }
   }
 }

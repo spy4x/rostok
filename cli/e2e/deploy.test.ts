@@ -68,6 +68,11 @@ if (Deno.env.get("FAKE_SSH_UNREACHABLE")) {
 // grandchild.
 const hangOn = Deno.env.get("FAKE_SSH_HANG_ON")
 if (hangOn && script.includes(hangOn)) {
+  // FAKE_SSH_PID_FILE: record this process's own pid before hanging, so
+  // a test can prove deploy actually killed THIS process (not just
+  // that deploy itself exited) by checking the pid is gone afterward.
+  const pidFile = Deno.env.get("FAKE_SSH_PID_FILE")
+  if (pidFile) await Deno.writeTextFile(pidFile, String(Deno.pid))
   setTimeout(() => Deno.exit(1), 20_000)
   setInterval(() => {}, 1000)
   await new Promise(() => {})
@@ -454,12 +459,18 @@ const record = {
   sshAddress: env.SSH_ADDRESS,
   sshUser: env.SSH_USER,
   pathApps: env.PATH_APPS,
+  // #4: the override must receive the REAL stack's own prefixed keys
+  // (CUSTOM_STACK_* here — TRAEFIK_* for the real traefik stack) —
+  // passing the display label "custom-stack (server override)" into
+  // the allowlist instead of the real stack name "custom-stack" would
+  // compute a prefix that matches nothing, dropping this key.
+  customStackSecret: env.CUSTOM_STACK_SECRET,
 }
 await Deno.writeTextFile(logPath, "server:" + JSON.stringify(record) + "\\n", { append: true })
 `,
     )
 
-    await writeServer(f.projectDir, [], ["custom-stack"])
+    await writeServer(f.projectDir, ["CUSTOM_STACK_SECRET=own-prefixed-value"], ["custom-stack"])
 
     const hookLog = join(f.remoteDir, "server-hook.json")
     const result = await runDeployCli(f, ["deploy", "test"], { SERVER_HOOK_LOG: hookLog })
@@ -478,6 +489,7 @@ await Deno.writeTextFile(logPath, "server:" + JSON.stringify(record) + "\\n", { 
     assertEquals(record.sshAddress, "deploy@remote.test")
     assertEquals(record.sshUser, "deploy")
     assertEquals(record.pathApps, "/srv/apps")
+    assertEquals(record.customStackSecret, "own-prefixed-value")
 
     // The file the server-specific hook wrote via its own import.meta.url
     // reached the remote alongside the rest of the stack's files.
@@ -830,21 +842,53 @@ Deno.test("e2e: an unreachable server fails fast, naming the step and saying it'
   }
 })
 
+/** True if a process with this pid still exists. Linux-only (`/proc`), matching this project's target platform. */
+/**
+ * True if a process with this pid still exists — checked with `ps`
+ * (not /proc stat: found to be unreliable for a grandchild pid in
+ * this exact "signal handler -> Deno.exit()" scenario during testing,
+ * incorrectly reporting a genuinely still-running process as gone).
+ */
+async function isPidAlive(pid: number): Promise<boolean> {
+  const result = await new Deno.Command("ps", {
+    args: ["-p", String(pid)],
+    stdout: "null",
+    stderr: "null",
+  }).output()
+  return result.success
+}
+
+/** Poll `path`'s content every 20ms (up to ~10s) until it includes `text`, or throw. */
+async function waitForFileToInclude(path: string, text: string): Promise<void> {
+  for (let i = 0; i < 500; i++) {
+    const content = await Deno.readTextFile(path).catch(() => "")
+    if (content.includes(text)) return
+    await new Promise((r) => setTimeout(r, 20))
+  }
+  throw new Error(`${path} never contained ${JSON.stringify(text)}`)
+}
+
 /**
  * Spawn `rostok deploy test` with FAKE_SSH_HANG_ON set (holds the fake
  * ssh call busy — see FAKE_SSH above — after the staging dir is
- * created and populated by rsync but before deploy finishes), wait for
- * the staging dir to appear under a private TMPDIR, send `signal`, and
- * return the exit code plus whether the staging dir survived.
+ * created and populated by rsync but before deploy finishes). Waits
+ * for the fake ssh's own log to actually show the blocking command
+ * (`docker network inspect proxy`) — not just for the staging dir to
+ * exist, which can appear well before that ssh call starts — before
+ * sending `signal`. Returns the exit code, whether the staging dir
+ * survived, and whether the fake ssh's own pid (written to a file
+ * right before it hangs) is still alive afterward — the real proof
+ * that deploy KILLED it, not just that deploy itself exited.
  */
 async function runInterruptedDeploy(
   f: Fixture,
   signal: Deno.Signal,
-): Promise<{ code: number; stagingDirSurvived: boolean }> {
+): Promise<{ code: number; stagingDirSurvived: boolean; sshStillAlive: boolean }> {
   // A private TMPDIR (per #219's brief: don't race other processes'
   // rostok-deploy-* directories) so this can find, and only find, its
   // own staging dir.
   const tmpRoot = await Deno.makeTempDir({ prefix: "rostok-e2e-tmproot-" })
+  const pidFile = join(tmpRoot, "fake-ssh.pid")
   try {
     await writeServer(f.projectDir, [], ["librespeed"])
 
@@ -860,6 +904,7 @@ async function runInterruptedDeploy(
         // Hold the deploy open after rsync (staging dir already
         // created and populated) but before it finishes.
         FAKE_SSH_HANG_ON: "docker network inspect proxy",
+        FAKE_SSH_PID_FILE: pidFile,
         TMPDIR: tmpRoot,
       },
       stdout: "piped",
@@ -867,49 +912,126 @@ async function runInterruptedDeploy(
     })
     const child = command.spawn()
 
-    let stagingDirName: string | undefined
-    for (let i = 0; i < 200 && !stagingDirName; i++) {
-      for await (const entry of Deno.readDir(tmpRoot)) {
-        if (entry.name.startsWith("rostok-deploy-")) stagingDirName = entry.name
-      }
-      if (!stagingDirName) await new Promise((r) => setTimeout(r, 50))
+    await waitForFileToInclude(f.logPath, "docker network inspect proxy")
+    // The blocking ssh call writes its pid before it starts hanging —
+    // by the time its own invocation shows up in the log, the pid file
+    // exists too, but poll briefly in case of a write-then-flush gap.
+    let pid: number | undefined
+    for (let i = 0; i < 100 && pid === undefined; i++) {
+      const text = await Deno.readTextFile(pidFile).catch(() => "")
+      if (text.trim()) pid = Number(text.trim())
+      else await new Promise((r) => setTimeout(r, 20))
     }
-    if (!stagingDirName) {
-      throw new Error("staging directory never appeared under the private TMPDIR")
-    }
-    const stagingDirPath = join(tmpRoot, stagingDirName)
+    if (pid === undefined) throw new Error("fake ssh never wrote its pid file")
 
     child.kill(signal)
     const output = await child.output()
 
-    const stagingDirSurvived = await Deno.stat(stagingDirPath).then(() => true).catch((err) => {
-      if (err instanceof Deno.errors.NotFound) return false
-      throw err
-    })
-    return { code: output.code, stagingDirSurvived }
+    let stagingDirName: string | undefined
+    for await (const entry of Deno.readDir(tmpRoot)) {
+      if (entry.name.startsWith("rostok-deploy-")) stagingDirName = entry.name
+    }
+    const stagingDirSurvived = stagingDirName !== undefined &&
+      await Deno.stat(join(tmpRoot, stagingDirName)).then(() => true).catch((err) => {
+        if (err instanceof Deno.errors.NotFound) return false
+        throw err
+      })
+    const sshStillAlive = await isPidAlive(pid)
+    return { code: output.code, stagingDirSurvived, sshStillAlive }
   } finally {
     await Deno.remove(tmpRoot, { recursive: true }).catch(() => {})
   }
 }
 
-Deno.test("e2e: SIGINT during deploy removes the staging directory (#219)", async () => {
+Deno.test("e2e: SIGINT during deploy removes the staging directory and kills the fake ssh (#219)", async () => {
   const f = await setupFixture()
   try {
-    const { code, stagingDirSurvived } = await runInterruptedDeploy(f, "SIGINT")
+    const { code, stagingDirSurvived, sshStillAlive } = await runInterruptedDeploy(f, "SIGINT")
     assertEquals(code, 130)
     assertEquals(stagingDirSurvived, false)
+    assertEquals(sshStillAlive, false, "the fake ssh child survived the signal")
   } finally {
     await teardownFixture(f)
   }
 })
 
-Deno.test("e2e: SIGTERM during deploy removes the staging directory and exits 143 (#219)", async () => {
+Deno.test("e2e: SIGTERM during deploy removes the staging directory, kills the fake ssh, exits 143 (#219)", async () => {
   const f = await setupFixture()
   try {
-    const { code, stagingDirSurvived } = await runInterruptedDeploy(f, "SIGTERM")
+    const { code, stagingDirSurvived, sshStillAlive } = await runInterruptedDeploy(f, "SIGTERM")
     assertEquals(code, 143)
     assertEquals(stagingDirSurvived, false)
+    assertEquals(sshStillAlive, false, "the fake ssh child survived the signal")
   } finally {
+    await teardownFixture(f)
+  }
+})
+
+Deno.test("e2e: SIGINT during a ~1,500-file stage leaves no staging directory behind (#219, staging race)", async () => {
+  // Regression for a real race: an async signal handler
+  // (`killActiveChildren(); await Deno.remove(...)`) let the main
+  // flow's own `await fetchToFile(...)` loop keep writing new files
+  // into the staging dir WHILE the async removal was concurrently
+  // walking and deleting it — observed to survive the signal 3 times
+  // out of 5 with a ~1,500-file stack. The fix makes the handler fully
+  // synchronous (no `await` anywhere in it), closing the interleaving
+  // window entirely.
+  const f = await setupFixture()
+  const tmpRoot = await Deno.makeTempDir({ prefix: "rostok-e2e-tmproot-" })
+  try {
+    const stackDir = join(f.projectDir, "stacks", "big-stack")
+    await Deno.mkdir(stackDir, { recursive: true })
+    await Deno.writeTextFile(
+      join(stackDir, "compose.yml"),
+      "name: ${PROJECT}\nservices:\n  big:\n    image: busybox\n",
+    )
+    const fileCount = 1500
+    for (let i = 0; i < fileCount; i++) {
+      await Deno.writeTextFile(join(stackDir, `file-${String(i).padStart(4, "0")}.txt`), "x")
+    }
+
+    await writeServer(f.projectDir, [], ["big-stack"])
+
+    const mainTs = new URL("../+main.ts", import.meta.url).pathname
+    const command = new Deno.Command(Deno.execPath(), {
+      args: ["run", "-A", mainTs, "deploy", "test"],
+      cwd: f.projectDir,
+      env: {
+        ...Deno.env.toObject(),
+        PATH: `${f.binDir}:${Deno.env.get("PATH") ?? ""}`,
+        FAKE_REMOTE_DIR: f.remoteDir,
+        FAKE_SSH_LOG: f.logPath,
+        TMPDIR: tmpRoot,
+      },
+      stdout: "piped",
+      stderr: "piped",
+    })
+    const child = command.spawn()
+
+    // Send the signal the instant `stacks/` shows up in the staging
+    // dir — as early as possible in the file-copy loop, to give the
+    // race the widest possible window.
+    let stagingDirName: string | undefined
+    for (let i = 0; i < 2000 && !stagingDirName; i++) {
+      for await (const entry of Deno.readDir(tmpRoot)) {
+        if (!entry.name.startsWith("rostok-deploy-")) continue
+        const hasStacksDir = await Deno.stat(join(tmpRoot, entry.name, "stacks"))
+          .then(() => true)
+          .catch(() => false)
+        if (hasStacksDir) stagingDirName = entry.name
+      }
+      if (!stagingDirName) await new Promise((r) => setTimeout(r, 1))
+    }
+    if (!stagingDirName) throw new Error("stacks/ never appeared under the staging directory")
+    const stagingDirPath = join(tmpRoot, stagingDirName)
+
+    child.kill("SIGINT")
+    const output = await child.output()
+    assertEquals(output.code, 130)
+
+    await assertNotExists(stagingDirPath)
+  } finally {
+    await Deno.remove(tmpRoot, { recursive: true }).catch(() => {})
     await teardownFixture(f)
   }
 })
