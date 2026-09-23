@@ -15,7 +15,7 @@ services:
   # It's configured to use Let's Encrypt to automatically generate SSL certificates and redirect all HTTP requests to HTTPS.
   traefik:
     container_name: "hl-traefik"
-    image: "traefik:3.7.6"
+    image: "traefik:${TRAEFIK_IMAGE_TAG:-3.7.6}"
     expose:
       - "8080"
     healthcheck:
@@ -71,13 +71,13 @@ services:
     deploy:
       resources:
         limits:
-          cpus: ${PROXY_CPU_LIMIT:-1}
-          memory: ${PROXY_MEM_LIMIT:-512M}
+          cpus: ${TRAEFIK_CPU_LIMIT:-1}
+          memory: ${TRAEFIK_MEM_LIMIT:-512M}
     labels:
       - "traefik.enable=true"
       - "traefik.docker.network=proxy"
       - "traefik.http.services.hl-traefik.loadbalancer.server.port=8080"
-      - "traefik.http.routers.hl-traefik.rule=Host(`${PROXY_SUBDOMAIN}.${DOMAIN}`)"
+      - "traefik.http.routers.hl-traefik.rule=Host(`${TRAEFIK_DOMAIN}`)"
       - "traefik.http.routers.hl-traefik.entrypoints=websecure"
       - "traefik.http.routers.hl-traefik.tls=true"
       - "traefik.http.routers.hl-traefik.tls.certresolver=myresolver"

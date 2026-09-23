@@ -24,16 +24,22 @@ labels:
 ## Environment Variables
 
 ```bash
-DOMAIN=yourdomain.com           # Base domain
-ACME_EMAIL=you@email.com        # Let's Encrypt email
-BASIC_AUTH_USER=admin           # Dashboard auth
-BASIC_AUTH_PASSWORD=...         # Generated via: openssl passwd -apr1
+TRAEFIK_DOMAIN=traefik.yourdomain.com   # Full dashboard host (default: traefik.${DOMAIN})
+CONTACT_EMAIL=you@email.com             # Let's Encrypt email — a server-level key, set by `server create`
+TRAEFIK_BASIC_AUTH_USER=admin           # Dashboard auth (default: admin)
+TRAEFIK_BASIC_AUTH_PASSWORD=...         # Dashboard auth (default: generated, 24 chars)
 ```
+
+`before.deploy.ts` bcrypt-hashes `TRAEFIK_BASIC_AUTH_PASSWORD` into
+`dynamic/.htpasswd` on every deploy — no manual `htpasswd` step. Servers
+whose `.env` still carries the pre-#210 `BASIC_AUTH_USER` +
+`BASIC_AUTH_BASE64` (or an already-hashed `BASIC_AUTH_PASSWORD`) keep
+working: the hook falls back to those when the new keys are absent.
 
 ## Access
 
-- Dashboard: `https://proxy.${DOMAIN}`
-- Requires basic auth (BASIC_AUTH_USER/PASSWORD)
+- Dashboard: `https://${TRAEFIK_DOMAIN}` (default `https://traefik.${DOMAIN}`)
+- Requires basic auth (`TRAEFIK_BASIC_AUTH_USER`/`TRAEFIK_BASIC_AUTH_PASSWORD`)
 
 ## Middleware
 

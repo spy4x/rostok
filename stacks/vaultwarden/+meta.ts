@@ -5,12 +5,13 @@
 // drive email notifications (signups, invites, password hints).
 //
 // Strictness (per Phase 4 user feedback): keep onboarding easy.
-// - VAULTWARDEN_DOMAIN: single var, default `passwords.${DOMAIN}`.
+// - VAULTWARDEN_DOMAIN: single var, default `passwords.${DOMAIN}`, holds
+//   the full host — compose reads Host(`${VAULTWARDEN_DOMAIN}`) directly.
 // - All VAULTWARDEN_* tunables: required:false with sensible defaults
 //   written to .env so compose doesn't see empty strings. Wizard can
 //   offer to change them but doesn't block.
-// - SMTP_* vars: required:false, no default → omitted unless user opts
-//   in via --var or wizard. Vaultwarden runs without SMTP (no email
+// - VAULTWARDEN_SMTP_*: required:false, no default → omitted unless user
+//   opts in via --var or wizard. Vaultwarden runs without SMTP (no email
 //   notifications, but signups/invites/password resets still work).
 
 import type { StackMeta } from "@rostok/cli"
@@ -21,7 +22,7 @@ export default {
   category: "security",
   variables: [
     {
-      key: "IMAGE_TAG",
+      key: "VAULTWARDEN_IMAGE_TAG",
       default: "latest",
       required: false,
     },
@@ -72,25 +73,25 @@ export default {
       required: false,
     },
     {
-      key: "SMTP_HOST",
+      key: "VAULTWARDEN_SMTP_HOST",
       // required:false + no default → omitted from .env if not provided.
       // Vaultwarden runs without SMTP; only notifications need it.
       required: false,
     },
     {
-      key: "SMTP_PORT",
+      key: "VAULTWARDEN_SMTP_PORT",
       required: false,
     },
     {
-      key: "SMTP_FROM",
+      key: "VAULTWARDEN_SMTP_FROM",
       required: false,
     },
     {
-      key: "SMTP_USERNAME",
+      key: "VAULTWARDEN_SMTP_USERNAME",
       required: false,
     },
     {
-      key: "SMTP_PASSWORD",
+      key: "VAULTWARDEN_SMTP_PASSWORD",
       required: false,
       secret: true,
     },

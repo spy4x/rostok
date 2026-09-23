@@ -18,7 +18,7 @@ export default {
   category: "tools",
   variables: [
     {
-      key: "IMAGE_TAG",
+      key: "LIBRESPEED_IMAGE_TAG",
       default: "latest",
       required: false,
     },

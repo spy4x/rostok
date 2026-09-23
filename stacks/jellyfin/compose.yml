@@ -8,7 +8,7 @@ networks:
 services:
   jellyfin:
     container_name: hl-jellyfin
-    image: jellyfin/jellyfin
+    image: jellyfin/jellyfin:${JELLYFIN_IMAGE_TAG:-latest}
     healthcheck:
       test: ["CMD", "curl", "-sf", "http://localhost:8096/health"]
       interval: 30s
@@ -42,7 +42,7 @@ services:
       - "traefik.enable=true"
       - "traefik.docker.network=proxy"
       - "traefik.http.services.hl-jellyfin.loadbalancer.server.port=8096"
-      - "traefik.http.routers.hl-jellyfin.rule=Host(`movies.${DOMAIN}`)"
+      - "traefik.http.routers.hl-jellyfin.rule=Host(`${JELLYFIN_DOMAIN}`)"
       - "traefik.http.routers.hl-jellyfin.middlewares=robots-deny@file"
       - "traefik.http.routers.hl-jellyfin.entrypoints=websecure"
       - "traefik.http.routers.hl-jellyfin.tls=true"
