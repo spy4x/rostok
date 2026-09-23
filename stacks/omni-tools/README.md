@@ -17,11 +17,19 @@ Self-hosted collection of everyday online tools — all running entirely client-
 
 ## Configuration
 
-No configuration needed. The container is stateless and requires no persistent storage or environment variables.
+```bash
+OMNI_TOOLS_DOMAIN=tools.yourdomain.com    # Full host for the Traefik rule
+OMNI_TOOLS_CPU_LIMIT=0.5                  # Optional (default: 0.5)
+OMNI_TOOLS_MEM_LIMIT=256M                 # Optional (default: 256M)
+```
 
-## Subdomain
+The container itself is stateless and needs no persistent storage.
 
-Available at `tools.${DOMAIN}`.
+## Access
+
+Dashboard: `https://${OMNI_TOOLS_DOMAIN}` — no default yet (no `+meta.ts`
+wizard for this stack); set it in `servers/<server>/.env`, e.g.
+`tools.${DOMAIN}`.
 
 ## Auth
 

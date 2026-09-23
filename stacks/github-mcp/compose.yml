@@ -18,11 +18,11 @@ services:
     restart: unless-stopped
     environment:
       # GitHub PAT — must have repo + read:user scopes at minimum
-      # Mapped from GITHUB_TOKEN (in servers/home/.env)
-      - GITHUB_PERSONAL_ACCESS_TOKEN=${GITHUB_TOKEN}
+      # Mapped from GITHUB_MCP_TOKEN (in servers/home/.env)
+      - GITHUB_PERSONAL_ACCESS_TOKEN=${GITHUB_MCP_TOKEN}
 
       # Optional: restrict to specific tool groups (use "all" for everything)
-      - GITHUB_TOOLSETS=${GITHUB_TOOLSETS:-all}
+      - GITHUB_TOOLSETS=${GITHUB_MCP_TOOLSETS:-all}
 
       # HTTP server config
       - PORT=3000

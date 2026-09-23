@@ -62,7 +62,7 @@ services:
       - "traefik.http.routers.hl-stalwart-dav.service=hl-stalwart"
 
   # MTA-STS policy server — serves .well-known/mta-sts.txt for TLS enforcement
-  # Covers mta-sts.${DOMAIN} and mta-sts.${NEATSOFT_DOMAIN} (same MX)
+  # Covers mta-sts.${DOMAIN} and mta-sts.${STALWART_NEATSOFT_DOMAIN} (same MX)
   mta-sts:
     container_name: hl-mta-sts
     image: nginx:alpine
@@ -90,7 +90,7 @@ services:
       - "traefik.http.routers.hl-mta-sts-primary.tls=true"
       - "traefik.http.routers.hl-mta-sts-primary.tls.certresolver=myresolver"
       # MTA-STS for secondary domain (same MX)
-      - "traefik.http.routers.hl-mta-sts-secondary.rule=Host(`mta-sts.${NEATSOFT_DOMAIN}`)"
+      - "traefik.http.routers.hl-mta-sts-secondary.rule=Host(`mta-sts.${STALWART_NEATSOFT_DOMAIN}`)"
       - "traefik.http.routers.hl-mta-sts-secondary.middlewares=robots-deny@file"
       - "traefik.http.routers.hl-mta-sts-secondary.entrypoints=websecure"
       - "traefik.http.routers.hl-mta-sts-secondary.tls=true"

@@ -43,7 +43,7 @@ DOMAIN=example.com
 # Comma-separated gatus FQDNs. Endpoint keys are namespaced by host
 # ("uptime-cloud|home_audiobookshelf") so the list decides which gatus
 # owns each key.
-UPTIME_HOSTS=uptime-cloud.${DOMAIN},uptime-home.${DOMAIN}
+OKO_UPTIME_HOSTS=uptime-cloud.${DOMAIN},uptime-home.${DOMAIN}
 ```
 
 The compose file passes them through. Defaults baked into the binary:

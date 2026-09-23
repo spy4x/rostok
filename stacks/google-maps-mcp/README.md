@@ -13,7 +13,7 @@ Open WebUI agents can now ask: "Find a coffee shop near Shibuya station with rat
 
 ## Tools exposed
 
-18 tools total (14 atomic + 4 composite). Filter via `GOOGLE_MAPS_ENABLED_TOOLS`.
+18 tools total (14 atomic + 4 composite). Filter via `GOOGLE_MAPS_MCP_ENABLED_TOOLS`.
 
 ### Common tools
 
@@ -58,9 +58,9 @@ Free tier: $200/mo credit covers ~30k place searches. Personal use is essentiall
 
 ```bash
 #region Google Maps MCP
-GOOGLE_MAPS_API_KEY=AIzaSy_YOUR_KEY_HERE
+GOOGLE_MAPS_MCP_API_KEY=AIzaSy_YOUR_KEY_HERE
 # Optional: restrict to the most common tools
-GOOGLE_MAPS_ENABLED_TOOLS=maps_search_places,maps_place_details,maps_geocode,maps_search_nearby
+GOOGLE_MAPS_MCP_ENABLED_TOOLS=maps_search_places,maps_place_details,maps_geocode,maps_search_nearby
 #endregion Google Maps MCP
 ```
 
@@ -70,7 +70,7 @@ GOOGLE_MAPS_ENABLED_TOOLS=maps_search_places,maps_place_details,maps_geocode,map
 deno task deploy home google-maps-mcp
 ```
 
-The first deploy builds the image from source (pin in compose.yml → `MCP_GOOGLE_MAP_VERSION`).
+The first deploy builds the image from source (pin via `GOOGLE_MAPS_MCP_VERSION` in .env, defaulted in compose.yml's `MCP_GOOGLE_MAP_VERSION` build arg).
 Subsequent deploys are fast (cached).
 
 ### 4. Wire into Open WebUI
@@ -142,10 +142,10 @@ For personal/agentic use (a few hundred queries/month), expect **$0/month**.
 
 ## Troubleshooting
 
-| Symptom                              | Cause                                  | Fix                                                     |
-| ------------------------------------ | -------------------------------------- | ------------------------------------------------------- |
-| `REQUEST_DENIED` from API            | Billing not enabled or API not enabled | Enable in Google Cloud Console                          |
-| `API_KEY_INVALID`                    | Wrong/restricted key                   | Check `GOOGLE_MAPS_API_KEY` in .env, re-issue if needed |
-| `OVER_QUERY_LIMIT`                   | Free tier exhausted or quota too low   | Wait or increase quota in Cloud Console                 |
-| Tools not appearing in Open WebUI    | TOOL_SERVER_CONNECTIONS misconfigured  | Check JSON syntax; restart Open WebUI container         |
-| Container build fails on `git clone` | Network blocked                        | Pre-clone the repo, mount as volume, change Dockerfile  |
+| Symptom                              | Cause                                  | Fix                                                         |
+| ------------------------------------ | -------------------------------------- | ----------------------------------------------------------- |
+| `REQUEST_DENIED` from API            | Billing not enabled or API not enabled | Enable in Google Cloud Console                              |
+| `API_KEY_INVALID`                    | Wrong/restricted key                   | Check `GOOGLE_MAPS_MCP_API_KEY` in .env, re-issue if needed |
+| `OVER_QUERY_LIMIT`                   | Free tier exhausted or quota too low   | Wait or increase quota in Cloud Console                     |
+| Tools not appearing in Open WebUI    | TOOL_SERVER_CONNECTIONS misconfigured  | Check JSON syntax; restart Open WebUI container             |
+| Container build fails on `git clone` | Network blocked                        | Pre-clone the repo, mount as volume, change Dockerfile      |

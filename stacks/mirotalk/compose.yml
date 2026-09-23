@@ -21,8 +21,8 @@ services:
       - TZ=${TIMEZONE:-UTC}
       - TURN_SERVER_ENABLED=true
       - TURN_SERVER_URL=turns:${DOMAIN}:5349
-      - TURN_SERVER_USERNAME=${TURN_SERVER_USERNAME}
-      - TURN_SERVER_CREDENTIAL=${TURN_SERVER_CREDENTIAL}
+      - TURN_SERVER_USERNAME=${MIROTALK_TURN_SERVER_USERNAME}
+      - TURN_SERVER_CREDENTIAL=${MIROTALK_TURN_SERVER_CREDENTIAL}
     restart: unless-stopped
     deploy:
       resources:
@@ -65,11 +65,11 @@ services:
       - --max-port=20000
       - --realm=${DOMAIN}
       - --server-name=${DOMAIN}
-      - --external-ip=${PUBLIC_IP}/${PUBLIC_IP}
-      - --relay-ip=${PUBLIC_IP}
+      - --external-ip=${MIROTALK_PUBLIC_IP}/${MIROTALK_PUBLIC_IP}
+      - --relay-ip=${MIROTALK_PUBLIC_IP}
       - --fingerprint
       - --lt-cred-mech
-      - --user=${TURN_SERVER_USERNAME}:${TURN_SERVER_CREDENTIAL}
+      - --user=${MIROTALK_TURN_SERVER_USERNAME}:${MIROTALK_TURN_SERVER_CREDENTIAL}
       - --total-quota=500
       - --stale-nonce=600
       - --cert=/certs/talk.${DOMAIN}.crt

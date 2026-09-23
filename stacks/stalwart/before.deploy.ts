@@ -7,7 +7,7 @@ const templatePath =
   new URL("./mta-sts/html/.well-known/mta-sts.txt.template", import.meta.url).pathname
 const outputPath = new URL("./mta-sts/html/.well-known/mta-sts.txt", import.meta.url).pathname
 
-const keys = ["DOMAIN", "NEATSOFT_DOMAIN", "STALWART_ADMIN_PASSWORD"] as const
+const keys = ["DOMAIN", "STALWART_NEATSOFT_DOMAIN", "STALWART_ADMIN_PASSWORD"] as const
 const missing: string[] = []
 for (const k of keys) {
   if (!Deno.env.get(k)) missing.push(k)
@@ -18,7 +18,7 @@ if (missing.length) {
 }
 
 const domain = Deno.env.get("DOMAIN")!
-const neatsoftDomain = Deno.env.get("NEATSOFT_DOMAIN")!
+const neatsoftDomain = Deno.env.get("STALWART_NEATSOFT_DOMAIN")!
 const password = Deno.env.get("STALWART_ADMIN_PASSWORD")!
 const allowInitialDeploy = Deno.env.get("STALWART_INITIAL_DEPLOY") === "true"
 let liveServerAvailable: boolean

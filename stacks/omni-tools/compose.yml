@@ -18,8 +18,8 @@ services:
     deploy:
       resources:
         limits:
-          cpus: ${OMNITOOLS_CPU_LIMIT:-0.5}
-          memory: ${OMNITOOLS_MEM_LIMIT:-256M}
+          cpus: ${OMNI_TOOLS_CPU_LIMIT:-0.5}
+          memory: ${OMNI_TOOLS_MEM_LIMIT:-256M}
     security_opt:
       - no-new-privileges:true
     networks:
