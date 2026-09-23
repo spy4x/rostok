@@ -37,26 +37,26 @@ export function serializeEnv(entries: EnvEntry[]): string {
 
 /**
  * Merge `incoming` into `existing`:
- *   - keys in `incoming` overwrite keys in `existing`
- *   - keys in `existing` not in `incoming` are preserved
- * Order: incoming wins on collision; existing keys come first, then any
- * incoming-only keys appended.
+ *   - a key present in both keeps its position from `existing`, value
+ *     updated to `incoming`'s — so re-running with the same values is a
+ *     byte-for-byte no-op, and a changed value doesn't jump to the
+ *     bottom of the file (which would needlessly re-encrypt neighboring
+ *     lines and churn the diff)
+ *   - a key only in `existing` is preserved untouched
+ *   - a key only in `incoming` is appended, in `incoming`'s order
  */
 export function mergeEnv(existing: EnvEntry[], incoming: EnvEntry[]): EnvEntry[] {
-  const out: EnvEntry[] = []
+  const incomingByKey = new Map(incoming.map((e) => [e.key, e.value]))
   const seen = new Set<string>()
-  for (const e of existing) {
-    if (incoming.some((i) => i.key === e.key)) {
-      // skip — will be replaced by the incoming entry
-      continue
-    }
-    out.push(e)
+  const out: EnvEntry[] = existing.map((e) => {
     seen.add(e.key)
-  }
-  // Preserve order of incoming, then append any extras not yet seen.
+    const value = incomingByKey.get(e.key)
+    return value !== undefined ? { key: e.key, value } : e
+  })
   for (const e of incoming) {
-    out.push(e)
+    if (seen.has(e.key)) continue
     seen.add(e.key)
+    out.push(e)
   }
   return out
 }

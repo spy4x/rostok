@@ -44,10 +44,29 @@ Deno.test("mergeEnv: incoming wins on collision, preserves existing extras", () 
   const incoming = [{ key: "A", value: "new-a" }, { key: "C", value: "c-new" }]
   const merged = mergeEnv(existing, incoming)
   assertEquals(merged, [
+    { key: "A", value: "new-a" }, // incoming wins, but keeps A's original position
     { key: "B", value: "b-only" }, // existing-only, preserved
-    { key: "A", value: "new-a" }, // incoming wins, kept in incoming order
-    { key: "C", value: "c-new" }, // incoming-only
+    { key: "C", value: "c-new" }, // incoming-only, appended
   ])
+})
+
+Deno.test("mergeEnv: an updated value stays in its original position, doesn't jump to the end", () => {
+  const existing = [
+    { key: "FIRST", value: "1" },
+    { key: "MIDDLE", value: "old" },
+    { key: "LAST", value: "3" },
+  ]
+  const incoming = [{ key: "MIDDLE", value: "new" }]
+  assertEquals(mergeEnv(existing, incoming), [
+    { key: "FIRST", value: "1" },
+    { key: "MIDDLE", value: "new" },
+    { key: "LAST", value: "3" },
+  ])
+})
+
+Deno.test("mergeEnv: re-running with identical values is a no-op (same order, same values)", () => {
+  const existing = [{ key: "A", value: "1" }, { key: "B", value: "2" }]
+  assertEquals(mergeEnv(existing, existing), existing)
 })
 
 Deno.test("readEnvFile: returns [] for missing file", async () => {
