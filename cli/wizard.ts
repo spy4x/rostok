@@ -16,6 +16,7 @@ import { initProject, type InitResult } from "./init.ts"
 import { serverCreate, type ServerCreateInput } from "./server-create.ts"
 import { stackAdd, type StackAddResult } from "./stack-add.ts"
 import { resolveCatalog } from "./catalog-paths.ts"
+import { validateServerName } from "./server-keys.ts"
 
 export interface WizardOptions {
   cwd?: string
@@ -42,6 +43,17 @@ export interface WizardResult {
  */
 export async function runWizard(opts: WizardOptions = {}): Promise<WizardResult> {
   const cwd = opts.cwd ?? Deno.cwd()
+
+  // #208 review fix: when the server name is already known (--var or a
+  // programmatic caller's serverInputs), validate it before init writes
+  // anything — a traversal name shouldn't leave a half-finished project
+  // skeleton behind. server-create validates again once it's the one
+  // asking (interactive mode may still need to prompt for the name).
+  const knownServerName = opts.serverInputs?.serverName ?? opts.providedVars?.SERVER_NAME ??
+    opts.providedVars?.serverName
+  if (knownServerName !== undefined) {
+    validateServerName(knownServerName)
+  }
 
   // Step 1: init.
   const init = await initProject(cwd)
