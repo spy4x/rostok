@@ -2,7 +2,7 @@
 // (No shell interaction — those run via the deploy script.)
 
 import { assertEquals, assertNotEquals, assertThrows } from "@std/assert"
-import { compareSync } from "npm:bcryptjs@3.0.3"
+import { compareSync, getRounds } from "npm:bcryptjs@3.0.3"
 
 import { hashPassword, resolveHtpasswdCredential } from "./before.deploy.ts"
 
@@ -25,6 +25,16 @@ Deno.test("hashPassword: output is a bcrypt hash Traefik's basicAuth accepts", (
   const hash = hashPassword("x")
   // $2a$/$2b$/$2y$ + 2-digit cost + "$" + 53-char salt+digest.
   assertEquals(/^\$2[aby]\$\d{2}\$.{53}$/.test(hash), true)
+})
+
+Deno.test("hashPassword: cost is pinned at 10", () => {
+  // The format check above accepts any 2-digit cost, so a lowered cost
+  // (weaker hashing, faster to brute-force) wouldn't fail it. Read the
+  // actual cost back out with bcryptjs's own getRounds() instead of
+  // matching the hash string, so this doesn't depend on which of
+  // $2a/$2b/$2y hashSync happens to emit.
+  const hash = hashPassword("x")
+  assertEquals(getRounds(hash), 10)
 })
 
 Deno.test("hashPassword: two calls for the same password produce different hashes", () => {
