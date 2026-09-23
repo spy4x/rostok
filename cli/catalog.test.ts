@@ -3,11 +3,17 @@
 // The catalog's `+meta.ts` files must agree with their `compose.yml` and
 // hooks — see #205 and #210. Checks, per catalog stack:
 //
-//   1. Every `${VAR}` in compose.yml without a `:-`/`-` bash default is
-//      either declared in that stack's +meta.ts or is a server-level key
-//      (isServerKey()).
-//   2. Every +meta.ts key is referenced by something else in the stack
-//      directory (compose.yml, a hook, the README, …) — dead schema.
+//   1. Every `${VAR}` in compose.yml without a bash default (`:-`, `-`)
+//      is either declared in that stack's +meta.ts or is a server-level
+//      key (isServerKey()). `${VAR:?msg}`/`${VAR?msg}` count as "no
+//      default" too — they fail rather than substitute anything.
+//      `${VAR:+alt}`/`${VAR+alt}` count as having one — they never
+//      trigger compose's "variable is not set" warning.
+//   2. Every +meta.ts key is read by compose.yml or a hook (not the
+//      README or anything else) — dead schema. deepseek-harness is
+//      exempt: a host-level install with neither compose.yml nor hooks,
+//      whose one key is consumed by hand from its README's install
+//      command, which this test doesn't parse.
 //   3. A +meta.ts key that isn't a server key carries the stack's own
 //      prefix (stackKeyPrefix()), and no two stacks declare the same
 //      non-server key.
@@ -18,8 +24,8 @@
 //      contract — these run from an installed package's https:// URL).
 //
 // deepseek-harness ships no compose.yml (host-level install, see its
-// README) — checks 1 and 4 skip a stack with no compose.yml; checks 2
-// and 3 still run.
+// README) — checks 1 and 4 skip a stack with no compose.yml; check 2
+// skips it by name (see above); check 3 still runs.
 //
 // `checkStack()` takes a directory and a name so the same logic can run
 // against a stale copy of `stacks/` (see the PR's Evidence section,
@@ -59,15 +65,28 @@ interface VarRef {
   hasDefault: boolean
 }
 
-/** Every `${VAR}`, `${VAR:-default}` and `${VAR-default}` reference in compose text. */
+/**
+ * Every `${VAR<op><rest>}` reference in compose text, for bare `${VAR}`
+ * and bash's four two-character parameter-expansion operators:
+ * `:-`/`-` (default value), `:?`/`?` (error if unset — no substitute, so
+ * this still counts as "no default"), `:+`/`+` (alternate value only
+ * when set — never triggers a "variable is not set" warning).
+ */
 export function findComposeRefs(composeText: string): VarRef[] {
   const refs: VarRef[] = []
-  const re = /\$\{([A-Z_][A-Z0-9_]*)(:?-[^}]*)?\}/g
+  const re = /\$\{([A-Z_][A-Z0-9_]*)(:?[-?+][^}]*)?\}/g
   let m: RegExpExecArray | null
   while ((m = re.exec(composeText)) !== null) {
-    refs.push({ key: m[1], hasDefault: m[2] !== undefined })
+    refs.push({ key: m[1], hasDefault: hasBashFallback(m[2]) })
   }
   return refs
+}
+
+/** `-`/`+` supply a fallback (no warning risk); bare `${VAR}` and `?` don't. */
+function hasBashFallback(operatorAndRest: string | undefined): boolean {
+  if (operatorAndRest === undefined) return false
+  const op = operatorAndRest.startsWith(":") ? operatorAndRest[1] : operatorAndRest[0]
+  return op === "-" || op === "+"
 }
 
 /** Every `Host(...)` rule's raw contents (e.g. `` `${GATUS_DOMAIN}` ``). */
@@ -92,23 +111,14 @@ export function findEscapingImports(hookText: string): string[] {
   return specifiers
 }
 
-async function* walkFiles(dir: string): AsyncGenerator<string> {
-  for await (const entry of Deno.readDir(dir)) {
-    const path = `${dir}/${entry.name}`
-    if (entry.isDirectory) {
-      yield* walkFiles(path)
-    } else if (entry.isFile) {
-      yield path
-    }
-  }
-}
+/** Files a +meta.ts key must be read by — compose.yml or a hook, nothing else (not the README). */
+const READABLE_FILES = ["compose.yml", "before.deploy.ts", "after.deploy.ts"]
 
-/** True when `key` appears as a whole word anywhere else in the stack directory. */
+/** True when `key` appears as a whole word in compose.yml or a hook. */
 async function keyIsReadSomewhere(dir: string, key: string): Promise<boolean> {
   const re = new RegExp(`\\b${key}\\b`)
-  for await (const path of walkFiles(dir)) {
-    if (path.endsWith("/+meta.ts")) continue
-    const text = await readIfExists(path)
+  for (const name of READABLE_FILES) {
+    const text = await readIfExists(`${dir}/${name}`)
     if (text && re.test(text)) return true
   }
   return false
@@ -145,10 +155,15 @@ export async function checkStack(
     }
   }
 
-  // 2. every +meta.ts key must be read by something else in the stack.
-  for (const key of metaKeys) {
-    if (!(await keyIsReadSomewhere(dir, key))) {
-      violations.push(`+meta.ts declares "${key}" but nothing else in the stack reads it`)
+  // 2. every +meta.ts key must be read by compose.yml or a hook.
+  // deepseek-harness is a host-level install with neither — its one key
+  // is consumed by hand from the README's install command, which this
+  // test doesn't parse — so it's exempt from this check by name.
+  if (name !== "deepseek-harness") {
+    for (const key of metaKeys) {
+      if (!(await keyIsReadSomewhere(dir, key))) {
+        violations.push(`+meta.ts declares "${key}" but nothing in compose.yml or a hook reads it`)
+      }
     }
   }
 
@@ -232,6 +247,22 @@ Deno.test("findComposeRefs: distinguishes refs with and without a bash default",
   ])
 })
 
+Deno.test("findComposeRefs: :?/? (required, errors if unset) count as no default", () => {
+  const refs = findComposeRefs("a: ${FOO:?required} b: ${BAR?required}")
+  assertEquals(refs, [
+    { key: "FOO", hasDefault: false },
+    { key: "BAR", hasDefault: false },
+  ])
+})
+
+Deno.test("findComposeRefs: :+/+ (alternate value) count as having a default", () => {
+  const refs = findComposeRefs("a: ${FOO:+alt} b: ${BAR+alt}")
+  assertEquals(refs, [
+    { key: "FOO", hasDefault: true },
+    { key: "BAR", hasDefault: true },
+  ])
+})
+
 Deno.test("findHostRules: extracts the raw rule contents", () => {
   const rules = findHostRules(
     '- "traefik.http.routers.hl-gatus.rule=Host(`${GATUS_DOMAIN}`)"',
@@ -277,9 +308,48 @@ Deno.test("checkStack: flags a +meta.ts key nothing in the stack reads", async (
     }
     const violations = await checkStack(dir, "acme", meta, new Map())
     assertEquals(
-      violations.some((v) => v.includes("ACME_UNUSED") && v.includes("nothing else")),
+      violations.some((v) => v.includes("ACME_UNUSED") && v.includes("nothing in compose.yml")),
       true,
     )
+  } finally {
+    await Deno.remove(dir, { recursive: true })
+  }
+})
+
+Deno.test("checkStack: a README-only mention doesn't count as read", async () => {
+  // The "read somewhere" check used to scan the whole stack directory,
+  // which let a key satisfy it by being mentioned only in prose. It now
+  // scans compose.yml and the two hooks only.
+  const dir = await Deno.makeTempDir()
+  try {
+    await Deno.writeTextFile(`${dir}/compose.yml`, "services:\n  x:\n    image: acme\n")
+    await Deno.writeTextFile(`${dir}/README.md`, "Set ACME_DOCS_ONLY to configure this.\n")
+    const meta: StackMeta = {
+      name: "acme",
+      description: "test",
+      variables: [{ key: "ACME_DOCS_ONLY", required: false, default: "x" }],
+    }
+    const violations = await checkStack(dir, "acme", meta, new Map())
+    assertEquals(
+      violations.some((v) => v.includes("ACME_DOCS_ONLY")),
+      true,
+    )
+  } finally {
+    await Deno.remove(dir, { recursive: true })
+  }
+})
+
+Deno.test("checkStack: exempts deepseek-harness (no compose.yml, no hooks) from the read-somewhere check", async () => {
+  const dir = await Deno.makeTempDir()
+  try {
+    await Deno.writeTextFile(`${dir}/README.md`, "npm install ... @${DEEPSEEK_HARNESS_VERSION}\n")
+    const meta: StackMeta = {
+      name: "deepseek-harness",
+      description: "test",
+      variables: [{ key: "DEEPSEEK_HARNESS_VERSION", required: false, default: "1.0.0" }],
+    }
+    const violations = await checkStack(dir, "deepseek-harness", meta, new Map())
+    assertEquals(violations, [])
   } finally {
     await Deno.remove(dir, { recursive: true })
   }
