@@ -12,7 +12,15 @@ Web-based file manager for server files.
 
 ## Access
 
-Web UI: `https://files.${DOMAIN}`
+Web UI: `https://${FILEBROWSER_DOMAIN}` (default `https://files.${DOMAIN}`)
+
+## Configuration
+
+`PATH_MEDIA`, `PATH_VIDEOS`, `PATH_MUSIC`, `PATH_BOOKS`, `PATH_SYNC`,
+`PATH_MOVIES`, `PATH_SERIES` and `PATH_OTHER` are host directories
+mounted into the container (default `${VOLUMES_PATH}/<name>`). They're
+server-level keys — jellyfin declares `PATH_MEDIA`/`PATH_VIDEOS`/
+`PATH_MUSIC` too, and both stacks share one value per key.
 
 ## Resources
 
