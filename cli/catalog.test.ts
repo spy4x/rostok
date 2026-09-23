@@ -238,6 +238,124 @@ Deno.test("catalog: every stack's +meta.ts agrees with its compose.yml and hooks
   assertEquals(allViolations, [], allViolations.join("\n"))
 })
 
+/**
+ * Check the catalog's `requires` graph as a whole (review fix, #212):
+ * every `requires` entry must name a stack that actually exists in the
+ * catalog, no stack may require itself, and no cycle (`a` requires `b`,
+ * `b` requires `a`, or a longer loop) may exist — `stackAdd`'s own
+ * runtime guard stops a cycle from recursing forever, but a cycle
+ * should never ship in the bundled catalog in the first place.
+ */
+export function checkRequiresGraph(entries: { name: string; meta: StackMeta }[]): Violation[] {
+  const violations: Violation[] = []
+  const byName = new Map(entries.map((e) => [e.name, e]))
+
+  for (const entry of entries) {
+    for (const req of entry.meta.requires ?? []) {
+      if (req === entry.name) {
+        violations.push(`${entry.name}: requires itself`)
+        continue
+      }
+      if (!byName.has(req)) {
+        violations.push(`${entry.name}: requires unknown stack "${req}"`)
+      }
+    }
+  }
+
+  // DFS cycle detection over edges whose target exists in the catalog —
+  // an unknown-target edge is already reported above and shouldn't also
+  // produce a confusing "cycle" report. Classic white/gray/black DFS:
+  // `onStack` is the current path (gray), `visited` is fully explored
+  // (black) — a back-edge into `onStack` is a cycle.
+  const visited = new Set<string>()
+  const onStack = new Set<string>()
+  const cycles: string[][] = []
+
+  const dfs = (name: string, path: string[]) => {
+    onStack.add(name)
+    path.push(name)
+    const reqs = (byName.get(name)?.meta.requires ?? []).filter(
+      (r) => byName.has(r) && r !== name,
+    )
+    for (const req of reqs) {
+      if (onStack.has(req)) {
+        const start = path.indexOf(req)
+        cycles.push([...path.slice(start), req])
+      } else if (!visited.has(req)) {
+        dfs(req, path)
+      }
+    }
+    path.pop()
+    onStack.delete(name)
+    visited.add(name)
+  }
+
+  for (const name of byName.keys()) {
+    if (!visited.has(name)) dfs(name, [])
+  }
+
+  // Dedupe cycles that are rotations of the same loop (a→b→a walked
+  // from "a" and, if the traversal ever restarted from "b", the same
+  // loop walked from "b" — same cycle, different starting point).
+  const seenCanonical = new Set<string>()
+  for (const cycle of cycles) {
+    const core = cycle.slice(0, -1) // drop the repeated closing node
+    const canonical = core
+      .map((_, i) => [...core.slice(i), ...core.slice(0, i)].join(","))
+      .sort()[0]
+    if (seenCanonical.has(canonical)) continue
+    seenCanonical.add(canonical)
+    violations.push(`requires cycle: ${cycle.join(" -> ")}`)
+  }
+
+  return violations
+}
+
+Deno.test("catalog: every requires entry names an existing stack, with no self-reference and no cycles", () => {
+  const catalog = loadCatalog()
+  const violations = checkRequiresGraph(catalog)
+  assertEquals(violations, [], violations.join("\n"))
+})
+
+Deno.test("checkRequiresGraph: flags a requires entry naming a stack not in the catalog", () => {
+  const entries = [
+    { name: "web", meta: { name: "web", description: "x", variables: [], requires: ["ghost"] } },
+  ]
+  const violations = checkRequiresGraph(entries)
+  assertEquals(violations.some((v) => v.includes('requires unknown stack "ghost"')), true)
+})
+
+Deno.test("checkRequiresGraph: flags a stack requiring itself", () => {
+  const entries = [
+    { name: "web", meta: { name: "web", description: "x", variables: [], requires: ["web"] } },
+  ]
+  const violations = checkRequiresGraph(entries)
+  assertEquals(violations.some((v) => v.includes("requires itself")), true)
+})
+
+Deno.test("checkRequiresGraph: flags a two-stack cycle (a -> b -> a), reported once", () => {
+  const entries = [
+    { name: "a", meta: { name: "a", description: "x", variables: [], requires: ["b"] } },
+    { name: "b", meta: { name: "b", description: "x", variables: [], requires: ["a"] } },
+  ]
+  const violations = checkRequiresGraph(entries)
+  const cycleViolations = violations.filter((v) => v.startsWith("requires cycle"))
+  assertEquals(cycleViolations.length, 1, violations.join("\n"))
+  assertEquals(cycleViolations[0].includes("a -> b -> a"), true)
+})
+
+Deno.test("checkRequiresGraph: accepts a plain one-level requires (web -> traefik, traefik -> nothing)", () => {
+  const entries = [
+    { name: "traefik", meta: { name: "traefik", description: "x", variables: [] } },
+    {
+      name: "web",
+      meta: { name: "web", description: "x", variables: [], requires: ["traefik"] },
+    },
+  ]
+  const violations = checkRequiresGraph(entries)
+  assertEquals(violations, [])
+})
+
 // ── Unit tests for the parsing helpers ─────────────────────────────────
 
 Deno.test("stripFullLineComments: blanks a commented-out line, keeps others", () => {

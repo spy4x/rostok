@@ -19,7 +19,6 @@
 // (`() => generatePassword()` only runs when the key is absent).
 
 import { join } from "@std/path"
-import { Confirm } from "@cliffy/prompt"
 import { encryptEnvFiles } from "./encrypt.ts"
 import {
   type EnvEntry,
@@ -34,7 +33,13 @@ import { decidePrompt } from "./prompt-rule.ts"
 import { resolveVariable } from "./defaults.ts"
 import { normalizeVariableSpec } from "./stack-meta.ts"
 import type { VariableSpec } from "./stack-meta.ts"
-import { promptValue, withKeyLabel } from "./prompts.ts"
+import {
+  type ConfirmFn,
+  defaultConfirmFn,
+  type PromptFn,
+  promptValue,
+  withKeyLabel,
+} from "./prompts.ts"
 import { serverDirFor } from "./server-keys.ts"
 import { UserError } from "./errors.ts"
 
@@ -70,6 +75,17 @@ export interface StackAddOptions {
   nonInteractive?: boolean
   /** Skip server-level propagation (testing only). */
   skipServerPropagation?: boolean
+  /** Test injection point for every interactive variable prompt — see prompts.ts's PromptFn. */
+  promptFn?: PromptFn
+  /** Test injection point for the "add this required stack now?" yes/no prompt. Defaults to cliffy's Confirm.prompt. */
+  confirmFn?: ConfirmFn
+  /**
+   * Internal — used by stackAdd's own `requires` recursion to detect a
+   * cycle (`a` requires `b`, `b` requires `a`). Names of stacks already
+   * being added higher up the current call chain. Never set this
+   * yourself; stackAdd manages it when it recurses for a dependency.
+   */
+  _visiting?: Set<string>
 }
 
 /**
@@ -98,27 +114,48 @@ export async function stackAdd(
   const catalog = await resolveCatalog(opts.catalogDir)
   const entry = findStack(catalog, stackName)
 
+  // Review fix — a requires cycle (a requires b, b requires a) would
+  // otherwise recurse forever. `_visiting` tracks every stack name
+  // already being added higher up the current call chain; a name
+  // reappearing here means a cycle, reported as a UserError naming the
+  // full chain instead of blowing the stack. An unknown required stack
+  // (not in the catalog at all) is caught for free: the recursive
+  // stackAdd call below reaches `findStack` for that name and throws
+  // its own "not found in catalog" UserError.
+  const visiting = opts._visiting ?? new Set<string>()
+  if (visiting.has(stackName)) {
+    throw new UserError(
+      `requires cycle: ${[...visiting, stackName].join(" -> ")}`,
+    )
+  }
+  visiting.add(stackName)
+
   // #212 point 1 — a stack that `requires` another one (e.g. every web
   // stack requires traefik) gets that dependency added first, on the
   // same server, before its own variables are resolved. Non-interactive
   // mode adds it automatically and says so; interactive mode asks.
   const missingRequires = await unmetRequires(serverDir, entry)
   const declinedRequires: string[] = []
+  const confirmFn = opts.confirmFn ?? defaultConfirmFn
   for (const requiredName of missingRequires) {
     if (opts.nonInteractive) {
       console.log(
         `rostok: ${stackName} requires '${requiredName}', which isn't on ${serverName} yet — adding it first.`,
       )
-      await stackAdd(requiredName, serverName, { ...opts, nonInteractive: true })
+      await stackAdd(requiredName, serverName, {
+        ...opts,
+        nonInteractive: true,
+        _visiting: visiting,
+      })
       continue
     }
-    const shouldAdd = await Confirm.prompt({
+    const shouldAdd = await confirmFn({
       message:
         `${stackName} requires '${requiredName}', which isn't on '${serverName}' yet. Add it now?`,
       default: true,
     })
     if (shouldAdd) {
-      await stackAdd(requiredName, serverName, opts)
+      await stackAdd(requiredName, serverName, { ...opts, _visiting: visiting })
     } else {
       declinedRequires.push(requiredName)
       console.log(
@@ -196,6 +233,7 @@ export async function stackAdd(
         fallback,
         secret: normalized.secret,
         nonInteractive: !!opts.nonInteractive,
+        promptFn: opts.promptFn,
       })
     } else {
       skippedKeys.push(key)
@@ -260,10 +298,10 @@ function resolvedSkipContext(
   return null
 }
 
-type ServerConfigFile = { stacks: { name: string }[] }
+export type ServerConfigFile = { stacks: { name: string }[] }
 
 /** Read servers/<n>/config.json's stack list. Missing file → empty list. */
-async function readServerConfig(serverDir: string): Promise<ServerConfigFile> {
+export async function readServerConfig(serverDir: string): Promise<ServerConfigFile> {
   const configPath = join(serverDir, "config.json")
   try {
     const text = await Deno.readTextFile(configPath)
