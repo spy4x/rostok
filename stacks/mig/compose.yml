@@ -9,13 +9,28 @@ services:
   # One owner, one URL, one feature: book a time slot.
   mig:
     container_name: hl-mig
-    # Built locally from /home/spy4x/mig-src on cloud. Source repo:
-    # /home/spy4x/sync/code/mig (local dev path). Build before deploy:
-    #   cd /home/spy4x/mig-src && \
-    #     docker build --build-arg MIG_VERSION=$(git rev-parse --short HEAD) -t mig:latest .
-    # ghcr.io/spy4x/mig:latest is unauthorized (private repo, no deploy
-    # token configured). Local image sidesteps that.
-    image: mig:latest
+    # Published by mig's own CI (github.com/spy4x/mig) to Docker Hub on
+    # every v* tag: a stable tag like v1.2.3 also moves `latest`, a
+    # pre-release tag like v1.2.3-rc.1 never does. Watchtower (this repo's
+    # `watchtower` stack, `--interval 86400 --cleanup`) polls every
+    # container daily and keeps `latest` current on its own.
+    # Deploy a new release right away instead of waiting for Watchtower:
+    #   deno task deploy <server> mig
+    # Pin or roll back to a specific release by setting in the server's
+    # `.env`:
+    #   MIG_IMAGE_TAG=v0.3.0
+    image: antonshubin/mig:${MIG_IMAGE_TAG:-latest}
+    # The image runs as a non-root user baked into it (uid 1993, `deno`,
+    # from mig's v0.4.0). The deploy script (cli/deploy/volumes.ts)
+    # chowns ${VOLUMES_PATH}/mig to PUID:PGID (default 1000:1000, see
+    # cli/deploy/env.ts) on every deploy, not to the image's built-in
+    # uid, so a freshly provisioned server's data dir is unwritable by
+    # the container's default user. Running the container as the same
+    # PUID:PGID the deploy script already chowns the volume to sidesteps
+    # that mismatch — the same fix stacks/vaultwarden, stacks/gatus,
+    # stacks/filebrowser, stacks/watchtower and stacks/woodpecker already
+    # use for the same reason.
+    user: "${PUID:-1000}:${PGID:-1000}"
     restart: unless-stopped
     env_file:
       - ${PATH_APPS}/configs/mig.env
