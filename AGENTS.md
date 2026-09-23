@@ -103,7 +103,7 @@ commit — even if the task is incomplete.
 
 - Prefix title with `[WIP]` until fully done.
 - Push + update PR body after every human interaction.
-- Remove `[WIP]` only when complete and ready for review.
+- Remove `[WIP]` only when complete and the review gate passed.
 - Reference issues with full URLs in PR body:
   `Closes [#N](https://github.com/spy4x/rostok/issues/N)`.
 
@@ -180,18 +180,29 @@ unrelated keys.
 
 ## 🧹 Merge protocol
 
-After all changes are done and the PR is created, **STOP and wait**.
-Never merge yourself. When the user says "merge":
+Agents work autonomously in this repo, including merging. A PR merges
+when both gates are green:
+
+- the pre-merge `@reviewer` gate (fresh-context review with its own
+  checks and mutations; a separate security review for changes to
+  deploy, SSH, secrets or auth), and
+- CI on the PR (Woodpecker, `ci/woodpecker/pr/woodpecker`).
+
+If a gate fails twice on the same cause, or a revert can't undo the
+change, leave the PR open and tell the user.
 
 - All commits relate to one feature → `gh pr merge --squash --delete-branch`
 - Some commits fix independent things → `gh pr merge --rebase --delete-branch`
 
-Then clean up:
+`deno publish` is the exception: JSR versions are immutable, so never
+publish without the user's explicit OK for that version.
+
+Then clean up (worktrees live in the sibling `worktrees/rostok/`):
 
 ```bash
-cd $(git rev-parse --show-toplevel)
-git worktree remove <type>/<short-description>
-git branch -d <type>/<short-description>
+git worktree remove ../worktrees/rostok/<type>/<short-description>
+git branch -D <type>/<short-description>
+git fetch --prune
 ```
 
 ---
