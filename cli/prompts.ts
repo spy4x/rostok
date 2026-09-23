@@ -3,18 +3,23 @@
 // Both server-create and stack-add need the same flow:
 //   1. Use the pre-supplied value if present (from --var or a pre-supplied
 //      map).
-//   2. Throw if non-interactive (the strict-default policy — per
-//      docs/v1-cli.md §3.4, every required var must have a default or
-//      --var; missing both means fail loud).
+//   2. In non-interactive mode: fall back to `fallback` if one exists;
+//      throw a UserError only when neither a value nor a fallback exists
+//      (the strict-default policy — per docs/v1-cli.md §3.4, every
+//      required var must have a default or --var; missing both means
+//      fail loud, naming the exact flag to pass).
 //   3. Otherwise prompt interactively (Input for normal, Secret for hidden).
 //
 // Extracts the pattern that previously lived twice in server-create.ts
 // (`ask()`) and stack-add.ts (`promptFor()`).
 
 import { Input, Secret } from "@cliffy/prompt"
+import { UserError } from "./errors.ts"
 
 export interface PromptValueOptions {
-  /** Human-readable label. Used as the prompt message and in error text. */
+  /** The `--var KEY` name. Used to look up `provided` and in the missing-value error. */
+  key: string
+  /** Human-readable label shown as the interactive prompt message. */
   label: string
   /** Pre-supplied value (e.g. from --var KEY=VAL). Wins if present. */
   provided?: string
@@ -24,7 +29,7 @@ export interface PromptValueOptions {
   validate?: (v: string) => true | string
   /** Hide input (use cliffy Secret.prompt). */
   secret?: boolean
-  /** Skip the interactive prompt entirely; throw if `provided` is missing. */
+  /** Skip the interactive prompt entirely; resolve from `fallback` or throw. */
   nonInteractive?: boolean
 }
 
@@ -32,18 +37,16 @@ export interface PromptValueOptions {
  * Resolve a value with the strict-default policy: prefer a provided value,
  * then the fallback (if any), then prompt (or fail).
  *
- * In non-interactive mode (when `nonInteractive: true`), this function
- * throws on missing values rather than prompting. The wizard passes
- * `nonInteractive: opts.nonInteractive` so `-n` / `--non-interactive` flows
- * fail fast instead of hanging on a TTY-less stdin.
+ * In non-interactive mode (`nonInteractive: true`), this returns
+ * `fallback` when one exists — matching "-n skips prompts, uses
+ * defaults" — and throws a `UserError` only when neither `provided` nor
+ * `fallback` exists.
  */
 export async function promptValue(opts: PromptValueOptions): Promise<string> {
   if (opts.provided !== undefined) return opts.provided
   if (opts.nonInteractive) {
-    throw new Error(
-      `${opts.label}: missing required value in non-interactive mode. ` +
-        `pass via --var KEY=VAL or provide a default.`,
-    )
+    if (opts.fallback !== undefined) return opts.fallback
+    throw new UserError(`missing ${opts.key}: pass --var ${opts.key}=<value>`)
   }
   const base = {
     message: opts.label,
