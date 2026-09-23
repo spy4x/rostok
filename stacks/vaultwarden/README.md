@@ -12,20 +12,21 @@ Self-hosted password manager compatible with Bitwarden clients.
 
 ## Configuration
 
-SMTP for password resets and emergency access:
+SMTP for password resets and emergency access (optional — omit to run
+without email):
 
 ```bash
-HOME_SMTP_HOST=mail.yourdomain.com
-HOME_SMTP_PORT=587
-HOME_SMTP_FROM=noreply@yourdomain.com
-HOME_SMTP_USERNAME=noreply@yourdomain.com
-HOME_SMTP_PASSWORD=...
+VAULTWARDEN_SMTP_HOST=mail.yourdomain.com
+VAULTWARDEN_SMTP_PORT=587
+VAULTWARDEN_SMTP_FROM=noreply@yourdomain.com
+VAULTWARDEN_SMTP_USERNAME=noreply@yourdomain.com
+VAULTWARDEN_SMTP_PASSWORD=...
 ```
 
 ## Access
 
-- Web Vault: `https://passwords.${DOMAIN}`
-- Admin Panel: `https://passwords.${DOMAIN}/admin` (requires `VAULTWARDEN_ADMIN_TOKEN`)
+- Web Vault: `https://${VAULTWARDEN_DOMAIN}` (default `https://passwords.${DOMAIN}`)
+- Admin Panel: `https://${VAULTWARDEN_DOMAIN}/admin` (requires `VAULTWARDEN_ADMIN_TOKEN`)
 
 ## Clients
 

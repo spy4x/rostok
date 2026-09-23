@@ -9,7 +9,7 @@ services:
   # Vaultwarden is a password manager which is compatible with Bitwarden clients.
   vaultwarden:
     container_name: hl-vaultwarden
-    image: vaultwarden/server:latest
+    image: vaultwarden/server:${VAULTWARDEN_IMAGE_TAG:-latest}
     healthcheck:
       test: ["CMD", "curl", "-sf", "http://localhost:80/"]
       interval: 30s
@@ -18,7 +18,7 @@ services:
       start_period: 40s
     user: "${PUID:-1000}:${PGID:-1000}"
     environment:
-      - DOMAIN=https://passwords.${DOMAIN}
+      - DOMAIN=https://${VAULTWARDEN_DOMAIN}
       # - ADMIN_TOKEN=${VAULTWARDEN_ADMIN_TOKEN} # Enable admin page only while needed and disable otherwise for better security
       - SIGNUPS_ALLOWED=${VAULTWARDEN_SIGNUPS_ALLOWED}
       - INVITATIONS_ALLOWED=${VAULTWARDEN_INVITATIONS_ALLOWED}
@@ -29,11 +29,11 @@ services:
       - LOG_LEVEL=${VAULTWARDEN_LOG_LEVEL}
       - EMERGENCY_ACCESS_ALLOWED=${VAULTWARDEN_EMERGENCY_ACCESS_ALLOWED}
       # SMTP configuration for email notifications
-      - SMTP_HOST=${SMTP_HOST}
-      - SMTP_PORT=${SMTP_PORT}
-      - SMTP_FROM=${SMTP_FROM}
-      - SMTP_USERNAME=${SMTP_USERNAME}
-      - SMTP_PASSWORD=${SMTP_PASSWORD}
+      - SMTP_HOST=${VAULTWARDEN_SMTP_HOST:-}
+      - SMTP_PORT=${VAULTWARDEN_SMTP_PORT:-}
+      - SMTP_FROM=${VAULTWARDEN_SMTP_FROM:-}
+      - SMTP_USERNAME=${VAULTWARDEN_SMTP_USERNAME:-}
+      - SMTP_PASSWORD=${VAULTWARDEN_SMTP_PASSWORD:-}
       - SMTP_SECURITY=starttls
       # Real client IP from Cloudflare (enables proper logging and rate limiting)
       - IP_HEADER=CF-Connecting-IP
@@ -54,7 +54,7 @@ services:
       - "traefik.docker.network=proxy"
       # Main service (handles both HTTP and WebSocket on port 80 since v1.29.0)
       - "traefik.http.services.hl-vaultwarden.loadbalancer.server.port=80"
-      - "traefik.http.routers.hl-vaultwarden.rule=Host(`passwords.${DOMAIN}`)"
+      - "traefik.http.routers.hl-vaultwarden.rule=Host(`${VAULTWARDEN_DOMAIN}`)"
       - "traefik.http.routers.hl-vaultwarden.entrypoints=websecure"
       - "traefik.http.routers.hl-vaultwarden.tls=true"
       - "traefik.http.routers.hl-vaultwarden.tls.certresolver=myresolver"
