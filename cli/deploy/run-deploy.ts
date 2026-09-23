@@ -12,26 +12,41 @@
 //   - Resolves each stack's files from the project's own `stacks/<name>/`
 //     if present, otherwise from the files shipped inside the CLI
 //     package (#203 point 2 — see stack-files.ts).
-//   - Runs a docker-group preflight before any file is synced (#207).
-//   - Applies the SSH_USER/PATH_APPS legacy fallbacks and fails loudly on
-//     any still-missing DEPLOY_REQUIRED_KEYS (#206).
+//   - Runs a docker-group preflight before any file is synced (#207), and
+//     decides whether privileged remote commands need `sudo -n` from the
+//     remote's own `id -u` — not from the SSH_USER string, which can be
+//     stale or overridden by the SSH target/ssh_config.
+//   - Applies the SSH_USER/PATH_APPS/PUID/PGID legacy fallbacks against
+//     `.env.root` merged with the server `.env` (compose reads both) and
+//     fails loudly on any still-missing DEPLOY_REQUIRED_KEYS (#206).
 //   - Stops rsyncing `./scripts` and `./deno.jsonc` — only `.env`,
 //     `.env.root`, `configs/`, `compose-override/` and the deployed
 //     stacks' files are sent.
+//   - Every value from `.env`/`config.json` embedded in a remote command
+//     is single-quoted (`shQuote`); the old double-quoting still let
+//     `$(...)`/backticks run inside it.
 //
 // Kept from the old script: a server can override a stack's before-hook
 // with `servers/<server>/configs/<deployAs>/before.deploy.ts`, run after
-// the stack's own before-hook. That file only ever exists locally in the
-// project (it's never shipped), so it still satisfies the hook
-// contract's "run from source, never a copy" rule the same way a stack's
-// own hook does.
+// the stack's own before-hook, FROM ITS STAGING COPY
+// (`<staging>/configs/<deployAs>/before.deploy.ts`) — unlike a stack's
+// own hook, this one is meant to run from a copy. The owner's real
+// server-specific hooks reference sibling stack files by relative URL
+// (`new URL("../../stacks/<name>/dynamic/", import.meta.url)`), which
+// only resolves correctly once the hook sits inside the staging layout
+// next to `stacks/`; running it from its original
+// `servers/<server>/configs/<deployAs>/` location (which has no
+// `stacks/` two levels up) would break that. The hook contract's "run
+// from source, never a copy" rule is about STACK hooks, which are
+// shipped and must not depend on staging's shape — a server-specific
+// hook is never shipped, so it has no such constraint.
 
 import { dirname, join, toFileUrl } from "@std/path"
 import { parseEnv, readEnvFile } from "../env-files.ts"
 import { serverDirFor } from "../server-keys.ts"
 import { UserError } from "../errors.ts"
 import { resolveDeployEnv } from "./env.ts"
-import { checkDockerGroup } from "./docker-preflight.ts"
+import { checkDockerGroup, needsRemoteSudo } from "./docker-preflight.ts"
 import { type ResolvedStackFiles, resolveStackFiles } from "./stack-files.ts"
 import { type HookContext, runHook } from "./hooks.ts"
 import { extractVolumePaths, generateVolumeCreationScript } from "./volumes.ts"
@@ -43,7 +58,7 @@ import {
   printDeploySummary,
   type StackConfig,
 } from "./deploy-script.ts"
-import { runCommand, runRemoteShell } from "./exec.ts"
+import { runCommand, runRemoteShell, shQuote } from "./exec.ts"
 
 export interface DeployOptions {
   /** Project root (the directory that holds `servers/` and `.env.root`). */
@@ -72,9 +87,24 @@ export async function runDeploy(opts: DeployOptions): Promise<DeployRunResult> {
 
   const env = entriesToRecord(await readEnvFile(envPath))
 
-  // #206: legacy fallbacks (SSH_USER, PATH_APPS), then fail loudly on any
-  // still-missing DEPLOY_REQUIRED_KEYS.
-  const { env: resolvedEnv, notices } = resolveDeployEnv(env, envPath)
+  const rootEnvPath = join(cwd, ".env.root")
+  let rootEnvText = ""
+  try {
+    rootEnvText = await Deno.readTextFile(rootEnvPath)
+  } catch (err) {
+    if (!(err instanceof Deno.errors.NotFound)) throw err
+  }
+  const rootEnv = entriesToRecord(parseEnv(rootEnvText))
+
+  // #206: legacy fallbacks (SSH_USER, PATH_APPS, PUID, PGID), then fail
+  // loudly on any still-missing DEPLOY_REQUIRED_KEYS. Checked against
+  // .env.root merged with the server .env (server wins) — compose itself
+  // reads both, so a key genuinely declared only in .env.root must count.
+  const { env: resolvedEnv, notices } = resolveDeployEnv(
+    { ...rootEnv, ...env },
+    envPath,
+    rootEnvPath,
+  )
   for (const notice of notices) console.error(notice)
 
   const SSH_ADDRESS = resolvedEnv.SSH_ADDRESS
@@ -85,8 +115,12 @@ export async function runDeploy(opts: DeployOptions): Promise<DeployRunResult> {
   const PGID = resolvedEnv.PGID
   const DOCKER_GROUP_ID = resolvedEnv.DOCKER_GROUP_ID
 
-  // #207: preflight before any file is synced.
+  // #207: preflight before any file is synced. Docker group GID, and
+  // whether privileged commands need `sudo -n` — decided from the
+  // remote's own `id -u`, not from the SSH_USER string (see
+  // docker-preflight.ts's needsRemoteSudo for why).
   await checkDockerGroup(SSH_ADDRESS, DOCKER_GROUP_ID, envPath)
+  const needsSudo = await needsRemoteSudo(SSH_ADDRESS)
 
   // config.json → which stacks to deploy.
   const configPath = join(serverDir, "config.json")
@@ -107,15 +141,6 @@ export async function runDeploy(opts: DeployOptions): Promise<DeployRunResult> {
     }
     stacks = filtered
   }
-
-  const rootEnvPath = join(cwd, ".env.root")
-  let rootEnvText = ""
-  try {
-    rootEnvText = await Deno.readTextFile(rootEnvPath)
-  } catch (err) {
-    if (!(err instanceof Deno.errors.NotFound)) throw err
-  }
-  const rootEnv = entriesToRecord(parseEnv(rootEnvText))
 
   const stagingDir = await Deno.makeTempDir({ prefix: "rostok-deploy-" })
   try {
@@ -167,16 +192,20 @@ export async function runDeploy(opts: DeployOptions): Promise<DeployRunResult> {
       )
 
       // Server-specific override hook, run after the stack's own
-      // before-hook: servers/<server>/configs/<deployAs>/before.deploy.ts.
-      // Unlike a stack's own hook, this file only ever exists locally in
-      // the project (it's never shipped), so "its source location" is
-      // simply that path — never a staging copy, same as any other hook.
-      const serverHookPath = join(cwd, "servers", server, "configs", deployAs, "before.deploy.ts")
-      if (await pathExists(serverHookPath)) {
+      // before-hook, from its STAGING COPY:
+      // <staging>/configs/<deployAs>/before.deploy.ts (copied from
+      // servers/<server>/configs/<deployAs>/ above, alongside
+      // copyIfExists(.../configs, ...)). It has to run from there, not
+      // its original project location — a real one uses
+      // `new URL("../../stacks/<name>/dynamic/", import.meta.url)` to
+      // reach its stack's files, which only resolves correctly inside
+      // staging's flat `configs/<x>/` + `stacks/<name>/` layout.
+      const stagedServerHookPath = join(stagingDir, "configs", deployAs, "before.deploy.ts")
+      if (await pathExists(stagedServerHookPath)) {
         await runHook(
           "before",
           `${stackConfig.name} (server override)`,
-          toFileUrl(serverHookPath).href,
+          toFileUrl(stagedServerHookPath).href,
           stagingDir,
           ctx,
         )
@@ -216,10 +245,13 @@ export async function runDeploy(opts: DeployOptions): Promise<DeployRunResult> {
     // Clean up stale stack directories on the remote (removed from
     // config.json). Uses the full config.stacks list, not the filtered
     // one, so a single-stack deploy doesn't remove every other stack.
+    // Every stack name is single-quoted going into the case pattern —
+    // double quotes (the old `" ${s} "`) still let `$(...)` run inside a
+    // case pattern, same as any other double-quoted shell text.
     const activeStacks = (config.stacks ?? []).map((s) => s.name)
-    const stackNamesPattern = activeStacks.map((s) => `" ${s} "`).join("|")
+    const stackNamesPattern = activeStacks.map((s) => shQuote(` ${s} `)).join("|")
     const remoteStacksScript = [
-      `cd "${PATH_APPS}/stacks" || exit 0`,
+      `cd ${shQuote(`${PATH_APPS}/stacks`)} || exit 0`,
       `for dir in */; do`,
       `  dir_name="\${dir%/}"`,
       `  case " \${dir_name} " in`,
@@ -275,12 +307,12 @@ export async function runDeploy(opts: DeployOptions): Promise<DeployRunResult> {
       const volumePaths = extractVolumePaths(composeContents, env)
       if (volumePaths.length > 0 && VOLUMES_PATH) {
         console.log(`Creating ${volumePaths.length} volume directories with correct ownership...`)
-        const script = generateVolumeCreationScript(volumePaths, PUID, PGID, SSH_USER)
+        const script = generateVolumeCreationScript(volumePaths, PUID, PGID, needsSudo)
         const volumesResult = await runRemoteShell(SSH_ADDRESS, script)
         if (!volumesResult.success) {
-          const sudoHint = SSH_USER !== "root"
-            ? ` SSH_USER ("${SSH_USER}") is not root on ${SSH_ADDRESS} — mkdir/chown need ` +
-              `passwordless sudo (a NOPASSWD rule in /etc/sudoers for this user).`
+          const sudoHint = needsSudo
+            ? ` The remote user on ${SSH_ADDRESS} isn't root — mkdir/chown need passwordless ` +
+              `sudo (a NOPASSWD rule in /etc/sudoers for that user).`
             : ""
           throw new UserError(
             `failed to create/chown volume directories on ${SSH_ADDRESS}: ` +
@@ -343,7 +375,13 @@ export async function runDeploy(opts: DeployOptions): Promise<DeployRunResult> {
     console.log("Deployment script finished")
     return { deployedStacks: stacks.map((s) => s.name), results }
   } finally {
-    await Deno.remove(stagingDir, { recursive: true }).catch(() => {})
+    // Staging holds a copy of .env (secrets) — a failed cleanup leaves
+    // that on disk, so warn instead of swallowing the error silently.
+    try {
+      await Deno.remove(stagingDir, { recursive: true })
+    } catch (err) {
+      console.error(`Warning: failed to remove staging directory ${stagingDir}: ${err}`)
+    }
   }
 }
 

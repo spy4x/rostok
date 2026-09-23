@@ -46,3 +46,17 @@ export async function runRemoteShell(
 ): Promise<CommandResult> {
   return await runCommand(["ssh", sshAddress, script])
 }
+
+/**
+ * Single-quote `value` for embedding in a remote shell command string.
+ * Every remote command rostok builds is one shell string (docker
+ * compose, mkdir/chown loops, case patterns), so any value that comes
+ * from `.env`, `config.json` or a stack name has to be quoted this way
+ * — double quotes still let `$(...)`/backticks/`$VAR` run inside them,
+ * and break outright on an embedded `"`. Single quotes suppress all of
+ * that; the one thing they can't contain literally is `'` itself, which
+ * is escaped as close-quote, escaped-quote, reopen-quote (`'\''`).
+ */
+export function shQuote(value: string): string {
+  return `'${value.replaceAll("'", `'\\''`)}'`
+}

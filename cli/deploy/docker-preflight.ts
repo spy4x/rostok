@@ -41,3 +41,24 @@ export async function checkDockerGroup(
     )
   }
 }
+
+/**
+ * `ssh <target> id -u` — decide whether privileged remote commands
+ * (mkdir/chown for volume directories) need a `sudo -n` prefix. This is
+ * decided from the remote itself, not from the SSH_USER string: an SSH
+ * target of `root@host` logs in as root even when SSH_USER in `.env`
+ * still names a non-root user (a stale value, an ssh_config alias with
+ * its own `User root`, …), so trusting the string was wrong — it added
+ * `sudo -n` for a session that was already root.
+ */
+export async function needsRemoteSudo(sshAddress: string): Promise<boolean> {
+  const result = await runRemoteCommand(sshAddress, ["id", "-u"])
+  const uid = result.output.trim()
+  if (!result.success || !uid) {
+    throw new UserError(
+      `could not determine the remote user's UID on ${sshAddress} (\`id -u\` failed: ` +
+        `${result.error.trim()}).`,
+    )
+  }
+  return uid !== "0"
+}

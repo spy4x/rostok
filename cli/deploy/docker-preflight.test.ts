@@ -1,7 +1,7 @@
-import { assertRejects, assertStringIncludes } from "@std/assert"
+import { assertEquals, assertRejects, assertStringIncludes } from "@std/assert"
 import { join } from "@std/path"
 import { UserError } from "../errors.ts"
-import { checkDockerGroup } from "./docker-preflight.ts"
+import { checkDockerGroup, needsRemoteSudo } from "./docker-preflight.ts"
 
 /** Install a fake `ssh` on PATH that prints `sshReply` to stdout and exits 0. */
 async function withFakeSsh<T>(sshReply: string, fn: () => Promise<T>): Promise<T> {
@@ -50,5 +50,29 @@ Deno.test("checkDockerGroup: throws when the docker group is missing", async () 
       UserError,
     )
     assertStringIncludes(err.message, "docker group not found")
+  })
+})
+
+Deno.test("needsRemoteSudo: false when the remote id -u is 0 (already root)", async () => {
+  await withFakeSsh("0\n", async () => {
+    const result = await needsRemoteSudo("root@example.com")
+    assertEquals(result, false)
+  })
+})
+
+Deno.test("needsRemoteSudo: true when the remote id -u is not 0", async () => {
+  await withFakeSsh("1000\n", async () => {
+    const result = await needsRemoteSudo("deploy@example.com")
+    assertEquals(result, true)
+  })
+})
+
+Deno.test("needsRemoteSudo: throws when id -u can't be read", async () => {
+  await withFakeSsh("", async () => {
+    const err = await assertRejects(
+      () => needsRemoteSudo("root@example.com"),
+      UserError,
+    )
+    assertStringIncludes(err.message, "id -u")
   })
 })

@@ -18,11 +18,11 @@ import { join } from "@std/path"
 
 const FAKE_SSH = `#!/usr/bin/env -S deno run --allow-read --allow-write --allow-env
 // Records every invocation to FAKE_SSH_LOG, then fakes just enough of a
-// remote host for a deploy to complete: the docker-group preflight and
-// the per-stack DEPLOY_START/DEPLOY_SUCCESS markers the real deploy
-// script would print after a successful \`docker compose up\`. Anything
-// else (proxy network, stale-stack cleanup, volume mkdir/chown) is
-// accepted silently, matching a healthy remote.
+// remote host for a deploy to complete: the docker-group + remote-UID
+// preflights and the per-stack DEPLOY_START/DEPLOY_SUCCESS markers the
+// real deploy script would print after a successful \`docker compose up\`.
+// Anything else (proxy network, stale-stack cleanup, volume mkdir/chown)
+// is accepted silently, matching a healthy remote.
 const args = Deno.args
 const script = args.slice(1).join(" ")
 const logPath = Deno.env.get("FAKE_SSH_LOG")
@@ -32,6 +32,10 @@ if (logPath) {
 if (script.includes("getent group docker")) {
   const gid = Deno.env.get("FAKE_DOCKER_GID") ?? "988"
   console.log(\`docker:x:\${gid}:\`)
+} else if (script === "id -u") {
+  // Default: root (uid 0) — matches SSH_ADDRESS=deploy@remote.test in the
+  // fixtures below, which is a placeholder address, not a real login.
+  console.log(Deno.env.get("FAKE_REMOTE_UID") ?? "0")
 } else if (script.includes("DEPLOY_START:")) {
   for (const m of script.matchAll(/DEPLOY_START:(\\S+):(\\S+)/g)) {
     console.log(\`DEPLOY_START:\${m[1]}:\${m[2]}\`)
@@ -150,8 +154,15 @@ Deno.test("e2e: deploy ships bundled catalog stacks with no local stacks/ folder
   const f = await setupFixture()
   try {
     // No `stacks/` directory in this project at all — every file has to
-    // come from the CLI package's bundled catalog.
+    // come from the CLI package's bundled catalog. `scripts/` and
+    // `deno.jsonc` DO exist here (matching a real project), so "neither
+    // reaches the remote" is a real assertion — with nothing to exclude,
+    // the old version of this test would have passed even if the
+    // whitelist logic were deleted entirely.
     await writeServer(f.projectDir, [], ["librespeed", "jellyfin"])
+    await Deno.mkdir(join(f.projectDir, "scripts"), { recursive: true })
+    await Deno.writeTextFile(join(f.projectDir, "scripts", "marker.ts"), "// dev-only\n")
+    await Deno.writeTextFile(join(f.projectDir, "deno.jsonc"), "{}\n")
 
     const result = await runDeployCli(f, ["deploy", "test"])
     if (!result.success) console.error(result.stderr)
@@ -238,7 +249,7 @@ Deno.test("e2e: rostok deploy ../escaped refuses before reading anything (#208)"
   }
 })
 
-Deno.test("e2e: server-specific hook overrides run from source, after the stack's own hook", async () => {
+Deno.test("e2e: server-specific hook overrides run from the staging copy, after the stack's own hook", async () => {
   const f = await setupFixture()
   try {
     // A local (non-catalog) stack — keeps this test independent of any
@@ -258,14 +269,27 @@ await Deno.writeTextFile(logPath, "stack\\n", { append: true })
     )
 
     // servers/test/configs/custom-stack/before.deploy.ts — the
-    // server-specific override. It self-checks that the stack's own
-    // hook already ran (the log already contains "stack"), and records
-    // its own cwd + the contract env keys for the test to assert on.
+    // server-specific override. Like the owner's real hook, it reaches
+    // its stack's sibling files with a URL relative to its OWN location
+    // (`new URL("../../stacks/custom-stack/", import.meta.url)`), which
+    // only resolves to the right place once this hook runs from its
+    // staging copy — from its original project location, "../../" would
+    // land on `servers/`, not the staging root. It writes a file there;
+    // that file must then reach the "remote" through rsync, the same as
+    // any other file under stacks/custom-stack/. It also self-checks
+    // that the stack's own hook already ran, and records its own cwd +
+    // the contract env keys for the test to assert on.
     const serverHookDir = join(f.projectDir, "servers", "test", "configs", "custom-stack")
     await Deno.mkdir(serverHookDir, { recursive: true })
     await Deno.writeTextFile(
       join(serverHookDir, "before.deploy.ts"),
-      `const logPath = Deno.env.get("SERVER_HOOK_LOG")!
+      `const stackDirUrl = new URL("../../stacks/custom-stack/", import.meta.url)
+await Deno.writeTextFile(
+  new URL("from-server-hook.txt", stackDirUrl),
+  "written by the server-specific hook via import.meta.url\\n",
+)
+
+const logPath = Deno.env.get("SERVER_HOOK_LOG")!
 const priorContent = await Deno.readTextFile(logPath).catch(() => "")
 const env = Deno.env.toObject()
 const record = {
@@ -299,6 +323,58 @@ await Deno.writeTextFile(logPath, "server:" + JSON.stringify(record) + "\\n", { 
     assertEquals(record.sshAddress, "deploy@remote.test")
     assertEquals(record.sshUser, "deploy")
     assertEquals(record.pathApps, "/srv/apps")
+
+    // The file the server-specific hook wrote via its own import.meta.url
+    // reached the remote alongside the rest of the stack's files.
+    const shippedFile = join(
+      f.remoteDir,
+      "srv",
+      "apps",
+      "stacks",
+      "custom-stack",
+      "from-server-hook.txt",
+    )
+    const shippedContent = await Deno.readTextFile(shippedFile)
+    assertEquals(shippedContent, "written by the server-specific hook via import.meta.url\n")
+  } finally {
+    await teardownFixture(f)
+  }
+})
+
+Deno.test("e2e: a hook receives $-heavy env values byte-for-byte (no --env-file mangling)", async () => {
+  const f = await setupFixture()
+  try {
+    // A local stack whose before-hook writes SECRET_HASH straight to a
+    // file under its own stack dir — that file then reaches the
+    // "remote" via rsync, so the test can check the exact bytes that
+    // survived the whole env-passing pipeline (parseEnv → Deno.Command's
+    // `env` option → Deno.env.get inside the hook). Deno's own
+    // `--env-file` flag mangles `$` in values like bcrypt hashes; rostok
+    // never uses it for this reason (see hooks.ts).
+    const stackDir = join(f.projectDir, "stacks", "hash-stack")
+    await Deno.mkdir(stackDir, { recursive: true })
+    await Deno.writeTextFile(
+      join(stackDir, "compose.yml"),
+      "name: ${PROJECT}\nservices:\n  hash:\n    image: busybox\n",
+    )
+    await Deno.writeTextFile(
+      join(stackDir, "before.deploy.ts"),
+      `const value = Deno.env.get("SECRET_HASH") ?? ""
+await Deno.writeTextFile("stacks/hash-stack/hash-output.txt", value)
+`,
+    )
+
+    const bcryptStyleValue = `$2y$05$abc$HOME$def`
+    await writeServer(f.projectDir, [`SECRET_HASH=${bcryptStyleValue}`], ["hash-stack"])
+
+    const result = await runDeployCli(f, ["deploy", "test"])
+    if (!result.success) console.error(result.stderr)
+    assertEquals(result.success, true)
+
+    const shipped = await Deno.readTextFile(
+      join(f.remoteDir, "srv", "apps", "stacks", "hash-stack", "hash-output.txt"),
+    )
+    assertEquals(shipped, bcryptStyleValue)
   } finally {
     await teardownFixture(f)
   }

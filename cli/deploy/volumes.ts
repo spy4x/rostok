@@ -5,10 +5,18 @@
 // directories owned by `root`, Traefik couldn't write `acme.json`, and
 // deploy still printed "Volume directories created". It now chowns to
 // `PUID:PGID` (the IDs the containers actually run as) and fails the
-// deploy loudly, with the remote error, when mkdir or chown fails. When
-// SSH_USER isn't root, every command is prefixed with `sudo -n` — a
-// missing passwordless-sudo rule then surfaces as a clear deploy error
-// instead of a silent permission failure.
+// deploy loudly, with the remote error, when mkdir or chown fails. The
+// caller decides whether `sudo -n` is needed from the remote's actual
+// `id -u` (see docker-preflight.ts's `needsRemoteSudo`), not from the
+// SSH_USER string — `ssh root@host` logs in as root regardless of what
+// SSH_USER says. A missing passwordless-sudo rule then surfaces as a
+// clear deploy error instead of a silent permission failure.
+//
+// Every value below comes from `.env` or a compose file, so it's quoted
+// with `shQuote` (single quotes) before going into the remote script —
+// double quotes would still let `$(...)`/backticks run.
+
+import { shQuote } from "./exec.ts"
 
 /** Extract every `${VOLUMES_PATH}/...` reference from a set of compose files. */
 export function extractVolumePaths(
@@ -42,11 +50,14 @@ export function generateVolumeCreationScript(
   volumePaths: string[],
   puid: string,
   pgid: string,
-  sshUser: string,
+  needsSudo: boolean,
 ): string {
-  const sudo = sshUser === "root" ? "" : "sudo -n "
+  const sudo = needsSudo ? "sudo -n " : ""
   const commands = volumePaths.map((path) => {
-    return `${sudo}mkdir -p "${path}" && ${sudo}chown -R ${puid}:${pgid} "${path}"`
+    const quotedPath = shQuote(path)
+    return `${sudo}mkdir -p ${quotedPath} && ${sudo}chown -R ${shQuote(puid)}:${
+      shQuote(pgid)
+    } ${quotedPath}`
   })
   return commands.join(" && ")
 }

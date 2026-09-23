@@ -7,8 +7,16 @@
 // environment, where USER is the shell's own variable — and print a
 // one-line notice so the operator renames the key.
 //
-// PATH_APPS falls back to DEFAULT_PATH_APPS (`/srv/apps`) when the server
-// `.env` predates the wizard asking for it.
+// PATH_APPS falls back to DEFAULT_PATH_APPS (`/srv/apps`), and PUID/PGID
+// fall back to `1000` (rostok's own default — docs/design/v1-cli.md §3.1,
+// `server-create.ts`'s own prompt default), when the server `.env`
+// predates the wizard asking for them.
+//
+// `resolveDeployEnv` takes the server `.env` already merged with
+// `.env.root` (the caller's job — see run-deploy.ts), because compose
+// itself reads both (`--env-file=.env.root --env-file=.env`): a required
+// key genuinely declared in `.env.root` (a cross-server value) must not
+// be reported missing just because it isn't repeated in the server file.
 
 import { DEFAULT_PATH_APPS, DEPLOY_REQUIRED_KEYS } from "../server-keys.ts"
 import { UserError } from "../errors.ts"
@@ -46,6 +54,21 @@ export function resolvePathApps(env: Record<string, string>): ResolvedValue {
   }
 }
 
+/** The PUID/PGID default `server create` itself prompts with. */
+export const DEFAULT_ID = "1000"
+
+/** PUID ← DEFAULT_ID (1000). */
+export function resolvePuid(env: Record<string, string>): ResolvedValue {
+  if (env.PUID) return { value: env.PUID }
+  return { value: DEFAULT_ID, notice: `PUID not set — using the default ${DEFAULT_ID}.` }
+}
+
+/** PGID ← DEFAULT_ID (1000). */
+export function resolvePgid(env: Record<string, string>): ResolvedValue {
+  if (env.PGID) return { value: env.PGID }
+  return { value: DEFAULT_ID, notice: `PGID not set — using the default ${DEFAULT_ID}.` }
+}
+
 export interface ResolvedDeployEnv {
   /** `env` with SSH_USER and PATH_APPS filled in by the fallbacks above. */
   env: Record<string, string>
@@ -55,27 +78,41 @@ export interface ResolvedDeployEnv {
 
 /**
  * Apply the legacy fallbacks, then throw a UserError naming every key of
- * DEPLOY_REQUIRED_KEYS still missing (and the file to fix) — deploy
+ * DEPLOY_REQUIRED_KEYS still missing (and the files to fix) — deploy
  * cannot proceed without them.
+ *
+ * `env` must already be `.env.root` merged with the server `.env` (server
+ * wins on conflict — see the module comment above); `envPath` and
+ * `rootEnvPath` are only used to name the files in notices and errors.
  */
-export function resolveDeployEnv(env: Record<string, string>, envPath: string): ResolvedDeployEnv {
+export function resolveDeployEnv(
+  env: Record<string, string>,
+  envPath: string,
+  rootEnvPath: string,
+): ResolvedDeployEnv {
   const notices: string[] = []
 
   const sshUser = resolveSshUser(env, envPath)
   if (sshUser.notice) notices.push(sshUser.notice)
   const pathApps = resolvePathApps(env)
   if (pathApps.notice) notices.push(pathApps.notice)
+  const puid = resolvePuid(env)
+  if (puid.notice) notices.push(puid.notice)
+  const pgid = resolvePgid(env)
+  if (pgid.notice) notices.push(pgid.notice)
 
   const resolved: Record<string, string> = {
     ...env,
     ...(sshUser.value ? { SSH_USER: sshUser.value } : {}),
     PATH_APPS: pathApps.value,
+    PUID: puid.value,
+    PGID: pgid.value,
   }
 
   const missing = DEPLOY_REQUIRED_KEYS.filter((key) => !resolved[key])
   if (missing.length > 0) {
     throw new UserError(
-      `missing required key(s) in ${envPath}: ${missing.join(", ")}`,
+      `missing required key(s) in ${envPath} (also checked ${rootEnvPath}): ${missing.join(", ")}`,
     )
   }
 

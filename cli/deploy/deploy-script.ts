@@ -1,10 +1,12 @@
 // Builds and parses the remote `docker compose` script deploy runs over
 // a single SSH session. Ported from the old scripts/deploy/src/+lib.ts —
-// behaviour unchanged except `cd "${pathApps}"` is now quoted (every
-// remote command rostok builds is a shell string, and PATH_APPS comes
-// from the server `.env`).
+// every value that comes from `.env`/`config.json` (PATH_APPS, a stack
+// name, deployAs) is now quoted with `shQuote` (single quotes) before
+// going into the script. The old double-quoting (`cd "${pathApps}"`)
+// still let `$(...)`/backticks run inside it and broke outright on an
+// embedded `"` — single quotes suppress both.
 
-import { runRemoteShell } from "./exec.ts"
+import { runRemoteShell, shQuote } from "./exec.ts"
 
 export interface StackConfig {
   name: string
@@ -35,11 +37,17 @@ export function generateDeployScript(
   for (const stackConfig of stacks) {
     const stackName = stackConfig.name
     const deployAs = stackConfig.deployAs || stackName
-    const projectFlag = `-p ${deployAs}`
+    const projectFlag = `-p ${shQuote(deployAs)}`
     const needsRestart = restartStacks.has(deployAs)
+    const quotedPathApps = shQuote(pathApps)
+    const startMarker = shQuote(`DEPLOY_START:${stackName}:${deployAs}`)
+    const successMarker = shQuote(`DEPLOY_SUCCESS:${stackName}:${deployAs}`)
+    const failedMarker = shQuote(`DEPLOY_FAILED:${stackName}:${deployAs}`)
+    const restartingMarker = shQuote(`RESTARTING:${stackName}:${deployAs}`)
+    const restartDoneMarker = shQuote(`RESTART_DONE:${stackName}:${deployAs}`)
 
     stackCommands.push(`
-echo "DEPLOY_START:${stackName}:${deployAs}"
+echo ${startMarker}
 # Belt-and-braces: drop any existing container with the stack's container_name
 # that doesn't belong to the current compose project. Happens when a stack
 # was previously deployed with a different project name (e.g. manual
@@ -48,10 +56,12 @@ echo "DEPLOY_START:${stackName}:${deployAs}"
 # project=${deployAs}). Same container_name under two different projects
 # → "name already in use" conflict on every redeploy.
 # Data lives in volumes, not in the container, so this is safe.
-cd "${pathApps}" && docker ps -a --filter "name=hl-${stackName}" --format '{{.ID}} {{.Label "com.docker.compose.project"}}' 2>/dev/null | while read id proj; do
-  if [ "\$proj" != "${deployAs}" ] && [ -n "\$id" ]; then
-    echo "  removing stale container \$id (project=\$proj, expected=${deployAs})"
-    docker rm -f \$id >/dev/null 2>&1 || true
+cd ${quotedPathApps} && docker ps -a --filter ${
+      shQuote(`name=hl-${stackName}`)
+    } --format '{{.ID}} {{.Label "com.docker.compose.project"}}' 2>/dev/null | while read id proj; do
+  if [ "\$proj" != ${shQuote(deployAs)} ] && [ -n "\$id" ]; then
+    echo "  removing stale container $id (project=$proj, expected="${shQuote(deployAs)}")"
+    docker rm -f "\$id" >/dev/null 2>&1 || true
   fi
 done
 # Per-server compose override (if present). The deploy rsyncs
@@ -63,20 +73,22 @@ done
 # login shell is zsh, which does NOT word-split unquoted parameter
 # expansions, so \$COMPOSE_FILES arrived as ONE argument and docker compose
 # read the filename as " stacks/<stack>/compose.yml" — leading space and all.
-set -- -f stacks/${stackName}/compose.yml
-[ -f "${pathApps}/compose-override/${stackName}.yml" ] && set -- "\$@" -f "compose-override/${stackName}.yml"
-cd "${pathApps}" && docker compose ${projectFlag} --env-file=.env.root --env-file=.env "\$@" up -d --build 2>&1
+set -- -f ${shQuote(`stacks/${stackName}/compose.yml`)}
+[ -f ${shQuote(`${pathApps}/compose-override/${stackName}.yml`)} ] && set -- "\$@" -f ${
+      shQuote(`compose-override/${stackName}.yml`)
+    }
+cd ${quotedPathApps} && docker compose ${projectFlag} --env-file=.env.root --env-file=.env "\$@" up -d --build 2>&1
 if [ $? -eq 0 ]; then
-  echo "DEPLOY_SUCCESS:${stackName}:${deployAs}"
+  echo ${successMarker}
 else
-  echo "DEPLOY_FAILED:${stackName}:${deployAs}"
+  echo ${failedMarker}
 fi
 ${
       needsRestart
         ? `
-echo "RESTARTING:${stackName}:${deployAs}"
-cd "${pathApps}" && docker compose ${projectFlag} "\$@" restart 2>&1
-echo "RESTART_DONE:${stackName}:${deployAs}"
+echo ${restartingMarker}
+cd ${quotedPathApps} && docker compose ${projectFlag} "\$@" restart 2>&1
+echo ${restartDoneMarker}
 `
         : ""
     }
@@ -172,7 +184,7 @@ export async function getRemoteChecksums(
     const remotePath = `${pathApps}/${filePath}`
     const result = await runRemoteShell(
       sshAddress,
-      `sha256sum "${remotePath}" 2>/dev/null || true`,
+      `sha256sum ${shQuote(remotePath)} 2>/dev/null || true`,
     )
 
     if (result.success && result.output) {
