@@ -185,6 +185,8 @@
       "!stacks/traefik/dynamic/00-base.yml",
       "!stacks/gatus/+meta.ts",
       "!stacks/gatus/compose.yml",
+      "!stacks/gatus/config.yml",
+      "!stacks/gatus/before.deploy.ts",
       "!stacks/gatus/after.deploy.ts",
       "!stacks/vaultwarden/+meta.ts",
       "!stacks/vaultwarden/compose.yml",

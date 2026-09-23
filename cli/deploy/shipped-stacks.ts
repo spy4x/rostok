@@ -26,6 +26,8 @@ export const SHIPPED_STACK_FILES: Record<string, readonly string[]> = {
   ],
   gatus: [
     "compose.yml",
+    "config.yml",
+    "before.deploy.ts",
     "after.deploy.ts",
   ],
   vaultwarden: [
