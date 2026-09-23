@@ -39,7 +39,7 @@ export const envEncryptCommand = new Command()
     }
     if (!status.ageKeyPresent) {
       console.error(
-        "rostok env encrypt: .age/key.txt missing. run `age-keygen -o .age/key.txt` first.",
+        "rostok env encrypt: .age/key.txt missing. run `rostok env setup` to generate one.",
       )
       Deno.exit(1)
     }

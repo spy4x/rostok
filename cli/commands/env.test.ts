@@ -78,3 +78,25 @@ Deno.test("runEnvSetup: says 'no changes made' when the gitignore rule was alrea
     assertEquals(result.lines.some((l) => l.includes("key left unchanged")), false)
   })
 })
+
+// #212 — `rostok env encrypt` with no key points at `rostok env setup`,
+// never at the raw `age-keygen` command a hobbyist shouldn't have to
+// know exists. Runs the real binary since envEncryptCommand's action
+// (unlike runEnvSetup) isn't split out into a testable function — it
+// calls Deno.exit directly.
+Deno.test("env encrypt: with no key, points at `rostok env setup`, not raw age-keygen", async () => {
+  await withTmpDir(async (dir) => {
+    const mainTs = join(import.meta.dirname!, "..", "+main.ts")
+    const cmd = new Deno.Command(Deno.execPath(), {
+      args: ["run", "-A", mainTs, "env", "encrypt"],
+      cwd: dir,
+      stdout: "null",
+      stderr: "piped",
+    })
+    const out = await cmd.output()
+    const stderr = new TextDecoder().decode(out.stderr)
+    assertEquals(out.code, 1)
+    assertEquals(stderr.includes("rostok env setup"), true, stderr)
+    assertEquals(stderr.includes("age-keygen"), false, stderr)
+  })
+})
