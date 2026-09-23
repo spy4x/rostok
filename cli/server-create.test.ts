@@ -51,6 +51,13 @@ echo "Could not resolve hostname" >&2
 exit 255
 `
 
+const OK_SSH_WITH_USER = `#!/bin/sh
+echo "DOCKER_GID=988"
+echo "SSH_UID=1000"
+echo "SSH_GID=1000"
+echo "SSH_USER=remoteuser"
+`
+
 async function withTmpDir<T>(fn: (dir: string) => Promise<T>): Promise<T> {
   const dir = await Deno.makeTempDir({ prefix: "rostok-server-create-" })
   try {
@@ -204,33 +211,109 @@ Deno.test("server create rejects a traversal server name and writes nothing", as
 })
 
 // ─────────────────────────────────────────────────────────────────────
-// #206 — a legacy USER / HOMELAB_USER key gets renamed to SSH_USER.
+// #206 + review fix #1 — a legacy USER / HOMELAB_USER key gets renamed
+// to SSH_USER, and re-running server create on an existing server with
+// an alias target (no user in SSH_ADDRESS) keeps every existing value
+// instead of resetting it to a static default. Regression: before the
+// fix, this printed "renamed USER to SSH_USER" and then immediately
+// overwrote it with the local `whoami`, and reset a hand-corrected
+// DOCKER_GROUP_ID back to 990.
 // ─────────────────────────────────────────────────────────────────────
 
-Deno.test("server create migrates a legacy USER key to SSH_USER", async () => {
+async function seedServerEnv(dir: string, name: string, text: string): Promise<void> {
+  await Deno.mkdir(join(dir, "servers", name), { recursive: true })
+  await Deno.writeTextFile(join(dir, "servers", name, ".env"), text)
+}
+
+Deno.test("re-running server create with an alias target keeps existing values (SSH_USER, DOCKER_GROUP_ID) instead of resetting them", async () => {
+  // The probe fails (unreachable alias, the realistic case for a CI
+  // sandbox) — every field must fall back to what's already in .env,
+  // not the static defaults.
+  await withFakeSsh(FAILING_SSH, () =>
+    withTmpDir(async (dir) => {
+      await seedServerEnv(
+        dir,
+        "home",
+        [
+          "PROJECT=hl",
+          "SSH_ADDRESS=myhomelab",
+          "USER=deploy", // legacy key — must migrate, not get overwritten by whoami
+          "DOMAIN=example.com",
+          "CONTACT_EMAIL=a@example.com",
+          "DOCKER_GROUP_ID=977", // hand-corrected — must survive a failed probe
+          "TIMEZONE=UTC",
+          "PUID=1000",
+          "PGID=1000",
+          "VOLUMES_PATH=/srv/volumes",
+          "PATH_APPS=/srv/apps",
+        ].join("\n") + "\n",
+      )
+
+      // Re-run with only the name supplied, exactly like a user re-running
+      // `rostok server create home -n` to pick up one small change.
+      const result = await serverCreate({
+        cwd: dir,
+        failFast: true,
+        providedVars: { SERVER_NAME: "home" },
+      })
+
+      const env = await readEnvFile(result.envPath)
+      assertEquals(
+        env.find((e) => e.key === "SSH_USER")?.value,
+        "deploy",
+        "kept the migrated user instead of falling back to the local shell user",
+      )
+      assertEquals(env.some((e) => e.key === "USER"), false)
+      assertEquals(
+        env.find((e) => e.key === "DOCKER_GROUP_ID")?.value,
+        "977",
+        "kept the hand-corrected GID — the probe failed, so it must not reset to 990",
+      )
+    }))
+})
+
+Deno.test("a successful probe's docker GID wins over a stale existing value", async () => {
   await withFakeSsh(OK_SSH, () =>
     withTmpDir(async (dir) => {
-      await Deno.mkdir(join(dir, "servers", "home"), { recursive: true })
-      await Deno.writeTextFile(
-        join(dir, "servers", "home", ".env"),
-        "PROJECT=hl\nUSER=oldname\n",
+      await seedServerEnv(
+        dir,
+        "home",
+        "PROJECT=hl\nSSH_ADDRESS=myhomelab\nSSH_USER=deploy\nDOMAIN=example.com\n" +
+          "CONTACT_EMAIL=a@example.com\nDOCKER_GROUP_ID=977\n",
       )
+      const result = await serverCreate({
+        cwd: dir,
+        failFast: true,
+        providedVars: { SERVER_NAME: "home" },
+      })
+      const env = await readEnvFile(result.envPath)
+      // OK_SSH reports 988 — the fresh, successful probe result wins
+      // over the stale 977 already in .env.
+      assertEquals(env.find((e) => e.key === "DOCKER_GROUP_ID")?.value, "988")
+    }))
+})
+
+// ─────────────────────────────────────────────────────────────────────
+// Review fix #2 — an alias target with no user anywhere (not provided,
+// not already in .env) asks the server (`id -un`) instead of guessing
+// the local shell user.
+// ─────────────────────────────────────────────────────────────────────
+
+Deno.test("server create asks the server for the remote username when an alias target has no known user", async () => {
+  await withFakeSsh(OK_SSH_WITH_USER, () =>
+    withTmpDir(async (dir) => {
       const result = await serverCreate({
         cwd: dir,
         failFast: true,
         providedVars: {
           SERVER_NAME: "home",
-          SSH_ADDRESS: "root@192.0.2.1",
+          SSH_ADDRESS: "myhomelab", // alias — no user in the target itself
           DOMAIN: "example.com",
           CONTACT_EMAIL: "a@example.com",
         },
       })
       const env = await readEnvFile(result.envPath)
-      // SSH_ADDRESS parses a user (root) which wins over the migrated
-      // legacy value once merged — the point of this test is that the
-      // *migration* ran (no leftover USER= line), not the final value.
-      assertEquals(env.some((e) => e.key === "USER"), false)
-      assertEquals(env.filter((e) => e.key === "SSH_USER").length, 1)
+      assertEquals(env.find((e) => e.key === "SSH_USER")?.value, "remoteuser")
     }))
 })
 
@@ -316,5 +399,50 @@ Deno.test("server create skips the probe entirely when all three are pre-supplie
     const env = await readEnvFile(result.envPath)
     assertEquals(env.find((e) => e.key === "DOCKER_GROUP_ID")?.value, "123")
     assertEquals(env.find((e) => e.key === "PUID")?.value, "2000")
+  })
+})
+
+// ─────────────────────────────────────────────────────────────────────
+// Review fix #4 — SSH probe hardening: accept an unknown host key (the
+// common case on a fresh server), separate options from the target with
+// `--`, and enforce an overall deadline so a hanging ssh can't block
+// the wizard.
+// ─────────────────────────────────────────────────────────────────────
+
+Deno.test("probeServer: passes BatchMode, StrictHostKeyChecking=accept-new and -- before the target", async () => {
+  const argsFile = await Deno.makeTempFile({ prefix: "rostok-ssh-args-" })
+  try {
+    const script = `#!/bin/sh
+echo "$@" > "${argsFile}"
+echo "DOCKER_GID=988"
+echo "SSH_UID=1000"
+echo "SSH_GID=1000"
+echo "SSH_USER=deploy"
+`
+    await withFakeSsh(script, async () => {
+      await probeServer("root@192.0.2.1")
+    })
+    const argv = await Deno.readTextFile(argsFile)
+    assertStringIncludes(argv, "BatchMode=yes")
+    assertStringIncludes(argv, "StrictHostKeyChecking=accept-new")
+    assertStringIncludes(argv, "-- root@192.0.2.1")
+  } finally {
+    await Deno.remove(argsFile).catch(() => {})
+  }
+})
+
+Deno.test("probeServer: enforces the deadline and kills a hanging ssh", async () => {
+  // `exec` replaces the shell with `sleep` (same PID) instead of forking
+  // it — otherwise SIGKILL only reaps the shell, and the orphaned sleep
+  // process keeps the piped stdout/stderr open until it exits on its
+  // own, defeating the deadline entirely.
+  await withFakeSsh(`#!/bin/sh\nexec sleep 5\n`, async () => {
+    const start = performance.now()
+    const result = await probeServer("root@192.0.2.1", { deadlineMs: 100 })
+    const elapsed = performance.now() - start
+    assertStringIncludes(result.reason ?? "", "timed out")
+    if (elapsed > 3000) {
+      throw new Error(`probeServer didn't respect the deadline: took ${elapsed}ms`)
+    }
   })
 })

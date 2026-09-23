@@ -14,6 +14,12 @@
 // - Every field also accepts the env-style name that lands in `.env`
 //   (SSH_ADDRESS, DOMAIN, ...) as a --var key, alongside the legacy
 //   camelCase alias (sshTarget, domain, ...) for 1.x compatibility.
+// - Re-running on an existing server defaults every field to what's
+//   already in .env, not a static default — otherwise a re-run without
+//   --var for every field would reset hand-tuned values (e.g. a
+//   corrected DOCKER_GROUP_ID) back to the guess. The one exception is
+//   DOCKER_GROUP_ID/PUID/PGID, where a successful SSH probe (#207) wins
+//   over the existing value, so drift on the real server self-corrects.
 // - Encryption is optional. If `age` is missing, the wizard still
 //   runs to completion; the user runs `rostok env encrypt` manually
 //   after installing age.
@@ -114,24 +120,21 @@ export const SERVER_VAR_ALIASES: readonly string[] = Object.values(FIELDS).map((
  */
 export async function serverCreate(opts: ServerCreateOptions = {}): Promise<ServerCreateResult> {
   const cwd = opts.cwd ?? Deno.cwd()
-  const input = await collectInput(opts.serverInputs, opts.providedVars, opts.failFast)
+  const { input, existing } = await collectInput(
+    cwd,
+    opts.serverInputs,
+    opts.providedVars,
+    opts.failFast,
+  )
 
   // Parse SSH target once. `user@host[:port]` → user hint; alias is preserved.
   const parsed = parseSshTarget(input.sshTarget)
 
-  // #208: validate before touching the filesystem — a traversal name
-  // (`../x`) or anything outside SERVER_NAME_PATTERN throws here, before
-  // any directory gets created.
+  // #208: validated inside collectInput, before any prompt beyond the
+  // name itself or any filesystem read/write — re-resolve here only to
+  // get the same directory (cheap; the pattern check already ran).
   const serverDir = serverDirFor(cwd, input.serverName)
   const envPath = join(serverDir, ".env")
-
-  // Read existing first to preserve unknown keys (e.g. PATH_* the user
-  // added by hand) and to migrate a legacy remote-user key (#206).
-  const existingRaw = await readEnvFile(envPath)
-  const { entries: existing, renamedFrom } = migrateSshUserKey(existingRaw)
-  if (renamedFrom) {
-    console.log(`rostok: renamed ${renamedFrom} to SSH_USER in ${relative(cwd, envPath)}`)
-  }
 
   await Deno.mkdir(join(serverDir, "configs"), { recursive: true })
 
@@ -151,6 +154,9 @@ export async function serverCreate(opts: ServerCreateOptions = {}): Promise<Serv
     { key: "VOLUMES_PATH", value: input.volumesPath },
     { key: "PATH_APPS", value: input.pathApps },
   ]
+  // #9: mergeEnv keeps each existing key in its original position when
+  // updating its value — a re-run with unchanged values leaves the file
+  // untouched, and a changed value doesn't jump to the bottom.
   const merged = mergeEnv(existing, incoming)
   await writeEnvFile(envPath, merged)
 
@@ -194,15 +200,18 @@ function lookupProvided(
 }
 
 /**
- * Collect server-create inputs. Interactive (uses cliffy prompts) or
- * non-interactive (`failFast: true` — every field falls back to its
- * default, or throws a UserError naming the `--var` to pass).
+ * Collect server-create inputs, plus the (already-migrated) existing
+ * `.env` entries for the caller to merge against. Interactive (uses
+ * cliffy prompts) or non-interactive (`failFast: true` — every field
+ * falls back to its default, or throws a UserError naming the `--var`
+ * to pass).
  */
 async function collectInput(
+  cwd: string,
   serverInputs: Partial<ServerCreateInput> | undefined,
   providedVars: Record<string, string> | undefined,
   failFast?: boolean,
-): Promise<ServerCreateInput> {
+): Promise<{ input: ServerCreateInput; existing: EnvEntry[] }> {
   const ask = (
     field: FieldDef,
     label: string,
@@ -227,117 +236,148 @@ async function collectInput(
   // #208: fail fast on a bad name before asking anything else.
   validateServerName(serverName)
 
+  // #1 (review fix): now that the name is known and valid, read whatever
+  // is already on disk so re-running server create defaults every field
+  // to its current value instead of a static guess — otherwise a re-run
+  // without --var for every field silently resets hand-tuned values
+  // (e.g. a corrected DOCKER_GROUP_ID, or the SSH_USER an alias target
+  // can't tell us on its own).
+  const serverDir = serverDirFor(cwd, serverName)
+  const envPath = join(serverDir, ".env")
+  const existingRaw = await readEnvFile(envPath)
+  const { entries: existing, renamedFrom } = migrateSshUserKey(existingRaw)
+  if (renamedFrom) {
+    console.log(`rostok: renamed ${renamedFrom} to SSH_USER in ${relative(cwd, envPath)}`)
+  }
+  const existingByKey = new Map(existing.map((e) => [e.key, e.value]))
+
   // SSH target — any string. No validation (per Phase 5 user feedback).
   const sshTarget = await ask(
     FIELDS.sshTarget,
     "SSH target (alias or user@host)?",
-    undefined,
+    existingByKey.get("SSH_ADDRESS"),
     () => true,
   )
 
-  // User — skip the prompt entirely when the SSH target already told us
-  // (design §3.1 step 2). Interactive and non-interactive alike use the
-  // parsed user unless explicitly overridden via --var.
   const parsedSsh = parseSshTarget(sshTarget)
-  let user: string
   const providedUser = lookupProvided(FIELDS.user, serverInputs, providedVars)
+  const existingUser = existingByKey.get("SSH_USER")
   const sshTargetUser = parsedSsh.user
+
+  // #2 (review fix): an alias target (no `user@` in the SSH_ADDRESS) with
+  // no user anywhere yet — not provided, not already in .env — needs the
+  // probe to ask the server who it's connecting as (`id -un`), instead of
+  // guessing the *local* shell user, which is very often wrong.
+  const needsRemoteUser = sshTargetUser === undefined && providedUser === undefined &&
+    existingUser === undefined
+
+  // #207: probe the server once for the real docker group GID and the
+  // SSH user's uid/gid (+ username, #2 above), and use them as defaults
+  // — unless every value the probe could supply is already pre-supplied
+  // (skip the network round trip).
+  const providedDockerGroupId = lookupProvided(FIELDS.dockerGroupId, serverInputs, providedVars)
+  const providedPuid = lookupProvided(FIELDS.puid, serverInputs, providedVars)
+  const providedPgid = lookupProvided(FIELDS.pgid, serverInputs, providedVars)
+  let probed: ServerProbeResult = {}
+  if (
+    providedDockerGroupId === undefined || providedPuid === undefined ||
+    providedPgid === undefined || needsRemoteUser
+  ) {
+    probed = await probeServer(sshTarget)
+    if (probed.reason) console.log(`rostok: ${probed.reason}`)
+  }
+
+  // User — skip the prompt entirely when the SSH target already told us
+  // (design §3.1 step 2). Interactive and non-interactive alike prefer,
+  // in order: an explicit override, the parsed/existing user, the probed
+  // remote username, then the local shell user as a last resort.
+  let user: string
   if (sshTargetUser !== undefined) {
     user = providedUser ?? sshTargetUser
   } else if (providedUser !== undefined) {
     user = providedUser
-  } else if (failFast) {
-    user = await defaultShellUser()
+  } else if (existingUser !== undefined) {
+    user = existingUser
   } else {
-    user = await promptValue({
+    const remoteUserDefault = probed.sshUser ?? await defaultShellUser()
+    user = failFast ? remoteUserDefault : await promptValue({
       key: FIELDS.user.envKey,
       label: "Remote user?",
-      fallback: await defaultShellUser(),
+      fallback: remoteUserDefault,
     })
   }
 
   const domain = await ask(
     FIELDS.domain,
     "Primary domain for this server?",
-    undefined,
+    existingByKey.get("DOMAIN"),
     (v) => (v.includes(".") ? true : "expected a domain like example.com"),
   )
   const contactEmail = await ask(
     FIELDS.contactEmail,
     "Contact email (for Let's Encrypt ACME registration)?",
-    undefined,
+    existingByKey.get("CONTACT_EMAIL"),
     (v) => (/^[^@]+@[^@]+\.[^@]+$/.test(v) ? true : "expected a valid email"),
   )
   const project = await ask(
     FIELDS.project,
     "Short project identifier?",
-    "hl",
+    existingByKey.get("PROJECT") ?? "hl",
     (v) => (/^[a-z0-9_-]+$/i.test(v) ? true : "alphanumeric/dash/underscore only"),
   )
-
-  // #207: probe the server once for the real docker group GID and the
-  // SSH user's uid/gid, and use them as defaults — unless every one of
-  // the three was already pre-supplied (skip the network round trip).
-  const providedDockerGroupId = lookupProvided(FIELDS.dockerGroupId, serverInputs, providedVars)
-  const providedPuid = lookupProvided(FIELDS.puid, serverInputs, providedVars)
-  const providedPgid = lookupProvided(FIELDS.pgid, serverInputs, providedVars)
-  let probed: ServerProbeResult = {}
-  if (
-    providedDockerGroupId === undefined || providedPuid === undefined || providedPgid === undefined
-  ) {
-    probed = await probeServer(sshTarget)
-    if (probed.reason) console.log(`rostok: ${probed.reason}`)
-  }
 
   const dockerGroupId = await ask(
     FIELDS.dockerGroupId,
     "Docker group ID (for /var/run/docker.sock access)?",
-    probed.dockerGroupId ?? "990",
+    probed.dockerGroupId ?? existingByKey.get("DOCKER_GROUP_ID") ?? "990",
     (v) => (/^\d+$/.test(v) ? true : "must be a numeric group ID"),
   )
 
-  // Detect host timezone as a default for TIMEZONE.
-  const tzDefault = await detectTimezone()
+  // Detect host timezone as a default for TIMEZONE — but an existing value wins.
+  const tzDefault = existingByKey.get("TIMEZONE") ?? await detectTimezone()
   const timezone = await ask(FIELDS.timezone, "Timezone (IANA)?", tzDefault, () => true)
 
   const puid = await ask(
     FIELDS.puid,
     "Container user ID (PUID)?",
-    probed.puid ?? "1000",
+    probed.puid ?? existingByKey.get("PUID") ?? "1000",
     (v) => (/^\d+$/.test(v) ? true : "must be a numeric user ID"),
   )
   const pgid = await ask(
     FIELDS.pgid,
     "Container group ID (PGID)?",
-    probed.pgid ?? puid,
+    probed.pgid ?? existingByKey.get("PGID") ?? puid,
     (v) => (/^\d+$/.test(v) ? true : "must be a numeric group ID"),
   )
   const volumesPath = await ask(
     FIELDS.volumesPath,
     "Host directory for compose volumes?",
-    "/srv/volumes",
+    existingByKey.get("VOLUMES_PATH") ?? "/srv/volumes",
     (v) => (v.startsWith("/") ? true : "must be an absolute path"),
   )
   const pathApps = await ask(
     FIELDS.pathApps,
     "Host directory where stacks are deployed?",
-    DEFAULT_PATH_APPS,
+    existingByKey.get("PATH_APPS") ?? DEFAULT_PATH_APPS,
     (v) => (v.startsWith("/") ? true : "must be an absolute path"),
   )
 
   return {
-    serverName,
-    sshTarget,
-    user,
-    domain,
-    contactEmail,
-    project,
-    dockerGroupId,
-    timezone,
-    puid,
-    pgid,
-    volumesPath,
-    pathApps,
+    input: {
+      serverName,
+      sshTarget,
+      user,
+      domain,
+      contactEmail,
+      project,
+      dockerGroupId,
+      timezone,
+      puid,
+      pgid,
+      volumesPath,
+      pathApps,
+    },
+    existing,
   }
 }
 
@@ -357,42 +397,63 @@ async function defaultShellUser(): Promise<string> {
 }
 
 // ─────────────────────────────────────────────────────────────────────
-// #207 — SSH probe for docker GID + PUID/PGID defaults.
+// #207 — SSH probe for docker GID + PUID/PGID + remote username defaults.
 // ─────────────────────────────────────────────────────────────────────
 
 export interface ServerProbeResult {
   dockerGroupId?: string
   puid?: string
   pgid?: string
+  /** The SSH user's remote username (`id -un`) — the SSH_USER default for an alias target with no other known user. */
+  sshUser?: string
   /** One-line reason to print when a probe didn't fully succeed. */
   reason?: string
 }
 
+/** Overall probe deadline — a hanging ssh (e.g. a firewall dropping packets) must never block the wizard. */
+const PROBE_DEFAULT_DEADLINE_MS = 10_000
+
 /**
  * Probe `target` once over SSH for the docker group GID (`getent group
- * docker`) and the SSH user's `id -u` / `id -g`. Best-effort: any SSH or
- * parsing failure returns a `reason` instead of throwing, and callers
- * fall back to today's static defaults. If the SSH user is root (uid 0),
- * PUID/PGID stay at the 1000/1000 default — containers shouldn't run as
- * root — but the docker GID still comes from the server.
+ * docker`), the SSH user's `id -u` / `id -g` / `id -un`. Best-effort: any
+ * SSH failure, timeout, or parsing failure returns a `reason` instead of
+ * throwing, and callers fall back to today's static defaults. If the SSH
+ * user is root (uid 0), PUID/PGID stay at the 1000/1000 default —
+ * containers shouldn't run as root — but the docker GID still comes from
+ * the server.
+ *
+ * `StrictHostKeyChecking=accept-new` is required alongside `BatchMode`:
+ * without it, an unknown host key (the common case on a fresh server)
+ * makes the probe fail outright instead of accepting and continuing,
+ * matching what a first-time interactive `ssh` to that host would do.
+ * `deadlineMs` (default {@link PROBE_DEFAULT_DEADLINE_MS}) kills the ssh
+ * process if it hasn't finished in time — exposed for tests.
  */
-export async function probeServer(target: string): Promise<ServerProbeResult> {
+export async function probeServer(
+  target: string,
+  opts: { deadlineMs?: number } = {},
+): Promise<ServerProbeResult> {
+  const deadlineMs = opts.deadlineMs ?? PROBE_DEFAULT_DEADLINE_MS
   const remoteCmd = "echo DOCKER_GID=$(getent group docker 2>/dev/null | cut -d: -f3); " +
-    "echo SSH_UID=$(id -u); echo SSH_GID=$(id -g)"
+    "echo SSH_UID=$(id -u); echo SSH_GID=$(id -g); echo SSH_USER=$(id -un)"
 
-  let stdout: string
-  let success: boolean
-  let stderr: string
+  let child: Deno.ChildProcess
   try {
-    const cmd = new Deno.Command("ssh", {
-      args: ["-o", "BatchMode=yes", "-o", "ConnectTimeout=5", target, remoteCmd],
+    child = new Deno.Command("ssh", {
+      args: [
+        "-o",
+        "BatchMode=yes",
+        "-o",
+        "ConnectTimeout=5",
+        "-o",
+        "StrictHostKeyChecking=accept-new",
+        "--",
+        target,
+        remoteCmd,
+      ],
       stdout: "piped",
       stderr: "piped",
-    })
-    const out = await cmd.output()
-    success = out.success
-    stdout = new TextDecoder().decode(out.stdout)
-    stderr = new TextDecoder().decode(out.stderr)
+    }).spawn()
   } catch (err) {
     return {
       reason: `couldn't probe ${target} over SSH: ${
@@ -400,11 +461,40 @@ export async function probeServer(target: string): Promise<ServerProbeResult> {
       } — using default docker group ID / PUID / PGID.`,
     }
   }
-  if (!success) {
-    const firstLine = stderr.trim().split("\n")[0] || "ssh exited with a non-zero status"
+
+  let timedOut = false
+  const timer = setTimeout(() => {
+    timedOut = true
+    try {
+      child.kill("SIGKILL")
+    } catch {
+      // already exited between the timer firing and the kill call.
+    }
+  }, deadlineMs)
+
+  let success: boolean
+  let stdout: string
+  let stderr: string
+  try {
+    const out = await child.output()
+    success = out.success
+    stdout = new TextDecoder().decode(out.stdout)
+    stderr = new TextDecoder().decode(out.stderr)
+  } finally {
+    clearTimeout(timer)
+  }
+
+  if (timedOut) {
     return {
-      reason:
-        `couldn't probe ${target} over SSH: ${firstLine} — using default docker group ID / PUID / PGID.`,
+      reason: `couldn't probe ${target} over SSH: timed out after ${deadlineMs}ms — ` +
+        "using default docker group ID / PUID / PGID.",
+    }
+  }
+  if (!success) {
+    const firstLine = stderr.trim().split("\n")[0] ?? ""
+    return {
+      reason: `couldn't probe ${target} over SSH: ${describeSshFailure(firstLine)} — ` +
+        "using default docker group ID / PUID / PGID.",
     }
   }
 
@@ -420,14 +510,32 @@ export async function probeServer(target: string): Promise<ServerProbeResult> {
   const isRoot = sshUid === "0"
   const puid = sshUid ? (isRoot ? "1000" : sshUid) : undefined
   const pgid = sshGid ? (isRoot ? "1000" : sshGid) : undefined
+  const sshUser = values.SSH_USER || undefined
 
   if (!values.DOCKER_GID) {
     return {
       puid,
       pgid,
+      sshUser,
       reason:
         `docker group not found on ${target} (is docker installed?) — using default docker group ID.`,
     }
   }
-  return { dockerGroupId: values.DOCKER_GID, puid, pgid }
+  return { dockerGroupId: values.DOCKER_GID, puid, pgid, sshUser }
+}
+
+/** Turn ssh's first stderr line into a short, specific reason instead of raw ssh text. */
+function describeSshFailure(stderrFirstLine: string): string {
+  const s = stderrFirstLine.toLowerCase()
+  if (s.includes("timed out") || s.includes("timeout")) return "connection timed out"
+  if (s.includes("host key verification failed") || s.includes("identification has changed")) {
+    return "host key verification failed"
+  }
+  if (s.includes("permission denied") || s.includes("authentication")) {
+    return "authentication failed"
+  }
+  if (s.includes("could not resolve hostname") || s.includes("name or service not known")) {
+    return "couldn't resolve the host"
+  }
+  return stderrFirstLine || "ssh exited with a non-zero status"
 }
