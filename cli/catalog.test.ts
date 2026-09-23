@@ -32,7 +32,7 @@
 // "prove it fails on main") without touching this file.
 
 import { assertEquals } from "@std/assert"
-import { fromFileUrl, join } from "@std/path"
+import { fromFileUrl, join, relative } from "@std/path"
 import { loadCatalog } from "./catalog.ts"
 import { isServerKey, stackKeyPrefix } from "./server-keys.ts"
 import type { StackMeta } from "./stack-meta.ts"
@@ -483,24 +483,54 @@ function matchAllHostVarKeys(text: string): string[] {
 }
 
 /**
- * Scan `text` for a reference to a legacy env key name: `HOMELAB_USER`,
- * `homelab_user` (the ansible var this repo renamed to `ssh_user`), any
- * `VPN_*` key, a `BASIC_AUTH_` key without the `TRAEFIK_`/`GATUS_`
- * prefix, or `${X_SUBDOMAIN}`. Returns the offending key for each match
- * found.
+ * Every bare, quoted identifier in `text` — `"KEY"` or `'KEY'` — the
+ * form a key name takes in `Deno.env.get("KEY")`, a hook's own
+ * `getEnv("KEY")` wrapper, ansible's `lookup('env', 'KEY')`, or a plain
+ * string-literal array. Case-insensitive at the token level (the caller
+ * decides what counts as banned) so it also catches `homelab_user`.
+ */
+function matchAllQuotedIdentifiers(text: string): string[] {
+  const out: string[] = []
+  const re = /["']([A-Za-z][A-Za-z0-9_]*)["']/g
+  for (const match of text.matchAll(re)) out.push(match[1])
+  return out
+}
+
+/**
+ * True for a dropped legacy env key name: `HOMELAB_USER`/`homelab_user`
+ * (the ansible var this repo renamed to `ssh_user`), any `VPN_*` key, a
+ * `BASIC_AUTH_` key without the `TRAEFIK_`/`GATUS_` prefix, or any
+ * `*_SUBDOMAIN` key.
+ */
+function isBannedLegacyKey(key: string): boolean {
+  if (key === "HOMELAB_USER" || key === "homelab_user") return true
+  if (/^VPN_/.test(key)) return true
+  if (key.endsWith("_SUBDOMAIN")) return true
+  if (key.includes("BASIC_AUTH_") && !key.startsWith("TRAEFIK_") && !key.startsWith("GATUS_")) {
+    return true
+  }
+  return false
+}
+
+/**
+ * Scan `text` for a reference to a legacy env key name (see
+ * `isBannedLegacyKey`), in any of the forms it can appear in: a compose
+ * `${VAR}`/bare `$VAR` substitution, or a bare quoted identifier —
+ * `"BASIC_AUTH_USER"`, `'VPN_PEERS'`, `Deno.env.get("SYNCTHING_SUBDOMAIN")`,
+ * `lookup('env', 'VPN_PEERS')`, `getEnv("BASIC_AUTH_USER")`. Returns the
+ * offending key for each match found.
  */
 export function findLegacyEnvKeyUsages(text: string): string[] {
   const found: string[] = []
+  // Ansible's `{{ homelab_user }}` (Jinja) has neither a `$` nor quotes
+  // around the name, so it needs its own bare word-boundary check.
   if (/\bHOMELAB_USER\b/.test(text)) found.push("HOMELAB_USER")
   if (/\bhomelab_user\b/.test(text)) found.push("homelab_user")
   for (const key of matchAllHostVarKeys(text)) {
-    if (
-      key.includes("BASIC_AUTH_") && !key.startsWith("TRAEFIK_") && !key.startsWith("GATUS_")
-    ) {
-      found.push(key)
-    }
-    if (key.endsWith("_SUBDOMAIN")) found.push(key)
-    if (/^VPN_/.test(key)) found.push(key)
+    if (isBannedLegacyKey(key)) found.push(key)
+  }
+  for (const key of matchAllQuotedIdentifiers(text)) {
+    if (isBannedLegacyKey(key)) found.push(key)
   }
   return found
 }
@@ -525,6 +555,26 @@ Deno.test("findLegacyEnvKeyUsages: flags any ${X_SUBDOMAIN}", () => {
   assertEquals(findLegacyEnvKeyUsages("Host(`${NTFY_SUBDOMAIN}.${DOMAIN}`)"), ["NTFY_SUBDOMAIN"])
 })
 
+Deno.test("findLegacyEnvKeyUsages: flags a bare quoted key, not just $VAR/\${VAR}", () => {
+  assertEquals(findLegacyEnvKeyUsages('key: "BASIC_AUTH_USER"'), ["BASIC_AUTH_USER"])
+  assertEquals(findLegacyEnvKeyUsages("key: 'VPN_PEERS'"), ["VPN_PEERS"])
+})
+
+Deno.test("findLegacyEnvKeyUsages: flags Deno.env.get(...) / getEnv(...) / ansible lookup(...) forms", () => {
+  assertEquals(
+    findLegacyEnvKeyUsages('Deno.env.get("SYNCTHING_SUBDOMAIN")'),
+    ["SYNCTHING_SUBDOMAIN"],
+  )
+  assertEquals(
+    findLegacyEnvKeyUsages("\"{{ lookup('env', 'VPN_PEERS') }}\""),
+    ["VPN_PEERS"],
+  )
+  assertEquals(
+    findLegacyEnvKeyUsages('getEnv("BASIC_AUTH_USER")'),
+    ["BASIC_AUTH_USER"],
+  )
+})
+
 Deno.test("findLegacyEnvKeyUsages: flags any VPN_* key", () => {
   assertEquals(findLegacyEnvKeyUsages("- PEERS=${VPN_PEERS}"), ["VPN_PEERS"])
 })
@@ -542,24 +592,42 @@ Deno.test("findLegacyEnvKeyUsages: a clean file reports nothing", () => {
   )
 })
 
-/** Recursively list files under `dir` whose name ends with one of `extensions`, skipping `*.test.ts`. */
+/** Recursively list files under `dir` whose name ends with one of `extensions`. */
 async function listFiles(dir: string, extensions: string[]): Promise<string[]> {
   const out: string[] = []
   for await (const entry of Deno.readDir(dir)) {
     const path = join(dir, entry.name)
     if (entry.isDirectory) {
       out.push(...await listFiles(path, extensions))
-    } else if (
-      extensions.some((ext) => entry.name.endsWith(ext)) && !entry.name.endsWith(".test.ts")
-    ) {
+    } else if (extensions.some((ext) => entry.name.endsWith(ext))) {
       out.push(path)
     }
   }
   return out
 }
 
+/**
+ * Test files that deliberately assert a legacy key is rejected or has no
+ * effect — their fixtures legitimately contain the banned strings this
+ * test bans everywhere else. Paths are relative to the repo root
+ * (`cli/../..` from this file). Every other file, including every other
+ * `*.test.ts`, is scanned like any source file — a test file is not a
+ * blanket exemption.
+ */
+const ALLOW_LISTED_LEGACY_MENTIONS: readonly string[] = [
+  // This file's own fixtures for the checker functions above.
+  "cli/catalog.test.ts",
+  // Assert a .env with only the legacy key has no remote user / GID.
+  "cli/deploy/env.test.ts",
+  "scripts/ansible/inventory.test.ts",
+  "stacks/syncthing/before.deploy.test.ts",
+  // Asserts the legacy BASIC_AUTH_* branch is gone (throws, not read).
+  "stacks/traefik/before.deploy.test.ts",
+]
+
 Deno.test("repo: no ansible/scripts/cli/stacks file references a banned legacy env key", async () => {
   const violations: string[] = []
+  const repoRoot = fromFileUrl(new URL("..", import.meta.url))
   const targets: Array<{ dir: string; extensions: string[] }> = [
     { dir: fromFileUrl(new URL("../ansible", import.meta.url)), extensions: [".yml", ".yaml"] },
     { dir: fromFileUrl(new URL("../scripts", import.meta.url)), extensions: [".ts"] },
@@ -568,12 +636,12 @@ Deno.test("repo: no ansible/scripts/cli/stacks file references a banned legacy e
   ]
 
   for (const { dir, extensions } of targets) {
-    // listFiles() already skips *.test.ts — including this file, whose
-    // own fixtures above legitimately contain the banned strings.
     for (const path of await listFiles(dir, extensions)) {
+      const relPath = relative(repoRoot, path)
+      if (ALLOW_LISTED_LEGACY_MENTIONS.includes(relPath)) continue
       const text = await Deno.readTextFile(path)
       for (const key of findLegacyEnvKeyUsages(text)) {
-        violations.push(`${path}: references legacy key ${key}`)
+        violations.push(`${relPath}: references legacy key ${key}`)
       }
     }
   }
@@ -582,15 +650,17 @@ Deno.test("repo: no ansible/scripts/cli/stacks file references a banned legacy e
 })
 
 /**
- * Every `Deno.env.get("KEY")` call, plus every `SCREAMING_SNAKE_CASE`
- * string literal inside a `const keys = [...]` array (the
- * "required env vars" list pattern used by e.g. stalwart/email-mcp's
- * before.deploy.ts) — the two ways a `*.deploy.ts` hook reads a host
- * env key.
+ * Every `Deno.env.get("KEY")` call, every bare `getEnv("KEY")` call (the
+ * callback a hook takes to stay pure and testable — see
+ * `stacks/traefik/before.deploy.ts`'s `resolveHtpasswdCredential`), plus
+ * every `SCREAMING_SNAKE_CASE` string literal inside a `const keys =
+ * [...]` array (the "required env vars" list pattern used by e.g.
+ * stalwart/email-mcp's before.deploy.ts) — the ways a `*.deploy.ts` hook
+ * reads a host env key.
  */
 export function findDeployTsHostKeys(text: string): string[] {
   const out: string[] = []
-  const getRe = /Deno\.env\.get\(\s*["']([A-Z][A-Z0-9_]*)["']\s*\)/g
+  const getRe = /\b(?:Deno\.env\.get|getEnv)\(\s*["']([A-Z][A-Z0-9_]*)["']\s*[,)]/g
   for (const m of text.matchAll(getRe)) out.push(m[1])
   const arrMatch = /const\s+keys\s*=\s*\[([^\]]*)\]/.exec(text)
   if (arrMatch) {
@@ -604,6 +674,13 @@ Deno.test("findDeployTsHostKeys: reads Deno.env.get(...) calls", () => {
   assertEquals(
     findDeployTsHostKeys('const x = Deno.env.get("ACME_TOKEN") ?? ""'),
     ["ACME_TOKEN"],
+  )
+})
+
+Deno.test("findDeployTsHostKeys: reads a bare getEnv(...) call (a hook's injected callback)", () => {
+  assertEquals(
+    findDeployTsHostKeys('const user = getEnv("TRAEFIK_BASIC_AUTH_USER")'),
+    ["TRAEFIK_BASIC_AUTH_USER"],
   )
 })
 
@@ -626,11 +703,17 @@ Deno.test(
       // key -> first file seen reading it, for a useful violation message.
       const keys = new Map<string, string>()
 
-      const composeRaw = await readIfExists(join(stacksDir, entry.name, "compose.yml"))
-      if (composeRaw) {
+      // Glob compose*.yml, not just compose.yml — a stack can ship
+      // additional compose files for deploy variants (e.g.
+      // home-assistant's compose.traefik.yml, compose.host.yml).
+      const stackDir = join(stacksDir, entry.name)
+      for await (const fileEntry of Deno.readDir(stackDir)) {
+        if (!fileEntry.isFile || !/^compose.*\.ya?ml$/.test(fileEntry.name)) continue
+        const composeRaw = await readIfExists(join(stackDir, fileEntry.name))
+        if (!composeRaw) continue
         const compose = stripFullLineComments(composeRaw)
         for (const key of matchAllHostVarKeys(compose)) {
-          if (!keys.has(key)) keys.set(key, "compose.yml")
+          if (!keys.has(key)) keys.set(key, fileEntry.name)
         }
       }
       for (const hookName of ["before.deploy.ts", "after.deploy.ts"]) {

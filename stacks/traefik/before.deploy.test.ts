@@ -81,3 +81,19 @@ Deno.test("resolveHtpasswdCredential: nothing set — throws instead of silently
     "No basic-auth credentials set",
   )
 })
+
+Deno.test("resolveHtpasswdCredential: legacy BASIC_AUTH_USER/PASSWORD is not read — throws", () => {
+  // The pre-#210 legacy branch (BASIC_AUTH_USER + BASIC_AUTH_BASE64 /
+  // an already-hashed BASIC_AUTH_PASSWORD) is gone. Setting only the
+  // legacy keys must throw the same "nothing set" error as setting
+  // nothing at all — not silently succeed with a stale credential.
+  assertThrows(
+    () =>
+      resolveHtpasswdCredential(envFrom({
+        BASIC_AUTH_USER: "legacyadmin",
+        BASIC_AUTH_PASSWORD: "plaintextpass",
+      })),
+    Error,
+    "No basic-auth credentials set",
+  )
+})
