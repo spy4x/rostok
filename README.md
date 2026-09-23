@@ -50,7 +50,7 @@ safe to commit.
 | `rostok server create [<name>]`              | Create a server (one of the wizard steps, standalone)                            |
 | `rostok stack add <name> --server=<name>`    | Add a stack to a server from the bundled catalog                                 |
 | `rostok stack list [--tree] [--format json]` | Browse the catalog. `--tree` indents under category, `--format json` for scripts |
-| `rostok deploy <server> [stack]`             | Deploy — thin wrapper over `deno task deploy`                                    |
+| `rostok deploy <server> [stack]`             | Deploy — rsyncs the server's files and runs `docker compose` over SSH            |
 | `rostok env encrypt`                         | Encrypt `.env` → `.env.age` (per-stack + root)                                   |
 | `rostok env decrypt`                         | Decrypt `.env.age` → `.env`                                                      |
 | `rostok env status`                          | Encryption posture + next steps                                                  |
