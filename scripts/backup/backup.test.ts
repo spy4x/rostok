@@ -60,3 +60,11 @@ Deno.test({
     assertEquals(isMissingContainerError("compose file not found"), false)
   },
 })
+
+Deno.test({
+  name: "restore.ts never reads the legacy USER key — only SSH_USER",
+  async fn() {
+    const text = await Deno.readTextFile(new URL("./restore.ts", import.meta.url))
+    assertEquals(/getEnvVar\(\s*["']USER["']/.test(text), false)
+  },
+})

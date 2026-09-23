@@ -87,9 +87,11 @@
         user: "{{ backup_cron_user }}"
         minute: "{{ backup_cron_minute }}"
         hour: "{{ backup_cron_hour }}"
-        # No USER= prefix — the backup script already loads the server
-        # .env (--env-file={{ env_file_path }}), which carries SSH_USER.
-        job: "{{ deno_install_path }}/bin/deno run --env-file={{ repo_path }}/.env.root --env-file={{ env_file_path }} -A {{ repo_path }}/scripts/backup/+main.ts >> {{ backup_log_path }} 2>&1"
+        # SSH_USER= belt-and-suspenders alongside the server .env
+        # (--env-file={{ env_file_path }}), which also carries SSH_USER —
+        # cron's own environment is otherwise minimal and this keeps the
+        # job correct even if the file load order ever changes.
+        job: "SSH_USER={{ ssh_user }} {{ deno_install_path }}/bin/deno run --env-file={{ repo_path }}/.env.root --env-file={{ env_file_path }} -A {{ repo_path }}/scripts/backup/+main.ts >> {{ backup_log_path }} 2>&1"
         state: present
 
     - name: Display cronjob info
@@ -99,4 +101,4 @@
           - "Schedule: Daily at {{ backup_cron_hour }}:{{ '%02d' | format(backup_cron_minute | int) }}"
           - "Log file: {{ backup_log_path }}"
           - "To view logs: tail -f {{ backup_log_path }}"
-          - "To test manually: sudo -u {{ backup_cron_user }} {{ deno_install_path }}/bin/deno run --env-file={{ repo_path }}/.env.root --env-file={{ env_file_path }} -A {{ repo_path }}/scripts/backup/+main.ts"
+          - "To test manually: sudo -u {{ backup_cron_user }} SSH_USER={{ ssh_user }} {{ deno_install_path }}/bin/deno run --env-file={{ repo_path }}/.env.root --env-file={{ env_file_path }} -A {{ repo_path }}/scripts/backup/+main.ts"

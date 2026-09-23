@@ -10,24 +10,23 @@ import {
 
 const ROOT_ENV_PATH = ".env.root"
 
-Deno.test("resolveSshUser: uses SSH_USER when present, no notice", () => {
-  const result = resolveSshUser({ SSH_USER: "deploy" })
-  assertEquals(result.value, "deploy")
-  assertEquals(result.notice, undefined)
+Deno.test("resolveSshUser: uses SSH_USER when present", () => {
+  assertEquals(resolveSshUser({ SSH_USER: "deploy" }), "deploy")
 })
 
 Deno.test("resolveSshUser: a .env with only HOMELAB_USER has no remote user", () => {
-  const result = resolveSshUser({ HOMELAB_USER: "homelab" })
-  assertEquals(result.value, "")
-  assertEquals(result.notice, undefined)
+  assertEquals(resolveSshUser({ HOMELAB_USER: "homelab" }), "")
+})
+
+Deno.test("resolveSshUser: a .env with only USER (the pre-1.0.4 wizard key) has no remote user", () => {
+  assertEquals(resolveSshUser({ USER: "x" }), "")
 })
 
 Deno.test("resolveSshUser: never reads the shell's own USER — only the given map", () => {
   const previous = Deno.env.get("USER")
   Deno.env.set("USER", "shell-user-should-be-ignored")
   try {
-    const result = resolveSshUser({})
-    assertEquals(result.value, "")
+    assertEquals(resolveSshUser({}), "")
   } finally {
     if (previous === undefined) Deno.env.delete("USER")
     else Deno.env.set("USER", previous)

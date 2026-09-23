@@ -92,7 +92,7 @@ async function main() {
     const resolvedUser = resolveSshUser(env)
 
     // Parse SSH_ADDRESS for user@host format
-    let user = resolvedUser.value || "homelab"
+    let user = resolvedUser || "homelab"
     let host = env.SSH_ADDRESS || ""
     if (host.includes("@")) {
       const parts = host.split("@")
