@@ -153,6 +153,10 @@ async function main() {
     inventory._meta.hostvars[server] = {
       ansible_host: host,
       ansible_user: user,
+      // Playbooks reference {{ homelab_user }} directly (predates
+      // ansible_user); keep it populated with the same resolved value so
+      // they don't see "'homelab_user' is undefined".
+      homelab_user: user,
       ansible_ssh_private_key_file:
         "{{ lookup('env', 'SSH_PRIVATE_KEY_FILE') | default('~/.ssh/id_ed25519', true) }}",
       ssh_port: "{{ lookup('env', 'SSH_PORT') }}",
