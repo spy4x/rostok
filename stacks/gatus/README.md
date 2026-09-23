@@ -12,7 +12,8 @@ Health monitoring with HTTP/TCP checks and alerts.
 
 ## Configuration
 
-The stack ships a starter `config.yml` with zero endpoints, so
+The stack ships a starter `config.yml` with a single self-check
+endpoint (Gatus refuses to start with zero endpoints), so
 `rostok stack add gatus -n` plus deploy gives a container that starts
 with no manual config step. To add checks, write
 `servers/{server}/configs/gatus.yml` — `before.deploy.ts` copies it over
