@@ -82,6 +82,7 @@ import {
   type StackConfig,
 } from "./deploy-script.ts"
 import { runRemoteShell, runRemoteSync, shQuote } from "./exec.ts"
+import { killActiveChildren } from "./process-registry.ts"
 
 export interface DeployOptions {
   /** Project root (the directory that holds `servers/` and `.env.root`). */
@@ -178,12 +179,16 @@ export async function runDeploy(opts: DeployOptions): Promise<DeployRunResult> {
   // #219: the staging dir holds a plaintext copy of `.env`/`.env.root`
   // (secrets) — a Ctrl-C or `kill` mid-deploy skips the `finally` below
   // entirely, leaving those on disk until the next reboot clears /tmp.
-  // These listeners clean up before exiting with the signal's
-  // conventional code (128 + signal number), and are removed in
-  // `finally` so a normal deploy leaves no listener behind.
+  // A hook or an ssh/rsync call can also still be running at that
+  // moment — kill everything process-registry.ts is tracking FIRST
+  // (SIGKILL: none of these are expected to shut down gracefully mid
+  // deploy), so nothing outlives the staging dir it might be reading
+  // from. These listeners are removed in `finally` so a normal deploy
+  // leaves no listener behind.
   const stagingDir = await Deno.makeTempDir({ prefix: "rostok-deploy-" })
   const onSignal = (signal: "SIGINT" | "SIGTERM") => {
     ;(async () => {
+      killActiveChildren()
       try {
         await Deno.remove(stagingDir, { recursive: true })
       } catch (err) {

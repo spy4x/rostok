@@ -35,20 +35,31 @@ const logPath = Deno.env.get("FAKE_SSH_LOG")
 if (logPath) {
   await Deno.writeTextFile(logPath, script + "\\n---\\n", { append: true })
 }
-// FAKE_SSH_UNREACHABLE simulates a dead/unreachable server: sleeps for
-// the ConnectTimeout deploy passed (proving the argv wiring works —
-// real ssh would enforce this timeout itself) then fails the way ssh
-// does on a real timeout, before running any of the branches below.
+// FAKE_SSH_UNREACHABLE simulates a dead/unreachable server. A real ssh
+// enforces -o ConnectTimeout=10 itself, so this fake only needs to
+// check the flag is actually in argv: present -> fail immediately the
+// way ssh does on a real timeout (proving the wiring works, without
+// spending 10 real seconds on it); ABSENT -> really hang, the way an
+// unreachable host would without that flag, so a regression that drops
+// ConnectTimeout turns this test red instead of quietly slow.
 if (Deno.env.get("FAKE_SSH_UNREACHABLE")) {
-  await new Promise((r) => setTimeout(r, 10_000))
-  console.error("ssh: connect to host remote.test port 22: Connection timed out")
-  Deno.exit(255)
+  if (args.includes("ConnectTimeout=10")) {
+    console.error("ssh: connect to host remote.test port 22: Connection timed out")
+    Deno.exit(255)
+  }
+  setInterval(() => {}, 1000)
+  await new Promise(() => {})
 }
 // FAKE_SSH_HANG_ON hangs forever the first time \`script\` contains this
 // text — used to hold a deploy open mid-run so a test can send it a
-// signal while the staging directory still exists.
+// signal while the staging directory still exists. setInterval (not a
+// bare unresolved Promise) keeps this process genuinely busy, the way
+// a real blocked ssh call would be — needed so the SIGINT/SIGTERM
+// tests below prove deploy actually KILLS this child, not just that it
+// happened to already exit on its own.
 const hangOn = Deno.env.get("FAKE_SSH_HANG_ON")
 if (hangOn && script.includes(hangOn)) {
+  setInterval(() => {}, 1000)
   await new Promise(() => {})
 }
 if (script.includes("getent group docker")) {
@@ -460,13 +471,16 @@ await Deno.writeTextFile(logPath, "server:" + JSON.stringify(record) + "\\n", { 
 Deno.test("e2e: a hook receives $-heavy env values byte-for-byte (no --env-file mangling)", async () => {
   const f = await setupFixture()
   try {
-    // A local stack whose before-hook writes SECRET_HASH straight to a
-    // file under its own stack dir — that file then reaches the
-    // "remote" via rsync, so the test can check the exact bytes that
-    // survived the whole env-passing pipeline (parseEnv → Deno.Command's
-    // `env` option → Deno.env.get inside the hook). Deno's own
-    // `--env-file` flag mangles `$` in values like bcrypt hashes; rostok
-    // never uses it for this reason (see hooks.ts).
+    // A local stack whose before-hook writes HASH_STACK_SECRET_HASH
+    // straight to a file under its own stack dir — that file then
+    // reaches the "remote" via rsync, so the test can check the exact
+    // bytes that survived the whole env-passing pipeline (parseEnv →
+    // hooks.ts's allowlist → Deno.Command's `env` option → Deno.env.get
+    // inside the hook). Deno's own `--env-file` flag mangles `$` in
+    // values like bcrypt hashes; rostok never uses it for this reason
+    // (see hooks.ts). The key is prefixed with the stack's own name
+    // (#217's allowlist, second pass) — an unprefixed SECRET_HASH would
+    // now be dropped before it ever reached the hook.
     const stackDir = join(f.projectDir, "stacks", "hash-stack")
     await Deno.mkdir(stackDir, { recursive: true })
     await Deno.writeTextFile(
@@ -475,13 +489,13 @@ Deno.test("e2e: a hook receives $-heavy env values byte-for-byte (no --env-file 
     )
     await Deno.writeTextFile(
       join(stackDir, "before.deploy.ts"),
-      `const value = Deno.env.get("SECRET_HASH") ?? ""
+      `const value = Deno.env.get("HASH_STACK_SECRET_HASH") ?? ""
 await Deno.writeTextFile("stacks/hash-stack/hash-output.txt", value)
 `,
     )
 
     const bcryptStyleValue = `$2y$05$abc$HOME$def`
-    await writeServer(f.projectDir, [`SECRET_HASH=${bcryptStyleValue}`], ["hash-stack"])
+    await writeServer(f.projectDir, [`HASH_STACK_SECRET_HASH=${bcryptStyleValue}`], ["hash-stack"])
 
     const result = await runDeployCli(f, ["deploy", "test"])
     if (!result.success) console.error(result.stderr)
@@ -714,31 +728,90 @@ Deno.test("e2e: a failed docker compose up throws a UserError naming the stack a
   }
 })
 
-Deno.test("e2e: an unreachable server fails the deploy within ~15s, naming the step (#219)", async () => {
+Deno.test("e2e: an unreachable server fails fast, naming the step and saying it's unreachable (#219, #10)", async () => {
   const f = await setupFixture()
   try {
     await writeServer(f.projectDir, [], ["librespeed"])
 
+    const mainTs = new URL("../+main.ts", import.meta.url).pathname
+    const command = new Deno.Command(Deno.execPath(), {
+      args: ["run", "-A", mainTs, "deploy", "test"],
+      cwd: f.projectDir,
+      env: {
+        ...Deno.env.toObject(),
+        PATH: `${f.binDir}:${Deno.env.get("PATH") ?? ""}`,
+        FAKE_REMOTE_DIR: f.remoteDir,
+        FAKE_SSH_LOG: f.logPath,
+        FAKE_SSH_UNREACHABLE: "1",
+      },
+      stdout: "piped",
+      stderr: "piped",
+    })
+    const child = command.spawn()
+
     const start = performance.now()
-    const result = await runDeployCli(f, ["deploy", "test"], { FAKE_SSH_UNREACHABLE: "1" })
+    // Bounded, not a bare `await child.output()`: if a regression drops
+    // -o ConnectTimeout=10, FAKE_SSH_UNREACHABLE really hangs (see
+    // FAKE_SSH above) — this race turns that into a failed assertion
+    // instead of hanging the whole test run, and kills the leftover
+    // child so nothing survives this test.
+    const timeoutMs = 5_000
+    const outcome = await Promise.race([
+      child.output().then((o) => ({ timedOut: false as const, o })),
+      new Promise<{ timedOut: true }>((resolve) =>
+        setTimeout(() => resolve({ timedOut: true }), timeoutMs)
+      ),
+    ])
     const elapsedMs = performance.now() - start
 
-    assertEquals(result.success, false)
-    // Names the step: the docker-group preflight, the first ssh call deploy makes.
-    assertStringIncludes(result.stderr, "docker group")
-    if (elapsedMs >= 15_000) {
-      throw new Error(`deploy took ${elapsedMs.toFixed(0)}ms — expected it to fail within ~15s`)
+    if (outcome.timedOut) {
+      try {
+        child.kill("SIGKILL")
+      } catch {
+        // already gone
+      }
+      await child.output().catch(() => {})
+      throw new Error(
+        `deploy did not fail within ${timeoutMs}ms — the ConnectTimeout wiring is broken`,
+      )
+    }
+
+    const stderr = new TextDecoder().decode(outcome.o.stderr)
+    assertEquals(outcome.o.success, false)
+    // #10: names the step and says the server is unreachable — not the
+    // misleading "docker group not found on <address>", which reads
+    // like Docker isn't installed rather than "ssh never connected".
+    assertStringIncludes(stderr, "can't reach")
+    assertStringIncludes(stderr, "over SSH")
+    assertStringIncludes(stderr, "checking the docker group")
+    assertEquals(stderr.includes("docker group not found"), false)
+    // The fake ssh fails immediately when -o ConnectTimeout=10 is in
+    // its argv (see FAKE_SSH_UNREACHABLE in FAKE_SSH above) — this
+    // should be near-instant, not the old hardcoded 10s sleep.
+    if (elapsedMs >= timeoutMs) {
+      throw new Error(
+        `deploy took ${elapsedMs.toFixed(0)}ms — expected it to fail almost instantly`,
+      )
     }
   } finally {
     await teardownFixture(f)
   }
 })
 
-Deno.test("e2e: SIGINT during deploy removes the staging directory (#219)", async () => {
-  const f = await setupFixture()
+/**
+ * Spawn `rostok deploy test` with FAKE_SSH_HANG_ON set (holds the fake
+ * ssh call busy — see FAKE_SSH above — after the staging dir is
+ * created and populated by rsync but before deploy finishes), wait for
+ * the staging dir to appear under a private TMPDIR, send `signal`, and
+ * return the exit code plus whether the staging dir survived.
+ */
+async function runInterruptedDeploy(
+  f: Fixture,
+  signal: Deno.Signal,
+): Promise<{ code: number; stagingDirSurvived: boolean }> {
   // A private TMPDIR (per #219's brief: don't race other processes'
-  // rostok-deploy-* directories) so this test can find, and only find,
-  // its own staging dir.
+  // rostok-deploy-* directories) so this can find, and only find, its
+  // own staging dir.
   const tmpRoot = await Deno.makeTempDir({ prefix: "rostok-e2e-tmproot-" })
   try {
     await writeServer(f.projectDir, [], ["librespeed"])
@@ -774,13 +847,85 @@ Deno.test("e2e: SIGINT during deploy removes the staging directory (#219)", asyn
     }
     const stagingDirPath = join(tmpRoot, stagingDirName)
 
-    child.kill("SIGINT")
+    child.kill(signal)
     const output = await child.output()
-    assertEquals(output.code, 130)
 
-    await assertNotExists(stagingDirPath)
+    const stagingDirSurvived = await Deno.stat(stagingDirPath).then(() => true).catch((err) => {
+      if (err instanceof Deno.errors.NotFound) return false
+      throw err
+    })
+    return { code: output.code, stagingDirSurvived }
   } finally {
     await Deno.remove(tmpRoot, { recursive: true }).catch(() => {})
+  }
+}
+
+Deno.test("e2e: SIGINT during deploy removes the staging directory (#219)", async () => {
+  const f = await setupFixture()
+  try {
+    const { code, stagingDirSurvived } = await runInterruptedDeploy(f, "SIGINT")
+    assertEquals(code, 130)
+    assertEquals(stagingDirSurvived, false)
+  } finally {
+    await teardownFixture(f)
+  }
+})
+
+Deno.test("e2e: SIGTERM during deploy removes the staging directory and exits 143 (#219)", async () => {
+  const f = await setupFixture()
+  try {
+    const { code, stagingDirSurvived } = await runInterruptedDeploy(f, "SIGTERM")
+    assertEquals(code, 143)
+    assertEquals(stagingDirSurvived, false)
+  } finally {
+    await teardownFixture(f)
+  }
+})
+
+Deno.test("e2e: runDeploy removes its SIGINT/SIGTERM listeners after finishing normally (#219)", async () => {
+  // Seam: spy on Deno.addSignalListener/removeSignalListener around one
+  // successful in-process run-deploy call. A listener registered but
+  // never removed would leave this process still reacting to SIGINT
+  // after the function returned.
+  const { runDeploy } = await import("../deploy/run-deploy.ts")
+
+  const f = await setupFixture()
+  try {
+    await writeServer(f.projectDir, [], [])
+
+    const previousPath = Deno.env.get("PATH") ?? ""
+    Deno.env.set("PATH", `${f.binDir}:${previousPath}`)
+    Deno.env.set("FAKE_REMOTE_DIR", f.remoteDir)
+    Deno.env.set("FAKE_SSH_LOG", f.logPath)
+
+    const added: Array<[Deno.Signal, unknown]> = []
+    const removed: Array<[Deno.Signal, unknown]> = []
+    const originalAdd = Deno.addSignalListener
+    const originalRemove = Deno.removeSignalListener
+    Deno.addSignalListener = (signal: Deno.Signal, handler: () => void) => {
+      added.push([signal, handler])
+      return originalAdd(signal, handler)
+    }
+    Deno.removeSignalListener = (signal: Deno.Signal, handler: () => void) => {
+      removed.push([signal, handler])
+      return originalRemove(signal, handler)
+    }
+
+    try {
+      await runDeploy({ cwd: f.projectDir, server: "test" })
+    } finally {
+      Deno.addSignalListener = originalAdd
+      Deno.removeSignalListener = originalRemove
+      Deno.env.set("PATH", previousPath)
+      Deno.env.delete("FAKE_REMOTE_DIR")
+      Deno.env.delete("FAKE_SSH_LOG")
+    }
+
+    assertEquals(added.length, 2, "expected exactly SIGINT + SIGTERM to be registered")
+    assertEquals(new Set(added.map(([s]) => s)), new Set(["SIGINT", "SIGTERM"]))
+    // Every listener that was added was also removed — same signal, same handler.
+    assertEquals(removed, added)
+  } finally {
     await teardownFixture(f)
   }
 })
