@@ -22,21 +22,36 @@
 // see stacks/traefik/before.deploy.ts's TRAEFIK_BASIC_AUTH_PASSWORD
 // handling.
 //
-// One thing `.env`/`.env.root` content must NOT be allowed to do:
-// override the process-level variables a hook's own tool invocations
-// rely on to find the right binaries and caches. A shared `.env` with
-// `PATH=/tmp/evil` or `NPM_CONFIG_REGISTRY=https://attacker` would
-// silently redirect every subprocess a hook spawns — see
-// DENIED_ENV_KEY_PATTERNS below. These keys always keep the deploy
-// process's own value; a hook that genuinely needs one reads it from
-// `Deno.env` directly (which still sees the real parent value, since it
-// was never overridden), not from the merged `.env` content.
+// (#217) One thing `.env`/`.env.root` content must NOT be allowed to
+// do: steer which binary or script a hook's own tool invocations run.
+// A shared `.env` with `PATH=/tmp/evil`, `BASH_ENV=configs/x.sh` or
+// `SSH_ASKPASS=configs/x` (plus `SSH_ASKPASS_REQUIRE=force`) would
+// silently redirect or hijack every subprocess a hook spawns —
+// starting `bash` runs whatever BASH_ENV names on every invocation;
+// SSH_ASKPASS_REQUIRE=force runs SSH_ASKPASS even without a TTY.
+//
+// A deny-list of names ("PATH, HOME, LD_*, DENO_*, ...") was tried
+// first and missed exactly this class — nobody had thought of
+// BASH_ENV/SSH_ASKPASS/GIT_SSH_COMMAND/RSYNC_RSH/PERL5OPT/PYTHONPATH
+// yet. The fix (#217, option B from the issue): the deploying
+// process's OWN environment wins on every name it already has —
+// `{ ...fromEnvFiles, ...Deno.env.toObject(), ...contractKeys }`. A
+// hook's own subprocess resolution then can't be redirected by any
+// name the deploy process's real environment already controls, known
+// or not. DENIED_ENV_KEY_NAMES below is only a backstop for names that
+// are USUALLY UNSET in the parent (so the "process wins" rule alone
+// wouldn't drop them) but still control what a hook's subprocess runs
+// or where it loads code from.
 
 import { UserError } from "../errors.ts"
 
 export interface HookContext {
   rootEnv: Record<string, string>
   serverEnv: Record<string, string>
+  /** Path to the server `.env` that produced `serverEnv` — named in a dropped-key warning. */
+  envPath: string
+  /** Path to `.env.root` that produced `rootEnv` — named in a dropped-key warning. */
+  rootEnvPath: string
   sshAddress: string
   sshUser: string
   pathApps: string
@@ -44,49 +59,76 @@ export interface HookContext {
 }
 
 /**
- * Keys from `.env`/`.env.root` never override the hook subprocess's own
- * environment — PATH/HOME/USER/SHELL control which binaries and home
- * directory a hook's tool calls resolve to; LD_ and DYLD_ prefixed keys
- * control dynamic linking; DENO_, NPM_CONFIG_ and NODE_ prefixed keys
- * control module/package resolution (a poisoned NPM_CONFIG_REGISTRY
- * could swap in a malicious package for any `npm:` import a hook makes);
- * SSH_AUTH_SOCK controls which ssh agent a hook's own `ssh` calls use;
- * TMPDIR controls where its temp files land. All of these stay the
- * parent (deploy) process's real values, inherited normally, rather
- * than being overridable by whatever ends up in a shared `.env`.
+ * Names usually unset in the deploy process's own environment, so
+ * `{ ...fromEnvFiles, ...Deno.env.toObject() }` alone wouldn't drop
+ * them if `.env`/`.env.root` set one. Each controls what a hook's own
+ * subprocess runs (SSH_ASKPASS*, BASH_ENV, ENV, GIT_SSH*, RSYNC_RSH,
+ * PERL5*, PYTHONPATH*, NODE_OPTIONS) or where it loads code/binaries
+ * from (LD_*, DYLD_*, DENO_*, NPM_CONFIG_*) — plus PATH/HOME/USER/SHELL/
+ * SSH_AUTH_SOCK/TMPDIR/NODE_* from the original deny-list, kept as a
+ * second layer even though the deploy process always has those set.
  */
-const DENIED_ENV_KEY_PATTERNS: readonly RegExp[] = [
-  /^PATH$/,
-  /^HOME$/,
-  /^USER$/,
-  /^SHELL$/,
-  /^LD_/,
-  /^DYLD_/,
-  /^DENO_/,
-  /^NPM_CONFIG_/,
-  /^NODE_/,
-  /^SSH_AUTH_SOCK$/,
-  /^TMPDIR$/,
-]
+const DENIED_ENV_KEY_NAMES = new Set([
+  "PATH",
+  "HOME",
+  "USER",
+  "SHELL",
+  "SSH_AUTH_SOCK",
+  "TMPDIR",
+  "SSH_ASKPASS",
+  "SSH_ASKPASS_REQUIRE",
+  "BASH_ENV",
+  "ENV",
+  "GIT_SSH_COMMAND",
+  "GIT_SSH",
+  "RSYNC_RSH",
+  "PERL5OPT",
+  "PERL5LIB",
+  "PYTHONPATH",
+  "PYTHONSTARTUP",
+  "NODE_OPTIONS",
+])
+const DENIED_ENV_KEY_PREFIXES = ["LD_", "DYLD_", "DENO_", "NPM_CONFIG_", "NODE_"]
 
 function isDeniedEnvKey(key: string): boolean {
-  return DENIED_ENV_KEY_PATTERNS.some((pattern) => pattern.test(key))
+  return DENIED_ENV_KEY_NAMES.has(key) || DENIED_ENV_KEY_PREFIXES.some((p) => key.startsWith(p))
 }
 
-/** Split `.env`/`.env.root` content into what a hook may see vs. what it may not (see DENIED_ENV_KEY_PATTERNS). */
-function partitionHookEnv(
-  merged: Record<string, string>,
-): { allowed: Record<string, string>; denied: string[] } {
-  const allowed: Record<string, string> = {}
-  const denied: string[] = []
-  for (const [key, value] of Object.entries(merged)) {
-    if (isDeniedEnvKey(key)) {
-      denied.push(key)
-      continue
-    }
-    allowed[key] = value
+export interface HookEnvResult {
+  env: Record<string, string>
+  /** One line per key the process's own environment kept, naming the file it would have come from. */
+  warnings: string[]
+}
+
+/**
+ * Build the environment a hook subprocess runs with: `.env.root` and the
+ * server `.env` merged (server wins), overlaid by the deploy process's
+ * own real environment (so any name it already controls wins outright —
+ * #217 option B), then the contract keys the hook is promised
+ * (SSH_ADDRESS/SSH_USER/PATH_APPS/DEPLOY_AS), then a final pass that
+ * strips DENIED_ENV_KEY_NAMES/PREFIXES still holding a `.env`/`.env.root`
+ * value (i.e. the process itself never set them) — see the module
+ * comment for why that backstop exists.
+ */
+export function buildHookEnv(ctx: HookContext, processEnv: Record<string, string>): HookEnvResult {
+  const fromFiles = { ...ctx.rootEnv, ...ctx.serverEnv }
+  const resolved: Record<string, string> = { ...fromFiles, ...processEnv }
+
+  const warnings: string[] = []
+  for (const key of Object.keys(fromFiles)) {
+    if (!isDeniedEnvKey(key)) continue
+    if (key in processEnv) continue // the process's own value already won above — nothing to drop
+    delete resolved[key]
+    const source = key in ctx.serverEnv ? ctx.envPath : ctx.rootEnvPath
+    warnings.push(`Warning: ignoring ${key} from ${source} — kept the deploy process's own value.`)
   }
-  return { allowed, denied }
+
+  resolved.SSH_ADDRESS = ctx.sshAddress
+  resolved.SSH_USER = ctx.sshUser
+  resolved.PATH_APPS = ctx.pathApps
+  resolved.DEPLOY_AS = ctx.deployAs
+
+  return { env: resolved, warnings }
 }
 
 /**
@@ -103,25 +145,17 @@ export async function runHook(
 ): Promise<void> {
   if (!source) return
 
-  const { allowed, denied } = partitionHookEnv({ ...ctx.rootEnv, ...ctx.serverEnv })
-  if (denied.length > 0) {
-    console.error(
-      `Warning: ignoring ${denied.join(", ")} from .env/.env.root for ${kind}.deploy.ts ` +
-        `(stack '${stackName}') — these keep the deploy process's own values.`,
-    )
+  const { env, warnings } = buildHookEnv(ctx, Deno.env.toObject())
+  for (const warning of warnings) {
+    console.error(`${warning} (${kind}.deploy.ts, stack '${stackName}')`)
   }
 
   console.log(`Running ${kind}.deploy.ts for stack ${stackName}...`)
   const command = new Deno.Command(Deno.execPath(), {
     args: ["run", "-A", source],
     cwd: stagingDir,
-    env: {
-      ...allowed,
-      SSH_ADDRESS: ctx.sshAddress,
-      SSH_USER: ctx.sshUser,
-      PATH_APPS: ctx.pathApps,
-      DEPLOY_AS: ctx.deployAs,
-    },
+    clearEnv: true,
+    env,
     stdout: "inherit",
     stderr: "inherit",
   })
