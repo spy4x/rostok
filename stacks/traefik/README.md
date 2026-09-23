@@ -45,23 +45,17 @@ full old → new key table.
 
 ## Middleware
 
-Add [middlewares](https://doc.traefik.io/traefik/middlewares/http/overview/) for authentication, rate limiting, etc. For basic auth, point at the
-hook-generated `.htpasswd` (a docker label can't reference a bcrypt hash
-built at deploy time the way `dashboard-auth` in `dynamic/00-base.yml`
-does):
+Add [middlewares](https://doc.traefik.io/traefik/middlewares/http/overview/) for authentication, rate limiting, etc. For basic auth, reuse the
+existing file-defined `dashboard-auth` middleware (`dynamic/00-base.yml`)
+instead of inventing a new one — it already points at the hook-generated
+`.htpasswd`, which a docker label can't reference directly (the label
+would need a bcrypt hash built at deploy time, not the plaintext
+`TRAEFIK_BASIC_AUTH_PASSWORD`). The `@file` suffix is required — it's
+defined in a file provider, not this service's own docker labels:
 
 ```yaml
 labels:
-  - "traefik.http.routers.myservice.middlewares=auth"
-```
-
-```yaml
-# dynamic/*.yml (see dynamic/00-base.yml's dashboard-auth for the pattern)
-http:
-  middlewares:
-    auth:
-      basicAuth:
-        usersFile: /etc/traefik/dynamic/.htpasswd
+  - "traefik.http.routers.myservice.middlewares=dashboard-auth@file"
 ```
 
 ## Resources
