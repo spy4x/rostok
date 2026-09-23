@@ -7,7 +7,7 @@
 
 import { Command } from "@cliffy/command"
 import { DESCRIPTION, NAME, VERSION } from "./version.ts"
-import { serverCreate } from "./server-create.ts"
+import { SERVER_VAR_ALIASES, SERVER_VAR_KEYS, serverCreate } from "./server-create.ts"
 import { stackAdd } from "./stack-add.ts"
 import { deployCommand } from "./commands/deploy.ts"
 import { envCommand } from "./commands/env.ts"
@@ -17,14 +17,24 @@ import { stackListCommand } from "./commands/list.ts"
 // location.
 import "./+lib.ts"
 
+// #209: --help lists the --var keys server-create/the wizard accept, so
+// non-interactive mode is discoverable without reading the source.
+const SERVER_VAR_HELP = `Server --var keys: ${SERVER_VAR_KEYS.join(", ")}
+  (legacy aliases: ${SERVER_VAR_ALIASES.join(", ")})`
+
 const ROOT_DESCRIPTION = `${DESCRIPTION}
 
 Run \`rostok\` for the full onboarding wizard (init + server create + stack
 add). Use the subcommands below for finer control.
 
+${SERVER_VAR_HELP}
+
 Examples:
 
     rostok                                # full wizard, interactive
+    rostok -n --var SERVER_NAME=home --var SSH_ADDRESS=root@192.0.2.1 \\
+        --var DOMAIN=example.com --var CONTACT_EMAIL=a@example.com
+                                           # full wizard, non-interactive
     rostok server create home             # create one server, standalone
     rostok stack add traefik -s home      # add a stack to a server
     rostok stack list --tree              # browse the bundled catalog
@@ -38,20 +48,30 @@ export function buildCommand(): any {
     .version(VERSION)
     .description(ROOT_DESCRIPTION)
     .option("-n, --non-interactive", "skip prompts, use defaults")
-    .option("--catalog <dir:string>", "override bundled catalog directory")
+    .option(
+      "--catalog <dir:string>",
+      "override bundled catalog directory (must exist; its stacks run as code)",
+    )
     .option(
       "--var <kv...:string[]>",
       "repeatable; overrides one variable (KEY=VAL)",
       { collect: true },
     )
+    .option(
+      "--stack <name...:string[]>",
+      "repeatable; add this stack in non-interactive mode",
+      { collect: true },
+    )
     .action(async (options) => {
       const providedVars = parseVarFlags(options.var)
+      const stacks = parseStackFlags(options.stack)
       const { runWizard } = await import("./wizard.ts")
       await runWizard({
         cwd: Deno.cwd(),
         catalogDir: options.catalog,
         nonInteractive: options.nonInteractive,
         providedVars,
+        stacks,
       })
       console.log("")
       console.log(`${NAME} v${VERSION} — wizard complete.`)
@@ -66,19 +86,30 @@ export function buildCommand(): any {
         new Command()
           .arguments("[name:string]")
           .option("-n, --non-interactive", "skip prompts, use defaults")
+          .option(
+            "--var <kv...:string[]>",
+            "repeatable; overrides one server field (KEY=VAL)",
+            { collect: true },
+          )
           .description(
             `Create a new server (writes servers/<name>/.env, encrypts).
+
+${SERVER_VAR_HELP}
 
 Examples:
 
     rostok server create                  # interactive, prompts for everything
     rostok server create home             # name as positional arg
-    rostok server create -n               # use defaults, fail fast on missing`,
+    rostok server create home -n \\
+        --var SSH_ADDRESS=root@192.0.2.1 --var DOMAIN=example.com \\
+        --var CONTACT_EMAIL=a@example.com # non-interactive, defaults for the rest`,
           )
           .action(async (options, name?: string) => {
+            const providedVars = parseVarFlags(options.var)
             await serverCreate({
               cwd: Deno.cwd(),
-              nonInteractive: name ? { serverName: name } : undefined,
+              serverInputs: name ? { serverName: name } : undefined,
+              providedVars,
               failFast: options.nonInteractive,
             })
           }),
@@ -95,7 +126,10 @@ Examples:
           .arguments("<name:string>")
           .option("-s, --server <name:string>", "target server", { required: true })
           .option("-n, --non-interactive", "skip prompts, use defaults")
-          .option("--catalog <dir:string>", "override bundled catalog directory")
+          .option(
+            "--catalog <dir:string>",
+            "override bundled catalog directory (must exist; its stacks run as code)",
+          )
           .option(
             "--var <kv...:string[]>",
             "repeatable; overrides one variable (KEY=VAL)",
@@ -103,6 +137,10 @@ Examples:
           )
           .description(
             `Add a stack to a server (resolves variables, writes .env, encrypts).
+
+A value already in servers/<server>/.env is kept unless you pass --var
+for that key — re-running never clobbers another stack's key or
+rotates an existing secret.
 
 Examples:
 
@@ -141,13 +179,33 @@ if (import.meta.main) {
 }
 
 /** Parse `--var KEY=VAL` flags into a record. */
-function parseVarFlags(flags: unknown): Record<string, string> {
+export function parseVarFlags(flags: unknown): Record<string, string> {
   const out: Record<string, string> = {}
-  if (!flags) return out
-  // Cliffy's `<kv...:string[]>` with `collect: true` produces a circular
-  // structure: the last slot points back to the root array. Walk to a
-  // bounded depth (strings live at depth 2 max) and bail on cycles.
+  const flat = flattenCliffyCollect(flags)
+  for (const f of flat) {
+    const eq = f.indexOf("=")
+    if (eq < 0) {
+      throw new Error(`--var requires KEY=VAL form, got: ${f}`)
+    }
+    out[f.slice(0, eq)] = f.slice(eq + 1)
+  }
+  return out
+}
+
+/** Parse repeatable `--stack <name>` flags into a plain string array. */
+export function parseStackFlags(flags: unknown): string[] {
+  return flattenCliffyCollect(flags)
+}
+
+/**
+ * cliffy's `<...:string[]>` / `<...:string...>` with `collect: true`
+ * produces a CIRCULAR structure: the last slot points back to the root
+ * array. Walk to a bounded depth (strings live at depth 2 max) and bail
+ * on cycles.
+ */
+function flattenCliffyCollect(flags: unknown): string[] {
   const flat: string[] = []
+  if (!flags) return flat
   const seen = new WeakSet<object>()
   const walk = (v: unknown, depth: number) => {
     if (typeof v === "string") {
@@ -162,12 +220,5 @@ function parseVarFlags(flags: unknown): Record<string, string> {
     }
   }
   walk(flags, 0)
-  for (const f of flat) {
-    const eq = f.indexOf("=")
-    if (eq < 0) {
-      throw new Error(`--var requires KEY=VAL form, got: ${f}`)
-    }
-    out[f.slice(0, eq)] = f.slice(eq + 1)
-  }
-  return out
+  return flat
 }

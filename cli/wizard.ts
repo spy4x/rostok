@@ -16,6 +16,7 @@ import { initProject, type InitResult } from "./init.ts"
 import { serverCreate, type ServerCreateInput } from "./server-create.ts"
 import { stackAdd, type StackAddResult } from "./stack-add.ts"
 import { resolveCatalog } from "./catalog-paths.ts"
+import { validateServerName } from "./server-keys.ts"
 
 export interface WizardOptions {
   cwd?: string
@@ -25,21 +26,34 @@ export interface WizardOptions {
   providedVars?: Record<string, string>
   /** Skip stack add entirely (used by `server create` subcommand). */
   skipStackAdd?: boolean
+  /** Stacks to add non-interactively (repeatable `--stack <name>`). */
+  stacks?: string[]
 }
 
 export interface WizardResult {
   init: InitResult
   serverName: string
-  stackAdd?: StackAddResult
+  stackAdds: StackAddResult[]
 }
 
 /**
- * Run the full wizard flow. Phase 5 ships the interactive happy path;
+ * Run the full wizard flow. Ships the interactive happy path;
  * non-interactive mode is a thin shell that fails loudly on missing
  * inputs (no silent fallbacks).
  */
 export async function runWizard(opts: WizardOptions = {}): Promise<WizardResult> {
   const cwd = opts.cwd ?? Deno.cwd()
+
+  // #208 review fix: when the server name is already known (--var or a
+  // programmatic caller's serverInputs), validate it before init writes
+  // anything — a traversal name shouldn't leave a half-finished project
+  // skeleton behind. server-create validates again once it's the one
+  // asking (interactive mode may still need to prompt for the name).
+  const knownServerName = opts.serverInputs?.serverName ?? opts.providedVars?.SERVER_NAME ??
+    opts.providedVars?.serverName
+  if (knownServerName !== undefined) {
+    validateServerName(knownServerName)
+  }
 
   // Step 1: init.
   const init = await initProject(cwd)
@@ -52,50 +66,56 @@ export async function runWizard(opts: WizardOptions = {}): Promise<WizardResult>
   }
 
   // Step 2: server create.
-  //
-  // --var KEY=VAL flags apply to BOTH server-create inputs and stack
-  // variables: callers expect `rostok --var serverName=foo --var DOMAIN=...`
-  // to feed both layers. server-create's `nonInteractive` accepts a
-  // Partial<ServerCreateInput>; we merge providedVars into it so flag
-  // values reach collectInput. Explicit serverInputs still win on key
-  // collision (programmatic callers shouldn't be overridden by --var).
   const server = await serverCreate({
     cwd,
-    nonInteractive: { ...opts.providedVars, ...opts.serverInputs },
+    serverInputs: opts.serverInputs,
+    providedVars: opts.providedVars,
     failFast: opts.nonInteractive,
   })
   console.log(`Server '${server.serverName}' created at ${server.serverDir}`)
 
-  // Step 3: stack add (optional). In non-interactive mode without
-  // --stacks=, skip — caller can run `rostok stack add <name> -s <server>`
-  // explicitly. In interactive mode, prompt for a stack.
-  let stackAddResult: StackAddResult | undefined
+  // Step 3: stack add (optional).
+  //
+  // Interactive mode prompts for one stack from the catalog. Non-
+  // interactive mode only adds stacks named via repeatable `--stack
+  // <name>`; with none given, it says so instead of failing silently
+  // (#209).
+  const stackAdds: StackAddResult[] = []
   if (!opts.skipStackAdd) {
-    const catalog = await resolveCatalog(opts.catalogDir)
-
-    let chosen: string | undefined
     if (opts.nonInteractive) {
-      // Phase 5 non-interactive mode: skip stack add. Phase 5b adds
-      // `--stacks=<csv>` bulk-add.
-    } else {
-      chosen = await pickStackInteractive(catalog.map((e) => e.name))
-      if (chosen) {
-        stackAddResult = await stackAdd(chosen, server.serverName, {
-          cwd,
-          catalogDir: opts.catalogDir,
-          providedVars: opts.providedVars,
-          nonInteractive: opts.nonInteractive,
-        })
+      if (opts.stacks && opts.stacks.length > 0) {
+        for (const name of opts.stacks) {
+          stackAdds.push(
+            await stackAdd(name, server.serverName, {
+              cwd,
+              catalogDir: opts.catalogDir,
+              providedVars: opts.providedVars,
+              nonInteractive: true,
+            }),
+          )
+        }
+      } else {
         console.log(
-          `Stack '${chosen}' added to '${server.serverName}'. ` +
-            `${stackAddResult.writtenEntries.length} vars written, ` +
-            `${stackAddResult.skippedKeys.length} skipped.`,
+          `skipped the stack step: run rostok stack add <name> -s ${server.serverName}`,
+        )
+      }
+    } else {
+      const catalog = await resolveCatalog(opts.catalogDir)
+      const chosen = await pickStackInteractive(catalog.map((e) => e.name))
+      if (chosen) {
+        stackAdds.push(
+          await stackAdd(chosen, server.serverName, {
+            cwd,
+            catalogDir: opts.catalogDir,
+            providedVars: opts.providedVars,
+            nonInteractive: false,
+          }),
         )
       }
     }
   }
 
-  return { init, serverName: server.serverName, stackAdd: stackAddResult }
+  return { init, serverName: server.serverName, stackAdds }
 }
 
 /** Interactive single-stack picker. Returns undefined if user picks — skip —. */
