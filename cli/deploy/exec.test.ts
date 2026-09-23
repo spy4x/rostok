@@ -1,7 +1,7 @@
 import { assertEquals, assertRejects } from "@std/assert"
 import { join } from "@std/path"
 import { UserError } from "../errors.ts"
-import { runRemoteCommand, runRemoteShell, shQuote } from "./exec.ts"
+import { runRemoteCommand, runRemoteShell, runRemoteSync, shQuote } from "./exec.ts"
 
 /** Install a fake `ssh` on PATH that prints its own argv, one per line, as JSON. */
 async function withFakeSsh<T>(fn: () => Promise<T>): Promise<T> {
@@ -82,6 +82,41 @@ Deno.test("runRemoteCommand: rejects a malicious SSH_ADDRESS before ssh is ever 
       UserError,
       "invalid SSH_ADDRESS",
     )
+  })
+})
+
+/** Install a fake `rsync` on PATH that prints its own argv, one per line. */
+async function withFakeRsync<T>(fn: () => Promise<T>): Promise<T> {
+  const binDir = await Deno.makeTempDir({ prefix: "rostok-fake-rsync-argv-" })
+  try {
+    const script = `#!/bin/sh\nfor a in "$@"; do printf '%s\\n' "$a"; done\n`
+    await Deno.writeTextFile(join(binDir, "rsync"), script, { mode: 0o755 })
+    const previousPath = Deno.env.get("PATH") ?? ""
+    Deno.env.set("PATH", `${binDir}:${previousPath}`)
+    try {
+      return await fn()
+    } finally {
+      Deno.env.set("PATH", previousPath)
+    }
+  } finally {
+    await Deno.remove(binDir, { recursive: true })
+  }
+}
+
+Deno.test("runRemoteSync: -e carries -p, ConnectTimeout and BatchMode; brackets a bare IPv6 destination", async () => {
+  await withFakeRsync(async () => {
+    const result = await runRemoteSync("root@[2001:db8::1]:2222", "/local/staging", "/srv/apps", [
+      "-avhzru",
+    ])
+    const argv = result.output.split("\n").filter((l) => l.length > 0)
+    assertEquals(argv, [
+      "-avhzru",
+      "-e",
+      `ssh ${expectedOptions().join(" ")} -p 2222`,
+      "--",
+      "/local/staging/",
+      "root@[2001:db8::1]:/srv/apps/",
+    ])
   })
 })
 

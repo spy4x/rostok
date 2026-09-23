@@ -5,9 +5,18 @@ import { checkDockerGroup, needsRemoteSudo } from "./docker-preflight.ts"
 
 /** Install a fake `ssh` on PATH that prints `sshReply` to stdout and exits 0. */
 async function withFakeSsh<T>(sshReply: string, fn: () => Promise<T>): Promise<T> {
+  return await withFakeSshScript(`printf '%s' ${shQuote(sshReply)}\n`, fn)
+}
+
+/** Install a fake `ssh` that simulates its own connection-level failure: prints `message` to stderr and exits 255. */
+async function withUnreachableFakeSsh<T>(message: string, fn: () => Promise<T>): Promise<T> {
+  return await withFakeSshScript(`printf '%s' ${shQuote(message)} >&2\nexit 255\n`, fn)
+}
+
+async function withFakeSshScript<T>(scriptBody: string, fn: () => Promise<T>): Promise<T> {
   const binDir = await Deno.makeTempDir({ prefix: "rostok-fake-ssh-" })
   try {
-    const script = `#!/bin/sh\nprintf '%s' ${shQuote(sshReply)}\n`
+    const script = `#!/bin/sh\n${scriptBody}`
     await Deno.writeTextFile(join(binDir, "ssh"), script, { mode: 0o755 })
     const previousPath = Deno.env.get("PATH") ?? ""
     Deno.env.set("PATH", `${binDir}:${previousPath}`)
@@ -75,4 +84,39 @@ Deno.test("needsRemoteSudo: throws when id -u can't be read", async () => {
     )
     assertStringIncludes(err.message, "id -u")
   })
+})
+
+Deno.test("checkDockerGroup: names the step and says the server is unreachable, not a missing docker group (#10)", async () => {
+  // ssh's own connection-level failures (dead host, timeout, refused,
+  // no DNS) always exit 255 — before this fix, that surfaced as the
+  // misleading "docker group not found on root@192.0.2.1", which reads
+  // like Docker isn't installed rather than "the server didn't answer".
+  await withUnreachableFakeSsh(
+    "ssh: connect to host 192.0.2.1 port 22: Connection timed out",
+    async () => {
+      const err = await assertRejects(
+        () => checkDockerGroup("root@192.0.2.1", "988", "servers/home/.env"),
+        UserError,
+      )
+      assertStringIncludes(err.message, "can't reach root@192.0.2.1 over SSH")
+      assertStringIncludes(err.message, "checking the docker group")
+      assertStringIncludes(err.message, "Connection timed out")
+      assertEquals(err.message.includes("docker group not found"), false)
+    },
+  )
+})
+
+Deno.test("needsRemoteSudo: names the step and says the server is unreachable, not a missing UID", async () => {
+  await withUnreachableFakeSsh(
+    "ssh: connect to host 192.0.2.1 port 22: Connection timed out",
+    async () => {
+      const err = await assertRejects(
+        () => needsRemoteSudo("root@192.0.2.1"),
+        UserError,
+      )
+      assertStringIncludes(err.message, "can't reach root@192.0.2.1 over SSH")
+      assertStringIncludes(err.message, "checking the remote user's UID")
+      assertEquals(err.message.includes("could not determine"), false)
+    },
+  )
 })

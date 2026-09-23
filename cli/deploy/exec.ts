@@ -13,6 +13,7 @@
 // invocation fails fast instead of hanging on one.
 
 import { parseSshAddress, rsyncDestination, rsyncSshOption, sshArgs } from "../server-keys.ts"
+import { trackChild } from "./process-registry.ts"
 
 /** `{ batchMode: true }` unless stdin is a TTY — shared by every ssh/rsync spawn below. */
 function defaultSshCallOptions(): { batchMode: boolean } {
@@ -28,11 +29,13 @@ function defaultSshCallOptions(): { batchMode: boolean } {
 
 export interface CommandResult {
   success: boolean
+  /** The raw exit code — ssh's own connection-level failures (unreachable host, timeout, refused, DNS) always exit 255, distinct from a remote command's own nonzero exit. */
+  code: number
   output: string
   error: string
 }
 
-/** Run a local command (argv form) and capture its output. */
+/** Run a local command (argv form) and capture its output. Tracked so a SIGINT/SIGTERM handler can kill it (process-registry.ts). */
 export async function runCommand(
   cmd: string[],
   opts?: { cwd?: string },
@@ -44,9 +47,12 @@ export async function runCommand(
     stdout: "piped",
     stderr: "piped",
   })
-  const out = await proc.output()
+  const child = proc.spawn()
+  trackChild(child)
+  const out = await child.output()
   return {
     success: out.code === 0,
+    code: out.code,
     output: new TextDecoder().decode(out.stdout),
     error: new TextDecoder().decode(out.stderr),
   }
