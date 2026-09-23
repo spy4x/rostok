@@ -133,7 +133,14 @@ services:
 
   kiosk:
     container_name: hl-immich-kiosk
-    image: ghcr.io/damongolding/immich-kiosk:latest
+    # Pin the exact version instead of tracking `latest`. Kiosk refuses to
+    # start when its own build requires a newer Immich than the server runs:
+    #   ERROR Immich version not supported Immich version=3.1.0 supported version=3.2.0
+    # It then exits 1, restart-loops, Traefik loses its only backend, and
+    # kiosk.${DOMAIN} returns 404 with no alert. Watchtower pulled a `latest`
+    # built for Immich 3.2.0 onto an Immich 3.1.0 server and caused exactly
+    # that. Bump this tag only together with ${IMMICH_VERSION} (see README).
+    image: ghcr.io/damongolding/immich-kiosk:0.44.0
     environment:
       - KIOSK_IMMICH_URL=http://server:2283
       - KIOSK_IMMICH_EXTERNAL_URL=https://photos.${DOMAIN}
@@ -174,6 +181,11 @@ services:
     ports:
       - 3000:3000
     labels:
+      # A pinned tag plus an unattended Watchtower pull is the failure this
+      # pin exists to prevent: the image is immutable, so tracking it adds
+      # nothing and only risks another silent version mismatch. Bump the
+      # tag above deliberately instead.
+      - "com.centurylinklabs.watchtower.enable=false"
       - "traefik.enable=true"
       - "traefik.docker.network=proxy"
       - "traefik.http.routers.hl-immich-kiosk.rule=Host(`kiosk.${DOMAIN}`)"
