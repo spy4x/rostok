@@ -140,3 +140,59 @@ Deno.test("resolveDeployEnv: the server .env value wins over .env.root on confli
   const merged = { ...rootEnv, ...serverEnv }
   assertEquals(merged.SSH_USER, "server-value")
 })
+
+const VALID_BASE = {
+  SSH_ADDRESS: "root@example.com",
+  SSH_USER: "deploy",
+  PATH_APPS: "/srv/apps",
+  VOLUMES_PATH: "/srv/volumes",
+  PUID: "1000",
+  PGID: "1000",
+  DOCKER_GROUP_ID: "988",
+}
+
+Deno.test("resolveDeployEnv: rejects an SSH_ADDRESS starting with -", () => {
+  // -oProxyCommand=<cmd> runs <cmd> locally the moment ssh (or rsync,
+  // which re-spawns ssh with the same target) parses it as an option.
+  const err = assertThrows(
+    () =>
+      resolveDeployEnv(
+        { ...VALID_BASE, SSH_ADDRESS: "-oProxyCommand=touch /tmp/PWNED" },
+        "servers/home/.env",
+        ROOT_ENV_PATH,
+      ),
+    UserError,
+  )
+  assertStringIncludes(err.message, "invalid SSH_ADDRESS")
+})
+
+Deno.test("resolveDeployEnv: accepts a plain user@host SSH_ADDRESS", () => {
+  // Should not throw.
+  resolveDeployEnv(VALID_BASE, "servers/home/.env", ROOT_ENV_PATH)
+})
+
+Deno.test("resolveDeployEnv: rejects a PATH_APPS containing $(...)", () => {
+  const err = assertThrows(
+    () =>
+      resolveDeployEnv(
+        { ...VALID_BASE, PATH_APPS: "/srv/apps/$(touch /tmp/PWNED)" },
+        "servers/home/.env",
+        ROOT_ENV_PATH,
+      ),
+    UserError,
+  )
+  assertStringIncludes(err.message, "invalid PATH_APPS")
+})
+
+Deno.test("resolveDeployEnv: rejects a VOLUMES_PATH with a .. segment", () => {
+  const err = assertThrows(
+    () =>
+      resolveDeployEnv(
+        { ...VALID_BASE, VOLUMES_PATH: "/srv/volumes/../../etc" },
+        "servers/home/.env",
+        ROOT_ENV_PATH,
+      ),
+    UserError,
+  )
+  assertStringIncludes(err.message, "invalid VOLUMES_PATH")
+})

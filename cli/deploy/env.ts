@@ -17,8 +17,20 @@
 // itself reads both (`--env-file=.env.root --env-file=.env`): a required
 // key genuinely declared in `.env.root` (a cross-server value) must not
 // be reported missing just because it isn't repeated in the server file.
+//
+// SSH_ADDRESS, PATH_APPS and VOLUMES_PATH are validated here too, before
+// any of them reaches an `ssh`/`rsync` argv or a remote path: an
+// `SSH_ADDRESS` starting with `-` (`-oProxyCommand=<cmd>`) runs `<cmd>`
+// on the machine running rostok the moment ssh (or rsync, which
+// re-spawns ssh with the same target) parses it as an option instead of
+// a destination.
 
-import { DEFAULT_PATH_APPS, DEPLOY_REQUIRED_KEYS } from "../server-keys.ts"
+import {
+  DEFAULT_PATH_APPS,
+  DEPLOY_REQUIRED_KEYS,
+  validateRemotePath,
+  validateSshAddress,
+} from "../server-keys.ts"
 import { UserError } from "../errors.ts"
 
 export interface ResolvedValue {
@@ -115,6 +127,13 @@ export function resolveDeployEnv(
       `missing required key(s) in ${envPath} (also checked ${rootEnvPath}): ${missing.join(", ")}`,
     )
   }
+
+  // Before any of these reaches ssh/rsync or a remote shell command:
+  // reject an SSH_ADDRESS that could be read as an option, and a
+  // PATH_APPS/VOLUMES_PATH that isn't a plain absolute path.
+  validateSshAddress(resolved.SSH_ADDRESS)
+  validateRemotePath("PATH_APPS", resolved.PATH_APPS)
+  validateRemotePath("VOLUMES_PATH", resolved.VOLUMES_PATH)
 
   return { env: resolved, notices }
 }

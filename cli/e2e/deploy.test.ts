@@ -23,8 +23,12 @@ const FAKE_SSH = `#!/usr/bin/env -S deno run --allow-read --allow-write --allow-
 // real deploy script would print after a successful \`docker compose up\`.
 // Anything else (proxy network, stale-stack cleanup, volume mkdir/chown)
 // is accepted silently, matching a healthy remote.
+//
+// Every real call is \`ssh -- <target> <command...>\` (cli/deploy/exec.ts
+// puts \`--\` before the target as a ProxyCommand-injection guard), so
+// the target is args[1], not args[0].
 const args = Deno.args
-const script = args.slice(1).join(" ")
+const script = args.slice(2).join(" ")
 const logPath = Deno.env.get("FAKE_SSH_LOG")
 if (logPath) {
   await Deno.writeTextFile(logPath, script + "\\n---\\n", { append: true })
@@ -238,6 +242,63 @@ Deno.test("e2e: deploy rejects a malicious stack name before anything is built",
     // Nothing reached the remote — the check runs before staging starts.
     const remoteApps = join(f.remoteDir, "srv", "apps")
     await assertNotExists(remoteApps)
+  } finally {
+    await teardownFixture(f)
+  }
+})
+
+Deno.test("e2e: SSH_ADDRESS=-oProxyCommand=... is rejected before any ssh/rsync call", async () => {
+  // A leading `-` in SSH_ADDRESS would be read as an ssh option — ssh
+  // (and rsync, which re-spawns ssh with the same target) would run
+  // `-oProxyCommand=<cmd>` as `<cmd>` on THIS machine the moment it
+  // parsed the argument, before ever reaching the remote.
+  const f = await setupFixture()
+  try {
+    const pwnedMarker = join(f.projectDir, "PWNED")
+    await writeServer(
+      f.projectDir,
+      [`SSH_ADDRESS=-oProxyCommand=touch ${pwnedMarker}`],
+      ["librespeed"],
+      { omitKeys: ["SSH_ADDRESS"] },
+    )
+
+    const result = await runDeployCli(f, ["deploy", "test"])
+    assertEquals(result.success, false)
+    assertStringIncludes(result.stderr, "invalid SSH_ADDRESS")
+
+    // No ssh call was made at all — validation ran before the
+    // docker-group preflight, the first thing that would call ssh.
+    const logExists = await Deno.stat(f.logPath).then(() => true).catch(() => false)
+    assertEquals(logExists, false, "no ssh/rsync call should have been made")
+
+    // The injected command never ran.
+    const pwned = await Deno.stat(pwnedMarker).then(() => true).catch(() => false)
+    assertEquals(pwned, false, "the injected ProxyCommand must never execute")
+  } finally {
+    await teardownFixture(f)
+  }
+})
+
+Deno.test("e2e: PATH_APPS with $(...) is rejected before any ssh/rsync call", async () => {
+  const f = await setupFixture()
+  try {
+    const pwnedMarker = join(f.projectDir, "PWNED")
+    await writeServer(
+      f.projectDir,
+      [`PATH_APPS=/srv/apps/$(touch ${pwnedMarker})`],
+      ["librespeed"],
+      { omitKeys: ["PATH_APPS"] },
+    )
+
+    const result = await runDeployCli(f, ["deploy", "test"])
+    assertEquals(result.success, false)
+    assertStringIncludes(result.stderr, "invalid PATH_APPS")
+
+    const logExists = await Deno.stat(f.logPath).then(() => true).catch(() => false)
+    assertEquals(logExists, false, "no ssh/rsync call should have been made")
+
+    const pwned = await Deno.stat(pwnedMarker).then(() => true).catch(() => false)
+    assertEquals(pwned, false, "the embedded $(...) must never execute")
   } finally {
     await teardownFixture(f)
   }
@@ -490,6 +551,52 @@ Deno.test("e2e: a DOCKER_GROUP_ID mismatch names .env.root when that's where the
     // Must not tell the operator to edit the server .env when the value
     // actually lives in .env.root.
     assertEquals(result.stderr.includes("servers/test/.env"), false)
+  } finally {
+    await teardownFixture(f)
+  }
+})
+
+Deno.test("e2e: staged .env and .env.root are chmod 0600", async () => {
+  // Both carry secrets, and rsync -a preserves the local staging mode on
+  // the remote — a 0644 copy in PATH_APPS is readable by every user on a
+  // shared box. The staging dir is private to runDeploy and gets removed
+  // before the CLI subprocess exits, so this checks the mode from
+  // inside, at the point Deno.remove is about to delete it.
+  const { runDeploy } = await import("../deploy/run-deploy.ts")
+
+  const f = await setupFixture()
+  try {
+    await writeServer(f.projectDir, [], [])
+
+    const previousPath = Deno.env.get("PATH") ?? ""
+    Deno.env.set("PATH", `${f.binDir}:${previousPath}`)
+    Deno.env.set("FAKE_REMOTE_DIR", f.remoteDir)
+    Deno.env.set("FAKE_SSH_LOG", f.logPath)
+
+    const originalRemove = Deno.remove
+    let envMode: number | null | undefined
+    let rootEnvMode: number | null | undefined
+    Deno.remove = async (path, options) => {
+      if (typeof path === "string") {
+        envMode = (await Deno.stat(join(path, ".env")).catch(() => undefined))?.mode
+        rootEnvMode = (await Deno.stat(join(path, ".env.root")).catch(() => undefined))?.mode
+      }
+      return await originalRemove(path, options)
+    }
+
+    try {
+      await runDeploy({ cwd: f.projectDir, server: "test" })
+    } finally {
+      Deno.remove = originalRemove
+      Deno.env.set("PATH", previousPath)
+      Deno.env.delete("FAKE_REMOTE_DIR")
+      Deno.env.delete("FAKE_SSH_LOG")
+    }
+
+    assertExists(envMode, "the mock never saw the staging dir's .env")
+    assertExists(rootEnvMode, "the mock never saw the staging dir's .env.root")
+    assertEquals((envMode! & 0o777).toString(8), "600")
+    assertEquals((rootEnvMode! & 0o777).toString(8), "600")
   } finally {
     await teardownFixture(f)
   }

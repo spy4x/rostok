@@ -31,20 +31,27 @@ export async function runCommand(
   }
 }
 
-/** Run `argv` on the remote host over ssh (each element its own argv slot). */
+/**
+ * Run `argv` on the remote host over ssh (each element its own argv
+ * slot). `--` before `sshAddress` is required, not decorative: even
+ * after `validateSshAddress` (cli/server-keys.ts) rejects a leading `-`
+ * at the source, `--` is what stops ssh's own option parser from ever
+ * reading the destination as an option in the first place — defense in
+ * depth for this specific argv position.
+ */
 export async function runRemoteCommand(
   sshAddress: string,
   argv: string[],
 ): Promise<CommandResult> {
-  return await runCommand(["ssh", sshAddress, ...argv])
+  return await runCommand(["ssh", "--", sshAddress, ...argv])
 }
 
-/** Run a shell script on the remote host over ssh, as a single command string. */
+/** Run a shell script on the remote host over ssh, as a single command string. Same `--` reasoning as runRemoteCommand. */
 export async function runRemoteShell(
   sshAddress: string,
   script: string,
 ): Promise<CommandResult> {
-  return await runCommand(["ssh", sshAddress, script])
+  return await runCommand(["ssh", "--", sshAddress, script])
 }
 
 /**

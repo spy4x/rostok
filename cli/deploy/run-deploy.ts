@@ -25,6 +25,28 @@
 //   - Every value from `.env`/`config.json` embedded in a remote command
 //     is single-quoted (`shQuote`); the old double-quoting still let
 //     `$(...)`/backticks run inside it.
+//   - SSH_ADDRESS, PATH_APPS and VOLUMES_PATH are validated (env.ts, via
+//     cli/server-keys.ts's validateSshAddress/validateRemotePath) before
+//     any of them reaches ssh/rsync argv or a remote command — an
+//     SSH_ADDRESS starting with `-` (`-oProxyCommand=<cmd>`) would
+//     otherwise run `<cmd>` locally the moment ssh (or rsync, which
+//     re-spawns ssh with the same target) parsed it as an option. Every
+//     direct ssh spawn in cli/deploy/ (exec.ts) also puts `--` before
+//     the target as a second, independent guard — rsync's own re-spawn
+//     of ssh can't take the same `--` (it splits a user@host address
+//     into `-l user host` before invoking its `-e` command, and `--`
+//     ahead of that makes ssh misread `-l` as the hostname instead), so
+//     validateSshAddress is the only guard for that specific spawn; a
+//     leading `--` before rsync's own positional args still guards
+//     rsync's own argument parser.
+//   - The staged `.env`/`.env.root` are chmod 0600 — both carry secrets,
+//     and rsync -a would otherwise ship whatever mode the source file
+//     happened to have to a directory other users on the remote can read.
+//
+// A stack's before/after hook is fully trusted code, run with `deno run
+// -A` — see hooks.ts for what that does and doesn't protect against
+// (it denies `.env`/`.env.root` from overriding PATH/HOME/DENO_*/etc.
+// in the hook's own process env, but does not sandbox the hook itself).
 //
 // Kept from the old script: a server can override a stack's before-hook
 // with `servers/<server>/configs/<deployAs>/before.deploy.ts`, run after
@@ -156,10 +178,18 @@ export async function runDeploy(opts: DeployOptions): Promise<DeployRunResult> {
   const stagingDir = await Deno.makeTempDir({ prefix: "rostok-deploy-" })
   try {
     // Whitelisted files only — no ./scripts, no ./deno.jsonc (#203 point 3).
-    await Deno.copyFile(envPath, join(stagingDir, ".env"))
+    // Both carry secrets, so chmod to 0600 regardless of the source
+    // file's mode or the process umask — rsync -a preserves this on the
+    // remote, where these land in PATH_APPS, potentially readable by
+    // every user on a shared box otherwise.
+    const stagedEnvPath = join(stagingDir, ".env")
+    await Deno.copyFile(envPath, stagedEnvPath)
+    await Deno.chmod(stagedEnvPath, 0o600)
     // Compose reads .env.root with --env-file; create an empty one in
     // staging when the project has none.
-    await Deno.writeTextFile(join(stagingDir, ".env.root"), rootEnvText)
+    const stagedRootEnvPath = join(stagingDir, ".env.root")
+    await Deno.writeTextFile(stagedRootEnvPath, rootEnvText)
+    await Deno.chmod(stagedRootEnvPath, 0o600)
     await copyIfExists(join(serverDir, "configs"), join(stagingDir, "configs"))
     await copyIfExists(join(serverDir, "compose-override"), join(stagingDir, "compose-override"))
 
@@ -243,11 +273,26 @@ export async function runDeploy(opts: DeployOptions): Promise<DeployRunResult> {
     }
 
     console.log(`Syncing files to ${SSH_ADDRESS}:${PATH_APPS}...`)
+    // rsync re-spawns ssh with SSH_ADDRESS as its destination, so this is
+    // the other place a malicious address could reach ssh's option
+    // parser — but `-e "ssh --"` (the same guard as exec.ts's
+    // runRemoteCommand/runRemoteShell) does NOT work here: for a
+    // user@host address, rsync itself splits it into `-l user host`
+    // before invoking the -e command, so `ssh -- -l user host` reads
+    // `-l` (now past the `--`) as the hostname and fails with "hostname
+    // contains invalid characters" — confirmed against a real server.
+    // `validateSshAddress` (env.ts, called before this point) is the
+    // real guard here: it rejects a leading `-` outright. The leading
+    // `--` below still stops rsync's own argument parser from reading a
+    // `-`-led destination as an rsync flag (rsync also rejects that on
+    // its own, e.g. "option does not take an argument" — this is a
+    // second, independent layer, not the only one).
     const rsyncResult = await runCommand([
       "rsync",
       "-avhzru",
       "-e",
       "ssh",
+      "--",
       `${stagingDir}/`,
       `${SSH_ADDRESS}:${PATH_APPS}/`,
     ])
