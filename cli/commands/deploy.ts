@@ -114,19 +114,16 @@ Examples:
   )
   .arguments("<server:string> [stack:string]")
   .action(async (_options, server: string, stack?: string) => {
+    // #211: throw UserError for every expected failure instead of
+    // printing and calling Deno.exit here — cli/+main.ts's top-level
+    // handler is the one place that formats a UserError as
+    // `rostok: <message>` with no stack trace. Letting it propagate
+    // (rather than catching and exiting inline) is what lets that
+    // wrapper own the formatting.
     const cwd = Deno.cwd()
     const result = await validateDeployArgs(cwd, server, stack)
     if (!result.ok) {
-      console.error(`rostok deploy: ${result.error}`)
-      Deno.exit(1)
+      throw new UserError(result.error!)
     }
-    try {
-      await runDeploy({ cwd, server, stack })
-    } catch (err) {
-      if (err instanceof UserError) {
-        console.error(`rostok deploy: ${err.message}`)
-        Deno.exit(1)
-      }
-      throw err
-    }
+    await runDeploy({ cwd, server, stack })
   })

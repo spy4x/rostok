@@ -24,14 +24,32 @@ const FAKE_SSH = `#!/usr/bin/env -S deno run --allow-read --allow-write --allow-
 // Anything else (proxy network, stale-stack cleanup, volume mkdir/chown)
 // is accepted silently, matching a healthy remote.
 //
-// Every real call is \`ssh -- <target> <command...>\` (cli/deploy/exec.ts
-// puts \`--\` before the target as a ProxyCommand-injection guard), so
-// the target is args[1], not args[0].
+// Every real call is \`ssh -o ConnectTimeout=10 [-o BatchMode=yes] [-p <port>]
+// -- <target> <command...>\` (cli/deploy/exec.ts's sshArgs, see
+// cli/server-keys.ts) — the target and command sit right after the
+// first \`--\`, wherever the options before it land.
 const args = Deno.args
-const script = args.slice(2).join(" ")
+const dashDashIdx = args.indexOf("--")
+const script = args.slice(dashDashIdx + 2).join(" ")
 const logPath = Deno.env.get("FAKE_SSH_LOG")
 if (logPath) {
   await Deno.writeTextFile(logPath, script + "\\n---\\n", { append: true })
+}
+// FAKE_SSH_UNREACHABLE simulates a dead/unreachable server: sleeps for
+// the ConnectTimeout deploy passed (proving the argv wiring works —
+// real ssh would enforce this timeout itself) then fails the way ssh
+// does on a real timeout, before running any of the branches below.
+if (Deno.env.get("FAKE_SSH_UNREACHABLE")) {
+  await new Promise((r) => setTimeout(r, 10_000))
+  console.error("ssh: connect to host remote.test port 22: Connection timed out")
+  Deno.exit(255)
+}
+// FAKE_SSH_HANG_ON hangs forever the first time \`script\` contains this
+// text — used to hold a deploy open mid-run so a test can send it a
+// signal while the staging directory still exists.
+const hangOn = Deno.env.get("FAKE_SSH_HANG_ON")
+if (hangOn && script.includes(hangOn)) {
+  await new Promise(() => {})
 }
 if (script.includes("getent group docker")) {
   const gid = Deno.env.get("FAKE_DOCKER_GID") ?? "988"
@@ -41,9 +59,18 @@ if (script.includes("getent group docker")) {
   // fixtures below, which is a placeholder address, not a real login.
   console.log(Deno.env.get("FAKE_REMOTE_UID") ?? "0")
 } else if (script.includes("DEPLOY_START:")) {
+  // FAKE_DEPLOY_FAIL_STACK lets a test simulate a stack whose
+  // \`docker compose up\` fails on the remote — everything else about
+  // the fake remote (docker group, uid) stays healthy.
+  const failStack = Deno.env.get("FAKE_DEPLOY_FAIL_STACK")
   for (const m of script.matchAll(/DEPLOY_START:(\\S+):(\\S+)/g)) {
     console.log(\`DEPLOY_START:\${m[1]}:\${m[2]}\`)
-    console.log(\`DEPLOY_SUCCESS:\${m[1]}:\${m[2]}\`)
+    if (m[1] === failStack) {
+      console.log("simulated docker compose failure")
+      console.log(\`DEPLOY_FAILED:\${m[1]}:\${m[2]}\`)
+    } else {
+      console.log(\`DEPLOY_SUCCESS:\${m[1]}:\${m[2]}\`)
+    }
   }
 }
 Deno.exit(0)
@@ -665,6 +692,95 @@ Deno.test("e2e: a failed staging cleanup logs a warning instead of swallowing it
     })
     assertEquals(stillThere, false, `staging dir ${stagingDirToClean} was not cleaned up`)
   } finally {
+    await teardownFixture(f)
+  }
+})
+
+Deno.test("e2e: a failed docker compose up throws a UserError naming the stack and the step (#211)", async () => {
+  const f = await setupFixture()
+  try {
+    await writeServer(f.projectDir, [], ["librespeed", "jellyfin"])
+
+    const result = await runDeployCli(f, ["deploy", "test"], {
+      FAKE_DEPLOY_FAIL_STACK: "librespeed",
+    })
+    assertEquals(result.success, false)
+    // Names the stack...
+    assertStringIncludes(result.stderr, "librespeed")
+    // ...and the step (docker compose up / deploy), not a bare stack trace.
+    assertStringIncludes(result.stderr, "failed to deploy")
+  } finally {
+    await teardownFixture(f)
+  }
+})
+
+Deno.test("e2e: an unreachable server fails the deploy within ~15s, naming the step (#219)", async () => {
+  const f = await setupFixture()
+  try {
+    await writeServer(f.projectDir, [], ["librespeed"])
+
+    const start = performance.now()
+    const result = await runDeployCli(f, ["deploy", "test"], { FAKE_SSH_UNREACHABLE: "1" })
+    const elapsedMs = performance.now() - start
+
+    assertEquals(result.success, false)
+    // Names the step: the docker-group preflight, the first ssh call deploy makes.
+    assertStringIncludes(result.stderr, "docker group")
+    if (elapsedMs >= 15_000) {
+      throw new Error(`deploy took ${elapsedMs.toFixed(0)}ms — expected it to fail within ~15s`)
+    }
+  } finally {
+    await teardownFixture(f)
+  }
+})
+
+Deno.test("e2e: SIGINT during deploy removes the staging directory (#219)", async () => {
+  const f = await setupFixture()
+  // A private TMPDIR (per #219's brief: don't race other processes'
+  // rostok-deploy-* directories) so this test can find, and only find,
+  // its own staging dir.
+  const tmpRoot = await Deno.makeTempDir({ prefix: "rostok-e2e-tmproot-" })
+  try {
+    await writeServer(f.projectDir, [], ["librespeed"])
+
+    const mainTs = new URL("../+main.ts", import.meta.url).pathname
+    const command = new Deno.Command(Deno.execPath(), {
+      args: ["run", "-A", mainTs, "deploy", "test"],
+      cwd: f.projectDir,
+      env: {
+        ...Deno.env.toObject(),
+        PATH: `${f.binDir}:${Deno.env.get("PATH") ?? ""}`,
+        FAKE_REMOTE_DIR: f.remoteDir,
+        FAKE_SSH_LOG: f.logPath,
+        // Hold the deploy open after rsync (staging dir already
+        // created and populated) but before it finishes.
+        FAKE_SSH_HANG_ON: "docker network inspect proxy",
+        TMPDIR: tmpRoot,
+      },
+      stdout: "piped",
+      stderr: "piped",
+    })
+    const child = command.spawn()
+
+    let stagingDirName: string | undefined
+    for (let i = 0; i < 200 && !stagingDirName; i++) {
+      for await (const entry of Deno.readDir(tmpRoot)) {
+        if (entry.name.startsWith("rostok-deploy-")) stagingDirName = entry.name
+      }
+      if (!stagingDirName) await new Promise((r) => setTimeout(r, 50))
+    }
+    if (!stagingDirName) {
+      throw new Error("staging directory never appeared under the private TMPDIR")
+    }
+    const stagingDirPath = join(tmpRoot, stagingDirName)
+
+    child.kill("SIGINT")
+    const output = await child.output()
+    assertEquals(output.code, 130)
+
+    await assertNotExists(stagingDirPath)
+  } finally {
+    await Deno.remove(tmpRoot, { recursive: true }).catch(() => {})
     await teardownFixture(f)
   }
 })
