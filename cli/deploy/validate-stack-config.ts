@@ -13,6 +13,7 @@
 // set before staging even starts.
 
 import { UserError } from "../errors.ts"
+import { hasReservedStackKeyPrefix, stackKeyPrefix } from "../server-keys.ts"
 import type { StackConfig } from "./deploy-script.ts"
 
 /** Lowercase letters, digits, dashes and underscores; starts with a letter or digit; at most 63 characters. */
@@ -36,6 +37,18 @@ export function validateStackConfigs(stacks: StackConfig[], configPath: string):
     validateStackValue(stack.name, "stack name", configPath)
     if (stack.deployAs !== undefined) {
       validateStackValue(stack.deployAs, "deployAs", configPath)
+    }
+    // A stack whose own key-prefix (stackKeyPrefix) starts with a
+    // reserved prefix (GIT_, DOCKER_, SSH_, ...) would let its
+    // .env-sourced keys collide with names tools a hook spawns treat
+    // specially — reject it at deploy time, not just at `stack add`
+    // (a project's stacks/<name>/ can bypass `stack add` entirely).
+    if (hasReservedStackKeyPrefix(stack.name)) {
+      throw new UserError(
+        `stack "${stack.name}" in ${configPath}: its own key prefix "${
+          stackKeyPrefix(stack.name)
+        }" is reserved — rename the stack.`,
+      )
     }
   }
 }

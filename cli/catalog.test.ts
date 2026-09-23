@@ -34,7 +34,7 @@
 import { assertEquals } from "@std/assert"
 import { fromFileUrl, join, relative } from "@std/path"
 import { loadCatalog } from "./catalog.ts"
-import { isServerKey, stackKeyPrefix } from "./server-keys.ts"
+import { hasReservedStackKeyPrefix, isServerKey, stackKeyPrefix } from "./server-keys.ts"
 import type { StackMeta } from "./stack-meta.ts"
 
 export type Violation = string
@@ -951,6 +951,21 @@ Deno.test(
       }
     }
 
+    assertEquals(violations, [], violations.join("\n"))
+  },
+)
+
+Deno.test(
+  "catalog: no stack's own key prefix is reserved (GIT_/DOCKER_/SSH_/...)",
+  async () => {
+    const stacksDir = fromFileUrl(new URL("../stacks", import.meta.url))
+    const violations: string[] = []
+    for await (const entry of Deno.readDir(stacksDir)) {
+      if (!entry.isDirectory) continue
+      if (hasReservedStackKeyPrefix(entry.name)) {
+        violations.push(`${entry.name} -> prefix "${stackKeyPrefix(entry.name)}" is reserved`)
+      }
+    }
     assertEquals(violations, [], violations.join("\n"))
   },
 )

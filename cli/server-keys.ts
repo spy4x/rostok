@@ -63,6 +63,73 @@ export function stackKeyPrefix(stackName: string): string {
   return `${stackName.toUpperCase().replace(/-/g, "_")}_`
 }
 
+/**
+ * Prefixes no stack's own `stackKeyPrefix` may start with. A stack
+ * named e.g. "git" or "docker" would get prefix "GIT_"/"DOCKER_",
+ * letting its own `.env`-sourced keys collide with names tools like
+ * git, ssh, bash, sudo, curl, aws, ansible, systemd etc. treat
+ * specially wherever a hook's environment (or anything else reading a
+ * `<PREFIX>_*` key) forwards them — regardless of the separate
+ * deny-list `cli/deploy/hooks.ts` applies at hook-run time. Checked by
+ * `validateStackConfigs` before a stack of that name can be deployed.
+ */
+export const RESERVED_STACK_KEY_PREFIXES = [
+  "LD_",
+  "DYLD_",
+  "DENO_",
+  "NPM_",
+  "NODE_",
+  "PYTHON",
+  "PERL",
+  "GIT_",
+  "DOCKER_",
+  "SSH_",
+  "BASH_",
+  "SUDO_",
+  "OPENSSL_",
+  "SSL_",
+  "CURL_",
+  "JAVA_",
+  "JDK_",
+  "XDG_",
+  "RSYNC_",
+  "HTTP_",
+  "HTTPS_",
+  "ALL_",
+  "NO_",
+  "PIP_",
+  "AWS_",
+  "CARGO_",
+  "DBUS_",
+  "SYSTEMD_",
+  "ANSIBLE_",
+  "LC_",
+  "GPG_",
+  "TMUX_",
+] as const
+
+/**
+ * Catalog stacks that shipped before RESERVED_STACK_KEY_PREFIXES
+ * existed, whose name happens to start with a now-reserved prefix
+ * ("docker-registry", "docker-sock-proxy" → "DOCKER_"). Exempted so
+ * this rule doesn't retroactively refuse to deploy something already
+ * in production — a NEW stack can't add itself here; it has to pick a
+ * name whose prefix isn't reserved. Revisit by renaming these two
+ * stacks in a separate PR (a breaking change for anyone who already
+ * deployed them) rather than by growing this list.
+ */
+export const RESERVED_STACK_KEY_PREFIX_EXEMPTIONS = [
+  "docker-registry",
+  "docker-sock-proxy",
+] as const
+
+/** True when `stackName`'s own key prefix starts with a reserved prefix (see RESERVED_STACK_KEY_PREFIXES), unless exempted. */
+export function hasReservedStackKeyPrefix(stackName: string): boolean {
+  if ((RESERVED_STACK_KEY_PREFIX_EXEMPTIONS as readonly string[]).includes(stackName)) return false
+  const prefix = stackKeyPrefix(stackName)
+  return RESERVED_STACK_KEY_PREFIXES.some((reserved) => prefix.startsWith(reserved))
+}
+
 /** Lowercase letters, digits and dashes; starts with a letter or digit; at most 63 characters. */
 export const SERVER_NAME_PATTERN = /^[a-z0-9][a-z0-9-]{0,62}$/
 
@@ -102,10 +169,17 @@ export interface SshTarget {
   port?: number
 }
 
+/** Strip ASCII control characters (including DEL) before echoing untrusted input (a key name, a rejected value) into a log line or error message. */
+function sanitizeForLog(s: string): string {
+  // deno-lint-ignore no-control-regex
+  return s.replace(/[\x00-\x1f\x7f]/g, "")
+}
+
 function sshAddressError(value: string): UserError {
   return new UserError(
-    `invalid SSH_ADDRESS "${value}": use an ssh_config alias, a host, user@host, host:port, ` +
-      `user@host:port, an IPv6 address, or [IPv6]:port, with no spaces and not starting with "-".`,
+    `invalid SSH_ADDRESS "${sanitizeForLog(value)}": use an ssh_config alias, a host, user@host, ` +
+      `host:port, user@host:port, an IPv6 address, or [IPv6]:port, with no spaces and not ` +
+      `starting with "-".`,
   )
 }
 
@@ -189,8 +263,8 @@ export function parseSshAddress(value: string): SshTarget {
       const maybePort = rest.slice(lastColon + 1)
       if (maybeHost.includes("::") && /^\d+$/.test(maybePort)) {
         throw new UserError(
-          `invalid SSH_ADDRESS "${value}": bracket an IPv6 address that carries a port — ` +
-            `use "[${maybeHost}]:${maybePort}".`,
+          `invalid SSH_ADDRESS "${sanitizeForLog(value)}": bracket an IPv6 address that carries ` +
+            `a port — use "[${sanitizeForLog(maybeHost)}]:${sanitizeForLog(maybePort)}".`,
         )
       }
       host = rest
@@ -204,7 +278,9 @@ export function parseSshAddress(value: string): SshTarget {
     if (!/^\d+$/.test(portText)) throw sshAddressError(value)
     port = Number(portText)
     if (port < 1 || port > 65535) {
-      throw new UserError(`invalid SSH_ADDRESS "${value}": port ${port} is outside 1-65535.`)
+      throw new UserError(
+        `invalid SSH_ADDRESS "${sanitizeForLog(value)}": port ${port} is outside 1-65535.`,
+      )
     }
   }
 

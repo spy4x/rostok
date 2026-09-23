@@ -1,8 +1,9 @@
-import { assert, assertEquals, assertFalse, assertThrows } from "@std/assert"
+import { assert, assertEquals, assertFalse, assertStringIncludes, assertThrows } from "@std/assert"
 import { join, resolve } from "@std/path"
 import { UserError } from "./errors.ts"
 import {
   DEPLOY_REQUIRED_KEYS,
+  hasReservedStackKeyPrefix,
   isServerKey,
   parseSshAddress,
   rsyncDestination,
@@ -70,6 +71,19 @@ Deno.test("isServerKey covers SERVER_KEYS and PATH_*", () => {
 Deno.test("stackKeyPrefix uppercases and replaces dashes", () => {
   assertEquals(stackKeyPrefix("librespeed"), "LIBRESPEED_")
   assertEquals(stackKeyPrefix("deepseek-harness"), "DEEPSEEK_HARNESS_")
+})
+
+Deno.test("hasReservedStackKeyPrefix flags a stack whose own prefix collides with a reserved name", () => {
+  for (const name of ["git", "docker", "ssh", "bash-tools", "sudo-helper", "npm-mirror"]) {
+    assert(hasReservedStackKeyPrefix(name), name)
+  }
+  assertFalse(hasReservedStackKeyPrefix("gitea")) // "GITEA_" doesn't start with "GIT_"
+  assertFalse(hasReservedStackKeyPrefix("librespeed"))
+})
+
+Deno.test("hasReservedStackKeyPrefix exempts the two pre-existing docker-* catalog stacks", () => {
+  assertFalse(hasReservedStackKeyPrefix("docker-registry"))
+  assertFalse(hasReservedStackKeyPrefix("docker-sock-proxy"))
 })
 
 Deno.test("accepts ordinary SSH targets", () => {
@@ -180,6 +194,17 @@ Deno.test("rejects a non-numeric or empty port", () => {
   for (const v of ["host:abc", "host:", "[2001:db8::1]:"]) {
     assertThrows(() => parseSshAddress(v), UserError, "invalid SSH_ADDRESS")
   }
+})
+
+Deno.test("strips control characters from a rejected SSH_ADDRESS before it reaches the error message (#7)", () => {
+  const err = assertThrows(
+    () => parseSshAddress("host\x07\x1bwith\x00control"),
+    UserError,
+  )
+  assertEquals(err.message.includes("\x07"), false)
+  assertEquals(err.message.includes("\x1b"), false)
+  assertEquals(err.message.includes("\x00"), false)
+  assertStringIncludes(err.message, "hostwithcontrol")
 })
 
 Deno.test("rejects empty parts", () => {
