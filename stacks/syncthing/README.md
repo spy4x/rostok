@@ -31,7 +31,7 @@ Server C: ~/sync/backups/myservice
 ## Environment Variables
 
 ```bash
-SYNCTHING_DOMAIN=sync.yourdomain.com  # Full host for the Traefik rule
+SYNCTHING_DOMAIN=sync.example.com  # Full host for the Traefik rule
 SYNCTHING_GUI_USER=admin              # Web UI username
 SYNCTHING_GUI_PASSWORD=...            # Generated password
 ```

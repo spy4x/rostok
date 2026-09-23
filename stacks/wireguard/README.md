@@ -19,7 +19,7 @@ VPN for secure remote access to services.
 ## Configuration
 
 ```bash
-WIREGUARD_DOMAIN=vpn.yourdomain.com          # Server public host/IP (→ SERVERURL)
+WIREGUARD_DOMAIN=vpn.example.com          # Server public host/IP (→ SERVERURL)
 WIREGUARD_PEERS=phone,laptop                 # Peer names/count (→ PEERS)
 WIREGUARD_DNS=1.1.1.1,8.8.8.8,9.9.9.9         # DNS for clients (→ PEERDNS, has a default)
 ```

@@ -117,7 +117,7 @@ see §5 for the layout and §7 for ownership.
    - `TIMEZONE` — IANA tz, defaults to `/etc/timezone` or `UTC`
    - `PUID`, `PGID` — container user/group IDs
    - `VOLUMES_PATH` — host dir for compose volumes
-   - `BASIC_AUTH_*` (only added in Phase 5+ when stacks need it)
+   - `TRAEFIK_BASIC_AUTH_*` (only added in Phase 5+, by the traefik stack)
 
 3. **Stack add** — interactive multi-select prompt: pick ONE stack from
    the bundled catalog. Runs that stack's variable flow. Builds the
@@ -288,14 +288,15 @@ Phase 4 user feedback split server config into two files:
 config:**
 - `PROJECT` — short project ID (e.g. `hl`)
 - `SSH_ADDRESS` — verbatim ssh target (alias or `user@host[:port]`)
-- `USER` — shell user on the remote host (parsed from SSH or prompted)
+- `SSH_USER` — remote user on the host (parsed from SSH or prompted)
+- `SERVER_NAME` — the server's own directory name (e.g. `home`)
 - `DOMAIN` — apex domain for this server
 - `CONTACT_EMAIL` — for ACME/Let's Encrypt registration
 - `DOCKER_GROUP_ID` — group ID for `/var/run/docker.sock` access
 - `TIMEZONE` — IANA tz, defaults to `/etc/timezone` or `UTC`
 - `PUID`, `PGID` — container user/group IDs
 - `VOLUMES_PATH` — host dir for compose volumes
-- `BASIC_AUTH_*` — basic-auth credentials (when stack needs it)
+- `TRAEFIK_BASIC_AUTH_*` — Traefik dashboard basic-auth credentials (when the traefik stack is added)
 - `PATH_*` — host dirs for media libraries (PATH_MEDIA, etc.)
 
 The wizard's `$ rostok` action creates `.env.root` empty by default;

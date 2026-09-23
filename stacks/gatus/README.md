@@ -58,7 +58,7 @@ headers:
 ```yaml
 endpoints:
   - name: ProtectedService
-    url: "https://protected.yourdomain.com"
+    url: "https://protected.example.com"
     interval: 5m
     headers:
       Authorization: "Basic ${GATUS_BASIC_AUTH_BASE64}"

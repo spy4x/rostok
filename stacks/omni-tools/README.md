@@ -18,7 +18,7 @@ Self-hosted collection of everyday online tools — all running entirely client-
 ## Configuration
 
 ```bash
-OMNI_TOOLS_DOMAIN=tools.yourdomain.com    # Full host for the Traefik rule
+OMNI_TOOLS_DOMAIN=tools.example.com    # Full host for the Traefik rule
 OMNI_TOOLS_CPU_LIMIT=0.5                  # Optional (default: 0.5)
 OMNI_TOOLS_MEM_LIMIT=256M                 # Optional (default: 256M)
 ```
