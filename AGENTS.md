@@ -103,7 +103,7 @@ commit — even if the task is incomplete.
 
 - Prefix title with `[WIP]` until fully done.
 - Push + update PR body after every human interaction.
-- Remove `[WIP]` only when complete and ready for review.
+- Remove `[WIP]` only when complete and the review gate passed.
 - Reference issues with full URLs in PR body:
   `Closes [#N](https://github.com/spy4x/rostok/issues/N)`.
 
@@ -180,18 +180,33 @@ unrelated keys.
 
 ## 🧹 Merge protocol
 
-After all changes are done and the PR is created, **STOP and wait**.
-Never merge yourself. When the user says "merge":
+Agents work autonomously in this repo, including merging. A PR merges
+when both gates are green:
+
+- the pre-merge `@reviewer` gate (fresh-context review with its own
+  checks and mutations; a separate security review for changes to
+  deploy, SSH, secrets or auth), and
+- CI on the PR (Woodpecker, `ci/woodpecker/pr/woodpecker`).
+
+If a gate fails twice on the same cause, or a revert can't undo the
+change, leave the PR open and tell the user.
 
 - All commits relate to one feature → `gh pr merge --squash --delete-branch`
 - Some commits fix independent things → `gh pr merge --rebase --delete-branch`
 
-Then clean up:
+`deno publish` is the exception: JSR versions are immutable, so never
+publish without the user's explicit OK for that version.
+
+Then clean up. Worktrees live in the sibling `worktrees/rostok/`; these
+commands work from any directory inside the repo or a worktree. `-D` is
+needed because git doesn't see a squash-merged branch as merged; run it
+only after the PR shows as merged.
 
 ```bash
-cd $(git rev-parse --show-toplevel)
-git worktree remove <type>/<short-description>
-git branch -d <type>/<short-description>
+MAIN=$(realpath "$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")")
+git -C "$MAIN" worktree remove "$(dirname "$MAIN")/worktrees/rostok/<type>/<short-description>"
+git -C "$MAIN" branch -D <type>/<short-description>
+git -C "$MAIN" fetch --prune
 ```
 
 ---
@@ -246,7 +261,8 @@ Semver:
 
 ### Publish flow
 
-After merge to `main`:
+After merge to `main`, and only with the user's explicit OK for this
+version (see the merge protocol):
 
 1. Confirm `deno task check` passes on the bumped source.
 2. `deno publish` from `main`. Browser OAuth; need a JSR token from
