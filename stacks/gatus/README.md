@@ -51,6 +51,23 @@ env-var expansion — they come from this stack's `GATUS_NTFY_URL`,
 `rostok stack add gatus`). Leave `GATUS_NTFY_URL`/`GATUS_NTFY_TOKEN_UPTIME`
 unset to run without alerting.
 
+To probe an endpoint sitting behind Traefik basic auth, reference
+`${GATUS_BASIC_AUTH_BASE64}` (base64 of `user:password`) in a check's
+headers:
+
+```yaml
+endpoints:
+  - name: ProtectedService
+    url: "https://protected.yourdomain.com"
+    interval: 5m
+    headers:
+      Authorization: "Basic ${GATUS_BASIC_AUTH_BASE64}"
+    conditions:
+      - "[STATUS] == 200"
+```
+
+Leave `GATUS_BASIC_AUTH_BASE64` unset for checks that don't need it.
+
 The dashboard has no auth of its own — put it behind Traefik's
 basic-auth or Authelia middleware if it shouldn't be public. Its router
 already carries `robots-deny@file` to keep it out of search indexes.
