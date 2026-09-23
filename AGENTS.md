@@ -197,12 +197,16 @@ change, leave the PR open and tell the user.
 `deno publish` is the exception: JSR versions are immutable, so never
 publish without the user's explicit OK for that version.
 
-Then clean up (worktrees live in the sibling `worktrees/rostok/`):
+Then clean up. Worktrees live in the sibling `worktrees/rostok/`; these
+commands work from any directory inside the repo or a worktree. `-D` is
+needed because git doesn't see a squash-merged branch as merged; run it
+only after the PR shows as merged.
 
 ```bash
-git worktree remove ../worktrees/rostok/<type>/<short-description>
-git branch -D <type>/<short-description>
-git fetch --prune
+MAIN=$(realpath "$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")")
+git -C "$MAIN" worktree remove "$(dirname "$MAIN")/worktrees/rostok/<type>/<short-description>"
+git -C "$MAIN" branch -D <type>/<short-description>
+git -C "$MAIN" fetch --prune
 ```
 
 ---
@@ -257,7 +261,8 @@ Semver:
 
 ### Publish flow
 
-After merge to `main`:
+After merge to `main`, and only with the user's explicit OK for this
+version (see the merge protocol):
 
 1. Confirm `deno task check` passes on the bumped source.
 2. `deno publish` from `main`. Browser OAuth; need a JSR token from
