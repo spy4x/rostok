@@ -81,7 +81,7 @@ import {
   printDeploySummary,
   type StackConfig,
 } from "./deploy-script.ts"
-import { runCommand, runRemoteShell, shQuote } from "./exec.ts"
+import { runRemoteShell, runRemoteSync, shQuote } from "./exec.ts"
 
 export interface DeployOptions {
   /** Project root (the directory that holds `servers/` and `.env.root`). */
@@ -175,7 +175,27 @@ export async function runDeploy(opts: DeployOptions): Promise<DeployRunResult> {
     stacks = filtered
   }
 
+  // #219: the staging dir holds a plaintext copy of `.env`/`.env.root`
+  // (secrets) — a Ctrl-C or `kill` mid-deploy skips the `finally` below
+  // entirely, leaving those on disk until the next reboot clears /tmp.
+  // These listeners clean up before exiting with the signal's
+  // conventional code (128 + signal number), and are removed in
+  // `finally` so a normal deploy leaves no listener behind.
   const stagingDir = await Deno.makeTempDir({ prefix: "rostok-deploy-" })
+  const onSignal = (signal: "SIGINT" | "SIGTERM") => {
+    ;(async () => {
+      try {
+        await Deno.remove(stagingDir, { recursive: true })
+      } catch (err) {
+        console.error(`Warning: failed to remove staging directory ${stagingDir}: ${err}`)
+      }
+      Deno.exit(signal === "SIGINT" ? 130 : 143)
+    })()
+  }
+  const onSigint = () => onSignal("SIGINT")
+  const onSigterm = () => onSignal("SIGTERM")
+  Deno.addSignalListener("SIGINT", onSigint)
+  Deno.addSignalListener("SIGTERM", onSigterm)
   try {
     // Whitelisted files only — no ./scripts, no ./deno.jsonc (#203 point 3).
     // Both carry secrets, so chmod to 0600 regardless of the source
@@ -221,6 +241,8 @@ export async function runDeploy(opts: DeployOptions): Promise<DeployRunResult> {
       const ctx: HookContext = {
         rootEnv,
         serverEnv: env,
+        envPath,
+        rootEnvPath,
         sshAddress: SSH_ADDRESS,
         sshUser: SSH_USER,
         pathApps: PATH_APPS,
@@ -282,22 +304,15 @@ export async function runDeploy(opts: DeployOptions): Promise<DeployRunResult> {
     // `-l` (now past the `--`) as the hostname and fails with "hostname
     // contains invalid characters" — confirmed against a real server.
     // `validateSshAddress` (env.ts, called before this point) is the
-    // real guard here: it rejects a leading `-` outright. The leading
-    // `--` below still stops rsync's own argument parser from reading a
-    // `-`-led destination as an rsync flag (rsync also rejects that on
-    // its own, e.g. "option does not take an argument" — this is a
-    // second, independent layer, not the only one).
-    const rsyncResult = await runCommand([
-      "rsync",
-      "-avhzru",
-      "-e",
-      "ssh",
-      "--",
-      `${stagingDir}/`,
-      `${SSH_ADDRESS}:${PATH_APPS}/`,
-    ])
+    // real guard here: it rejects a leading `-` outright. `runRemoteSync`
+    // (exec.ts) still puts `--` before its own positional args, guarding
+    // rsync's own argument parser from a `-`-led destination — a second,
+    // independent layer, not the only one.
+    const rsyncResult = await runRemoteSync(SSH_ADDRESS, stagingDir, PATH_APPS, ["-avhzru"])
     if (!rsyncResult.success) {
-      throw new UserError(`rsync to ${SSH_ADDRESS} failed: ${rsyncResult.error.trim()}`)
+      throw new UserError(
+        `rsync of ${server} to ${SSH_ADDRESS} failed: ${rsyncResult.error.trim()}`,
+      )
     }
 
     // Clean up stale stack directories on the remote (removed from
@@ -409,6 +424,8 @@ export async function runDeploy(opts: DeployOptions): Promise<DeployRunResult> {
       const ctx: HookContext = {
         rootEnv,
         serverEnv: env,
+        envPath,
+        rootEnvPath,
         sshAddress: SSH_ADDRESS,
         sshUser: SSH_USER,
         pathApps: PATH_APPS,
@@ -438,6 +455,8 @@ export async function runDeploy(opts: DeployOptions): Promise<DeployRunResult> {
     console.log("Deployment script finished")
     return { deployedStacks: stacks.map((s) => s.name), results }
   } finally {
+    Deno.removeSignalListener("SIGINT", onSigint)
+    Deno.removeSignalListener("SIGTERM", onSigterm)
     // Staging holds a copy of .env (secrets) — a failed cleanup leaves
     // that on disk, so warn instead of swallowing the error silently.
     try {
