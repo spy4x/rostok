@@ -39,6 +39,15 @@ export interface StackMeta {
   category?: string
   /** Ordered list of environment variables this stack declares. */
   variables: VariableSpec[]
+  /**
+   * Other catalog stack names this one needs on the same server before it
+   * can work — v1's only case is `["traefik"]` for every web stack (one
+   * with a `Host()` Traefik router label in its `compose.yml`). #212:
+   * `stack add`/the wizard offer to add a missing requirement first
+   * (non-interactive mode adds it automatically). v2 can grow this into a
+   * full dependency graph; v1 only reads this one level.
+   */
+  requires?: string[]
 }
 
 // Runtime schemas — defense-in-depth beyond TypeScript's `satisfies` check.
@@ -69,6 +78,7 @@ export const StackMetaSchema: type.Any = type({
   description: "string > 0",
   "category?": "string",
   variables: VariableSpec.array(),
+  "requires?": "string[]",
 })
 
 /**

@@ -26,6 +26,7 @@ export default {
   name: "gatus",
   description: "Lightweight health-check status page with ntfy alerting",
   category: "monitoring",
+  requires: ["traefik"],
   variables: [
     {
       key: "GATUS_IMAGE_TAG",

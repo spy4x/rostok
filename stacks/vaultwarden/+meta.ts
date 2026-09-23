@@ -20,6 +20,7 @@ export default {
   name: "vaultwarden",
   description: "Bitwarden-compatible password manager with SMTP notifications",
   category: "security",
+  requires: ["traefik"],
   variables: [
     {
       key: "VAULTWARDEN_IMAGE_TAG",

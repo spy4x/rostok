@@ -16,6 +16,7 @@ export default {
   name: "librespeed",
   description: "Self-hosted speed-test tool (librespeed/speedtest)",
   category: "tools",
+  requires: ["traefik"],
   variables: [
     {
       key: "LIBRESPEED_IMAGE_TAG",

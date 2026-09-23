@@ -12,6 +12,7 @@ import { UserError } from "./errors.ts"
 import { DEPLOY_REQUIRED_KEYS } from "./server-keys.ts"
 import { readEnvFile } from "./env-files.ts"
 import { probeServer, serverCreate } from "./server-create.ts"
+import type { PromptBase } from "./prompts.ts"
 
 /** Write a fake `ssh` on its own PATH entry, prepended for the duration of `fn`. */
 async function withFakeSsh<T>(script: string, fn: () => Promise<T>): Promise<T> {
@@ -49,6 +50,21 @@ echo "SSH_GID=1000"
 const FAILING_SSH = `#!/bin/sh
 echo "Could not resolve hostname" >&2
 exit 255
+`
+
+// Distinguishes the #207 probe command from the #212 timedatectl
+// command by content, so one fake ssh script can answer both.
+const OK_SSH_WITH_REMOTE_TIMEZONE = `#!/bin/sh
+case "$*" in
+  *timedatectl*)
+    echo "Pacific/Kiritimati"
+    ;;
+  *)
+    echo "DOCKER_GID=988"
+    echo "SSH_UID=1000"
+    echo "SSH_GID=1000"
+    ;;
+esac
 `
 
 const OK_SSH_WITH_USER = `#!/bin/sh
@@ -360,6 +376,68 @@ Deno.test("server create asks the server for the remote username when an alias t
       })
       const env = await readEnvFile(result.envPath)
       assertEquals(env.find((e) => e.key === "SSH_USER")?.value, "remoteuser")
+    }))
+})
+
+// ─────────────────────────────────────────────────────────────────────
+// Review fix — #212's "human label with the key in parentheses" claim
+// was never actually driven through the interactive branch: every
+// existing test either provides every field (skipping the prompt
+// entirely) or runs non-interactively (which uses the label as an error
+// suffix, not what the user sees). `promptFn` lets a test capture the
+// exact label cliffy would show.
+// ─────────────────────────────────────────────────────────────────────
+
+Deno.test("server create: the interactive SSH target prompt's label carries (SSH_ADDRESS)", async () => {
+  await withFakeSsh(OK_SSH, () =>
+    withTmpDir(async (dir) => {
+      const seen: PromptBase[] = []
+      await serverCreate({
+        cwd: dir,
+        providedVars: {
+          SERVER_NAME: "home",
+          DOMAIN: "example.com",
+          CONTACT_EMAIL: "a@example.com",
+        },
+        promptFn: (base) => {
+          seen.push(base)
+          if (base.message.includes("SSH target")) return Promise.resolve("root@192.0.2.1")
+          // Every other field has a usable default (from the probe or a
+          // static fallback) — accept it, same as pressing Enter would.
+          return Promise.resolve(base.default ?? "x")
+        },
+      })
+      const sshPrompt = seen.find((b) => b.message.includes("SSH_ADDRESS"))
+      assertEquals(sshPrompt !== undefined, true, seen.map((b) => b.message).join("\n"))
+      assertStringIncludes(sshPrompt!.message, "SSH target")
+      assertStringIncludes(sshPrompt!.message, "(SSH_ADDRESS)")
+    }))
+})
+
+// Review fix — nothing previously exercised the actual remote-timezone
+// wiring end to end: server-create.ts wires `remote:
+// sshReachable ? () => remoteTimedatectlTimezone(sshTarget) : undefined`
+// into detectTimezone, but every existing test either had no fake ssh
+// (probe fails, sshReachable false, remote never called) or never
+// checked TIMEZONE's actual value. If that wiring were deleted (remote
+// always undefined), this test's expectation — the server's own,
+// deliberately weird zone, not whatever the CI machine's local Intl
+// zone happens to be — would go red.
+Deno.test("server create: TIMEZONE defaults to the server's own timedatectl answer, not the local machine's zone", async () => {
+  await withFakeSsh(OK_SSH_WITH_REMOTE_TIMEZONE, () =>
+    withTmpDir(async (dir) => {
+      const result = await serverCreate({
+        cwd: dir,
+        failFast: true,
+        providedVars: {
+          SERVER_NAME: "home",
+          SSH_ADDRESS: "root@192.0.2.1",
+          DOMAIN: "example.com",
+          CONTACT_EMAIL: "a@example.com",
+        },
+      })
+      const env = await readEnvFile(result.envPath)
+      assertEquals(env.find((e) => e.key === "TIMEZONE")?.value, "Pacific/Kiritimati")
     }))
 })
 

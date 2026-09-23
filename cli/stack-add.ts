@@ -33,7 +33,13 @@ import { decidePrompt } from "./prompt-rule.ts"
 import { resolveVariable } from "./defaults.ts"
 import { normalizeVariableSpec } from "./stack-meta.ts"
 import type { VariableSpec } from "./stack-meta.ts"
-import { promptValue } from "./prompts.ts"
+import {
+  type ConfirmFn,
+  defaultConfirmFn,
+  type PromptFn,
+  promptValue,
+  withKeyLabel,
+} from "./prompts.ts"
 import { serverDirFor } from "./server-keys.ts"
 import { UserError } from "./errors.ts"
 
@@ -49,6 +55,13 @@ export interface StackAddResult {
   newCount: number
   /** Keys that already had a value, kept unchanged. */
   keptCount: number
+  /**
+   * `requires` dependencies that were missing and the user (interactively)
+   * chose not to add. Callers use this to steer {@link buildNextSteps}'s
+   * "add this first" suggestion — empty when every requirement was met or
+   * auto-added (non-interactive mode never declines).
+   */
+  declinedRequires: string[]
 }
 
 export interface StackAddOptions {
@@ -62,6 +75,17 @@ export interface StackAddOptions {
   nonInteractive?: boolean
   /** Skip server-level propagation (testing only). */
   skipServerPropagation?: boolean
+  /** Test injection point for every interactive variable prompt — see prompts.ts's PromptFn. */
+  promptFn?: PromptFn
+  /** Test injection point for the "add this required stack now?" yes/no prompt. Defaults to cliffy's Confirm.prompt. */
+  confirmFn?: ConfirmFn
+  /**
+   * Internal — used by stackAdd's own `requires` recursion to detect a
+   * cycle (`a` requires `b`, `b` requires `a`). Names of stacks already
+   * being added higher up the current call chain. Never set this
+   * yourself; stackAdd manages it when it recurses for a dependency.
+   */
+  _visiting?: Set<string>
 }
 
 /**
@@ -89,6 +113,57 @@ export async function stackAdd(
 
   const catalog = await resolveCatalog(opts.catalogDir)
   const entry = findStack(catalog, stackName)
+
+  // Review fix — a requires cycle (a requires b, b requires a) would
+  // otherwise recurse forever. `_visiting` tracks every stack name
+  // already being added higher up the current call chain; a name
+  // reappearing here means a cycle, reported as a UserError naming the
+  // full chain instead of blowing the stack. An unknown required stack
+  // (not in the catalog at all) is caught for free: the recursive
+  // stackAdd call below reaches `findStack` for that name and throws
+  // its own "not found in catalog" UserError.
+  const visiting = opts._visiting ?? new Set<string>()
+  if (visiting.has(stackName)) {
+    throw new UserError(
+      `requires cycle: ${[...visiting, stackName].join(" -> ")}`,
+    )
+  }
+  visiting.add(stackName)
+
+  // #212 point 1 — a stack that `requires` another one (e.g. every web
+  // stack requires traefik) gets that dependency added first, on the
+  // same server, before its own variables are resolved. Non-interactive
+  // mode adds it automatically and says so; interactive mode asks.
+  const missingRequires = await unmetRequires(serverDir, entry)
+  const declinedRequires: string[] = []
+  const confirmFn = opts.confirmFn ?? defaultConfirmFn
+  for (const requiredName of missingRequires) {
+    if (opts.nonInteractive) {
+      console.log(
+        `rostok: ${stackName} requires '${requiredName}', which isn't on ${serverName} yet — adding it first.`,
+      )
+      await stackAdd(requiredName, serverName, {
+        ...opts,
+        nonInteractive: true,
+        _visiting: visiting,
+      })
+      continue
+    }
+    const shouldAdd = await confirmFn({
+      message:
+        `${stackName} requires '${requiredName}', which isn't on '${serverName}' yet. Add it now?`,
+      default: true,
+    })
+    if (shouldAdd) {
+      await stackAdd(requiredName, serverName, { ...opts, _visiting: visiting })
+    } else {
+      declinedRequires.push(requiredName)
+      console.log(
+        `rostok: skipped adding '${requiredName}' — ${stackName} may not work until you run ` +
+          `rostok stack add ${requiredName} -s ${serverName}`,
+      )
+    }
+  }
 
   const existing = await readEnvFile(envPath)
   const existingByKey = new Map(existing.map((e) => [e.key, e.value]))
@@ -148,12 +223,17 @@ export async function stackAdd(
       value = resolved.value
     } else if (decision === "prompt") {
       const fallback = typeof normalized.default === "function" ? undefined : normalized.default
+      // #212: every prompt carries its --var key in parentheses. A
+      // stack's own `question` (when set) is the human label; with no
+      // question, the key alone is the label, so it's never shown twice
+      // as "KEY (KEY)".
       value = await promptValue({
         key,
-        label: normalized.question ?? key,
+        label: normalized.question ? withKeyLabel(normalized.question, key) : key,
         fallback,
         secret: normalized.secret,
         nonInteractive: !!opts.nonInteractive,
+        promptFn: opts.promptFn,
       })
     } else {
       skippedKeys.push(key)
@@ -197,6 +277,7 @@ export async function stackAdd(
     skippedKeys,
     newCount,
     keptCount,
+    declinedRequires,
   }
 }
 
@@ -217,20 +298,41 @@ function resolvedSkipContext(
   return null
 }
 
+export type ServerConfigFile = { stacks: { name: string }[] }
+
+/** Read servers/<n>/config.json's stack list. Missing file → empty list. */
+export async function readServerConfig(serverDir: string): Promise<ServerConfigFile> {
+  const configPath = join(serverDir, "config.json")
+  try {
+    const text = await Deno.readTextFile(configPath)
+    const cfg = JSON.parse(text)
+    if (!Array.isArray(cfg.stacks)) cfg.stacks = []
+    return cfg
+  } catch (err) {
+    if (err instanceof Deno.errors.NotFound) return { stacks: [] }
+    throw err
+  }
+}
+
 /** Read or create servers/<n>/config.json with the new stack entry. */
 async function updateServerConfig(serverDir: string, entry: CatalogEntry): Promise<void> {
   const configPath = join(serverDir, "config.json")
-  type ConfigFile = { stacks: { name: string }[] }
-  let cfg: ConfigFile = { stacks: [] }
-  try {
-    const text = await Deno.readTextFile(configPath)
-    cfg = JSON.parse(text)
-    if (!Array.isArray(cfg.stacks)) cfg.stacks = []
-  } catch (err) {
-    if (!(err instanceof Deno.errors.NotFound)) throw err
-  }
+  const cfg = await readServerConfig(serverDir)
   if (!cfg.stacks.some((s) => s.name === entry.meta.name)) {
     cfg.stacks.push({ name: entry.meta.name })
   }
   await Deno.writeTextFile(configPath, JSON.stringify(cfg, null, 2) + "\n")
+}
+
+/**
+ * `entry.meta.requires` names not yet in `servers/<n>/config.json`'s
+ * stack list (#212 point 1). Empty when the stack declares no
+ * requirements or every one of them is already present.
+ */
+async function unmetRequires(serverDir: string, entry: CatalogEntry): Promise<string[]> {
+  const required = entry.meta.requires ?? []
+  if (required.length === 0) return []
+  const cfg = await readServerConfig(serverDir)
+  const present = new Set(cfg.stacks.map((s) => s.name))
+  return required.filter((name) => !present.has(name))
 }

@@ -2,11 +2,12 @@
 // .env ownership: keep existing values, never rotate secrets, missing
 // server fails clean, unresolved ${...} fails clean).
 
-import { assertEquals, assertRejects } from "@std/assert"
+import { assertEquals, assertRejects, assertStringIncludes } from "@std/assert"
 import { join } from "@std/path"
 import { UserError } from "./errors.ts"
 import { readEnvFile } from "./env-files.ts"
 import { stackAdd } from "./stack-add.ts"
+import type { PromptBase } from "./prompts.ts"
 
 async function withTmpDir<T>(fn: (dir: string) => Promise<T>): Promise<T> {
   const dir = await Deno.makeTempDir({ prefix: "rostok-stack-add-" })
@@ -96,6 +97,194 @@ Deno.test("stack add rejects a traversal server name and writes nothing outside 
 // ─────────────────────────────────────────────────────────────────────
 // #210 point 3 — a missing server fails clean and writes nothing.
 // ─────────────────────────────────────────────────────────────────────
+
+// ─────────────────────────────────────────────────────────────────────
+// #212 point 1 — a stack that `requires` another one gets that
+// dependency added first. Non-interactive mode adds it automatically;
+// interactive mode's yes/no is driven below through `confirmFn` (no
+// real TTY needed).
+// ─────────────────────────────────────────────────────────────────────
+
+const WEB_STACK_META = (name: string, requires: string[]) => `
+import type { StackMeta } from "@rostok/cli"
+export default {
+  name: "${name}",
+  description: "fixture",
+  requires: ${JSON.stringify(requires)},
+  variables: [
+    { key: "${name.toUpperCase()}_DOMAIN", default: "${name}.\${DOMAIN}", required: true },
+  ],
+} satisfies StackMeta
+`
+
+async function readServerConfigStacks(dir: string, serverName: string): Promise<string[]> {
+  const text = await Deno.readTextFile(join(dir, "servers", serverName, "config.json"))
+  const cfg = JSON.parse(text) as { stacks: { name: string }[] }
+  return cfg.stacks.map((s) => s.name)
+}
+
+Deno.test("stack add -n automatically adds a missing requires dependency first", async () => {
+  await withTmpDir(async (dir) => {
+    const catalogDir = join(dir, "catalog")
+    await writeCatalog(catalogDir, {
+      traefik: IMAGE_STACK_META("traefik", "3.0"),
+      web: WEB_STACK_META("web", ["traefik"]),
+    })
+    await seedServer(dir, "test", { DOMAIN: "example.com" })
+    await stackAdd("web", "test", { cwd: dir, catalogDir, nonInteractive: true })
+
+    const stacks = await readServerConfigStacks(dir, "test")
+    assertEquals(stacks.includes("traefik"), true, "traefik should have been added first")
+    assertEquals(stacks.includes("web"), true)
+
+    const env = await readEnvFile(join(dir, "servers", "test", ".env"))
+    assertEquals(env.some((e) => e.key === "TRAEFIK_DOMAIN"), true)
+    assertEquals(env.some((e) => e.key === "WEB_DOMAIN"), true)
+  })
+})
+
+Deno.test("stack add -n skips adding a requires dependency already on the server", async () => {
+  await withTmpDir(async (dir) => {
+    const catalogDir = join(dir, "catalog")
+    await writeCatalog(catalogDir, {
+      traefik: IMAGE_STACK_META("traefik", "3.0"),
+      web: WEB_STACK_META("web", ["traefik"]),
+    })
+    await seedServer(dir, "test", { DOMAIN: "example.com" })
+    await stackAdd("traefik", "test", { cwd: dir, catalogDir, nonInteractive: true })
+    await stackAdd("web", "test", { cwd: dir, catalogDir, nonInteractive: true })
+
+    const stacks = await readServerConfigStacks(dir, "test")
+    // Both present exactly once — config.json's own de-dup (updateServerConfig)
+    // proves the second call didn't re-add traefik.
+    assertEquals(stacks.filter((s) => s === "traefik").length, 1)
+    assertEquals(stacks.filter((s) => s === "web").length, 1)
+  })
+})
+
+Deno.test("stack add on a stack with no requires never touches config.json's other entries", async () => {
+  await withTmpDir(async (dir) => {
+    const catalogDir = join(dir, "catalog")
+    await writeCatalog(catalogDir, { demo: IMAGE_STACK_META("demo", "1.0") })
+    await seedServer(dir, "test", { DOMAIN: "example.com" })
+    await stackAdd("demo", "test", { cwd: dir, catalogDir, nonInteractive: true })
+    const stacks = await readServerConfigStacks(dir, "test")
+    assertEquals(stacks, ["demo"])
+  })
+})
+
+// Review fix — interactive requires prompt, driven through `confirmFn`
+// instead of a real TTY. Saying "yes" adds the dependency; saying "no"
+// records it in `declinedRequires` and proceeds without it.
+
+Deno.test("stack add interactively adds a requires dependency when the user says yes", async () => {
+  await withTmpDir(async (dir) => {
+    const catalogDir = join(dir, "catalog")
+    await writeCatalog(catalogDir, {
+      traefik: IMAGE_STACK_META("traefik", "3.0"),
+      web: WEB_STACK_META("web", ["traefik"]),
+    })
+    await seedServer(dir, "test", { DOMAIN: "example.com" })
+    const seenMessages: string[] = []
+    const result = await stackAdd("web", "test", {
+      cwd: dir,
+      catalogDir,
+      confirmFn: (opts) => {
+        seenMessages.push(opts.message)
+        return Promise.resolve(true)
+      },
+    })
+    assertEquals(result.declinedRequires, [])
+    assertEquals(seenMessages.some((m) => m.includes("requires 'traefik'")), true)
+    const stacks = await readServerConfigStacks(dir, "test")
+    assertEquals(stacks.includes("traefik"), true)
+  })
+})
+
+Deno.test("stack add interactively skips a requires dependency when the user says no, records it as declined", async () => {
+  await withTmpDir(async (dir) => {
+    const catalogDir = join(dir, "catalog")
+    await writeCatalog(catalogDir, {
+      traefik: IMAGE_STACK_META("traefik", "3.0"),
+      web: WEB_STACK_META("web", ["traefik"]),
+    })
+    await seedServer(dir, "test", { DOMAIN: "example.com" })
+    const result = await stackAdd("web", "test", {
+      cwd: dir,
+      catalogDir,
+      confirmFn: () => Promise.resolve(false),
+    })
+    assertEquals(result.declinedRequires, ["traefik"])
+    const stacks = await readServerConfigStacks(dir, "test")
+    assertEquals(stacks.includes("traefik"), false)
+    assertEquals(stacks.includes("web"), true)
+  })
+})
+
+// Review fix — a requires cycle (a requires b, b requires a) must stop
+// with a one-line UserError instead of recursing forever.
+Deno.test("stack add on a requires cycle (a -> b -> a) throws a UserError naming the cycle, not a stack overflow", async () => {
+  await withTmpDir(async (dir) => {
+    const catalogDir = join(dir, "catalog")
+    await writeCatalog(catalogDir, {
+      a: WEB_STACK_META("a", ["b"]),
+      b: WEB_STACK_META("b", ["a"]),
+    })
+    await seedServer(dir, "test", { DOMAIN: "example.com" })
+    await assertRejects(
+      () => stackAdd("a", "test", { cwd: dir, catalogDir, nonInteractive: true }),
+      UserError,
+      "requires cycle",
+    )
+  })
+})
+
+// #211 — findStack's "unknown stack" error is a UserError (no stack
+// trace at the CLI boundary), not a plain Error.
+// Review fix — #212's "human label with the key in parentheses" claim
+// for stack variables was never driven through the interactive branch
+// either; `promptFn` captures the exact label cliffy would show.
+const QUESTION_STACK_META = `
+import type { StackMeta } from "@rostok/cli"
+export default {
+  name: "quiz",
+  description: "fixture",
+  variables: [{ key: "QUIZ_TOKEN", question: "API token for the quiz service", required: true }],
+} satisfies StackMeta
+`
+
+Deno.test("stack add: the interactive variable prompt's label carries (KEY)", async () => {
+  await withTmpDir(async (dir) => {
+    const catalogDir = join(dir, "catalog")
+    await writeCatalog(catalogDir, { quiz: QUESTION_STACK_META })
+    await seedServer(dir, "test", { DOMAIN: "example.com" })
+    const seen: PromptBase[] = []
+    await stackAdd("quiz", "test", {
+      cwd: dir,
+      catalogDir,
+      promptFn: (base) => {
+        seen.push(base)
+        return Promise.resolve("secret-token")
+      },
+    })
+    assertEquals(seen.length, 1, seen.map((b) => b.message).join("\n"))
+    assertStringIncludes(seen[0].message, "API token for the quiz service")
+    assertStringIncludes(seen[0].message, "(QUIZ_TOKEN)")
+  })
+})
+
+Deno.test("stack add on an unknown stack name fails as a UserError naming the catalog", async () => {
+  await withTmpDir(async (dir) => {
+    const catalogDir = join(dir, "catalog")
+    await writeCatalog(catalogDir, { demo: IMAGE_STACK_META("demo", "1.0") })
+    await seedServer(dir, "test", { DOMAIN: "example.com" })
+    await assertRejects(
+      () => stackAdd("nope", "test", { cwd: dir, catalogDir }),
+      UserError,
+      "stack 'nope' not found in catalog",
+    )
+  })
+})
 
 Deno.test("stack add on a missing server fails and writes nothing", async () => {
   await withTmpDir(async (dir) => {
