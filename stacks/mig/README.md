@@ -45,7 +45,7 @@ everyone is refused.
 Every step of the embed flow stays under `/embed` (`/embed`,
 `/embed?date=…`, `/embed?date=…&slot=…`, the booking form posting to
 `/embed/book`, `/embed/confirmed`), so the catalog runs a second router,
-`hl-mig-embed`, matching `Host(...) && PathPrefix(`/embed`)` at a higher
+`hl-mig-embed`, matching ``Host(...) && PathPrefix(`/embed`)`` at a higher
 priority than the main router. Its middleware chain is independent: the
 frame-ancestors policy applies to `/embed` only, and every other path —
 `/`, `/confirmed`, `/health` — stays on the main router's default chain

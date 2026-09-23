@@ -74,6 +74,8 @@ services:
       # its own, but priority=1000 pins the order explicitly — well above
       # any rule-length default — so it stays correct if either rule's
       # length changes later.
+      # PathPrefix is a plain string prefix, so /embedded would match too;
+      # mig serves nothing there, so only a 404 page would carry the header.
       - "traefik.http.routers.hl-mig-embed.rule=Host(`meet.${DOMAIN}`) && PathPrefix(`/embed`)"
       - "traefik.http.routers.hl-mig-embed.priority=1000"
       - "traefik.http.routers.hl-mig-embed.entrypoints=websecure"
