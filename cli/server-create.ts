@@ -34,7 +34,7 @@
 import { join } from "@std/path"
 import { encryptEnvFiles } from "./encrypt.ts"
 import { type EnvEntry, mergeEnv, readEnvFile, writeEnvFile } from "./env-files.ts"
-import { promptValue, withKeyLabel } from "./prompts.ts"
+import { type PromptFn, promptValue, withKeyLabel } from "./prompts.ts"
 import { tryCaptureStdout } from "./shell.ts"
 import {
   detectTimezone as detectTimezoneFromSources,
@@ -91,6 +91,8 @@ export interface ServerCreateOptions {
   failFast?: boolean
   /** Override the project root (defaults to Deno.cwd()). */
   cwd?: string
+  /** Test injection point for every interactive prompt — see prompts.ts's PromptFn. */
+  promptFn?: PromptFn
 }
 
 /** Subset of the server-create inputs that can be pre-supplied. */
@@ -148,6 +150,7 @@ export async function serverCreate(opts: ServerCreateOptions = {}): Promise<Serv
     opts.serverInputs,
     opts.providedVars,
     opts.failFast,
+    opts.promptFn,
   )
 
   // Parse SSH target once. `user@host[:port]` → user hint; alias is preserved.
@@ -235,6 +238,7 @@ async function collectInput(
   serverInputs: Partial<ServerCreateInput> | undefined,
   providedVars: Record<string, string> | undefined,
   failFast?: boolean,
+  promptFn?: PromptFn,
 ): Promise<{ input: ServerCreateInput; existing: EnvEntry[] }> {
   // #212: every label carries its `--var` key in parentheses, so a
   // hobbyist who wants to skip a prompt next time learns the exact flag
@@ -253,6 +257,7 @@ async function collectInput(
       fallback,
       validate,
       nonInteractive: !!failFast,
+      promptFn,
     })
 
   const serverName = await ask(
@@ -332,6 +337,7 @@ async function collectInput(
       key: FIELDS.user.envKey,
       label: withKeyLabel("Remote user, the SSH login used to deploy", FIELDS.user.envKey),
       fallback: remoteUserDefault,
+      promptFn,
     })
   }
 
@@ -349,7 +355,7 @@ async function collectInput(
   )
   const project = await ask(
     FIELDS.project,
-    "Short project identifier, used as a compose project name",
+    "Short project identifier, used to group this project's containers",
     existingByKey.get("PROJECT") ?? "hl",
     (v) => (/^[a-z0-9_-]+$/i.test(v) ? true : "alphanumeric/dash/underscore only"),
   )
@@ -362,10 +368,12 @@ async function collectInput(
   )
 
   // Detect a timezone default — but an existing value always wins.
-  // #212: order is local Intl zone, then /etc/timezone, then the
-  // server's own `timedatectl` over the SSH target — only attempted
-  // when the #207 probe above already reached it, so a dead target
-  // doesn't add a second hanging SSH round trip just for this — then UTC.
+  // #212: TIMEZONE configures containers on the server, so the
+  // server's own zone wins whenever it's knowable. Order (see
+  // timezone.ts): the server's `timedatectl` over the SSH target —
+  // only attempted when the #207 probe above already reached it, so a
+  // dead target doesn't add a second hanging SSH round trip just for
+  // this — then the local Intl zone, then local /etc/timezone, then UTC.
   const sshReachable = probed.dockerGroupId !== undefined || probed.puid !== undefined ||
     probed.pgid !== undefined || probed.sshUser !== undefined
   const tzDefault = existingByKey.get("TIMEZONE") ?? await detectTimezoneFromSources({
@@ -400,7 +408,7 @@ async function collectInput(
   // (e.g. `/srv/$(x)`) and `..` segments, not just "starts with /".
   const volumesPath = await ask(
     FIELDS.volumesPath,
-    "Host directory for compose volumes",
+    "Folder on the server where app data is stored",
     existingByKey.get("VOLUMES_PATH") ?? "/srv/volumes",
     toValidator((v) => validateRemotePath("VOLUMES_PATH", v)),
   )

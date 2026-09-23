@@ -14,10 +14,12 @@
 import { Checkbox } from "@cliffy/prompt"
 import { initProject, type InitResult, maybeOfferKeyGeneration } from "./init.ts"
 import { serverCreate, type ServerCreateInput } from "./server-create.ts"
+import type { CatalogEntry } from "./catalog.ts"
 import { stackAdd, type StackAddResult } from "./stack-add.ts"
 import { resolveCatalog } from "./catalog-paths.ts"
 import { serverDirFor, validateServerName } from "./server-keys.ts"
 import { buildNextSteps } from "./next-steps.ts"
+import { type ConfirmFn, type PromptFn } from "./prompts.ts"
 import { join, relative } from "@std/path"
 
 export interface WizardOptions {
@@ -30,6 +32,14 @@ export interface WizardOptions {
   skipStackAdd?: boolean
   /** Stacks to add non-interactively (repeatable `--stack <name>`). */
   stacks?: string[]
+  /** Test injection point for every interactive variable prompt — see prompts.ts's PromptFn. */
+  promptFn?: PromptFn
+  /** Test injection point for stack-add's "add this required stack now?" yes/no prompt. */
+  confirmFn?: ConfirmFn
+  /** Test injection point for the multi-select stack picker. Defaults to a real Checkbox.prompt. */
+  pickStacksFn?: (options: { name: string; value: string }[]) => Promise<string[]>
+  /** Test injection point for the "generate an encryption key?" offer. Defaults to {@link maybeOfferKeyGeneration}. */
+  offerKeyGeneration?: (cwd: string) => Promise<void>
 }
 
 export interface WizardResult {
@@ -69,8 +79,9 @@ export async function runWizard(opts: WizardOptions = {}): Promise<WizardResult>
   // #212: offer key generation only after the file list above is on
   // screen — the prompt used to run inside initProject, before the user
   // had any idea what "Initialized" even referred to.
+  const offerKeyGeneration = opts.offerKeyGeneration ?? maybeOfferKeyGeneration
   if (init.shouldOfferKeyGeneration && !opts.nonInteractive) {
-    await maybeOfferKeyGeneration(cwd)
+    await offerKeyGeneration(cwd)
   }
 
   // Step 2: server create.
@@ -79,6 +90,7 @@ export async function runWizard(opts: WizardOptions = {}): Promise<WizardResult>
     serverInputs: opts.serverInputs,
     providedVars: opts.providedVars,
     failFast: opts.nonInteractive,
+    promptFn: opts.promptFn,
   })
   console.log(`Server '${server.serverName}' created at ${server.serverDir}`)
 
@@ -89,42 +101,42 @@ export async function runWizard(opts: WizardOptions = {}): Promise<WizardResult>
   // stack had to re-run the wizard just to add the second one). Non-
   // interactive mode only adds stacks named via repeatable `--stack
   // <name>`; with none given, it says so instead of failing silently
-  // (#209). Each `stackAdd` call handles its own `requires` dependency
-  // (#212 point 1), so picking e.g. only "librespeed" still ends up with
-  // traefik too.
+  // (#209).
+  //
+  // `orderStacksByRequires` (review fix) runs the batch through
+  // requires-order first: when traefik and librespeed are BOTH chosen
+  // in the same run, traefik is added first so librespeed's own
+  // requires check finds it already on the server and never asks —
+  // each `stackAdd` call still handles requires on its own (#212 point
+  // 1) for anything NOT in this run's batch.
   const stackAdds: StackAddResult[] = []
   const declinedRequires: string[] = []
   if (!opts.skipStackAdd) {
+    const catalog = await resolveCatalog(opts.catalogDir)
+    let toAdd: string[] = []
     if (opts.nonInteractive) {
       if (opts.stacks && opts.stacks.length > 0) {
-        for (const name of opts.stacks) {
-          const result = await stackAdd(name, server.serverName, {
-            cwd,
-            catalogDir: opts.catalogDir,
-            providedVars: opts.providedVars,
-            nonInteractive: true,
-          })
-          stackAdds.push(result)
-          declinedRequires.push(...result.declinedRequires)
-        }
+        toAdd = orderStacksByRequires(catalog, opts.stacks)
       } else {
         console.log(
           `skipped the stack step: run rostok stack add <name> -s ${server.serverName}`,
         )
       }
     } else {
-      const catalog = await resolveCatalog(opts.catalogDir)
-      const chosen = await pickStacksInteractive(catalog.map((e) => e.name))
-      for (const name of chosen) {
-        const result = await stackAdd(name, server.serverName, {
-          cwd,
-          catalogDir: opts.catalogDir,
-          providedVars: opts.providedVars,
-          nonInteractive: false,
-        })
-        stackAdds.push(result)
-        declinedRequires.push(...result.declinedRequires)
-      }
+      const chosen = await pickStacksInteractive(catalog, opts.pickStacksFn)
+      toAdd = orderStacksByRequires(catalog, chosen)
+    }
+    for (const name of toAdd) {
+      const result = await stackAdd(name, server.serverName, {
+        cwd,
+        catalogDir: opts.catalogDir,
+        providedVars: opts.providedVars,
+        nonInteractive: !!opts.nonInteractive,
+        promptFn: opts.promptFn,
+        confirmFn: opts.confirmFn,
+      })
+      stackAdds.push(result)
+      declinedRequires.push(...result.declinedRequires)
     }
   }
 
@@ -147,14 +159,63 @@ export async function runWizard(opts: WizardOptions = {}): Promise<WizardResult>
   return { init, serverName: server.serverName, stackAdds }
 }
 
-/** Interactive multi-select stack picker. Returns an empty array if the user picks none. */
-async function pickStacksInteractive(stackNames: string[]): Promise<string[]> {
-  if (stackNames.length === 0) {
+/**
+ * Reorder `chosen` (a batch of stack names picked in one wizard run) so
+ * that any stack another chosen stack `requires` is added first —
+ * within this batch only. A `requires` name NOT in `chosen` is left for
+ * `stackAdd`'s own per-call requires resolution (#212 point 1); v1's
+ * `requires` is one level deep (see stack-meta.ts), so a single pass
+ * that moves each direct requirement ahead of its dependent is enough —
+ * this never needs to handle a requires chain longer than one hop.
+ */
+function orderStacksByRequires(catalog: CatalogEntry[], chosen: string[]): string[] {
+  const chosenSet = new Set(chosen)
+  const requiresWithinBatch = (name: string): string[] =>
+    (catalog.find((e) => e.name === name)?.meta.requires ?? []).filter((r) => chosenSet.has(r))
+
+  const result: string[] = []
+  const remaining = [...chosen]
+  let progressed = true
+  while (remaining.length > 0 && progressed) {
+    progressed = false
+    for (let i = 0; i < remaining.length; i++) {
+      const name = remaining[i]
+      if (requiresWithinBatch(name).every((r) => result.includes(r))) {
+        result.push(name)
+        remaining.splice(i, 1)
+        progressed = true
+        break
+      }
+    }
+  }
+  // A leftover here means a requires cycle within the batch itself —
+  // stackAdd's own cycle guard reports that clearly; just preserve the
+  // original order for whatever didn't resolve rather than dropping it.
+  result.push(...remaining)
+  return result
+}
+
+/**
+ * Interactive multi-select stack picker, showing each stack's own
+ * description next to its name so a hobbyist isn't picking blind.
+ * Returns an empty array if the user picks none.
+ */
+async function pickStacksInteractive(
+  catalog: CatalogEntry[],
+  pickStacksFn?: (options: { name: string; value: string }[]) => Promise<string[]>,
+): Promise<string[]> {
+  if (catalog.length === 0) {
     console.log("No stacks found in catalog. Skipping stack add.")
     return []
   }
-  return await Checkbox.prompt({
-    message: "Pick stacks to add (space to select, enter to confirm; none to skip):",
-    options: stackNames.map((name) => ({ name, value: name })),
-  })
+  const options = catalog.map((e) => ({
+    name: `${e.name} — ${e.meta.description}`,
+    value: e.name,
+  }))
+  const pick = pickStacksFn ?? ((opts) =>
+    Checkbox.prompt({
+      message: "Pick stacks to add (space to select, enter to confirm; none to skip):",
+      options: opts,
+    }))
+  return await pick(options)
 }

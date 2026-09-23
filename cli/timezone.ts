@@ -38,7 +38,20 @@ export interface TimezoneSources {
   etcTimezone?: () => Promise<string | undefined>
 }
 
-/** True when `Intl.DateTimeFormat` accepts `tz` as a timeZone — the standard way to validate an IANA name without a lookup table. */
+/**
+ * True when `Intl.DateTimeFormat` accepts `tz` as a timeZone — the
+ * standard way to validate an IANA name without a lookup table.
+ *
+ * Review nit — canonicalizing a legacy alias (`Asia/Saigon` →
+ * `Asia/Ho_Chi_Minh`) was considered, but neither
+ * `Intl.DateTimeFormat(undefined, { timeZone }).resolvedOptions().timeZone`
+ * nor `Temporal.Now.zonedDateTimeISO(tz).timeZoneId` canonicalize it in
+ * this runtime's ICU — both echo the alias back unchanged, and
+ * `Intl.supportedValuesOf("timeZone")` lists `Asia/Saigon` but not
+ * `Asia/Ho_Chi_Minh`, so there's no reliable JS-exposed canonicalization
+ * to call here. Skipped; the alias is still a valid IANA name and works
+ * correctly wherever TIMEZONE is used.
+ */
 function isValidTimezone(tz: string): boolean {
   try {
     new Intl.DateTimeFormat(undefined, { timeZone: tz })
