@@ -34,8 +34,12 @@
 import { join } from "@std/path"
 import { encryptEnvFiles } from "./encrypt.ts"
 import { type EnvEntry, mergeEnv, readEnvFile, writeEnvFile } from "./env-files.ts"
-import { promptValue } from "./prompts.ts"
+import { promptValue, withKeyLabel } from "./prompts.ts"
 import { tryCaptureStdout } from "./shell.ts"
+import {
+  detectTimezone as detectTimezoneFromSources,
+  remoteTimedatectlTimezone,
+} from "./timezone.ts"
 import {
   DEFAULT_PATH_APPS,
   serverDirFor,
@@ -232,6 +236,10 @@ async function collectInput(
   providedVars: Record<string, string> | undefined,
   failFast?: boolean,
 ): Promise<{ input: ServerCreateInput; existing: EnvEntry[] }> {
+  // #212: every label carries its `--var` key in parentheses, so a
+  // hobbyist who wants to skip a prompt next time learns the exact flag
+  // to pass — labels below are written for someone reading them cold,
+  // with no docs open.
   const ask = (
     field: FieldDef,
     label: string,
@@ -240,7 +248,7 @@ async function collectInput(
   ) =>
     promptValue({
       key: field.envKey,
-      label,
+      label: withKeyLabel(label, field.envKey),
       provided: lookupProvided(field, serverInputs, providedVars),
       fallback,
       validate,
@@ -249,7 +257,7 @@ async function collectInput(
 
   const serverName = await ask(
     FIELDS.serverName,
-    "Server name?",
+    "Server name, used as a folder name",
     "home",
     (v) => (v.trim().length > 0 ? true : "server name required"),
   )
@@ -272,7 +280,7 @@ async function collectInput(
   // verbatim, so a leading `-` or a space must be rejected outright.
   const sshTarget = await ask(
     FIELDS.sshTarget,
-    "SSH target (alias or user@host)?",
+    "SSH target: an ssh_config alias or user@host[:port]",
     existingByKey.get("SSH_ADDRESS"),
     toValidator(validateSshAddress),
   )
@@ -322,40 +330,53 @@ async function collectInput(
     const remoteUserDefault = probed.sshUser ?? await defaultShellUser()
     user = failFast ? remoteUserDefault : await promptValue({
       key: FIELDS.user.envKey,
-      label: "Remote user?",
+      label: withKeyLabel("Remote user, the SSH login used to deploy", FIELDS.user.envKey),
       fallback: remoteUserDefault,
     })
   }
 
   const domain = await ask(
     FIELDS.domain,
-    "Primary domain for this server?",
+    "Primary domain for this server, e.g. example.com",
     existingByKey.get("DOMAIN"),
     (v) => (v.includes(".") ? true : "expected a domain like example.com"),
   )
   const contactEmail = await ask(
     FIELDS.contactEmail,
-    "Contact email (for Let's Encrypt ACME registration)?",
+    "Contact email, used for Let's Encrypt ACME registration",
     existingByKey.get("CONTACT_EMAIL"),
     (v) => (/^[^@]+@[^@]+\.[^@]+$/.test(v) ? true : "expected a valid email"),
   )
   const project = await ask(
     FIELDS.project,
-    "Short project identifier?",
+    "Short project identifier, used as a compose project name",
     existingByKey.get("PROJECT") ?? "hl",
     (v) => (/^[a-z0-9_-]+$/i.test(v) ? true : "alphanumeric/dash/underscore only"),
   )
 
   const dockerGroupId = await ask(
     FIELDS.dockerGroupId,
-    "Docker group ID (for /var/run/docker.sock access)?",
+    "Docker group ID on the server, for /var/run/docker.sock access",
     probed.dockerGroupId ?? existingByKey.get("DOCKER_GROUP_ID") ?? "990",
     (v) => (/^\d+$/.test(v) ? true : "must be a numeric group ID"),
   )
 
-  // Detect host timezone as a default for TIMEZONE — but an existing value wins.
-  const tzDefault = existingByKey.get("TIMEZONE") ?? await detectTimezone()
-  const timezone = await ask(FIELDS.timezone, "Timezone (IANA)?", tzDefault, () => true)
+  // Detect a timezone default — but an existing value always wins.
+  // #212: order is local Intl zone, then /etc/timezone, then the
+  // server's own `timedatectl` over the SSH target — only attempted
+  // when the #207 probe above already reached it, so a dead target
+  // doesn't add a second hanging SSH round trip just for this — then UTC.
+  const sshReachable = probed.dockerGroupId !== undefined || probed.puid !== undefined ||
+    probed.pgid !== undefined || probed.sshUser !== undefined
+  const tzDefault = existingByKey.get("TIMEZONE") ?? await detectTimezoneFromSources({
+    remote: sshReachable ? () => remoteTimedatectlTimezone(sshTarget) : undefined,
+  })
+  const timezone = await ask(
+    FIELDS.timezone,
+    "Timezone (IANA, e.g. Europe/Berlin)",
+    tzDefault,
+    () => true,
+  )
 
   // Review fix: PUID/PGID are ownership already on disk, not drift to
   // correct — an existing value always wins over the probe (unlike
@@ -364,13 +385,13 @@ async function collectInput(
   // first time).
   const puid = await ask(
     FIELDS.puid,
-    "Container user ID (PUID)?",
+    "Container user ID — the uid containers run as on the server",
     existingByKey.get("PUID") ?? probed.puid ?? "1000",
     (v) => (/^\d+$/.test(v) ? true : "must be a numeric user ID"),
   )
   const pgid = await ask(
     FIELDS.pgid,
-    "Container group ID (PGID)?",
+    "Container group ID — the gid containers run as on the server",
     existingByKey.get("PGID") ?? probed.pgid ?? puid,
     (v) => (/^\d+$/.test(v) ? true : "must be a numeric group ID"),
   )
@@ -379,13 +400,13 @@ async function collectInput(
   // (e.g. `/srv/$(x)`) and `..` segments, not just "starts with /".
   const volumesPath = await ask(
     FIELDS.volumesPath,
-    "Host directory for compose volumes?",
+    "Host directory for compose volumes",
     existingByKey.get("VOLUMES_PATH") ?? "/srv/volumes",
     toValidator((v) => validateRemotePath("VOLUMES_PATH", v)),
   )
   const pathApps = await ask(
     FIELDS.pathApps,
-    "Host directory where stacks are deployed?",
+    "Host directory where stacks are deployed",
     existingByKey.get("PATH_APPS") ?? DEFAULT_PATH_APPS,
     toValidator((v) => validateRemotePath("PATH_APPS", v)),
   )
@@ -406,16 +427,6 @@ async function collectInput(
       pathApps,
     },
     existing,
-  }
-}
-
-/** Detect host timezone via /etc/timezone (Debian/Ubuntu); fallback UTC. */
-async function detectTimezone(): Promise<string> {
-  try {
-    const text = await Deno.readTextFile("/etc/timezone")
-    return text.trim() || "UTC"
-  } catch {
-    return "UTC"
   }
 }
 
