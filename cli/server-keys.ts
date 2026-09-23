@@ -13,11 +13,22 @@
 import { join, resolve, SEPARATOR } from "@std/path"
 import { UserError } from "./errors.ts"
 
-/** Server-level keys, in the order `server create` writes them. */
+/**
+ * Server-level keys, in the order `server create` writes them.
+ *
+ * SERVER_NAME was previously injected only in memory during `stack add`'s
+ * variable resolution (for `${SERVER_NAME}` string defaults), never
+ * written to `.env` — a `compose.yml` that read it directly at deploy
+ * time (e.g. zond's `probe-${SERVER_NAME}.${DOMAIN}` host rule) had
+ * nothing to read. It's a genuine per-server fact — the directory name —
+ * so it's added here and to the keys `server create` writes below,
+ * fixing that gap.
+ */
 export const SERVER_KEYS = [
   "PROJECT",
   "SSH_ADDRESS",
   "SSH_USER",
+  "SERVER_NAME",
   "DOMAIN",
   "CONTACT_EMAIL",
   "DOCKER_GROUP_ID",

@@ -164,6 +164,7 @@ export async function serverCreate(opts: ServerCreateOptions = {}): Promise<Serv
     { key: "PROJECT", value: input.project },
     { key: "SSH_ADDRESS", value: input.sshTarget },
     { key: "SSH_USER", value: input.user },
+    { key: "SERVER_NAME", value: input.serverName },
     { key: "DOMAIN", value: input.domain },
     { key: "CONTACT_EMAIL", value: input.contactEmail },
     { key: "DOCKER_GROUP_ID", value: input.dockerGroupId },
