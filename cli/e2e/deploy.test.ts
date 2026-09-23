@@ -842,20 +842,34 @@ Deno.test("e2e: an unreachable server fails fast, naming the step and saying it'
   }
 })
 
-/** True if a process with this pid still exists. Linux-only (`/proc`), matching this project's target platform. */
 /**
- * True if a process with this pid still exists — checked with `ps`
- * (not /proc stat: found to be unreliable for a grandchild pid in
- * this exact "signal handler -> Deno.exit()" scenario during testing,
- * incorrectly reporting a genuinely still-running process as gone).
+ * True if a process with this pid still exists: signal 0 isn't exposed
+ * by Deno, so send SIGCONT, which is harmless to a running process and
+ * fails with NotFound once the pid is gone. Needs no external tool (the
+ * CI image has no `ps`).
  */
-async function isPidAlive(pid: number): Promise<boolean> {
-  const result = await new Deno.Command("ps", {
-    args: ["-p", String(pid)],
-    stdout: "null",
-    stderr: "null",
-  }).output()
-  return result.success
+function isPidAlive(pid: number): boolean {
+  try {
+    Deno.kill(pid, "SIGCONT")
+    return true
+  } catch (err) {
+    if (err instanceof Deno.errors.NotFound) return false
+    throw err
+  }
+}
+
+/**
+ * Poll `isPidAlive` for up to `ms`: a killed process can linger as a
+ * zombie for a moment until its new parent reaps it, and a zombie still
+ * accepts signals. True if the pid is still there after the wait.
+ */
+async function isPidAliveAfter(pid: number, ms = 3000): Promise<boolean> {
+  const deadline = Date.now() + ms
+  while (isPidAlive(pid)) {
+    if (Date.now() > deadline) return true
+    await new Promise((r) => setTimeout(r, 50))
+  }
+  return false
 }
 
 /** Poll `path`'s content every 20ms (up to ~10s) until it includes `text`, or throw. */
@@ -936,7 +950,7 @@ async function runInterruptedDeploy(
         if (err instanceof Deno.errors.NotFound) return false
         throw err
       })
-    const sshStillAlive = await isPidAlive(pid)
+    const sshStillAlive = await isPidAliveAfter(pid)
     return { code: output.code, stagingDirSurvived, sshStillAlive }
   } finally {
     await Deno.remove(tmpRoot, { recursive: true }).catch(() => {})
@@ -960,6 +974,18 @@ Deno.test("e2e: SIGTERM during deploy removes the staging directory, kills the f
   try {
     const { code, stagingDirSurvived, sshStillAlive } = await runInterruptedDeploy(f, "SIGTERM")
     assertEquals(code, 143)
+    assertEquals(stagingDirSurvived, false)
+    assertEquals(sshStillAlive, false, "the fake ssh child survived the signal")
+  } finally {
+    await teardownFixture(f)
+  }
+})
+
+Deno.test("e2e: SIGHUP (a closed terminal) during deploy removes the staging directory and kills the fake ssh, exits 129 (#219)", async () => {
+  const f = await setupFixture()
+  try {
+    const { code, stagingDirSurvived, sshStillAlive } = await runInterruptedDeploy(f, "SIGHUP")
+    assertEquals(code, 129)
     assertEquals(stagingDirSurvived, false)
     assertEquals(sshStillAlive, false, "the fake ssh child survived the signal")
   } finally {
@@ -1036,7 +1062,7 @@ Deno.test("e2e: SIGINT during a ~1,500-file stage leaves no staging directory be
   }
 })
 
-Deno.test("e2e: runDeploy removes its SIGINT/SIGTERM listeners after finishing normally (#219)", async () => {
+Deno.test("e2e: runDeploy removes its signal listeners after finishing normally (#219)", async () => {
   // Seam: spy on Deno.addSignalListener/removeSignalListener around one
   // successful in-process run-deploy call. A listener registered but
   // never removed would leave this process still reacting to SIGINT
@@ -1075,8 +1101,11 @@ Deno.test("e2e: runDeploy removes its SIGINT/SIGTERM listeners after finishing n
       Deno.env.delete("FAKE_SSH_LOG")
     }
 
-    assertEquals(added.length, 2, "expected exactly SIGINT + SIGTERM to be registered")
-    assertEquals(new Set(added.map(([s]) => s)), new Set(["SIGINT", "SIGTERM"]))
+    assertEquals(added.length, 4, "expected exactly SIGHUP, SIGINT, SIGQUIT and SIGTERM")
+    assertEquals(
+      new Set(added.map(([s]) => s)),
+      new Set(["SIGHUP", "SIGINT", "SIGQUIT", "SIGTERM"]),
+    )
     // Every listener that was added was also removed — same signal, same handler.
     assertEquals(removed, added)
   } finally {

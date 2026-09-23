@@ -106,6 +106,9 @@ export const RESERVED_STACK_KEY_PREFIXES = [
   "LC_",
   "GPG_",
   "TMUX_",
+  // Deno reads JSR_URL to pick the registry a hook's `jsr:` imports come from.
+  "JSR_",
+  "RUST_",
 ] as const
 
 /**

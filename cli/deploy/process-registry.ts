@@ -76,7 +76,7 @@ export function setsidAvailable(): Promise<boolean> {
 /**
  * Register `child` so `killActiveChildren` can reach it, and stop
  * tracking it once `child.status` settles. `isGroupLeader` marks a
- * child started under `setsid` (see `SshTarget`-style doc above).
+ * child started under `setsid` (see `runHook` in hooks.ts).
  */
 export function trackChild(child: Deno.ChildProcess, isGroupLeader = false): void {
   const entry: TrackedChild = { child, pid: child.pid, isGroupLeader }
@@ -115,13 +115,7 @@ function spinWaitMs(ms: number): void {
  *
  * SIGKILL is unconditional, not gated on an "is it still alive?"
  * check: signalling an already-exited pid just fails harmlessly
- * (caught in `signalOne`), and a liveness probe here would need to be
- * synchronous too — `Deno.statSync("/proc/<pid>")` looked reliable in
- * isolation but gave a false "already dead" for a genuinely still-
- * running grandchild in this module's own real signal-handler
- * context, which would have silently skipped the SIGKILL fallback
- * exactly when it's needed. Sending it unconditionally after the grace
- * period removes that dependency entirely.
+ * (caught in `signalOne`), so no liveness probe is needed here.
  */
 export function killActiveChildren(): void {
   const snapshot = [...activeChildren]

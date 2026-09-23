@@ -74,7 +74,18 @@ Deno.test("stackKeyPrefix uppercases and replaces dashes", () => {
 })
 
 Deno.test("hasReservedStackKeyPrefix flags a stack whose own prefix collides with a reserved name", () => {
-  for (const name of ["git", "docker", "ssh", "bash-tools", "sudo-helper", "npm-mirror"]) {
+  for (
+    const name of [
+      "git",
+      "docker",
+      "ssh",
+      "bash-tools",
+      "sudo-helper",
+      "npm-mirror",
+      "jsr",
+      "rust-tools",
+    ]
+  ) {
     assert(hasReservedStackKeyPrefix(name), name)
   }
   assertFalse(hasReservedStackKeyPrefix("gitea")) // "GITEA_" doesn't start with "GIT_"

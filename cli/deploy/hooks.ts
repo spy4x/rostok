@@ -107,6 +107,8 @@ const DENIED_ENV_KEY_NAMES = new Set([
   "SSH_ASKPASS_REQUIRE",
   "BASH_ENV",
   "ENV",
+  // Redirects where a hook's own `jsr:` imports are fetched from.
+  "JSR_URL",
   "GIT_ASKPASS",
   "GIT_PROXY_COMMAND",
   "GIT_EXEC_PATH",

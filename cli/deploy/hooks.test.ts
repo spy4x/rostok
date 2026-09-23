@@ -6,6 +6,7 @@ import {
   killActiveChildren,
   setsidAvailable,
   supportsProcessGroupKill,
+  trackChild,
 } from "./process-registry.ts"
 
 // `test-stack`'s own prefix (stackKeyPrefix) is TEST_STACK_ — DOMAIN is
@@ -488,20 +489,34 @@ Deno.test(
   },
 )
 
-/** True if a process with this pid still exists. Linux-only (`/proc`), matching this project's target platform. */
 /**
- * True if a process with this pid still exists — checked with `ps`
- * (not /proc stat: found to be unreliable for a grandchild pid in the
- * "signal handler -> Deno.exit()" scenario during testing, incorrectly
- * reporting a genuinely still-running process as gone).
+ * True if a process with this pid still exists: signal 0 isn't exposed
+ * by Deno, so send SIGCONT, which is harmless to a running process and
+ * fails with NotFound once the pid is gone. Needs no external tool (the
+ * CI image has no `ps`).
  */
-async function isPidAlive(pid: number): Promise<boolean> {
-  const result = await new Deno.Command("ps", {
-    args: ["-p", String(pid)],
-    stdout: "null",
-    stderr: "null",
-  }).output()
-  return result.success
+function isPidAlive(pid: number): boolean {
+  try {
+    Deno.kill(pid, "SIGCONT")
+    return true
+  } catch (err) {
+    if (err instanceof Deno.errors.NotFound) return false
+    throw err
+  }
+}
+
+/**
+ * Poll `isPidAlive` for up to `ms`: a killed process can linger as a
+ * zombie for a moment until its new parent reaps it, and a zombie still
+ * accepts signals. True if the pid is still there after the wait.
+ */
+async function isPidAliveAfter(pid: number, ms = 3000): Promise<boolean> {
+  const deadline = Date.now() + ms
+  while (isPidAlive(pid)) {
+    if (Date.now() > deadline) return true
+    await new Promise((r) => setTimeout(r, 50))
+  }
+  return false
 }
 
 const canGroupKill = supportsProcessGroupKill() && await setsidAvailable()
@@ -549,7 +564,7 @@ Deno.test({
       killActiveChildren()
       await runPromise.catch(() => {}) // the hook process itself is killed too
 
-      const stillAlive = await isPidAlive(childPid)
+      const stillAlive = await isPidAliveAfter(childPid)
       assertEquals(
         stillAlive,
         false,
@@ -571,4 +586,64 @@ Deno.test("runHook: throws UserError naming the stack when the hook exits non-ze
     assertEquals(err.message.includes("test-stack"), true)
     assertEquals(err.message.includes("before.deploy.ts"), true)
   })
+})
+
+Deno.test("buildHookEnv: dropped keys collapse into one warning with control characters stripped", () => {
+  const ctx: HookContext = {
+    ...BASE_CTX,
+    serverEnv: { "EVIL\x1b[31mKEY": "x", OTHER_STACK_KEY: "y" },
+  }
+  const { warnings } = buildHookEnv(ctx, STACK_NAME, {})
+  assertEquals(warnings.length, 1, warnings.join("\n"))
+  assertStringIncludes(warnings[0], "OTHER_STACK_KEY")
+  assertStringIncludes(warnings[0], "EVIL")
+  const controlChars = [...warnings[0]].filter((c) => c.charCodeAt(0) < 0x20 || c === "\x7f")
+  assertEquals(controlChars, [], JSON.stringify(warnings[0]))
+})
+
+Deno.test("buildHookEnv: contract keys beat both a .env value and the parent environment", () => {
+  const ctx: HookContext = {
+    ...BASE_CTX,
+    serverEnv: { SSH_ADDRESS: "evil@example.net", PATH_APPS: "/tmp/evil" },
+  }
+  const { env } = buildHookEnv(ctx, STACK_NAME, { SSH_USER: "shell-user", DEPLOY_AS: "shell" })
+  assertEquals(env.SSH_ADDRESS, BASE_CTX.sshAddress)
+  assertEquals(env.PATH_APPS, BASE_CTX.pathApps)
+  assertEquals(env.SSH_USER, BASE_CTX.sshUser)
+  assertEquals(env.DEPLOY_AS, BASE_CTX.deployAs)
+})
+
+Deno.test("buildHookEnv: JSR_URL from .env never reaches a hook, even for a stack named jsr", () => {
+  const ctx: HookContext = { ...BASE_CTX, serverEnv: { JSR_URL: "http://127.0.0.1:9/" } }
+  const { env, warnings } = buildHookEnv(ctx, "jsr", {})
+  assertEquals(env.JSR_URL, undefined)
+  assertStringIncludes(warnings.join("\n"), "JSR_URL")
+})
+
+Deno.test("killActiveChildren: SIGKILLs a child that ignores SIGTERM", async () => {
+  // `trap "" TERM` makes the shell and the sleep it execs ignore SIGTERM,
+  // so only the SIGKILL that follows the grace period can end it.
+  const child = new Deno.Command("sh", {
+    args: ["-c", `trap "" TERM; exec sleep 30`],
+    stdout: "null",
+    stderr: "null",
+  }).spawn()
+  trackChild(child)
+  try {
+    await new Promise((r) => setTimeout(r, 200)) // let the trap install
+    killActiveChildren()
+    const status = await Promise.race([
+      child.status,
+      new Promise<null>((r) => setTimeout(() => r(null), 3000)),
+    ])
+    assert(status !== null, "the SIGTERM-ignoring child was still running 3 s later")
+    assertEquals(status.signal, "SIGKILL")
+  } finally {
+    try {
+      child.kill("SIGKILL")
+    } catch {
+      // Already gone.
+    }
+    await child.status
+  }
 })

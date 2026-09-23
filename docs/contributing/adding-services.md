@@ -154,7 +154,7 @@ same trust a `+meta.ts` or `backup.ts` already gets; it is not
 sandboxed against the `.env`/`.env.root` content it's handed.
 
 **Termination.** `rostok deploy` signals a hook (SIGTERM, then SIGKILL
-if it doesn't exit) on Ctrl-C or `kill`. When the Deno build and OS
+if it doesn't exit) on Ctrl-C, `kill`, Ctrl-\\ or a closed terminal. When the Deno build and OS
 support it, the hook runs as its own process group and the WHOLE group
 gets signalled — a child process the hook itself spawned (a
 long-running build, a database migration) is reached automatically.
@@ -165,6 +165,13 @@ an interrupted deploy. A hook that only runs short-lived commands and
 waits for them to finish (the common case — `docker`, `curl`, a
 one-shot script) needs no special handling; this only matters for a
 hook that starts something long-running and returns before it's done.
+
+**No terminal.** A hook in its own process group has no controlling
+terminal, so it can't prompt. An `ssh` call in a hook that would ask for
+a host key or a passphrase fails instead of asking: pass
+`-o BatchMode=yes` so it fails fast with a clear error. The deploy has
+already connected to the server once before any hook runs, so the host
+key is normally known by then.
 
 ---
 

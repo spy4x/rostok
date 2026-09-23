@@ -191,21 +191,11 @@ export async function runDeploy(opts: DeployOptions): Promise<DeployRunResult> {
   // main loop's own `await fetchToFile(...)` calls kept creating new
   // files in the same directory while the async removal was walking it.
   // A synchronous function runs to completion without yielding, so
-  // nothing else can interleave with it — closing that window. `aborted`
-  // is also checked before every file write below, as a second,
-  // independent guard against the same class of race.
-  let aborted = false
+  // nothing else can interleave with it — closing that window. SIGHUP
+  // (a closed terminal or dropped ssh session) and SIGQUIT (Ctrl-\\)
+  // would otherwise take their default action and leave the same files.
   const stagingDir = await Deno.makeTempDir({ prefix: "rostok-deploy-" })
-  const onSignal = (signal: "SIGINT" | "SIGTERM") => {
-    aborted = true
-    killActiveChildren()
-    removeStagingDirSync(stagingDir)
-    Deno.exit(signal === "SIGINT" ? 130 : 143)
-  }
-  const onSigint = () => onSignal("SIGINT")
-  const onSigterm = () => onSignal("SIGTERM")
-  Deno.addSignalListener("SIGINT", onSigint)
-  Deno.addSignalListener("SIGTERM", onSigterm)
+  const removeSignalCleanup = installStagingSignalCleanup(stagingDir)
   try {
     // Whitelisted files only — no ./scripts, no ./deno.jsonc (#203 point 3).
     // Both carry secrets, so chmod to 0600 regardless of the source
@@ -230,12 +220,6 @@ export async function runDeploy(opts: DeployOptions): Promise<DeployRunResult> {
       const resolved = await resolveStackFiles(cwd, stackConfig.name)
       stackFiles.set(stackConfig.name, resolved)
       for (const [rel, url] of resolved.files) {
-        // A second, independent guard against the staging race (see
-        // the signal handler's own comment above): even though the
-        // handler's cleanup is synchronous and should win any race on
-        // its own, stop writing more files into a directory a signal
-        // has already told us to delete.
-        if (aborted) break
         await fetchToFile(url, join(stagingDir, "stacks", stackConfig.name, rel))
       }
       console.log(
@@ -477,8 +461,7 @@ export async function runDeploy(opts: DeployOptions): Promise<DeployRunResult> {
     console.log("Deployment script finished")
     return { deployedStacks: stacks.map((s) => s.name), results }
   } finally {
-    Deno.removeSignalListener("SIGINT", onSigint)
-    Deno.removeSignalListener("SIGTERM", onSigterm)
+    removeSignalCleanup()
     // Staging holds a copy of .env (secrets) — a failed cleanup leaves
     // that on disk, so warn instead of swallowing the error silently.
     try {
@@ -521,11 +504,10 @@ async function applyStackEnvs(
 }
 
 /**
- * Remove `dir` synchronously, retrying up to 3 times on failure — the
- * main deploy flow can still be mid-write to a file inside `dir` for a
- * moment even after `aborted` is set (see the signal handler above), so
- * a first `ENOTEMPTY`-style failure right after a signal isn't
- * necessarily permanent. Never throws; logs a warning if it still
+ * Remove `dir` synchronously, retrying up to 3 times on failure — one
+ * write the main deploy flow started before the signal can still land
+ * inside `dir`, so a first `ENOTEMPTY`-style failure right after a
+ * signal isn't necessarily permanent. Never throws; logs a warning if it still
  * can't remove the directory after every retry.
  */
 function removeStagingDirSync(dir: string): void {
@@ -596,4 +578,46 @@ function entriesToRecord(entries: { key: string; value: string }[]): Record<stri
   const out: Record<string, string> = {}
   for (const { key, value } of entries) out[key] = value
   return out
+}
+
+/** Signals that end a deploy early, with the shell's exit code for each (128 + signal number). */
+export const STAGING_CLEANUP_SIGNALS = [
+  { signal: "SIGHUP", code: 129 },
+  { signal: "SIGINT", code: 130 },
+  { signal: "SIGQUIT", code: 131 },
+  { signal: "SIGTERM", code: 143 },
+] as const
+
+/**
+ * The work a deploy does when a signal ends it early: kill every child
+ * process deploy started, remove the staging dir, and exit with the
+ * signal's code. Fully synchronous — it must never yield to the event
+ * loop, or the deploy's own pending file writes run between its steps
+ * and recreate the staging dir (see the comment in `runDeploy`).
+ * `exit` is injectable so a test can call this directly.
+ */
+export function handleStagingSignal(
+  stagingDir: string,
+  code: number,
+  exit: (code: number) => void = Deno.exit,
+): void {
+  killActiveChildren()
+  removeStagingDirSync(stagingDir)
+  exit(code)
+}
+
+/**
+ * Register `handleStagingSignal` for every signal in
+ * `STAGING_CLEANUP_SIGNALS`. Returns a function that removes the
+ * listeners again, called once the deploy finishes normally.
+ */
+export function installStagingSignalCleanup(stagingDir: string): () => void {
+  const listeners = STAGING_CLEANUP_SIGNALS.map(({ signal, code }) => {
+    const listener = () => handleStagingSignal(stagingDir, code)
+    Deno.addSignalListener(signal, listener)
+    return { signal, listener }
+  })
+  return () => {
+    for (const { signal, listener } of listeners) Deno.removeSignalListener(signal, listener)
+  }
 }
