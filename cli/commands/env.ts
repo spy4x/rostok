@@ -158,14 +158,17 @@ export async function runEnvSetup(cwd: string): Promise<EnvSetupResult> {
   }
   // #204: guarantee .age/key.txt can never be committed — before we
   // write a fresh key, and even when one already exists.
-  await ensureAgeIgnored(cwd)
+  const gitignoreFix = await ensureAgeIgnored(cwd)
   if (await checkAgeKeyPresent(cwd)) {
     return {
       ok: true,
       alreadyExisted: true,
       lines: [
         `rostok env setup: .age/key.txt already exists at ${cwd}/.age/key.txt`,
-        "  no changes made.",
+        // Review fix: this run may still have changed .gitignore even
+        // though the key itself is untouched — "no changes made" would
+        // be false in that case.
+        gitignoreFix.added ? "  key left unchanged." : "  no changes made.",
       ],
     }
   }
