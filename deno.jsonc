@@ -158,10 +158,13 @@
     //
     // JSR's exclude doesn't follow gitignore semantics for negative
     // globs in nested directories. The working syntax is to exclude
-    // `stacks/**` AND re-include each top-level +meta.ts by explicit
-    // path. The catalog loader (cli/catalog.ts) keeps an explicit
-    // `import` per stack, so adding a stack is a 2-line change here AND
-    // in catalog.ts — keep them in sync.
+    // `stacks/**` AND re-include every needed file by explicit path.
+    // Two things must stay in sync with this list:
+    //   - cli/catalog.ts (the `import` per stack — +meta.ts only)
+    //   - cli/deploy/shipped-stacks.ts (compose.yml/hooks/static config
+    //     `rostok deploy` needs at runtime — see #203).
+    // `deno publish --dry-run` lists exactly what ships; use it to check
+    // this block after adding a stack or a deploy file.
     "exclude": [
       "**/*.test.ts",
       "**/*.test.tsx",
@@ -176,12 +179,23 @@
       "stacks/**/*",
       "stacks/*/+meta.ts",
       "!stacks/traefik/+meta.ts",
+      "!stacks/traefik/compose.yml",
+      "!stacks/traefik/before.deploy.ts",
+      "!stacks/traefik/after.deploy.ts",
+      "!stacks/traefik/dynamic/00-base.yml",
       "!stacks/gatus/+meta.ts",
+      "!stacks/gatus/compose.yml",
+      "!stacks/gatus/after.deploy.ts",
       "!stacks/vaultwarden/+meta.ts",
+      "!stacks/vaultwarden/compose.yml",
       "!stacks/jellyfin/+meta.ts",
+      "!stacks/jellyfin/compose.yml",
       "!stacks/filebrowser/+meta.ts",
+      "!stacks/filebrowser/compose.yml",
       "!stacks/librespeed/+meta.ts",
-      "!stacks/deepseek-harness/+meta.ts"
+      "!stacks/librespeed/compose.yml",
+      "!stacks/deepseek-harness/+meta.ts",
+      "!stacks/deepseek-harness/systemd/dsh.service"
     ]
   },
   "exclude": [
