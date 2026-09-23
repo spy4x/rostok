@@ -32,7 +32,7 @@
 // "prove it fails on main") without touching this file.
 
 import { assertEquals } from "@std/assert"
-import { fromFileUrl } from "@std/path"
+import { fromFileUrl, join } from "@std/path"
 import { loadCatalog } from "./catalog.ts"
 import { isServerKey, stackKeyPrefix } from "./server-keys.ts"
 import type { StackMeta } from "./stack-meta.ts"
@@ -443,4 +443,91 @@ Deno.test("checkStack: flags a hook that imports out of its stack directory", as
   } finally {
     await Deno.remove(dir, { recursive: true })
   }
+})
+
+// ─────────────────────────────────────────────────────────────────────
+// Guard test — every dropped legacy env key name (see the PR that
+// dropped the fallbacks) must never reappear in a stack's compose.yml
+// or deploy hooks. Runs against every directory under stacks/, not just
+// the ones with a +meta.ts — most stacks (ntfy, wireguard, gitea, ...)
+// don't have one yet.
+// ─────────────────────────────────────────────────────────────────────
+
+/** A `${VAR}` reference, with an optional bash default/error/alt suffix stripped. */
+const VAR_REF = /\$\{([A-Z][A-Z0-9_]*)(?:[:?+-][^}]*)?\}/g
+
+/**
+ * Scan `text` (a compose.yml or a *.deploy.ts) for a reference to a
+ * legacy env key name: `HOMELAB_USER`, a `BASIC_AUTH_` key without the
+ * `TRAEFIK_`/`GATUS_` prefix, `${X_SUBDOMAIN}`, or an unprefixed
+ * `${SMTP_...}`. Returns the offending key for each match found.
+ */
+export function findLegacyEnvKeyUsages(text: string): string[] {
+  const found: string[] = []
+  if (/\bHOMELAB_USER\b/.test(text)) found.push("HOMELAB_USER")
+  for (const match of text.matchAll(VAR_REF)) {
+    const key = match[1]
+    if (
+      key.includes("BASIC_AUTH_") && !key.startsWith("TRAEFIK_") && !key.startsWith("GATUS_")
+    ) {
+      found.push(key)
+    }
+    if (key.endsWith("_SUBDOMAIN")) found.push(key)
+    if (key.startsWith("SMTP_")) found.push(key)
+  }
+  return found
+}
+
+Deno.test("findLegacyEnvKeyUsages: flags HOMELAB_USER", () => {
+  assertEquals(findLegacyEnvKeyUsages("owner: {{ HOMELAB_USER }}"), ["HOMELAB_USER"])
+})
+
+Deno.test("findLegacyEnvKeyUsages: flags a BASIC_AUTH_ key without TRAEFIK_/GATUS_", () => {
+  assertEquals(findLegacyEnvKeyUsages("- ${BASIC_AUTH_USER}"), ["BASIC_AUTH_USER"])
+})
+
+Deno.test("findLegacyEnvKeyUsages: does not flag TRAEFIK_/GATUS_-prefixed basic auth keys", () => {
+  assertEquals(
+    findLegacyEnvKeyUsages("- ${TRAEFIK_BASIC_AUTH_USER}\n- ${GATUS_BASIC_AUTH_BASE64}"),
+    [],
+  )
+})
+
+Deno.test("findLegacyEnvKeyUsages: flags any ${X_SUBDOMAIN}", () => {
+  assertEquals(findLegacyEnvKeyUsages("Host(`${NTFY_SUBDOMAIN}.${DOMAIN}`)"), ["NTFY_SUBDOMAIN"])
+})
+
+Deno.test("findLegacyEnvKeyUsages: flags an unprefixed ${SMTP_...} but not a stack-prefixed one", () => {
+  assertEquals(
+    findLegacyEnvKeyUsages("- EMAIL_HOST=${SMTP_HOST}\n- EMAIL_HOST=${GITEA_SMTP_HOST}"),
+    ["SMTP_HOST"],
+  )
+})
+
+Deno.test("findLegacyEnvKeyUsages: a clean file reports nothing", () => {
+  assertEquals(
+    findLegacyEnvKeyUsages(
+      "- ${TRAEFIK_BASIC_AUTH_USER}\nHost(`${NTFY_DOMAIN}`)\n- ${GITEA_SMTP_HOST}",
+    ),
+    [],
+  )
+})
+
+Deno.test("catalog: no stack's compose.yml or deploy hook references a dropped legacy env key", async () => {
+  const stacksDir = fromFileUrl(new URL("../stacks", import.meta.url))
+  const violations: string[] = []
+
+  for await (const entry of Deno.readDir(stacksDir)) {
+    if (!entry.isDirectory) continue
+    for (const fileName of ["compose.yml", "before.deploy.ts", "after.deploy.ts"]) {
+      const path = join(stacksDir, entry.name, fileName)
+      const text = await readIfExists(path)
+      if (!text) continue
+      for (const key of findLegacyEnvKeyUsages(text)) {
+        violations.push(`${entry.name}/${fileName}: references legacy key ${key}`)
+      }
+    }
+  }
+
+  assertEquals(violations, [], violations.join("\n"))
 })
