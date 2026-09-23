@@ -1,0 +1,409 @@
+// The deploy logic `rostok deploy <server> [stack]` runs in-process
+// (#203 point 1). Ported from the old scripts/deploy/+main.ts, which now
+// wraps this module (see scripts/deploy/+main.ts) so `deno task deploy`
+// keeps working in this repo.
+//
+// Differences from the old script, per #203/#206/#207/#208:
+//   - Takes the project directory, server name and optional stack as
+//     arguments instead of reading `./` and `Deno.args`.
+//   - Throws UserError on expected failures instead of calling Deno.exit.
+//   - Validates the server name with `serverDirFor` before reading
+//     anything (#208).
+//   - Resolves each stack's files from the project's own `stacks/<name>/`
+//     if present, otherwise from the files shipped inside the CLI
+//     package (#203 point 2 — see stack-files.ts).
+//   - Runs a docker-group preflight before any file is synced (#207).
+//   - Applies the SSH_USER/PATH_APPS legacy fallbacks and fails loudly on
+//     any still-missing DEPLOY_REQUIRED_KEYS (#206).
+//   - Stops rsyncing `./scripts` and `./deno.jsonc` — only `.env`,
+//     `.env.root`, `configs/`, `compose-override/` and the deployed
+//     stacks' files are sent.
+
+import { dirname, join } from "@std/path"
+import { parseEnv, readEnvFile } from "../env-files.ts"
+import { serverDirFor } from "../server-keys.ts"
+import { UserError } from "../errors.ts"
+import { resolveDeployEnv } from "./env.ts"
+import { checkDockerGroup } from "./docker-preflight.ts"
+import { type ResolvedStackFiles, resolveStackFiles } from "./stack-files.ts"
+import { type HookContext, runHook } from "./hooks.ts"
+import { extractVolumePaths, generateVolumeCreationScript } from "./volumes.ts"
+import {
+  type DeployResult,
+  generateDeployScript,
+  getRemoteChecksums,
+  parseDeployResults,
+  printDeploySummary,
+  type StackConfig,
+} from "./deploy-script.ts"
+import { runCommand, runRemoteShell } from "./exec.ts"
+
+export interface DeployOptions {
+  /** Project root (the directory that holds `servers/` and `.env.root`). */
+  cwd: string
+  server: string
+  /** Deploy only this stack instead of every stack in config.json. */
+  stack?: string
+}
+
+export interface DeployRunResult {
+  deployedStacks: string[]
+  results: DeployResult[]
+}
+
+export async function runDeploy(opts: DeployOptions): Promise<DeployRunResult> {
+  const { cwd, server } = opts
+
+  // #208: validate the server name before reading anything.
+  const serverDir = serverDirFor(cwd, server)
+  const envPath = join(serverDir, ".env")
+  if (!(await pathExists(envPath))) {
+    throw new UserError(
+      `server '${server}' not found at ${envPath}. Run \`rostok server create ${server}\` first.`,
+    )
+  }
+
+  const env = entriesToRecord(await readEnvFile(envPath))
+
+  // #206: legacy fallbacks (SSH_USER, PATH_APPS), then fail loudly on any
+  // still-missing DEPLOY_REQUIRED_KEYS.
+  const { env: resolvedEnv, notices } = resolveDeployEnv(env, envPath)
+  for (const notice of notices) console.error(notice)
+
+  const SSH_ADDRESS = resolvedEnv.SSH_ADDRESS
+  const SSH_USER = resolvedEnv.SSH_USER
+  const PATH_APPS = resolvedEnv.PATH_APPS
+  const VOLUMES_PATH = resolvedEnv.VOLUMES_PATH
+  const PUID = resolvedEnv.PUID
+  const PGID = resolvedEnv.PGID
+  const DOCKER_GROUP_ID = resolvedEnv.DOCKER_GROUP_ID
+
+  // #207: preflight before any file is synced.
+  await checkDockerGroup(SSH_ADDRESS, DOCKER_GROUP_ID, envPath)
+
+  // config.json → which stacks to deploy.
+  const configPath = join(serverDir, "config.json")
+  let config: { stacks?: StackConfig[] } = {}
+  try {
+    config = JSON.parse(await Deno.readTextFile(configPath))
+  } catch (err) {
+    if (!(err instanceof Deno.errors.NotFound)) throw err
+  }
+  let stacks = config.stacks ?? []
+  if (opts.stack !== undefined) {
+    const filtered = stacks.filter((s) => s.name === opts.stack)
+    if (filtered.length === 0) {
+      throw new UserError(
+        `stack '${opts.stack}' not found in server '${server}' config.json. ` +
+          `Available: ${stacks.map((s) => s.name).join(", ") || "(none)"}`,
+      )
+    }
+    stacks = filtered
+  }
+
+  const rootEnvPath = join(cwd, ".env.root")
+  let rootEnvText = ""
+  try {
+    rootEnvText = await Deno.readTextFile(rootEnvPath)
+  } catch (err) {
+    if (!(err instanceof Deno.errors.NotFound)) throw err
+  }
+  const rootEnv = entriesToRecord(parseEnv(rootEnvText))
+
+  const stagingDir = await Deno.makeTempDir({ prefix: "rostok-deploy-" })
+  try {
+    // Whitelisted files only — no ./scripts, no ./deno.jsonc (#203 point 3).
+    await Deno.copyFile(envPath, join(stagingDir, ".env"))
+    // Compose reads .env.root with --env-file; create an empty one in
+    // staging when the project has none.
+    await Deno.writeTextFile(join(stagingDir, ".env.root"), rootEnvText)
+    await copyIfExists(join(serverDir, "configs"), join(stagingDir, "configs"))
+    await copyIfExists(join(serverDir, "compose-override"), join(stagingDir, "compose-override"))
+
+    // Stage each active stack's files, resolved from the project's own
+    // stacks/<name>/ or from the shipped catalog (#203 point 2).
+    const stackFiles = new Map<string, ResolvedStackFiles>()
+    for (const stackConfig of stacks) {
+      const resolved = await resolveStackFiles(cwd, stackConfig.name)
+      stackFiles.set(stackConfig.name, resolved)
+      for (const [rel, url] of resolved.files) {
+        await fetchToFile(url, join(stagingDir, "stacks", stackConfig.name, rel))
+      }
+      console.log(
+        ` + stacks/${stackConfig.name} (${resolved.origin}, ${resolved.files.size} file(s))`,
+      )
+    }
+
+    // config.json's per-stack `envs` (`${VAR}` filled from the server
+    // .env) — written into the staging .env once, if not already there.
+    for (const stackConfig of stacks) {
+      await applyStackEnvs(stackConfig, env, stagingDir)
+    }
+
+    // Before-hooks — from source, cwd = staging (see hooks.ts).
+    for (const stackConfig of stacks) {
+      const deployAs = stackConfig.deployAs || stackConfig.name
+      const ctx: HookContext = {
+        rootEnv,
+        serverEnv: env,
+        sshAddress: SSH_ADDRESS,
+        sshUser: SSH_USER,
+        pathApps: PATH_APPS,
+        deployAs,
+      }
+      await runHook(
+        "before",
+        stackConfig.name,
+        stackFiles.get(stackConfig.name)?.files.get("before.deploy.ts"),
+        stagingDir,
+        ctx,
+      )
+    }
+
+    // Snapshot checksums of watched config files before rsync.
+    const stacksWithConfigFiles = stacks.filter(
+      (s) => s.watchFilesAndRestartIfChanged && s.watchFilesAndRestartIfChanged.length > 0,
+    )
+    const checksumsBefore = new Map<string, Map<string, string>>()
+    for (const stackConfig of stacksWithConfigFiles) {
+      const deployAs = stackConfig.deployAs || stackConfig.name
+      checksumsBefore.set(
+        deployAs,
+        await getRemoteChecksums(
+          SSH_ADDRESS,
+          PATH_APPS,
+          stackConfig.watchFilesAndRestartIfChanged!,
+        ),
+      )
+    }
+
+    console.log(`Syncing files to ${SSH_ADDRESS}:${PATH_APPS}...`)
+    const rsyncResult = await runCommand([
+      "rsync",
+      "-avhzru",
+      "-e",
+      "ssh",
+      `${stagingDir}/`,
+      `${SSH_ADDRESS}:${PATH_APPS}/`,
+    ])
+    if (!rsyncResult.success) {
+      throw new UserError(`rsync to ${SSH_ADDRESS} failed: ${rsyncResult.error.trim()}`)
+    }
+
+    // Clean up stale stack directories on the remote (removed from
+    // config.json). Uses the full config.stacks list, not the filtered
+    // one, so a single-stack deploy doesn't remove every other stack.
+    const activeStacks = (config.stacks ?? []).map((s) => s.name)
+    const stackNamesPattern = activeStacks.map((s) => `" ${s} "`).join("|")
+    const remoteStacksScript = [
+      `cd "${PATH_APPS}/stacks" || exit 0`,
+      `for dir in */; do`,
+      `  dir_name="\${dir%/}"`,
+      `  case " \${dir_name} " in`,
+      `    ${stackNamesPattern}) ;;`,
+      `    *) echo "Removing stale stack: \${dir_name}"; rm -rf "\${dir}";;`,
+      `  esac`,
+      `done`,
+    ].join("\n")
+    const cleanupResult = await runRemoteShell(SSH_ADDRESS, remoteStacksScript)
+    if (!cleanupResult.success) {
+      console.error(`Warning: failed to clean up stale stacks: ${cleanupResult.error.trim()}`)
+    }
+
+    // Snapshot checksums after rsync and detect changes.
+    const restartStacks = new Set<string>()
+    for (const stackConfig of stacksWithConfigFiles) {
+      const deployAs = stackConfig.deployAs || stackConfig.name
+      const after = await getRemoteChecksums(
+        SSH_ADDRESS,
+        PATH_APPS,
+        stackConfig.watchFilesAndRestartIfChanged!,
+      )
+      const before = checksumsBefore.get(deployAs)
+      if (before) {
+        for (const [filePath, hashAfter] of after) {
+          if (before.get(filePath) !== hashAfter) restartStacks.add(deployAs)
+        }
+      }
+    }
+
+    console.log("Ensuring proxy network exists on remote server...")
+    const networkResult = await runRemoteShell(
+      SSH_ADDRESS,
+      `docker network inspect proxy >/dev/null 2>&1 || docker network create proxy`,
+    )
+    if (!networkResult.success) {
+      throw new UserError(
+        `failed to ensure the proxy network on ${SSH_ADDRESS}: ${networkResult.error.trim()}`,
+      )
+    }
+
+    let results: DeployResult[] = []
+    if (stacks.length > 0) {
+      const composeContents: string[] = []
+      for (const stackConfig of stacks) {
+        const composePath = join(stagingDir, "stacks", stackConfig.name, "compose.yml")
+        try {
+          composeContents.push(await Deno.readTextFile(composePath))
+        } catch {
+          // No compose.yml (e.g. a host-level stack like deepseek-harness) — skip.
+        }
+      }
+      const volumePaths = extractVolumePaths(composeContents, env)
+      if (volumePaths.length > 0 && VOLUMES_PATH) {
+        console.log(`Creating ${volumePaths.length} volume directories with correct ownership...`)
+        const script = generateVolumeCreationScript(volumePaths, PUID, PGID, SSH_USER)
+        const volumesResult = await runRemoteShell(SSH_ADDRESS, script)
+        if (!volumesResult.success) {
+          const sudoHint = SSH_USER !== "root"
+            ? ` SSH_USER ("${SSH_USER}") is not root on ${SSH_ADDRESS} — mkdir/chown need ` +
+              `passwordless sudo (a NOPASSWD rule in /etc/sudoers for this user).`
+            : ""
+          throw new UserError(
+            `failed to create/chown volume directories on ${SSH_ADDRESS}: ` +
+              `${volumesResult.error.trim()}.${sudoHint}`,
+          )
+        }
+        console.log("Volume directories created")
+      }
+
+      const deployScript = generateDeployScript(stacks, PATH_APPS, restartStacks)
+      const deployResult = await runRemoteShell(SSH_ADDRESS, deployScript)
+      results = parseDeployResults(deployResult.output, stacks)
+      printDeploySummary(results)
+
+      const failed = results.filter((r) => !r.success)
+      if (failed.length > 0) {
+        throw new UserError(
+          `${failed.length} stack(s) failed to deploy: ${failed.map((r) => r.name).join(", ")}`,
+        )
+      }
+    } else {
+      console.log("No stacks to deploy")
+    }
+
+    // After-hooks run after `docker compose up`. Every stack's hook runs
+    // even if an earlier one fails, so one broken hook doesn't hide
+    // problems in the others; all failures are reported together.
+    const afterFailures: string[] = []
+    for (const stackConfig of stacks) {
+      const deployAs = stackConfig.deployAs || stackConfig.name
+      const ctx: HookContext = {
+        rootEnv,
+        serverEnv: env,
+        sshAddress: SSH_ADDRESS,
+        sshUser: SSH_USER,
+        pathApps: PATH_APPS,
+        deployAs,
+      }
+      try {
+        await runHook(
+          "after",
+          stackConfig.name,
+          stackFiles.get(stackConfig.name)?.files.get("after.deploy.ts"),
+          stagingDir,
+          ctx,
+        )
+      } catch (err) {
+        if (err instanceof UserError) {
+          console.error(err.message)
+          afterFailures.push(stackConfig.name)
+        } else {
+          throw err
+        }
+      }
+    }
+    if (afterFailures.length > 0) {
+      throw new UserError(`after.deploy.ts failed for stack(s): ${afterFailures.join(", ")}`)
+    }
+
+    console.log("Deployment script finished")
+    return { deployedStacks: stacks.map((s) => s.name), results }
+  } finally {
+    await Deno.remove(stagingDir, { recursive: true }).catch(() => {})
+  }
+}
+
+/** Fill `${VAR}` placeholders in a stack's config.json `envs` and append to the staging .env. */
+async function applyStackEnvs(
+  stackConfig: StackConfig,
+  serverEnv: Record<string, string>,
+  stagingDir: string,
+): Promise<void> {
+  const envs = stackConfig.envs ?? {}
+  for (const [key, value] of Object.entries(envs)) {
+    if (typeof value !== "string") {
+      throw new UserError(
+        `invalid env value for key '${key}' in stack '${stackConfig.name}' (config.json): must be a string`,
+      )
+    }
+    const filled = value.replace(/\$\{([^}]+)\}/g, (_match, varName) => {
+      const resolvedValue = serverEnv[varName.trim()]
+      if (resolvedValue === undefined) {
+        throw new UserError(
+          `environment variable '${varName.trim()}' not found for stack '${stackConfig.name}' ` +
+            `(referenced in config.json envs)`,
+        )
+      }
+      return resolvedValue
+    })
+    const stagingEnvPath = join(stagingDir, ".env")
+    const current = await Deno.readTextFile(stagingEnvPath)
+    if (!current.includes(`${key}=`)) {
+      await Deno.writeTextFile(stagingEnvPath, `${current}\n${key}=${filled}\n`)
+    }
+  }
+}
+
+async function pathExists(path: string): Promise<boolean> {
+  try {
+    await Deno.stat(path)
+    return true
+  } catch (err) {
+    if (err instanceof Deno.errors.NotFound) return false
+    throw err
+  }
+}
+
+async function copyIfExists(src: string, dest: string): Promise<void> {
+  let info: Deno.FileInfo
+  try {
+    info = await Deno.stat(src)
+  } catch (err) {
+    if (err instanceof Deno.errors.NotFound) return
+    throw err
+  }
+  if (info.isDirectory) {
+    await copyDirRecursive(src, dest)
+  } else if (info.isFile) {
+    await Deno.mkdir(dirname(dest), { recursive: true })
+    await Deno.copyFile(src, dest)
+  }
+}
+
+async function copyDirRecursive(src: string, dest: string): Promise<void> {
+  await Deno.mkdir(dest, { recursive: true })
+  for await (const entry of Deno.readDir(src)) {
+    const s = join(src, entry.name)
+    const d = join(dest, entry.name)
+    if (entry.isDirectory) await copyDirRecursive(s, d)
+    else if (entry.isFile) await Deno.copyFile(s, d)
+  }
+}
+
+/** Fetch `url` (file:// or https://) and write its bytes to `destPath`, creating parent dirs. */
+async function fetchToFile(url: string, destPath: string): Promise<void> {
+  await Deno.mkdir(dirname(destPath), { recursive: true })
+  const resp = await fetch(url)
+  if (!resp.ok) {
+    throw new Error(`failed to fetch ${url}: HTTP ${resp.status}`)
+  }
+  const bytes = new Uint8Array(await resp.arrayBuffer())
+  await Deno.writeFile(destPath, bytes)
+}
+
+function entriesToRecord(entries: { key: string; value: string }[]): Record<string, string> {
+  const out: Record<string, string> = {}
+  for (const { key, value } of entries) out[key] = value
+  return out
+}

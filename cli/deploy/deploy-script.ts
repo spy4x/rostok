@@ -1,5 +1,10 @@
-// Deploy utility functions — extracted for testability
-import { runCommand } from "../../+lib.ts"
+// Builds and parses the remote `docker compose` script deploy runs over
+// a single SSH session. Ported from the old scripts/deploy/src/+lib.ts —
+// behaviour unchanged except `cd "${pathApps}"` is now quoted (every
+// remote command rostok builds is a shell string, and PATH_APPS comes
+// from the server `.env`).
+
+import { runRemoteShell } from "./exec.ts"
 
 export interface StackConfig {
   name: string
@@ -16,42 +21,9 @@ export interface DeployResult {
 }
 
 /**
- * Extract volume paths from compose files that need to be created
- */
-export function extractVolumePaths(
-  composeContents: string[],
-  env: Record<string, string>,
-): string[] {
-  const volumePaths: Set<string> = new Set()
-
-  for (const content of composeContents) {
-    const volumeMatches = content.matchAll(/\$\{VOLUMES_PATH\}\/([^:]+):/g)
-
-    for (const match of volumeMatches) {
-      const volumeSubPath = match[1].split(":")[0]
-      const expandedPath = volumeSubPath.replace(/\$\{([^}]+)\}/g, (_m, varName) => {
-        return env[varName.trim()] || `\${${varName}}`
-      })
-      volumePaths.add(`${env["VOLUMES_PATH"] || "${VOLUMES_PATH}"}/${expandedPath}`)
-    }
-  }
-
-  return Array.from(volumePaths)
-}
-
-/**
- * Generate a shell script to create volume directories with correct ownership
- */
-export function generateVolumeCreationScript(volumePaths: string[], user: string): string {
-  const commands = volumePaths.map((path) => {
-    return `mkdir -p "${path}" 2>/dev/null; chown -R ${user}:${user} "${path}" 2>/dev/null || true`
-  })
-
-  return commands.join(" && ")
-}
-
-/**
- * Generate a bash script that deploys all stacks and outputs structured results
+ * Generate a bash script that deploys all stacks in one SSH session and
+ * prints structured `DEPLOY_START`/`DEPLOY_SUCCESS`/`DEPLOY_FAILED`
+ * markers `parseDeployResults` reads back.
  */
 export function generateDeployScript(
   stacks: StackConfig[],
@@ -76,7 +48,7 @@ echo "DEPLOY_START:${stackName}:${deployAs}"
 # project=${deployAs}). Same container_name under two different projects
 # → "name already in use" conflict on every redeploy.
 # Data lives in volumes, not in the container, so this is safe.
-cd ${pathApps} && docker ps -a --filter "name=hl-${stackName}" --format '{{.ID}} {{.Label "com.docker.compose.project"}}' 2>/dev/null | while read id proj; do
+cd "${pathApps}" && docker ps -a --filter "name=hl-${stackName}" --format '{{.ID}} {{.Label "com.docker.compose.project"}}' 2>/dev/null | while read id proj; do
   if [ "\$proj" != "${deployAs}" ] && [ -n "\$id" ]; then
     echo "  removing stale container \$id (project=\$proj, expected=${deployAs})"
     docker rm -f \$id >/dev/null 2>&1 || true
@@ -93,7 +65,7 @@ done
 # read the filename as " stacks/<stack>/compose.yml" — leading space and all.
 set -- -f stacks/${stackName}/compose.yml
 [ -f "${pathApps}/compose-override/${stackName}.yml" ] && set -- "\$@" -f "compose-override/${stackName}.yml"
-cd ${pathApps} && docker compose ${projectFlag} --env-file=.env.root --env-file=.env "\$@" up -d --build 2>&1
+cd "${pathApps}" && docker compose ${projectFlag} --env-file=.env.root --env-file=.env "\$@" up -d --build 2>&1
 if [ $? -eq 0 ]; then
   echo "DEPLOY_SUCCESS:${stackName}:${deployAs}"
 else
@@ -103,7 +75,7 @@ ${
       needsRestart
         ? `
 echo "RESTARTING:${stackName}:${deployAs}"
-cd ${pathApps} && docker compose ${projectFlag} "\$@" restart 2>&1
+cd "${pathApps}" && docker compose ${projectFlag} "\$@" restart 2>&1
 echo "RESTART_DONE:${stackName}:${deployAs}"
 `
         : ""
@@ -114,9 +86,7 @@ echo "RESTART_DONE:${stackName}:${deployAs}"
   return stackCommands.join("\n")
 }
 
-/**
- * Parse the deploy output to extract results for each stack
- */
+/** Parse the deploy output to extract results for each stack. */
 export function parseDeployResults(output: string, stacks: StackConfig[]): DeployResult[] {
   const results: DeployResult[] = []
   const lines = output.split("\n")
@@ -151,9 +121,7 @@ export function parseDeployResults(output: string, stacks: StackConfig[]): Deplo
   return results
 }
 
-/**
- * Print a summary of deployment results
- */
+/** Print a summary of deployment results. */
 export function printDeploySummary(results: DeployResult[]): void {
   console.log("\n========== DEPLOYMENT SUMMARY ==========")
 
@@ -190,8 +158,8 @@ export function printDeploySummary(results: DeployResult[]): void {
 }
 
 /**
- * Compute SHA256 checksums of config files on remote server
- * Returns map of file path (relative to PATH_APPS) to checksum
+ * Compute SHA256 checksums of config files on the remote server.
+ * Returns a map of file path (relative to PATH_APPS) to checksum.
  */
 export async function getRemoteChecksums(
   sshAddress: string,
@@ -202,11 +170,10 @@ export async function getRemoteChecksums(
 
   for (const filePath of watchFilesAndRestartIfChanged) {
     const remotePath = `${pathApps}/${filePath}`
-    const result = await runCommand([
-      "ssh",
+    const result = await runRemoteShell(
       sshAddress,
       `sha256sum "${remotePath}" 2>/dev/null || true`,
-    ])
+    )
 
     if (result.success && result.output) {
       const hash = result.output.split(/\s+/)[0]
@@ -218,5 +185,3 @@ export async function getRemoteChecksums(
 
   return checksums
 }
-
-// runCommand imported from ../../+lib.ts

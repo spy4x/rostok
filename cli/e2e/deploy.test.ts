@@ -1,0 +1,250 @@
+// End-to-end test for `rostok deploy` (#203 point 4).
+//
+// Walks the path a JSR-installed user is in: a project folder outside
+// this repo, with no `stacks/` directory of its own — every stack file
+// has to come from the CLI package's bundled catalog (cli/deploy/
+// shipped-stacks.ts + stack-files.ts), never from `./stacks/` or
+// `./scripts/`. Fake `ssh` and `rsync` binaries go first on PATH: they
+// record what they're asked to do and `rsync` copies into a temp
+// "remote" directory, so the test can assert on the exact files that
+// reached it — including that `./scripts` and `./deno.jsonc` do NOT.
+//
+// If cli/deploy/shipped-stacks.ts under-lists a catalog stack's files
+// (or run-deploy.ts fails to stage one), the corresponding assertion
+// below fails.
+
+import { assertEquals, assertStringIncludes } from "@std/assert"
+import { join } from "@std/path"
+
+const FAKE_SSH = `#!/usr/bin/env -S deno run --allow-read --allow-write --allow-env
+// Records every invocation to FAKE_SSH_LOG, then fakes just enough of a
+// remote host for a deploy to complete: the docker-group preflight and
+// the per-stack DEPLOY_START/DEPLOY_SUCCESS markers the real deploy
+// script would print after a successful \`docker compose up\`. Anything
+// else (proxy network, stale-stack cleanup, volume mkdir/chown) is
+// accepted silently, matching a healthy remote.
+const args = Deno.args
+const script = args.slice(1).join(" ")
+const logPath = Deno.env.get("FAKE_SSH_LOG")
+if (logPath) {
+  await Deno.writeTextFile(logPath, script + "\\n---\\n", { append: true })
+}
+if (script.includes("getent group docker")) {
+  const gid = Deno.env.get("FAKE_DOCKER_GID") ?? "988"
+  console.log(\`docker:x:\${gid}:\`)
+} else if (script.includes("DEPLOY_START:")) {
+  for (const m of script.matchAll(/DEPLOY_START:(\\S+):(\\S+)/g)) {
+    console.log(\`DEPLOY_START:\${m[1]}:\${m[2]}\`)
+    console.log(\`DEPLOY_SUCCESS:\${m[1]}:\${m[2]}\`)
+  }
+}
+Deno.exit(0)
+`
+
+const FAKE_RSYNC = `#!/usr/bin/env -S deno run --allow-read --allow-write --allow-env
+// Copies the local staging dir (second-to-last arg, "src/") into
+// FAKE_REMOTE_DIR + the remote path from the last arg ("user@host:/path/"),
+// standing in for the real server the deploy would rsync to.
+const args = Deno.args
+const dest = args[args.length - 1]
+const src = args[args.length - 2].replace(/\\/$/, "")
+const colonIdx = dest.indexOf(":")
+const remotePath = dest.slice(colonIdx + 1)
+const remoteRoot = Deno.env.get("FAKE_REMOTE_DIR")!
+const destDir = remoteRoot + remotePath
+
+async function copyDir(s: string, d: string) {
+  await Deno.mkdir(d, { recursive: true })
+  for await (const entry of Deno.readDir(s)) {
+    const sp = \`\${s}/\${entry.name}\`
+    const dp = \`\${d}/\${entry.name}\`
+    if (entry.isDirectory) {
+      await copyDir(sp, dp)
+    } else if (entry.isFile) {
+      await Deno.copyFile(sp, dp)
+    }
+  }
+}
+await copyDir(src, destDir)
+Deno.exit(0)
+`
+
+interface Fixture {
+  projectDir: string
+  binDir: string
+  remoteDir: string
+  logPath: string
+}
+
+async function setupFixture(): Promise<Fixture> {
+  const projectDir = await Deno.makeTempDir({ prefix: "rostok-e2e-project-" })
+  const binDir = await Deno.makeTempDir({ prefix: "rostok-e2e-bin-" })
+  const remoteDir = await Deno.makeTempDir({ prefix: "rostok-e2e-remote-" })
+  const logPath = join(binDir, "ssh.log")
+
+  await Deno.writeTextFile(join(binDir, "ssh"), FAKE_SSH, { mode: 0o755 })
+  await Deno.writeTextFile(join(binDir, "rsync"), FAKE_RSYNC, { mode: 0o755 })
+
+  return { projectDir, binDir, remoteDir, logPath }
+}
+
+async function teardownFixture(f: Fixture): Promise<void> {
+  await Promise.all(
+    [f.projectDir, f.binDir, f.remoteDir].map((d) => Deno.remove(d, { recursive: true })),
+  )
+}
+
+async function writeServer(
+  projectDir: string,
+  extraEnvLines: string[],
+  stackNames: string[],
+): Promise<void> {
+  const serverDir = join(projectDir, "servers", "test")
+  await Deno.mkdir(serverDir, { recursive: true })
+  const envLines = [
+    "SSH_ADDRESS=deploy@remote.test",
+    "SSH_USER=deploy",
+    "PATH_APPS=/srv/apps",
+    "VOLUMES_PATH=/srv/volumes",
+    "PUID=1000",
+    "PGID=1000",
+    "DOCKER_GROUP_ID=988",
+    ...extraEnvLines,
+  ]
+  await Deno.writeTextFile(join(serverDir, ".env"), envLines.join("\n") + "\n")
+  await Deno.writeTextFile(
+    join(serverDir, "config.json"),
+    JSON.stringify({ stacks: stackNames.map((name) => ({ name })) }),
+  )
+}
+
+async function runDeployCli(
+  f: Fixture,
+  args: string[],
+  extraEnv: Record<string, string> = {},
+): Promise<{ success: boolean; code: number; stdout: string; stderr: string }> {
+  const mainTs = new URL("../+main.ts", import.meta.url).pathname
+  const cmd = new Deno.Command(Deno.execPath(), {
+    args: ["run", "-A", mainTs, ...args],
+    cwd: f.projectDir,
+    env: {
+      ...Deno.env.toObject(),
+      PATH: `${f.binDir}:${Deno.env.get("PATH") ?? ""}`,
+      FAKE_REMOTE_DIR: f.remoteDir,
+      FAKE_SSH_LOG: f.logPath,
+      ...extraEnv,
+    },
+    stdout: "piped",
+    stderr: "piped",
+  })
+  const out = await cmd.output()
+  return {
+    success: out.success,
+    code: out.code,
+    stdout: new TextDecoder().decode(out.stdout),
+    stderr: new TextDecoder().decode(out.stderr),
+  }
+}
+
+Deno.test("e2e: deploy ships bundled catalog stacks with no local stacks/ folder", async () => {
+  const f = await setupFixture()
+  try {
+    // No `stacks/` directory in this project at all — every file has to
+    // come from the CLI package's bundled catalog.
+    await writeServer(f.projectDir, [], ["librespeed", "jellyfin"])
+
+    const result = await runDeployCli(f, ["deploy", "test"])
+    if (!result.success) console.error(result.stderr)
+    assertEquals(result.success, true)
+
+    const remoteApps = join(f.remoteDir, "srv", "apps")
+
+    // The deployed stacks' shipped files reached the remote — proves
+    // cli/deploy/shipped-stacks.ts + stack-files.ts resolved them even
+    // though `<project>/stacks/` doesn't exist.
+    await Deno.stat(join(remoteApps, "stacks", "librespeed", "compose.yml"))
+    await Deno.stat(join(remoteApps, "stacks", "jellyfin", "compose.yml"))
+
+    // Only the whitelisted files reached the remote — no ./scripts, no
+    // ./deno.jsonc (#203 point 3).
+    const rootEntries = new Set(
+      [...Deno.readDirSync(remoteApps)].map((e) => e.name),
+    )
+    assertEquals(rootEntries.has("scripts"), false)
+    assertEquals(rootEntries.has("deno.jsonc"), false)
+    assertEquals(rootEntries.has(".env"), true)
+    assertEquals(rootEntries.has(".env.root"), true)
+
+    // .env.root was created empty in staging (the fixture project has none).
+    const rootEnv = await Deno.readTextFile(join(remoteApps, ".env.root"))
+    assertEquals(rootEnv, "")
+
+    // The docker-group preflight ran before anything else (#207).
+    const log = await Deno.readTextFile(f.logPath)
+    assertStringIncludes(log, "getent group docker")
+  } finally {
+    await teardownFixture(f)
+  }
+})
+
+Deno.test("e2e: deploy fails a stack that is neither local nor bundled, before syncing anything", async () => {
+  const f = await setupFixture()
+  try {
+    await writeServer(f.projectDir, [], ["not-a-real-stack"])
+
+    const result = await runDeployCli(f, ["deploy", "test"])
+    assertEquals(result.success, false)
+    assertStringIncludes(result.stderr, "not-a-real-stack")
+
+    // Nothing reached the remote.
+    const remoteApps = join(f.remoteDir, "srv", "apps")
+    await assertNotExists(remoteApps)
+  } finally {
+    await teardownFixture(f)
+  }
+})
+
+Deno.test("e2e: deploy stops on a DOCKER_GROUP_ID mismatch before syncing files (#207)", async () => {
+  const f = await setupFixture()
+  try {
+    await writeServer(f.projectDir, ["DOCKER_GROUP_ID=990"], ["librespeed"])
+
+    const result = await runDeployCli(f, ["deploy", "test"], { FAKE_DOCKER_GID: "988" })
+    assertEquals(result.success, false)
+    assertStringIncludes(result.stderr, "DOCKER_GROUP_ID mismatch")
+    assertStringIncludes(result.stderr, "990")
+    assertStringIncludes(result.stderr, "988")
+
+    const remoteApps = join(f.remoteDir, "srv", "apps")
+    await assertNotExists(remoteApps)
+  } finally {
+    await teardownFixture(f)
+  }
+})
+
+Deno.test("e2e: rostok deploy ../escaped refuses before reading anything (#208)", async () => {
+  const f = await setupFixture()
+  try {
+    // No servers/ directory at all — if the CLI read anything before
+    // validating the name, this would fail differently (e.g. ENOENT).
+    const result = await runDeployCli(f, ["deploy", "../escaped"])
+    assertEquals(result.success, false)
+    assertStringIncludes(result.stderr, "invalid server name")
+
+    const escapedDir = join(f.projectDir, "..", "escaped")
+    await assertNotExists(escapedDir)
+  } finally {
+    await teardownFixture(f)
+  }
+})
+
+async function assertNotExists(path: string): Promise<void> {
+  let exists = true
+  try {
+    await Deno.stat(path)
+  } catch (err) {
+    if (err instanceof Deno.errors.NotFound) exists = false
+    else throw err
+  }
+  assertEquals(exists, false, `expected ${path} not to exist`)
+}
