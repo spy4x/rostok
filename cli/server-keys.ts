@@ -95,23 +95,169 @@ export function serverDirFor(cwd: string, name: string): string {
   return dir
 }
 
-/** An ssh_config alias, host, `user@host` or IPv6 address; never starts with `-`. */
-export const SSH_ADDRESS_PATTERN = /^[A-Za-z0-9_][A-Za-z0-9._@:-]*$/
+/** A parsed `SSH_ADDRESS`: an optional user, the host (or ssh_config alias), and an optional port. */
+export interface SshTarget {
+  user?: string
+  host: string
+  port?: number
+}
+
+function sshAddressError(value: string): UserError {
+  return new UserError(
+    `invalid SSH_ADDRESS "${value}": use an ssh_config alias, a host, user@host, host:port, ` +
+      `user@host:port, an IPv6 address, or [IPv6]:port, with no spaces and not starting with "-".`,
+  )
+}
+
+/** Letters, digits, `.`, `_`, `-` and `:` (bare IPv6 needs the colons) — nothing a shell reads specially. */
+const SSH_HOST_CHARS_PATTERN = /^[A-Za-z0-9_.:-]+$/
 
 /**
- * Throw a UserError unless `value` is safe to pass to `ssh` and `rsync` as
- * the target: an ssh_config alias, `host` or `user@host`. A leading `-`
- * would be read as an ssh option (`-oProxyCommand=…` runs a local
- * command), and rsync re-spawns ssh with the target itself, so `--` alone
- * can't protect it. Only letters, digits and `._-@:` are allowed.
+ * Parse `SSH_ADDRESS` into `{ user?, host, port? }`. Throws a UserError for
+ * anything unsafe to hand to `ssh`/`rsync` as a target, or genuinely
+ * ambiguous:
+ *
+ * - A leading `-` (`-oProxyCommand=…` would run a local command the
+ *   moment ssh's own option parser read it — see runRemoteCommand's `--`
+ *   for the second, independent guard).
+ * - An empty address, an empty user (`@host`) or an empty host (`user@`,
+ *   `:2222`).
+ * - A port outside 1–65535, or a non-numeric port.
+ * - An unbracketed IPv6 address followed by what looks like a port
+ *   (contains `::` and the text after the last `:` is all digits) — ssh
+ *   itself has no way to tell a trailing port from a hex segment there,
+ *   so this is refused rather than guessed at; bracket it instead
+ *   (`[2001:db8::1]:2222`).
+ *
+ * A bare multi-colon address with no `::` (a rare fully-written IPv6
+ * literal) or one that doesn't end in a plausible port is accepted as a
+ * host with no port — ssh accepts it unbracketed as long as there's no
+ * port to disambiguate.
  */
-export function validateSshAddress(value: string): void {
-  if (!SSH_ADDRESS_PATTERN.test(value)) {
-    throw new UserError(
-      `invalid SSH_ADDRESS "${value}": use an ssh_config alias, a host or user@host, ` +
-        `with no spaces and not starting with "-".`,
-    )
+export function parseSshAddress(value: string): SshTarget {
+  if (value.startsWith("-")) throw sshAddressError(value)
+
+  let rest = value
+  let user: string | undefined
+  const atIdx = rest.indexOf("@")
+  if (atIdx !== -1) {
+    user = rest.slice(0, atIdx)
+    rest = rest.slice(atIdx + 1)
+    if (user === "") throw sshAddressError(value)
   }
+  if (rest === "") throw sshAddressError(value)
+
+  let host: string
+  let portText: string | undefined
+
+  if (rest.startsWith("[")) {
+    const closeIdx = rest.indexOf("]")
+    if (closeIdx === -1) throw sshAddressError(value)
+    host = rest.slice(1, closeIdx)
+    const after = rest.slice(closeIdx + 1)
+    if (after !== "") {
+      if (!after.startsWith(":")) throw sshAddressError(value)
+      portText = after.slice(1)
+    }
+    if (host === "") throw sshAddressError(value)
+  } else {
+    const colonCount = rest.split(":").length - 1
+    if (colonCount === 0) {
+      host = rest
+    } else if (colonCount === 1) {
+      const idx = rest.indexOf(":")
+      host = rest.slice(0, idx)
+      portText = rest.slice(idx + 1)
+      if (host === "") throw sshAddressError(value)
+    } else {
+      const lastColon = rest.lastIndexOf(":")
+      const maybeHost = rest.slice(0, lastColon)
+      const maybePort = rest.slice(lastColon + 1)
+      if (maybeHost.includes("::") && /^\d+$/.test(maybePort)) {
+        throw new UserError(
+          `invalid SSH_ADDRESS "${value}": bracket an IPv6 address that carries a port — ` +
+            `use "[${maybeHost}]:${maybePort}".`,
+        )
+      }
+      host = rest
+    }
+  }
+
+  if (!SSH_HOST_CHARS_PATTERN.test(host)) throw sshAddressError(value)
+
+  let port: number | undefined
+  if (portText !== undefined) {
+    if (!/^\d+$/.test(portText)) throw sshAddressError(value)
+    port = Number(portText)
+    if (port < 1 || port > 65535) {
+      throw new UserError(`invalid SSH_ADDRESS "${value}": port ${port} is outside 1-65535.`)
+    }
+  }
+
+  return { user, host, port }
+}
+
+/** Throw a UserError unless `value` parses as a valid SSH_ADDRESS — see `parseSshAddress`. */
+export function validateSshAddress(value: string): void {
+  parseSshAddress(value)
+}
+
+/**
+ * `user@host`, or just `host`/the ssh_config alias with no user. Never
+ * brackets an IPv6 host: ssh gets the target and `-p <port>` as separate
+ * argv slots (sshArgs below), so there's no single "host:port" string
+ * for a bare colon to be ambiguous inside — brackets are only needed
+ * where the two are joined into one string (rsyncDestination below).
+ */
+function targetHost(target: SshTarget): string {
+  return target.user ? `${target.user}@${target.host}` : target.host
+}
+
+/** Extra options every ssh call deploy makes gets — see #219 (module comment in exec.ts). */
+export interface SshCallOptions {
+  /** `-o BatchMode=yes` — set when stdin isn't a TTY, so ssh fails fast instead of prompting. */
+  batchMode?: boolean
+}
+
+/**
+ * The argv for `ssh` given a parsed target: the standard options
+ * (`ConnectTimeout=10`, `BatchMode=yes` when `opts.batchMode`), `-p
+ * <port>` when set, `--` (stops ssh's own option parser from ever
+ * reading the target as a flag — defense in depth even though
+ * `parseSshAddress` already rejects a leading `-`), then `user@host`,
+ * then any extra argv.
+ */
+export function sshArgs(
+  target: SshTarget,
+  extra: string[] = [],
+  opts: SshCallOptions = {},
+): string[] {
+  const args: string[] = ["-o", "ConnectTimeout=10"]
+  if (opts.batchMode) args.push("-o", "BatchMode=yes")
+  if (target.port !== undefined) args.push("-p", String(target.port))
+  args.push("--", targetHost(target))
+  return [...args, ...extra]
+}
+
+/** rsync's `-e "ssh ..."` value for a parsed target — same options as `sshArgs`, minus the target/`--`. */
+export function rsyncSshOption(target: SshTarget, opts: SshCallOptions = {}): string {
+  const parts = ["ssh", "-o", "ConnectTimeout=10"]
+  if (opts.batchMode) parts.push("-o", "BatchMode=yes")
+  if (target.port !== undefined) parts.push("-p", String(target.port))
+  return parts.join(" ")
+}
+
+/**
+ * `user@host:<remotePath>` — rsync's destination argument, as one
+ * string. Unlike `sshArgs`, a bare IPv6 host here always needs brackets
+ * (`[2001:db8::1]:/path`, port or not): rsync itself splits this string
+ * on the first `:` to separate host from path, so an unbracketed IPv6
+ * address's own colons would be read as that separator.
+ */
+export function rsyncDestination(target: SshTarget, remotePath: string): string {
+  const host = target.host.includes(":") ? `[${target.host}]` : target.host
+  const withUser = target.user ? `${target.user}@${host}` : host
+  return `${withUser}:${remotePath}`
 }
 
 /** Absolute path made of letters, digits, `.`, `_`, `-` and `/`. */

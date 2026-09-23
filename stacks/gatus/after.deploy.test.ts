@@ -4,14 +4,73 @@
 import { assertEquals, assertThrows } from "@std/assert"
 import { buildRestartCommand } from "./after.deploy.ts"
 
-Deno.test("buildRestartCommand: valid address — '--' precedes the address", () => {
+Deno.test("buildRestartCommand: valid address — ConnectTimeout then '--' precedes the address", () => {
   const args = buildRestartCommand("user@192.0.2.10", "hl-gatus")
-  assertEquals(args, ["--", "user@192.0.2.10", "docker", "restart", "hl-gatus"])
+  assertEquals(args, [
+    "-o",
+    "ConnectTimeout=10",
+    "--",
+    "user@192.0.2.10",
+    "docker",
+    "restart",
+    "hl-gatus",
+  ])
 })
 
 Deno.test("buildRestartCommand: an ssh_config alias is accepted", () => {
   const args = buildRestartCommand("home", "hl-gatus")
-  assertEquals(args, ["--", "home", "docker", "restart", "hl-gatus"])
+  assertEquals(args, ["-o", "ConnectTimeout=10", "--", "home", "docker", "restart", "hl-gatus"])
+})
+
+Deno.test("buildRestartCommand: carries the port from SSH_ADDRESS as -p", () => {
+  const args = buildRestartCommand("user@192.0.2.10:2222", "hl-gatus")
+  assertEquals(args, [
+    "-o",
+    "ConnectTimeout=10",
+    "-p",
+    "2222",
+    "--",
+    "user@192.0.2.10",
+    "docker",
+    "restart",
+    "hl-gatus",
+  ])
+})
+
+Deno.test("buildRestartCommand: a bare IPv6 address is accepted with no port", () => {
+  const args = buildRestartCommand("2001:db8::1", "hl-gatus")
+  assertEquals(args, [
+    "-o",
+    "ConnectTimeout=10",
+    "--",
+    "2001:db8::1",
+    "docker",
+    "restart",
+    "hl-gatus",
+  ])
+})
+
+Deno.test("buildRestartCommand: [IPv6]:port reaches ssh as a bare host + -p", () => {
+  const args = buildRestartCommand("[2001:db8::1]:2222", "hl-gatus")
+  assertEquals(args, [
+    "-o",
+    "ConnectTimeout=10",
+    "-p",
+    "2222",
+    "--",
+    "2001:db8::1",
+    "docker",
+    "restart",
+    "hl-gatus",
+  ])
+})
+
+Deno.test("buildRestartCommand: rejects an unbracketed IPv6 address followed by a port", () => {
+  assertThrows(
+    () => buildRestartCommand("2001:db8::1:2222", "hl-gatus"),
+    Error,
+    "invalid SSH_ADDRESS",
+  )
 })
 
 Deno.test("buildRestartCommand: rejects a value starting with '-'", () => {

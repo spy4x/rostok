@@ -4,8 +4,12 @@ import { UserError } from "./errors.ts"
 import {
   DEPLOY_REQUIRED_KEYS,
   isServerKey,
+  parseSshAddress,
+  rsyncDestination,
+  rsyncSshOption,
   SERVER_KEYS,
   serverDirFor,
+  sshArgs,
   stackKeyPrefix,
   validateRemotePath,
   validateServerName,
@@ -95,6 +99,120 @@ Deno.test("rejects SSH targets that ssh would read as options", () => {
   ) {
     assertThrows(() => validateSshAddress(v), UserError, "invalid SSH_ADDRESS")
   }
+})
+
+Deno.test("parseSshAddress parses user, host and port", () => {
+  assertEquals(parseSshAddress("homelab"), { user: undefined, host: "homelab", port: undefined })
+  assertEquals(parseSshAddress("192.0.2.1"), {
+    user: undefined,
+    host: "192.0.2.1",
+    port: undefined,
+  })
+  assertEquals(parseSshAddress("root@192.0.2.1"), {
+    user: "root",
+    host: "192.0.2.1",
+    port: undefined,
+  })
+  assertEquals(parseSshAddress("192.0.2.1:2222"), {
+    user: undefined,
+    host: "192.0.2.1",
+    port: 2222,
+  })
+  assertEquals(parseSshAddress("root@192.0.2.1:2222"), {
+    user: "root",
+    host: "192.0.2.1",
+    port: 2222,
+  })
+})
+
+Deno.test("parseSshAddress accepts a bare IPv6 address with no port", () => {
+  assertEquals(parseSshAddress("2001:db8::1"), {
+    user: undefined,
+    host: "2001:db8::1",
+    port: undefined,
+  })
+  assertEquals(parseSshAddress("root@2001:db8::1"), {
+    user: "root",
+    host: "2001:db8::1",
+    port: undefined,
+  })
+})
+
+Deno.test("parseSshAddress accepts [IPv6]:port, bracketed with or without a user", () => {
+  assertEquals(parseSshAddress("[2001:db8::1]:2222"), {
+    user: undefined,
+    host: "2001:db8::1",
+    port: 2222,
+  })
+  assertEquals(parseSshAddress("root@[2001:db8::1]:2222"), {
+    user: "root",
+    host: "2001:db8::1",
+    port: 2222,
+  })
+  // Brackets with no port are also fine.
+  assertEquals(parseSshAddress("[2001:db8::1]"), {
+    user: undefined,
+    host: "2001:db8::1",
+    port: undefined,
+  })
+})
+
+Deno.test("rejects an unbracketed IPv6 address followed by what looks like a port", () => {
+  assertThrows(
+    () => parseSshAddress("2001:db8::1:2222"),
+    UserError,
+    "bracket an IPv6 address that carries a port",
+  )
+})
+
+Deno.test("rejects a port outside 1-65535", () => {
+  for (
+    const v of ["host:0", "host:65536", "host:999999", "[2001:db8::1]:0", "[2001:db8::1]:70000"]
+  ) {
+    assertThrows(() => parseSshAddress(v), UserError, "outside 1-65535")
+  }
+})
+
+Deno.test("rejects a non-numeric or empty port", () => {
+  for (const v of ["host:abc", "host:", "[2001:db8::1]:"]) {
+    assertThrows(() => parseSshAddress(v), UserError, "invalid SSH_ADDRESS")
+  }
+})
+
+Deno.test("rejects empty parts", () => {
+  for (const v of ["@host", "user@", ":2222"]) {
+    assertThrows(() => parseSshAddress(v), UserError, "invalid SSH_ADDRESS")
+  }
+})
+
+Deno.test("sshArgs builds -p, the standard options, -- and the target", () => {
+  assertEquals(
+    sshArgs({ host: "192.0.2.1" }, ["id", "-u"]),
+    ["-o", "ConnectTimeout=10", "--", "192.0.2.1", "id", "-u"],
+  )
+  assertEquals(
+    sshArgs({ user: "root", host: "192.0.2.1", port: 2222 }, ["id", "-u"]),
+    ["-o", "ConnectTimeout=10", "-p", "2222", "--", "root@192.0.2.1", "id", "-u"],
+  )
+  assertEquals(
+    sshArgs({ host: "2001:db8::1", port: 2222 }, [], { batchMode: true }),
+    ["-o", "ConnectTimeout=10", "-o", "BatchMode=yes", "-p", "2222", "--", "2001:db8::1"],
+  )
+})
+
+Deno.test("rsyncSshOption and rsyncDestination carry the port and bracket a bare IPv6", () => {
+  assertEquals(
+    rsyncSshOption({ host: "192.0.2.1", port: 2222 }),
+    "ssh -o ConnectTimeout=10 -p 2222",
+  )
+  assertEquals(
+    rsyncDestination({ host: "192.0.2.1", port: 2222 }, "/srv/apps"),
+    "192.0.2.1:/srv/apps",
+  )
+  assertEquals(
+    rsyncDestination({ user: "root", host: "2001:db8::1" }, "/srv/apps"),
+    "root@[2001:db8::1]:/srv/apps",
+  )
 })
 
 Deno.test("accepts plain absolute remote paths", () => {

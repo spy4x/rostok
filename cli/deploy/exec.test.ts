@@ -1,5 +1,6 @@
-import { assertEquals, assertStringIncludes } from "@std/assert"
+import { assertEquals, assertRejects } from "@std/assert"
 import { join } from "@std/path"
+import { UserError } from "../errors.ts"
 import { runRemoteCommand, runRemoteShell, shQuote } from "./exec.ts"
 
 /** Install a fake `ssh` on PATH that prints its own argv, one per line, as JSON. */
@@ -20,11 +21,34 @@ async function withFakeSsh<T>(fn: () => Promise<T>): Promise<T> {
   }
 }
 
-Deno.test("runRemoteCommand: puts -- before the target, ahead of the rest of argv", async () => {
+// Mirrors exec.ts's own check — a batch-mode option is expected iff this
+// test process's own stdin isn't a TTY (true in CI, possibly false when
+// run interactively at a terminal).
+function expectedOptions(): string[] {
+  const opts = ["-o", "ConnectTimeout=10"]
+  let isTerminal = false
+  try {
+    isTerminal = Deno.stdin.isTerminal()
+  } catch {
+    // not a TTY
+  }
+  if (!isTerminal) opts.push("-o", "BatchMode=yes")
+  return opts
+}
+
+Deno.test("runRemoteCommand: -p <port>, the standard options, -- then the rest of argv", async () => {
   await withFakeSsh(async () => {
     const result = await runRemoteCommand("root@example.com", ["id", "-u"])
     const argv = result.output.split("\n").filter((l) => l.length > 0)
-    assertEquals(argv, ["--", "root@example.com", "id", "-u"])
+    assertEquals(argv, [...expectedOptions(), "--", "root@example.com", "id", "-u"])
+  })
+})
+
+Deno.test("runRemoteCommand: carries the port from SSH_ADDRESS", async () => {
+  await withFakeSsh(async () => {
+    const result = await runRemoteCommand("root@192.0.2.1:2222", ["id", "-u"])
+    const argv = result.output.split("\n").filter((l) => l.length > 0)
+    assertEquals(argv, [...expectedOptions(), "-p", "2222", "--", "root@192.0.2.1", "id", "-u"])
   })
 })
 
@@ -32,19 +56,33 @@ Deno.test("runRemoteShell: puts -- before the target, ahead of the script", asyn
   await withFakeSsh(async () => {
     const result = await runRemoteShell("root@example.com", "echo hi")
     const argv = result.output.split("\n").filter((l) => l.length > 0)
-    assertEquals(argv, ["--", "root@example.com", "echo hi"])
+    assertEquals(argv, [...expectedOptions(), "--", "root@example.com", "echo hi"])
   })
 })
 
-Deno.test("runRemoteCommand: -- stops ssh's own option parser from reading a malicious target as a flag", async () => {
-  // Real end-to-end proof against the real `ssh` binary (not a fake): a
-  // target starting with `-` would otherwise be read as an ssh option
-  // (e.g. -oProxyCommand=<cmd>, which runs <cmd> locally). With `--` in
-  // front, ssh must treat it as a literal (invalid) hostname instead —
-  // it fails on "invalid hostname", never on "unknown option".
-  const result = await runRemoteCommand("-oProxyCommand=false", ["id", "-u"])
-  assertEquals(result.success, false)
-  assertStringIncludes(result.error.toLowerCase(), "hostname")
+Deno.test("runRemoteCommand: an [IPv6]:port SSH_ADDRESS reaches ssh as a bare host + -p", async () => {
+  // ssh gets the target and -p as separate argv slots, so the brackets
+  // that disambiguated the SSH_ADDRESS string aren't needed (or added)
+  // once it's parsed — see targetHost's comment in server-keys.ts.
+  await withFakeSsh(async () => {
+    const result = await runRemoteCommand("[2001:db8::1]:2222", ["id", "-u"])
+    const argv = result.output.split("\n").filter((l) => l.length > 0)
+    assertEquals(argv, [...expectedOptions(), "-p", "2222", "--", "2001:db8::1", "id", "-u"])
+  })
+})
+
+Deno.test("runRemoteCommand: rejects a malicious SSH_ADDRESS before ssh is ever spawned", async () => {
+  // A target starting with `-` would otherwise be read as an ssh option
+  // (e.g. -oProxyCommand=<cmd>, which runs <cmd> locally). parseSshAddress
+  // (cli/server-keys.ts) throws before runCommand builds any argv at
+  // all — no ssh process is spawned, fake or real.
+  await withFakeSsh(async () => {
+    await assertRejects(
+      () => runRemoteCommand("-oProxyCommand=false", ["id", "-u"]),
+      UserError,
+      "invalid SSH_ADDRESS",
+    )
+  })
 })
 
 Deno.test("shQuote: wraps a value in single quotes", () => {
