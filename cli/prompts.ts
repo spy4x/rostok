@@ -16,6 +16,18 @@
 import { Input, Secret } from "@cliffy/prompt"
 import { UserError } from "./errors.ts"
 
+/**
+ * Append the `--var` key to a human prompt label, e.g.
+ * `withKeyLabel("Server name, used as a folder name", "SERVER_NAME")` →
+ * `"Server name, used as a folder name (SERVER_NAME)"`. #212: every
+ * prompt shows its key so a hobbyist learns the exact `--var` flag to
+ * pass next time, instead of only seeing an internal field name like
+ * `serverName`.
+ */
+export function withKeyLabel(label: string, key: string): string {
+  return `${label} (${key})`
+}
+
 export interface PromptValueOptions {
   /** The `--var KEY` name. Used to look up `provided` and in the missing-value error. */
   key: string
@@ -40,12 +52,23 @@ export interface PromptValueOptions {
   nonInteractive?: boolean
 }
 
-/** Run `validate` (if any) and throw a UserError naming `key` on rejection. */
+/**
+ * Run `validate` (if any) and throw a UserError naming `key` on rejection.
+ *
+ * Some `validate` functions (e.g. server-keys.ts's `validateSshAddress`,
+ * adapted via `toValidator`) already return a message that starts with
+ * `invalid <key>` — prefixing again would print
+ * "invalid SSH_ADDRESS: invalid SSH_ADDRESS …". Only add the prefix when
+ * the message doesn't already carry it.
+ */
 function assertValid(opts: PromptValueOptions, value: string): void {
   if (!opts.validate) return
   const result = opts.validate(value)
   if (result !== true) {
-    throw new UserError(`invalid ${opts.key}: ${result}`)
+    const message = result.startsWith(`invalid ${opts.key}`)
+      ? result
+      : `invalid ${opts.key}: ${result}`
+    throw new UserError(message)
   }
 }
 

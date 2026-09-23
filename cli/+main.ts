@@ -5,10 +5,14 @@
 // examples per subcommand (cliffy renders the multi-line description
 // verbatim in --help output).
 
-import { Command } from "@cliffy/command"
+import { Command, ValidationError } from "@cliffy/command"
+import { join, relative } from "@std/path"
 import { DESCRIPTION, NAME, VERSION } from "./version.ts"
+import { UserError } from "./errors.ts"
 import { SERVER_VAR_ALIASES, SERVER_VAR_KEYS, serverCreate } from "./server-create.ts"
 import { stackAdd } from "./stack-add.ts"
+import { serverDirFor } from "./server-keys.ts"
+import { buildNextSteps } from "./next-steps.ts"
 import { deployCommand } from "./commands/deploy.ts"
 import { envCommand } from "./commands/env.ts"
 import { stackListCommand } from "./commands/list.ts"
@@ -46,6 +50,11 @@ export function buildCommand(): any {
   const cmd = new Command()
     .name(NAME)
     .version(VERSION)
+    // #211: cliffy's default behavior prints its own error + exits from
+    // inside parse() itself, before any try/catch around parse() ever
+    // runs. throwErrors() makes it throw a ValidationError instead, so
+    // `runCli` below can format every failure the same way.
+    .throwErrors()
     .description(ROOT_DESCRIPTION)
     .option("-n, --non-interactive", "skip prompts, use defaults")
     .option(
@@ -151,14 +160,30 @@ Examples:
         --var TRAEFIK_BASIC_AUTH_USER=admin              # pre-supply variables`,
           )
           .action(async (options, name: string) => {
+            const cwd = Deno.cwd()
             const catalogDir = options.catalog ?? undefined
             const providedVars = parseVarFlags(options.var)
-            await stackAdd(name, options.server, {
-              cwd: Deno.cwd(),
+            const result = await stackAdd(name, options.server, {
+              cwd,
               catalogDir,
               providedVars,
               nonInteractive: options.nonInteractive,
             })
+            // #212: what was written and what to run next — a bare
+            // "added X to Y" summary left a first-timer with no idea
+            // what came after.
+            const serverDir = serverDirFor(cwd, options.server)
+            const lines = await buildNextSteps({
+              serverName: options.server,
+              serverDir,
+              written: [
+                relative(cwd, join(serverDir, ".env")),
+                relative(cwd, join(serverDir, "config.json")),
+              ],
+              missingRequires: result.declinedRequires,
+            })
+            console.log("")
+            for (const line of lines) console.log(line)
           }),
       )
       .command(
@@ -174,8 +199,47 @@ Examples:
   return cmd
 }
 
+/**
+ * Translate a thrown error into rostok's own format (#211): a `UserError`
+ * or a cliffy `ValidationError` (bad flag, missing required option —
+ * cliffy throws these once `.throwErrors()` is set, instead of printing
+ * its own message and exiting from inside `parse()`) becomes one
+ * `rostok: <message>` line with no stack trace. Anything else is a bug:
+ * it gets the message plus a one-line pointer to file an issue, and the
+ * stack trace only when `debug` is true (from `ROSTOK_DEBUG=1`).
+ *
+ * Pure — no `console`/`Deno.exit` — so tests can check the exact lines
+ * for every branch (including the debug trace) without spawning a
+ * subprocess or intercepting process exit.
+ */
+export function formatCliError(err: unknown, debug: boolean): string[] {
+  const message = err instanceof Error ? err.message : String(err)
+  if (err instanceof UserError || err instanceof ValidationError) {
+    return [`rostok: ${message}`]
+  }
+  const lines = [
+    `rostok: unexpected error: ${message}`,
+    "this is a bug, please report it at https://github.com/spy4x/rostok/issues",
+  ]
+  if (debug && err instanceof Error && err.stack) {
+    lines.push(err.stack)
+  }
+  return lines
+}
+
+/** Run the CLI and print+exit via {@link formatCliError} on any thrown error. */
+export async function runCli(args: string[]): Promise<void> {
+  try {
+    await buildCommand().parse(args)
+  } catch (err) {
+    const lines = formatCliError(err, Deno.env.get("ROSTOK_DEBUG") === "1")
+    for (const line of lines) console.error(line)
+    Deno.exit(1)
+  }
+}
+
 if (import.meta.main) {
-  await buildCommand().parse(Deno.args)
+  await runCli(Deno.args)
 }
 
 /** Parse `--var KEY=VAL` flags into a record. */
@@ -185,7 +249,7 @@ export function parseVarFlags(flags: unknown): Record<string, string> {
   for (const f of flat) {
     const eq = f.indexOf("=")
     if (eq < 0) {
-      throw new Error(`--var requires KEY=VAL form, got: ${f}`)
+      throw new UserError(`--var requires KEY=VAL form, got: ${f}`)
     }
     out[f.slice(0, eq)] = f.slice(eq + 1)
   }

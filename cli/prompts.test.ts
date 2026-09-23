@@ -3,7 +3,17 @@
 
 import { assertEquals, assertRejects } from "@std/assert"
 import { UserError } from "./errors.ts"
-import { promptValue } from "./prompts.ts"
+import { promptValue, withKeyLabel } from "./prompts.ts"
+
+// #212 — every interactive prompt shows its `--var` key so a hobbyist
+// learns the flag to pass next time, instead of only an internal field
+// name like `serverName`.
+Deno.test("withKeyLabel: appends the key in parentheses", () => {
+  assertEquals(
+    withKeyLabel("Server name, used as a folder name", "SERVER_NAME"),
+    "Server name, used as a folder name (SERVER_NAME)",
+  )
+})
 
 Deno.test("promptValue: a provided value always wins, even non-interactively", async () => {
   const v = await promptValue({ key: "DOMAIN", label: "Domain?", provided: "example.com" })
@@ -57,6 +67,28 @@ Deno.test("promptValue: validate runs against the non-interactive fallback", asy
     UserError,
     "invalid SSH_ADDRESS: must be 'ok'",
   )
+})
+
+// #211/#212 review — a `validate` adapted from server-keys.ts's throwing
+// `validate*` functions (via server-create.ts's `toValidator`) already
+// returns a message that starts with "invalid <key> ..." (it names the
+// key itself). assertValid must not add a second "invalid <key>: "
+// prefix on top of that one.
+const rejectWithOwnPrefix = (v: string) => `invalid SSH_ADDRESS "${v}": must be 'ok'`
+const selfPrefixed = (v: string) => v === "ok" ? true : rejectWithOwnPrefix(v)
+
+Deno.test("promptValue: doesn't double the 'invalid <key>' prefix when validate already includes it", async () => {
+  let message = ""
+  try {
+    await promptValue({ key: "SSH_ADDRESS", label: "?", provided: "bad", validate: selfPrefixed })
+  } catch (err) {
+    message = err instanceof Error ? err.message : String(err)
+  }
+  // assertRejects' msgIncludes is a substring check, which the duplicated
+  // "invalid SSH_ADDRESS: invalid SSH_ADDRESS ..." form would still pass
+  // (the correct message is a substring of the buggy one) — assert exact
+  // equality instead so a reintroduced double prefix is caught.
+  assertEquals(message, `invalid SSH_ADDRESS "bad": must be 'ok'`)
 })
 
 Deno.test("promptValue: a validate that passes doesn't affect the result", async () => {

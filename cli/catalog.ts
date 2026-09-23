@@ -13,6 +13,7 @@
 // forks / custom stacks — v2 territory per docs/v2-cli.md.
 
 import type { StackMeta } from "./stack-meta.ts"
+import { UserError } from "./errors.ts"
 
 export interface CatalogEntry {
   meta: StackMeta
@@ -68,10 +69,10 @@ export function findStack(
   const matches = catalog.filter((e) => e.name === name || e.meta.name === name)
   if (matches.length === 0) {
     const available = catalog.map((e) => e.name).join(", ")
-    throw new Error(`stack '${name}' not found in catalog. available: ${available || "(none)"}`)
+    throw new UserError(`stack '${name}' not found in catalog. available: ${available || "(none)"}`)
   }
   if (matches.length > 1) {
-    throw new Error(`ambiguous stack name '${name}': ${matches.length} entries`)
+    throw new UserError(`ambiguous stack name '${name}': ${matches.length} entries`)
   }
   return matches[0]
 }

@@ -12,9 +12,10 @@ import {
 } from "@std/assert"
 import { Command } from "@cliffy/command"
 import { join } from "@std/path"
-import { buildCommand, parseStackFlags, parseVarFlags } from "./+main.ts"
+import { buildCommand, formatCliError, parseStackFlags, parseVarFlags } from "./+main.ts"
 import { DESCRIPTION, NAME, VERSION } from "./version.ts"
 import { readEnvFile } from "./env-files.ts"
+import { UserError } from "./errors.ts"
 
 Deno.test("buildCommand: returns a fresh Command on every call", () => {
   // Important for tests — sharing one Command across cases would mutate state.
@@ -232,4 +233,156 @@ Deno.test("wiring: `server create --var` reaches serverCreate through buildComma
       await Deno.remove(tmp, { recursive: true }).catch(() => {})
     }
   })
+})
+
+// #212 — `rostok stack add` prints "Next steps" (files written, what to
+// run next, DNS records) through the real buildCommand().parse() entry
+// point, not just from calling stackAdd() directly.
+Deno.test("wiring: `stack add` through buildCommand().parse() prints next steps + DNS records", async () => {
+  await withFakeSsh(async () => {
+    const tmp = await Deno.makeTempDir({ prefix: "rostok-main-stack-add-" })
+    const originalCwd = Deno.cwd()
+    const originalLog = console.log
+    const printed: string[] = []
+    console.log = (...args: unknown[]) => {
+      printed.push(args.map(String).join(" "))
+    }
+    try {
+      Deno.chdir(tmp)
+      await buildCommand().parse([
+        "server",
+        "create",
+        "home",
+        "-n",
+        "--var",
+        "SSH_ADDRESS=root@203.0.113.9",
+        "--var",
+        "DOMAIN=example.com",
+        "--var",
+        "CONTACT_EMAIL=a@example.com",
+      ])
+      // librespeed requires traefik — non-interactive mode adds it
+      // automatically, so this also exercises #212 point 1 end to end.
+      await buildCommand().parse(["stack", "add", "librespeed", "-s", "home", "-n"])
+    } finally {
+      console.log = originalLog
+      Deno.chdir(originalCwd)
+      await Deno.remove(tmp, { recursive: true }).catch(() => {})
+    }
+    const output = printed.join("\n")
+    assertStringIncludes(output, "Wrote:")
+    assertStringIncludes(output, join("servers", "home", ".env"))
+    assertStringIncludes(output, "rostok deploy home")
+    assertStringIncludes(output, "DNS records:")
+    assertStringIncludes(output, "A example.com → 203.0.113.9")
+    assertStringIncludes(output, "A *.example.com → 203.0.113.9")
+  })
+})
+
+// ─────────────────────────────────────────────────────────────────────
+// #211 — user errors print without a stack trace.
+//
+// `formatCliError` is tested directly for the exact line shapes,
+// including the ROSTOK_DEBUG branch (no subprocess or Deno.exit needed).
+// The three CLI-argument scenarios from the issue run as real
+// subprocesses (`deno run -A cli/+main.ts …`), the same entry point a
+// user invokes, so a regression in the `.throwErrors()` wiring or the
+// `if (import.meta.main)` guard would be caught, not just a regression
+// in `formatCliError` itself.
+// ─────────────────────────────────────────────────────────────────────
+
+Deno.test("formatCliError: UserError prints one line, no trace", () => {
+  const lines = formatCliError(new UserError("bad input"), false)
+  assertEquals(lines, ["rostok: bad input"])
+})
+
+Deno.test("formatCliError: unexpected error prints message + bug pointer, no trace by default", () => {
+  const lines = formatCliError(new Error("boom"), false)
+  assertEquals(lines, [
+    "rostok: unexpected error: boom",
+    "this is a bug, please report it at https://github.com/spy4x/rostok/issues",
+  ])
+})
+
+Deno.test("formatCliError: ROSTOK_DEBUG (passed as debug=true) appends the stack trace", () => {
+  const err = new Error("boom")
+  const lines = formatCliError(err, true)
+  assertEquals(lines.length, 3)
+  assertStringIncludes(lines[2], "boom")
+  // A real stack trace has at least one "    at " frame line.
+  assertStringIncludes(lines[2], "at ")
+})
+
+Deno.test("formatCliError: debug=false never appends a trace even if one exists", () => {
+  const err = new Error("boom")
+  const lines = formatCliError(err, false)
+  assertEquals(lines.length, 2)
+})
+
+const MAIN_TS = join(import.meta.dirname!, "+main.ts")
+
+/** Run `deno run -A cli/+main.ts <args>` as a real subprocess, in a fresh temp cwd. */
+async function runMainSubprocess(
+  args: string[],
+  env: Record<string, string> = {},
+): Promise<{ code: number; stdout: string; stderr: string }> {
+  const tmp = await Deno.makeTempDir({ prefix: "rostok-main-subprocess-" })
+  try {
+    const cmd = new Deno.Command(Deno.execPath(), {
+      args: ["run", "-A", MAIN_TS, ...args],
+      cwd: tmp,
+      env,
+      stdout: "piped",
+      stderr: "piped",
+    })
+    const out = await cmd.output()
+    return {
+      code: out.code,
+      stdout: new TextDecoder().decode(out.stdout),
+      stderr: new TextDecoder().decode(out.stderr),
+    }
+  } finally {
+    await Deno.remove(tmp, { recursive: true }).catch(() => {})
+  }
+}
+
+/** No line in `text` starts with the `    at ` prefix a Deno stack trace frame uses. */
+function assertNoStackFrame(text: string) {
+  for (const line of text.split("\n")) {
+    if (line.startsWith("    at ")) {
+      throw new Error(`expected no stack trace frame, got line: ${JSON.stringify(line)}`)
+    }
+  }
+}
+
+Deno.test({
+  name: "subprocess: `stack add nope -s a -n` fails as rostok: <message>, no trace",
+  async fn() {
+    const result = await runMainSubprocess(["stack", "add", "nope", "-s", "a", "-n"])
+    assertEquals(result.code, 1)
+    assertStringIncludes(result.stderr, "rostok: ")
+    assertNoStackFrame(result.stderr)
+  },
+})
+
+Deno.test({
+  name: "subprocess: -n run with a required value missing fails as rostok: <message>, no trace",
+  async fn() {
+    // Non-interactive server create with no --var at all: SSH_ADDRESS
+    // has no default, so this hits the "missing <key>" UserError path.
+    const result = await runMainSubprocess(["server", "create", "home", "-n"])
+    assertEquals(result.code, 1)
+    assertStringIncludes(result.stderr, "rostok: ")
+    assertNoStackFrame(result.stderr)
+  },
+})
+
+Deno.test({
+  name: "subprocess: an unknown flag fails as rostok: <message>, no trace",
+  async fn() {
+    const result = await runMainSubprocess(["stack", "add", "traefik", "--bogus-flag"])
+    assertEquals(result.code, 1)
+    assertStringIncludes(result.stderr, "rostok: ")
+    assertNoStackFrame(result.stderr)
+  },
 })
