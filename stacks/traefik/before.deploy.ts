@@ -10,6 +10,11 @@
 // stacks/traefik/README.md and docs/design/v1-cli.md), no relative import
 // out of this stack directory.
 //
+// dynamic/00-base.yml points dashboard-auth at .htpasswd unconditionally,
+// so a missing credential fails the deploy (exit 1) instead of logging
+// and continuing — a green deploy with no .htpasswd would ship a
+// dashboard nothing can log into.
+//
 // Traefik's basicAuth middleware caches the file at startup — the
 // after.deploy.ts hook restarts hl-traefik after deploy so it picks up
 // the new file.
@@ -32,68 +37,98 @@ export function hashPassword(password: string): string {
   return hashSync(password, 10)
 }
 
-async function writeHtpasswd(user: string, hash: string): Promise<void> {
-  await Deno.writeTextFile(HTPASSWD_PATH, `${user}:${hash}\n`, { mode: 0o600 })
+export interface HtpasswdCredential {
+  user: string
+  /** A bcrypt hash — already hashed by the caller, written verbatim. */
+  hash: string
 }
 
 /**
- * Generate .htpasswd for dashboard-auth from TRAEFIK_BASIC_AUTH_USER +
- * TRAEFIK_BASIC_AUTH_PASSWORD (bcrypt-hashed here). Falls back to the
- * pre-#210 legacy inputs — BASIC_AUTH_USER with either BASIC_AUTH_BASE64
- * ("user:pass" base64) or an already-hashed BASIC_AUTH_PASSWORD — for
- * servers whose .env hasn't been migrated to the new key names yet.
+ * Resolve the .htpasswd entry to write, from TRAEFIK_BASIC_AUTH_USER +
+ * TRAEFIK_BASIC_AUTH_PASSWORD or the pre-#210 legacy inputs
+ * (BASIC_AUTH_USER with either BASIC_AUTH_BASE64 or an already-hashed
+ * BASIC_AUTH_PASSWORD). Pure — no I/O — so every branch is testable
+ * without touching the filesystem.
+ *
+ * Throws, naming exactly which key is missing, instead of returning
+ * null: dynamic/00-base.yml points dashboard-auth at .htpasswd
+ * unconditionally, so a deploy that skips writing it would go green
+ * and still ship a dashboard nothing can log into.
  */
-async function generateHtpasswd(): Promise<void> {
-  const user = Deno.env.get("TRAEFIK_BASIC_AUTH_USER")
-  const password = Deno.env.get("TRAEFIK_BASIC_AUTH_PASSWORD")
+export function resolveHtpasswdCredential(
+  getEnv: (key: string) => string | undefined,
+): HtpasswdCredential {
+  const user = getEnv("TRAEFIK_BASIC_AUTH_USER")
+  const password = getEnv("TRAEFIK_BASIC_AUTH_PASSWORD")
 
   if (user && password) {
-    await writeHtpasswd(user, hashPassword(password))
-    console.log(`Generated ${HTPASSWD_PATH} (bcrypt from TRAEFIK_BASIC_AUTH_PASSWORD)`)
-    return
+    return { user, hash: hashPassword(password) }
   }
-
-  // Legacy fallback (pre-#210 servers/*/.env).
-  const legacyUser = Deno.env.get("BASIC_AUTH_USER")
-  if (!legacyUser) {
-    console.log(
-      "No TRAEFIK_BASIC_AUTH_USER/BASIC_AUTH_USER set, skipping htpasswd generation",
+  // Report a set-but-incomplete pair precisely, rather than falling
+  // through to the legacy branch and reporting "BASIC_AUTH_USER is not
+  // set" when the real problem is the new PASSWORD key.
+  if (user && !password) {
+    throw new Error(
+      "TRAEFIK_BASIC_AUTH_USER is set but TRAEFIK_BASIC_AUTH_PASSWORD is not — both are required.",
     )
-    return
+  }
+  if (!user && password) {
+    throw new Error(
+      "TRAEFIK_BASIC_AUTH_PASSWORD is set but TRAEFIK_BASIC_AUTH_USER is not — both are required.",
+    )
   }
 
-  const base64Auth = Deno.env.get("BASIC_AUTH_BASE64")
+  // Neither new key set — legacy fallback (pre-#210 servers/*/.env).
+  const legacyUser = getEnv("BASIC_AUTH_USER")
+  if (!legacyUser) {
+    throw new Error(
+      "No basic-auth credentials set: TRAEFIK_BASIC_AUTH_USER/TRAEFIK_BASIC_AUTH_PASSWORD " +
+        "(and the legacy BASIC_AUTH_USER) are all unset.",
+    )
+  }
+
+  const base64Auth = getEnv("BASIC_AUTH_BASE64")
   if (base64Auth) {
     try {
       const decoded = atob(base64Auth)
       const colonIdx = decoded.indexOf(":")
       const plainPassword = colonIdx > 0 ? decoded.substring(colonIdx + 1) : null
       if (plainPassword) {
-        await writeHtpasswd(legacyUser, hashPassword(plainPassword))
-        console.log(`Generated ${HTPASSWD_PATH} (bcrypt from legacy BASIC_AUTH_BASE64)`)
-        return
+        return { user: legacyUser, hash: hashPassword(plainPassword) }
       }
-    } catch (err) {
-      console.log(`Failed to decode BASIC_AUTH_BASE64: ${err}`)
+    } catch {
+      // Falls through to BASIC_AUTH_PASSWORD / the final throw below.
     }
   }
 
-  const legacyPassword = Deno.env.get("BASIC_AUTH_PASSWORD")
+  const legacyPassword = getEnv("BASIC_AUTH_PASSWORD")
   if (legacyPassword?.startsWith("$2")) {
     // Already a bcrypt hash — write it directly.
-    await writeHtpasswd(legacyUser, legacyPassword)
-    console.log(`Generated ${HTPASSWD_PATH} (legacy bcrypt from BASIC_AUTH_PASSWORD)`)
-    return
+    return { user: legacyUser, hash: legacyPassword }
   }
   if (legacyPassword) {
-    await writeHtpasswd(legacyUser, hashPassword(legacyPassword))
-    console.log(`Generated ${HTPASSWD_PATH} (bcrypt from legacy plaintext BASIC_AUTH_PASSWORD)`)
-    return
+    return { user: legacyUser, hash: hashPassword(legacyPassword) }
   }
 
-  console.log(
-    "No password source found (set TRAEFIK_BASIC_AUTH_PASSWORD, or legacy BASIC_AUTH_BASE64/BASIC_AUTH_PASSWORD)",
+  throw new Error(
+    `BASIC_AUTH_USER is set ("${legacyUser}") but neither BASIC_AUTH_BASE64 nor a usable ` +
+      "BASIC_AUTH_PASSWORD provides a password. Set TRAEFIK_BASIC_AUTH_PASSWORD instead.",
   )
+}
+
+async function writeHtpasswd(user: string, hash: string): Promise<void> {
+  // 0644, not 0600: the file holds a bcrypt hash, not the password
+  // itself, and Traefik on the server runs as PUID:PGID — an owner
+  // decided by the local uid that rsync'd the file, not necessarily
+  // PUID. 0600 would leave the running container unable to read its
+  // own dashboard-auth file.
+  await Deno.writeTextFile(HTPASSWD_PATH, `${user}:${hash}\n`, { mode: 0o644 })
+}
+
+async function generateHtpasswd(): Promise<void> {
+  const credential = resolveHtpasswdCredential((key) => Deno.env.get(key))
+  await writeHtpasswd(credential.user, credential.hash)
+  console.log(`Generated ${HTPASSWD_PATH}`)
 }
 
 async function copyServerConfigs(): Promise<void> {
@@ -124,6 +159,11 @@ async function copyServerConfigs(): Promise<void> {
 }
 
 if (import.meta.main) {
-  await copyServerConfigs()
-  await generateHtpasswd()
+  try {
+    await copyServerConfigs()
+    await generateHtpasswd()
+  } catch (err) {
+    console.error("before.deploy.ts FAILED:", err instanceof Error ? err.message : String(err))
+    Deno.exit(1)
+  }
 }
