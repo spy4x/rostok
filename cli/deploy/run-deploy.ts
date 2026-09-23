@@ -119,8 +119,13 @@ export async function runDeploy(opts: DeployOptions): Promise<DeployRunResult> {
   // #207: preflight before any file is synced. Docker group GID, and
   // whether privileged commands need `sudo -n` — decided from the
   // remote's own `id -u`, not from the SSH_USER string (see
-  // docker-preflight.ts's needsRemoteSudo for why).
-  await checkDockerGroup(SSH_ADDRESS, DOCKER_GROUP_ID, envPath)
+  // docker-preflight.ts's needsRemoteSudo for why). The mismatch message
+  // names whichever file DOCKER_GROUP_ID actually came from — it's a
+  // DEPLOY_REQUIRED_KEYS key, so the merged-env check guarantees it's in
+  // one of the two, but not necessarily the server .env (env wins the
+  // merge only when it HAS the key).
+  const dockerGroupIdSource = env.DOCKER_GROUP_ID ? envPath : rootEnvPath
+  await checkDockerGroup(SSH_ADDRESS, DOCKER_GROUP_ID, dockerGroupIdSource)
   const needsSudo = await needsRemoteSudo(SSH_ADDRESS)
 
   // config.json → which stacks to deploy.
@@ -172,10 +177,12 @@ export async function runDeploy(opts: DeployOptions): Promise<DeployRunResult> {
       )
     }
 
-    // config.json's per-stack `envs` (`${VAR}` filled from the server
-    // .env) — written into the staging .env once, if not already there.
+    // config.json's per-stack `envs` (`${VAR}` filled from .env.root
+    // merged with the server .env — a referenced key can legitimately
+    // live in either file) — written into the staging .env once, if not
+    // already there.
     for (const stackConfig of stacks) {
-      await applyStackEnvs(stackConfig, env, stagingDir)
+      await applyStackEnvs(stackConfig, resolvedEnv, stagingDir)
     }
 
     // Before-hooks — from source, cwd = staging (see hooks.ts).
@@ -310,7 +317,12 @@ export async function runDeploy(opts: DeployOptions): Promise<DeployRunResult> {
           // No compose.yml (e.g. a host-level stack like deepseek-harness) — skip.
         }
       }
-      const volumePaths = extractVolumePaths(composeContents, env)
+      // Merged env: a compose file's ${VOLUMES_PATH} (or any other var
+      // referenced inside a volume path) can live in .env.root alone —
+      // using the server .env in isolation here silently extracted the
+      // literal, unexpanded "${VOLUMES_PATH}/..." string and deploy
+      // reported success while creating nothing real on the remote.
+      const volumePaths = extractVolumePaths(composeContents, resolvedEnv)
       if (volumePaths.length > 0 && VOLUMES_PATH) {
         console.log(`Creating ${volumePaths.length} volume directories with correct ownership...`)
         const script = generateVolumeCreationScript(volumePaths, PUID, PGID, needsSudo)

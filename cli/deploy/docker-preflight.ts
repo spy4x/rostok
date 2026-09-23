@@ -11,12 +11,17 @@ import { runRemoteCommand } from "./exec.ts"
 /**
  * `ssh <target> getent group docker`. Throws UserError if the docker
  * group is missing, or if its GID doesn't match `expectedGid` (naming
- * both values and `envPath` so the operator knows what to edit).
+ * both values and `sourceFile` so the operator knows what to edit).
+ *
+ * `sourceFile` is the caller's job to get right: DOCKER_GROUP_ID can
+ * legitimately live in either `.env.root` or the server `.env` (compose
+ * reads both), so the caller passes whichever file the value actually
+ * came from — not always the server `.env`.
  */
 export async function checkDockerGroup(
   sshAddress: string,
   expectedGid: string,
-  envPath: string,
+  sourceFile: string,
 ): Promise<void> {
   const result = await runRemoteCommand(sshAddress, ["getent", "group", "docker"])
   const line = result.output.trim()
@@ -35,8 +40,8 @@ export async function checkDockerGroup(
   }
   if (remoteGid !== expectedGid) {
     throw new UserError(
-      `DOCKER_GROUP_ID mismatch: ${envPath} has ${expectedGid}, but the docker group on ` +
-        `${sshAddress} is ${remoteGid}. Update DOCKER_GROUP_ID in ${envPath} to ${remoteGid} ` +
+      `DOCKER_GROUP_ID mismatch: ${sourceFile} has ${expectedGid}, but the docker group on ` +
+        `${sshAddress} is ${remoteGid}. Update DOCKER_GROUP_ID in ${sourceFile} to ${remoteGid} ` +
         `and redeploy.`,
     )
   }

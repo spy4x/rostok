@@ -102,17 +102,22 @@ async function writeServer(
   projectDir: string,
   extraEnvLines: string[],
   stackNames: string[],
+  opts: { omitKeys?: string[] } = {},
 ): Promise<void> {
   const serverDir = join(projectDir, "servers", "test")
   await Deno.mkdir(serverDir, { recursive: true })
+  const omit = new Set(opts.omitKeys ?? [])
+  const baseline = [
+    ["SSH_ADDRESS", "deploy@remote.test"],
+    ["SSH_USER", "deploy"],
+    ["PATH_APPS", "/srv/apps"],
+    ["VOLUMES_PATH", "/srv/volumes"],
+    ["PUID", "1000"],
+    ["PGID", "1000"],
+    ["DOCKER_GROUP_ID", "988"],
+  ]
   const envLines = [
-    "SSH_ADDRESS=deploy@remote.test",
-    "SSH_USER=deploy",
-    "PATH_APPS=/srv/apps",
-    "VOLUMES_PATH=/srv/volumes",
-    "PUID=1000",
-    "PGID=1000",
-    "DOCKER_GROUP_ID=988",
+    ...baseline.filter(([key]) => !omit.has(key)).map(([key, value]) => `${key}=${value}`),
     ...extraEnvLines,
   ]
   await Deno.writeTextFile(join(serverDir, ".env"), envLines.join("\n") + "\n")
@@ -120,6 +125,11 @@ async function writeServer(
     join(serverDir, "config.json"),
     JSON.stringify({ stacks: stackNames.map((name) => ({ name })) }),
   )
+}
+
+/** Write `.env.root` at the project root (the cross-server env file). */
+async function writeRootEnv(projectDir: string, lines: string[]): Promise<void> {
+  await Deno.writeTextFile(join(projectDir, ".env.root"), lines.join("\n") + "\n")
 }
 
 async function runDeployCli(
@@ -393,6 +403,111 @@ await Deno.writeTextFile("stacks/hash-stack/hash-output.txt", value)
       join(f.remoteDir, "srv", "apps", "stacks", "hash-stack", "hash-output.txt"),
     )
     assertEquals(shipped, bcryptStyleValue)
+  } finally {
+    await teardownFixture(f)
+  }
+})
+
+Deno.test("e2e: VOLUMES_PATH declared only in .env.root still resolves real volume paths", async () => {
+  // Regression: run-deploy.ts used to extract volume paths from the
+  // server .env alone. With VOLUMES_PATH only in .env.root, the
+  // required-key check (which does look at the merge) passed, but the
+  // remote ran `mkdir -p '${VOLUMES_PATH}/...'` literally — deploy still
+  // reported success.
+  const f = await setupFixture()
+  try {
+    const stackDir = join(f.projectDir, "stacks", "vol-stack")
+    await Deno.mkdir(stackDir, { recursive: true })
+    await Deno.writeTextFile(
+      join(stackDir, "compose.yml"),
+      [
+        "name: ${PROJECT}",
+        "services:",
+        "  vol:",
+        "    image: busybox",
+        "    volumes:",
+        "      - ${VOLUMES_PATH}/vol-stack/data:/data:z",
+      ].join("\n") + "\n",
+    )
+
+    await writeServer(f.projectDir, [], ["vol-stack"], { omitKeys: ["VOLUMES_PATH"] })
+    await writeRootEnv(f.projectDir, ["VOLUMES_PATH=/srv/volumes"])
+
+    const result = await runDeployCli(f, ["deploy", "test"])
+    if (!result.success) console.error(result.stderr)
+    assertEquals(result.success, true)
+
+    const log = await Deno.readTextFile(f.logPath)
+    // The real, merged value reached the remote mkdir/chown command...
+    assertStringIncludes(log, "mkdir -p '/srv/volumes/vol-stack/data'")
+    // ...never the literal, unexpanded placeholder.
+    assertEquals(log.includes("${VOLUMES_PATH}"), false)
+  } finally {
+    await teardownFixture(f)
+  }
+})
+
+Deno.test("e2e: a DOCKER_GROUP_ID mismatch names .env.root when that's where the value is", async () => {
+  const f = await setupFixture()
+  try {
+    await writeServer(f.projectDir, [], ["librespeed"], { omitKeys: ["DOCKER_GROUP_ID"] })
+    await writeRootEnv(f.projectDir, ["DOCKER_GROUP_ID=990"])
+
+    const result = await runDeployCli(f, ["deploy", "test"], { FAKE_DOCKER_GID: "988" })
+    assertEquals(result.success, false)
+    assertStringIncludes(result.stderr, "DOCKER_GROUP_ID mismatch")
+    assertStringIncludes(result.stderr, ".env.root")
+    // Must not tell the operator to edit the server .env when the value
+    // actually lives in .env.root.
+    assertEquals(result.stderr.includes("servers/test/.env"), false)
+  } finally {
+    await teardownFixture(f)
+  }
+})
+
+Deno.test("e2e: a failed staging cleanup logs a warning instead of swallowing it", async () => {
+  // runDeploy's own `finally` block removes the staging directory. To
+  // observe a failure there without reaching into its private temp dir,
+  // call runDeploy in-process (not the CLI subprocess) and make
+  // Deno.remove throw for the duration of this one test.
+  const { runDeploy } = await import("../deploy/run-deploy.ts")
+
+  const f = await setupFixture()
+  try {
+    await writeServer(f.projectDir, [], [])
+
+    const previousPath = Deno.env.get("PATH") ?? ""
+    Deno.env.set("PATH", `${f.binDir}:${previousPath}`)
+    Deno.env.set("FAKE_REMOTE_DIR", f.remoteDir)
+    Deno.env.set("FAKE_SSH_LOG", f.logPath)
+
+    const originalRemove = Deno.remove
+    const originalConsoleError = console.error
+    const errorLines: string[] = []
+    console.error = (...args: unknown[]) => {
+      errorLines.push(args.map(String).join(" "))
+    }
+    // Rejects, matching the real Deno.remove's async failure mode (not a
+    // synchronous throw) — a `.catch(() => {})` on the old code would
+    // actually catch this, so the mutation check below has to fail the
+    // same way production would: silently.
+    Deno.remove = () =>
+      Promise.reject(new Deno.errors.PermissionDenied("simulated: staging cleanup denied"))
+
+    try {
+      await runDeploy({ cwd: f.projectDir, server: "test" })
+    } finally {
+      Deno.remove = originalRemove
+      console.error = originalConsoleError
+      Deno.env.set("PATH", previousPath)
+      Deno.env.delete("FAKE_REMOTE_DIR")
+      Deno.env.delete("FAKE_SSH_LOG")
+    }
+
+    const warned = errorLines.some((line) =>
+      line.includes("Warning: failed to remove staging directory")
+    )
+    assertEquals(warned, true, `expected a cleanup warning, got: ${errorLines.join(" | ")}`)
   } finally {
     await teardownFixture(f)
   }
