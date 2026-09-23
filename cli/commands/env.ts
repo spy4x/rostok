@@ -23,6 +23,7 @@ import {
   encryptEnvFiles,
   generateAgeKey,
 } from "../encrypt.ts"
+import { ensureAgeIgnored } from "../init.ts"
 
 /** `rostok env encrypt` — run the encrypt task directly. */
 export const envEncryptCommand = new Command()
@@ -150,6 +151,9 @@ export const envSetupCommand = new Command()
       console.log("  no changes made.")
       Deno.exit(0)
     }
+    // #204: guarantee .age/key.txt can never be committed before we
+    // write the key that would decrypt every .env.age in the project.
+    await ensureAgeIgnored(cwd)
     const result = await generateAgeKey(cwd)
     if (!result.ok) {
       console.error(`rostok env setup: failed: ${result.error}`)

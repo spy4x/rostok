@@ -31,6 +31,10 @@ const GITIGNORE_TEMPLATE = `# Plaintext secrets — never commit. The encrypted 
 .env
 .env.root
 
+# age encryption private key — decrypts every encrypted env file in
+# this project. NEVER commit this.
+.age/
+
 # deno runtime
 deno.lock
 `
@@ -71,6 +75,11 @@ export async function initProject(cwd: string = Deno.cwd()): Promise<InitResult>
 
   // 2. .gitignore (plaintext secrets only)
   await writeIfMissing(join(cwd, ".gitignore"), GITIGNORE_TEMPLATE, created, skipped)
+
+  // 2b. #204: guarantee .age/key.txt can never be committed, on every
+  // run — not just the first. Projects created by 1.0.0–1.0.3 shipped a
+  // .gitignore without this rule; this backfills it.
+  await ensureAgeIgnored(cwd)
 
   // 3. servers/ — empty dir for per-server config
   await mkdirIfMissing(join(cwd, "servers"), created, skipped)
@@ -139,11 +148,75 @@ async function maybeOfferKeyGeneration(cwd: string): Promise<void> {
   if (result.ok) {
     console.info(
       `rostok: generated ${result.path}. public key: ${result.publicKey}\n` +
-        "  (the public key is safe to share; the secret key in .age/key.txt is NOT — gitignore'd automatically.)",
+        "  (the public key is safe to share; the secret key in .age/key.txt is NOT — " +
+        "rostok keeps .age/ gitignored, see above.)",
     )
   } else {
     console.warn(`rostok: failed to generate key: ${result.error}`)
   }
+}
+
+/**
+ * #204: make sure `.age/key.txt` can never be committed. Prefers `git
+ * check-ignore` (handles nested/negated patterns correctly) when git and
+ * a repo are available; otherwise falls back to a plain-text scan of
+ * `.gitignore` for a rule that would cover it. Appends `.age/` and
+ * prints a one-line notice when neither already covers it.
+ *
+ * Exported so `rostok env setup` (cli/commands/env.ts) can run the same
+ * check right before it writes a key, not just during init/wizard runs.
+ */
+export async function ensureAgeIgnored(cwd: string): Promise<{ added: boolean }> {
+  if (await isAgeIgnored(cwd)) return { added: false }
+  await appendGitignoreRule(cwd, ".age/")
+  console.info(
+    "rostok: .age/key.txt wasn't gitignored — added `.age/` to .gitignore. " +
+      "the encryption key must never be committed.",
+  )
+  return { added: true }
+}
+
+async function isAgeIgnored(cwd: string): Promise<boolean> {
+  if (await exists(join(cwd, ".git")) && await isCommandOnPath("git")) {
+    try {
+      const cmd = new Deno.Command("git", {
+        args: ["check-ignore", "-q", ".age/key.txt"],
+        cwd,
+        stdout: "null",
+        stderr: "null",
+      })
+      const out = await cmd.output()
+      return out.success
+    } catch {
+      // git crashed mid-run — fall through to the text check below.
+    }
+  }
+  return await gitignoreTextCoversAge(cwd)
+}
+
+/** Best-effort match — not a full gitignore glob parser, just the common rule shapes. */
+async function gitignoreTextCoversAge(cwd: string): Promise<boolean> {
+  let text: string
+  try {
+    text = await Deno.readTextFile(join(cwd, ".gitignore"))
+  } catch {
+    return false
+  }
+  const candidates = new Set([".age", ".age/", "/.age", "/.age/", ".age/*", ".age/key.txt"])
+  return text.split("\n").some((line) => candidates.has(line.trim()))
+}
+
+async function appendGitignoreRule(cwd: string, rule: string): Promise<void> {
+  const path = join(cwd, ".gitignore")
+  let text = ""
+  try {
+    text = await Deno.readTextFile(path)
+  } catch {
+    // No .gitignore yet — unlikely (init always writes one first), but
+    // handle gracefully: start a fresh file with just this rule.
+  }
+  const sep = text.length > 0 && !text.endsWith("\n") ? "\n" : ""
+  await Deno.writeTextFile(path, `${text}${sep}${rule}\n`)
 }
 
 async function writeIfMissing(
