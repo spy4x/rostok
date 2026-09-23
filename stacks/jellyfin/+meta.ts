@@ -15,6 +15,7 @@ export default {
   name: "jellyfin",
   description: "Self-hosted media server (movies, TV, music, books)",
   category: "media",
+  requires: ["traefik"],
   variables: [
     {
       key: "JELLYFIN_IMAGE_TAG",

@@ -19,6 +19,7 @@ export default {
   name: "filebrowser",
   description: "Self-hosted web-based file manager",
   category: "storage",
+  requires: ["traefik"],
   variables: [
     {
       key: "FILEBROWSER_IMAGE_TAG",

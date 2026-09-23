@@ -203,6 +203,20 @@ export async function checkStack(
     }
   }
 
+  // 6. #212 — a stack with a Traefik router label needs traefik on the
+  // same server before it works at all. traefik itself doesn't require
+  // itself. A plain text search for the label (not `findHostRules`,
+  // which only looks at the value inside `Host(...)`) — the point here
+  // is "does this compose file wire itself into Traefik at all", not
+  // the specific domain it uses (check 4 above already covers that).
+  if (composeText && name !== "traefik" && composeText.includes("traefik.http.routers")) {
+    if (!(meta.requires ?? []).includes("traefik")) {
+      violations.push(
+        `compose.yml declares a traefik.http.routers label but +meta.ts doesn't requires: ["traefik"]`,
+      )
+    }
+  }
+
   return violations
 }
 
@@ -421,6 +435,74 @@ Deno.test("checkStack: flags a Host() rule that doesn't use <PREFIX>_DOMAIN", as
       violations.some((v) => v.includes("Host(") && v.includes("ACME_DOMAIN")),
       true,
     )
+  } finally {
+    await Deno.remove(dir, { recursive: true })
+  }
+})
+
+// #212 — a stack that wires itself into Traefik must declare
+// requires: ["traefik"], so `stack add`/the wizard can offer (or,
+// non-interactively, automatically add) the dependency first.
+
+Deno.test('checkStack: flags a traefik router label with no requires: ["traefik"]', async () => {
+  const dir = await Deno.makeTempDir()
+  try {
+    await Deno.writeTextFile(
+      `${dir}/compose.yml`,
+      "labels:\n" +
+        '  - "traefik.http.routers.acme.rule=Host(`${ACME_DOMAIN}`)"\n',
+    )
+    const meta: StackMeta = {
+      name: "acme",
+      description: "test",
+      variables: [],
+    }
+    const violations = await checkStack(dir, "acme", meta, new Map())
+    assertEquals(
+      violations.some((v) => v.includes("traefik.http.routers") && v.includes("requires")),
+      true,
+    )
+  } finally {
+    await Deno.remove(dir, { recursive: true })
+  }
+})
+
+Deno.test('checkStack: accepts a traefik router label when requires: ["traefik"] is declared', async () => {
+  const dir = await Deno.makeTempDir()
+  try {
+    await Deno.writeTextFile(
+      `${dir}/compose.yml`,
+      "labels:\n" +
+        '  - "traefik.http.routers.acme.rule=Host(`${ACME_DOMAIN}`)"\n',
+    )
+    const meta: StackMeta = {
+      name: "acme",
+      description: "test",
+      variables: [],
+      requires: ["traefik"],
+    }
+    const violations = await checkStack(dir, "acme", meta, new Map())
+    assertEquals(violations.some((v) => v.includes("requires")), false)
+  } finally {
+    await Deno.remove(dir, { recursive: true })
+  }
+})
+
+Deno.test("checkStack: traefik itself is exempt (doesn't require itself)", async () => {
+  const dir = await Deno.makeTempDir()
+  try {
+    await Deno.writeTextFile(
+      `${dir}/compose.yml`,
+      "labels:\n" +
+        '  - "traefik.http.routers.dashboard.rule=Host(`${TRAEFIK_DOMAIN}`)"\n',
+    )
+    const meta: StackMeta = {
+      name: "traefik",
+      description: "test",
+      variables: [],
+    }
+    const violations = await checkStack(dir, "traefik", meta, new Map())
+    assertEquals(violations.some((v) => v.includes("requires")), false)
   } finally {
     await Deno.remove(dir, { recursive: true })
   }

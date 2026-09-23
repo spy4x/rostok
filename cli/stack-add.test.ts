@@ -97,6 +97,96 @@ Deno.test("stack add rejects a traversal server name and writes nothing outside 
 // #210 point 3 — a missing server fails clean and writes nothing.
 // ─────────────────────────────────────────────────────────────────────
 
+// ─────────────────────────────────────────────────────────────────────
+// #212 point 1 — a stack that `requires` another one gets that
+// dependency added first. Non-interactive mode adds it automatically;
+// interactive mode is covered by the wizard's own tests (Confirm.prompt
+// isn't driven here — this only exercises the -n path).
+// ─────────────────────────────────────────────────────────────────────
+
+const WEB_STACK_META = (name: string, requires: string[]) => `
+import type { StackMeta } from "@rostok/cli"
+export default {
+  name: "${name}",
+  description: "fixture",
+  requires: ${JSON.stringify(requires)},
+  variables: [
+    { key: "${name.toUpperCase()}_DOMAIN", default: "${name}.\${DOMAIN}", required: true },
+  ],
+} satisfies StackMeta
+`
+
+async function readServerConfigStacks(dir: string, serverName: string): Promise<string[]> {
+  const text = await Deno.readTextFile(join(dir, "servers", serverName, "config.json"))
+  const cfg = JSON.parse(text) as { stacks: { name: string }[] }
+  return cfg.stacks.map((s) => s.name)
+}
+
+Deno.test("stack add -n automatically adds a missing requires dependency first", async () => {
+  await withTmpDir(async (dir) => {
+    const catalogDir = join(dir, "catalog")
+    await writeCatalog(catalogDir, {
+      traefik: IMAGE_STACK_META("traefik", "3.0"),
+      web: WEB_STACK_META("web", ["traefik"]),
+    })
+    await seedServer(dir, "test", { DOMAIN: "example.com" })
+    await stackAdd("web", "test", { cwd: dir, catalogDir, nonInteractive: true })
+
+    const stacks = await readServerConfigStacks(dir, "test")
+    assertEquals(stacks.includes("traefik"), true, "traefik should have been added first")
+    assertEquals(stacks.includes("web"), true)
+
+    const env = await readEnvFile(join(dir, "servers", "test", ".env"))
+    assertEquals(env.some((e) => e.key === "TRAEFIK_DOMAIN"), true)
+    assertEquals(env.some((e) => e.key === "WEB_DOMAIN"), true)
+  })
+})
+
+Deno.test("stack add -n skips adding a requires dependency already on the server", async () => {
+  await withTmpDir(async (dir) => {
+    const catalogDir = join(dir, "catalog")
+    await writeCatalog(catalogDir, {
+      traefik: IMAGE_STACK_META("traefik", "3.0"),
+      web: WEB_STACK_META("web", ["traefik"]),
+    })
+    await seedServer(dir, "test", { DOMAIN: "example.com" })
+    await stackAdd("traefik", "test", { cwd: dir, catalogDir, nonInteractive: true })
+    await stackAdd("web", "test", { cwd: dir, catalogDir, nonInteractive: true })
+
+    const stacks = await readServerConfigStacks(dir, "test")
+    // Both present exactly once — config.json's own de-dup (updateServerConfig)
+    // proves the second call didn't re-add traefik.
+    assertEquals(stacks.filter((s) => s === "traefik").length, 1)
+    assertEquals(stacks.filter((s) => s === "web").length, 1)
+  })
+})
+
+Deno.test("stack add on a stack with no requires never touches config.json's other entries", async () => {
+  await withTmpDir(async (dir) => {
+    const catalogDir = join(dir, "catalog")
+    await writeCatalog(catalogDir, { demo: IMAGE_STACK_META("demo", "1.0") })
+    await seedServer(dir, "test", { DOMAIN: "example.com" })
+    await stackAdd("demo", "test", { cwd: dir, catalogDir, nonInteractive: true })
+    const stacks = await readServerConfigStacks(dir, "test")
+    assertEquals(stacks, ["demo"])
+  })
+})
+
+// #211 — findStack's "unknown stack" error is a UserError (no stack
+// trace at the CLI boundary), not a plain Error.
+Deno.test("stack add on an unknown stack name fails as a UserError naming the catalog", async () => {
+  await withTmpDir(async (dir) => {
+    const catalogDir = join(dir, "catalog")
+    await writeCatalog(catalogDir, { demo: IMAGE_STACK_META("demo", "1.0") })
+    await seedServer(dir, "test", { DOMAIN: "example.com" })
+    await assertRejects(
+      () => stackAdd("nope", "test", { cwd: dir, catalogDir }),
+      UserError,
+      "stack 'nope' not found in catalog",
+    )
+  })
+})
+
 Deno.test("stack add on a missing server fails and writes nothing", async () => {
   await withTmpDir(async (dir) => {
     const catalogDir = join(dir, "catalog")
