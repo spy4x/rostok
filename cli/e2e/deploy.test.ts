@@ -215,6 +215,24 @@ Deno.test("e2e: deploy fails a stack that is neither local nor bundled, before s
   }
 })
 
+Deno.test("e2e: deploy rejects a malicious stack name before anything is built", async () => {
+  const f = await setupFixture()
+  try {
+    await writeServer(f.projectDir, [], ["evil\ninjected"])
+
+    const result = await runDeployCli(f, ["deploy", "test"])
+    assertEquals(result.success, false)
+    assertStringIncludes(result.stderr, "invalid stack name")
+    assertStringIncludes(result.stderr, "config.json")
+
+    // Nothing reached the remote — the check runs before staging starts.
+    const remoteApps = join(f.remoteDir, "srv", "apps")
+    await assertNotExists(remoteApps)
+  } finally {
+    await teardownFixture(f)
+  }
+})
+
 Deno.test("e2e: deploy stops on a DOCKER_GROUP_ID mismatch before syncing files (#207)", async () => {
   const f = await setupFixture()
   try {

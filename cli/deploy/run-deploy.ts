@@ -48,6 +48,7 @@ import { UserError } from "../errors.ts"
 import { resolveDeployEnv } from "./env.ts"
 import { checkDockerGroup, needsRemoteSudo } from "./docker-preflight.ts"
 import { type ResolvedStackFiles, resolveStackFiles } from "./stack-files.ts"
+import { validateStackConfigs } from "./validate-stack-config.ts"
 import { type HookContext, runHook } from "./hooks.ts"
 import { extractVolumePaths, generateVolumeCreationScript } from "./volumes.ts"
 import {
@@ -130,6 +131,11 @@ export async function runDeploy(opts: DeployOptions): Promise<DeployRunResult> {
   } catch (err) {
     if (!(err instanceof Deno.errors.NotFound)) throw err
   }
+  // Every stack's name/deployAs, validated before anything is built (a
+  // newline in either could otherwise break out of a `#` comment line in
+  // the generated deploy script — see validate-stack-config.ts).
+  validateStackConfigs(config.stacks ?? [], configPath)
+
   let stacks = config.stacks ?? []
   if (opts.stack !== undefined) {
     const filtered = stacks.filter((s) => s.name === opts.stack)
