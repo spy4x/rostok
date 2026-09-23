@@ -47,6 +47,13 @@ if (Deno.env.get("FAKE_SSH_UNREACHABLE")) {
     console.error("ssh: connect to host remote.test port 22: Connection timed out")
     Deno.exit(255)
   }
+  // No ConnectTimeout in argv: really hang, the way an unreachable host
+  // would. Killing the top-level "deno run mainTs" test subprocess
+  // doesn't necessarily reach THIS grandchild (Deno.Command exposes no
+  // process-group kill), so this gets its own hard deadline — 20s, well
+  // past every test's own bounded wait — instead of relying only on
+  // being killed from outside.
+  setTimeout(() => Deno.exit(1), 20_000)
   setInterval(() => {}, 1000)
   await new Promise(() => {})
 }
@@ -56,9 +63,12 @@ if (Deno.env.get("FAKE_SSH_UNREACHABLE")) {
 // bare unresolved Promise) keeps this process genuinely busy, the way
 // a real blocked ssh call would be — needed so the SIGINT/SIGTERM
 // tests below prove deploy actually KILLS this child, not just that it
-// happened to already exit on its own.
+// happened to already exit on its own. Same self-deadline as above, in
+// case deploy's own signal handling regresses and never reaches this
+// grandchild.
 const hangOn = Deno.env.get("FAKE_SSH_HANG_ON")
 if (hangOn && script.includes(hangOn)) {
+  setTimeout(() => Deno.exit(1), 20_000)
   setInterval(() => {}, 1000)
   await new Promise(() => {})
 }
@@ -368,9 +378,27 @@ Deno.test("e2e: rostok deploy ../escaped refuses before reading anything (#208)"
     const result = await runDeployCli(f, ["deploy", "../escaped"])
     assertEquals(result.success, false)
     assertStringIncludes(result.stderr, "invalid server name")
+    assertCleanFailure(result.stderr)
 
     const escapedDir = join(f.projectDir, "..", "escaped")
     await assertNotExists(escapedDir)
+  } finally {
+    await teardownFixture(f)
+  }
+})
+
+Deno.test("e2e: rostok deploy nonexistent fails cleanly through the real entry point — no stack trace (#211, #9)", async () => {
+  // A well-formed but nonexistent server name — no servers/nonexistent
+  // directory at all. Run through the real cli/+main.ts entry point
+  // (runDeployCli spawns it), not an in-process call, so this actually
+  // exercises #227's top-level UserError -> "rostok: <message>" wrapper.
+  const f = await setupFixture()
+  try {
+    const result = await runDeployCli(f, ["deploy", "nonexistent"])
+    assertEquals(result.success, false)
+    assertEquals(result.code, 1)
+    assertStringIncludes(result.stderr, "not found")
+    assertCleanFailure(result.stderr)
   } finally {
     await teardownFixture(f)
   }
@@ -719,10 +747,12 @@ Deno.test("e2e: a failed docker compose up throws a UserError naming the stack a
       FAKE_DEPLOY_FAIL_STACK: "librespeed",
     })
     assertEquals(result.success, false)
+    assertEquals(result.code, 1)
     // Names the stack...
     assertStringIncludes(result.stderr, "librespeed")
     // ...and the step (docker compose up / deploy), not a bare stack trace.
     assertStringIncludes(result.stderr, "failed to deploy")
+    assertCleanFailure(result.stderr)
   } finally {
     await teardownFixture(f)
   }
@@ -778,6 +808,7 @@ Deno.test("e2e: an unreachable server fails fast, naming the step and saying it'
 
     const stderr = new TextDecoder().decode(outcome.o.stderr)
     assertEquals(outcome.o.success, false)
+    assertEquals(outcome.o.code, 1)
     // #10: names the step and says the server is unreachable — not the
     // misleading "docker group not found on <address>", which reads
     // like Docker isn't installed rather than "ssh never connected".
@@ -785,6 +816,7 @@ Deno.test("e2e: an unreachable server fails fast, naming the step and saying it'
     assertStringIncludes(stderr, "over SSH")
     assertStringIncludes(stderr, "checking the docker group")
     assertEquals(stderr.includes("docker group not found"), false)
+    assertCleanFailure(stderr)
     // The fake ssh fails immediately when -o ConnectTimeout=10 is in
     // its argv (see FAKE_SSH_UNREACHABLE in FAKE_SSH above) — this
     // should be near-instant, not the old hardcoded 10s sleep.
@@ -939,4 +971,31 @@ async function assertNotExists(path: string): Promise<void> {
     else throw err
   }
   assertEquals(exists, false, `expected ${path} not to exist`)
+}
+
+/**
+ * Assert the shape #211's cli/+main.ts wrapper promises for an expected
+ * failure: stderr starts with `rostok: ` and carries no stack-trace
+ * line (`    at ...`) — the deploy path threw a UserError, which the
+ * wrapper formats cleanly, not an unhandled exception with its default
+ * Deno formatting.
+ */
+function assertCleanFailure(stderr: string): void {
+  if (!stderr.startsWith("rostok: ")) {
+    throw new Error(`expected stderr to start with "rostok: ", got: ${JSON.stringify(stderr)}`)
+  }
+  const traceLine = stderr.split("\n").find((line) => line.startsWith("    at "))
+  assertEquals(traceLine, undefined, `expected no stack-trace line, got: ${traceLine}`)
+  // A plain Error (not UserError) falls into formatCliError's "bug"
+  // branch — "rostok: unexpected error: ..." plus a please-report line
+  // — which also happens to start with "rostok: " and (with
+  // ROSTOK_DEBUG unset) also happens to carry no "    at " line. Reject
+  // that branch explicitly so this assertion actually distinguishes a
+  // UserError from a bug, not just any thrown value.
+  assertEquals(
+    stderr.includes("unexpected error"),
+    false,
+    "deploy threw a plain Error, not UserError",
+  )
+  assertEquals(stderr.includes("please report"), false, "deploy threw a plain Error, not UserError")
 }
