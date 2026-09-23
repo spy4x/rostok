@@ -52,7 +52,7 @@ The `noreply@antonshubin.com` account must exist on the Stalwart mailserver
 
 1. Go to `https://mail.antonshubin.com/admin` → Directory → Add user
 2. Set name: `noreply`, email: `noreply@antonshubin.com`
-3. Set password matching `SMTP_PASSWORD` in `servers/home/.env`
+3. Set password matching `CALDIY_SMTP_PASSWORD` in `servers/home/.env`
 4. Verify with the SMTP test in step 1
 
 ### 3. Network & DNS
