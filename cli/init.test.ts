@@ -32,18 +32,24 @@ Deno.test("initProject: creates skeleton in empty dir", async () => {
 
     const envRoot = await Deno.readTextFile(join(tmp, ".env.root"))
     assertEquals(envRoot, "")
+
+    // #212: initProject no longer runs the key-generation prompt itself
+    // — it only signals the caller should offer it, once the caller has
+    // printed what was just created.
+    assertEquals(result.shouldOfferKeyGeneration, true)
   } finally {
     await Deno.remove(tmp, { recursive: true })
   }
 })
 
-Deno.test("initProject: idempotent — second call skips existing files", async () => {
+Deno.test("initProject: idempotent — second call skips existing files and doesn't re-offer key generation", async () => {
   const tmp = await Deno.makeTempDir({ prefix: "rostok-init-" })
   try {
     await initProject(tmp)
     const second = await initProject(tmp)
     assertEquals(second.created.length, 0)
     assertEquals(second.skipped.length, 4)
+    assertEquals(second.shouldOfferKeyGeneration, false)
   } finally {
     await Deno.remove(tmp, { recursive: true })
   }

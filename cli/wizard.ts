@@ -11,12 +11,14 @@
 // defaults + any `--var KEY=VAL` overrides; fails fast on missing
 // inputs (per docs/v1-cli.md §3.4 strict-default policy).
 
-import { Select } from "@cliffy/prompt"
-import { initProject, type InitResult } from "./init.ts"
+import { Checkbox } from "@cliffy/prompt"
+import { initProject, type InitResult, maybeOfferKeyGeneration } from "./init.ts"
 import { serverCreate, type ServerCreateInput } from "./server-create.ts"
 import { stackAdd, type StackAddResult } from "./stack-add.ts"
 import { resolveCatalog } from "./catalog-paths.ts"
-import { validateServerName } from "./server-keys.ts"
+import { serverDirFor, validateServerName } from "./server-keys.ts"
+import { buildNextSteps } from "./next-steps.ts"
+import { join, relative } from "@std/path"
 
 export interface WizardOptions {
   cwd?: string
@@ -64,6 +66,12 @@ export async function runWizard(opts: WizardOptions = {}): Promise<WizardResult>
   if (init.skipped.length > 0 && !opts.nonInteractive) {
     for (const f of init.skipped) console.log(`  = ${f} (already exists, left alone)`)
   }
+  // #212: offer key generation only after the file list above is on
+  // screen — the prompt used to run inside initProject, before the user
+  // had any idea what "Initialized" even referred to.
+  if (init.shouldOfferKeyGeneration && !opts.nonInteractive) {
+    await maybeOfferKeyGeneration(cwd)
+  }
 
   // Step 2: server create.
   const server = await serverCreate({
@@ -76,23 +84,28 @@ export async function runWizard(opts: WizardOptions = {}): Promise<WizardResult>
 
   // Step 3: stack add (optional).
   //
-  // Interactive mode prompts for one stack from the catalog. Non-
+  // Interactive mode offers a multi-select (#212 — one stack per wizard
+  // run was the old behavior; a hobbyist setting up traefik + a web
+  // stack had to re-run the wizard just to add the second one). Non-
   // interactive mode only adds stacks named via repeatable `--stack
   // <name>`; with none given, it says so instead of failing silently
-  // (#209).
+  // (#209). Each `stackAdd` call handles its own `requires` dependency
+  // (#212 point 1), so picking e.g. only "librespeed" still ends up with
+  // traefik too.
   const stackAdds: StackAddResult[] = []
+  const declinedRequires: string[] = []
   if (!opts.skipStackAdd) {
     if (opts.nonInteractive) {
       if (opts.stacks && opts.stacks.length > 0) {
         for (const name of opts.stacks) {
-          stackAdds.push(
-            await stackAdd(name, server.serverName, {
-              cwd,
-              catalogDir: opts.catalogDir,
-              providedVars: opts.providedVars,
-              nonInteractive: true,
-            }),
-          )
+          const result = await stackAdd(name, server.serverName, {
+            cwd,
+            catalogDir: opts.catalogDir,
+            providedVars: opts.providedVars,
+            nonInteractive: true,
+          })
+          stackAdds.push(result)
+          declinedRequires.push(...result.declinedRequires)
         }
       } else {
         console.log(
@@ -101,36 +114,47 @@ export async function runWizard(opts: WizardOptions = {}): Promise<WizardResult>
       }
     } else {
       const catalog = await resolveCatalog(opts.catalogDir)
-      const chosen = await pickStackInteractive(catalog.map((e) => e.name))
-      if (chosen) {
-        stackAdds.push(
-          await stackAdd(chosen, server.serverName, {
-            cwd,
-            catalogDir: opts.catalogDir,
-            providedVars: opts.providedVars,
-            nonInteractive: false,
-          }),
-        )
+      const chosen = await pickStacksInteractive(catalog.map((e) => e.name))
+      for (const name of chosen) {
+        const result = await stackAdd(name, server.serverName, {
+          cwd,
+          catalogDir: opts.catalogDir,
+          providedVars: opts.providedVars,
+          nonInteractive: false,
+        })
+        stackAdds.push(result)
+        declinedRequires.push(...result.declinedRequires)
       }
     }
   }
 
+  // #212: what was written and what to run next — the old wizard ended
+  // with just "wizard complete.", leaving a first-timer to guess.
+  const serverDir = serverDirFor(cwd, server.serverName)
+  const written = [
+    relative(cwd, join(serverDir, ".env")),
+    relative(cwd, join(serverDir, "config.json")),
+  ]
+  const nextSteps = await buildNextSteps({
+    serverName: server.serverName,
+    serverDir,
+    written,
+    missingRequires: [...new Set(declinedRequires)],
+  })
+  console.log("")
+  for (const line of nextSteps) console.log(line)
+
   return { init, serverName: server.serverName, stackAdds }
 }
 
-/** Interactive single-stack picker. Returns undefined if user picks — skip —. */
-async function pickStackInteractive(stackNames: string[]): Promise<string | undefined> {
+/** Interactive multi-select stack picker. Returns an empty array if the user picks none. */
+async function pickStacksInteractive(stackNames: string[]): Promise<string[]> {
   if (stackNames.length === 0) {
     console.log("No stacks found in catalog. Skipping stack add.")
-    return undefined
+    return []
   }
-  const SKIP = "__skip__"
-  const picked = await Select.prompt({
-    message: "Pick a stack to add (or skip):",
-    options: [
-      { name: "— skip —", value: SKIP },
-      ...stackNames.map((name) => ({ name, value: name })),
-    ],
+  return await Checkbox.prompt({
+    message: "Pick stacks to add (space to select, enter to confirm; none to skip):",
+    options: stackNames.map((name) => ({ name, value: name })),
   })
-  return picked === SKIP ? undefined : picked
 }

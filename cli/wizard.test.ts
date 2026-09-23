@@ -113,6 +113,56 @@ export default {
   })
 })
 
+// #212 point 4 — a first-timer isn't limited to one stack per wizard
+// run: --stack (the non-interactive equivalent of the multi-select
+// Checkbox) accepts several names in one go.
+Deno.test("runWizard: -n with multiple --stack adds every named stack in order", async () => {
+  await withTmpDir(async (dir) => {
+    const catalogDir = join(dir, "catalog")
+    for (const name of ["demo", "demo2"]) {
+      await Deno.mkdir(join(catalogDir, name), { recursive: true })
+      await Deno.writeTextFile(
+        join(catalogDir, name, "+meta.ts"),
+        `import type { StackMeta } from "@rostok/cli"
+export default {
+  name: "${name}",
+  description: "fixture",
+  variables: [{ key: "${name.toUpperCase()}_DOMAIN", default: "${name}.\${DOMAIN}", required: true }],
+} satisfies StackMeta
+`,
+      )
+    }
+    const result = await runWizard({
+      cwd: dir,
+      catalogDir,
+      nonInteractive: true,
+      serverInputs: SERVER_INPUTS,
+      stacks: ["demo", "demo2"],
+    })
+    assertEquals(result.stackAdds.map((r) => r.stackName), ["demo", "demo2"])
+  })
+})
+
+// #212 — the wizard ends with what was written and what to run next
+// (deploy command + DNS records), not just "wizard complete."
+Deno.test("runWizard: prints Next steps with the deploy command and DNS records", async () => {
+  await withTmpDir(async (dir) => {
+    const lines: string[] = []
+    const originalLog = console.log
+    console.log = (...args: unknown[]) => lines.push(args.join(" "))
+    try {
+      await runWizard({ cwd: dir, nonInteractive: true, serverInputs: SERVER_INPUTS })
+    } finally {
+      console.log = originalLog
+    }
+    const output = lines.join("\n")
+    assertEquals(output.includes("Next steps:"), true, output)
+    assertEquals(output.includes("rostok deploy home"), true, output)
+    assertEquals(output.includes("DNS records:"), true, output)
+    assertEquals(output.includes("A example.test"), true, output)
+  })
+})
+
 // Review fix #7 — a traversal name known up front leaves the folder
 // empty: init must not run before the name is validated.
 Deno.test("runWizard: -n --var serverName=../x leaves an empty folder", async () => {

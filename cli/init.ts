@@ -46,6 +46,15 @@ export interface InitResult {
   skipped: string[]
   /** Whether `git init` ran successfully (false if git not on PATH). */
   gitInitialized: boolean
+  /**
+   * True when this was a first-time init (created something) — the
+   * caller should offer key generation via {@link maybeOfferKeyGeneration}
+   * once it's done printing what was created. #212: the old code ran the
+   * "generate a key?" prompt from inside `initProject` itself, before the
+   * caller had printed the "Initialized: …" file list — a first-timer
+   * answered a prompt with no idea yet what had just happened.
+   */
+  shouldOfferKeyGeneration: boolean
 }
 
 /**
@@ -95,23 +104,12 @@ export async function initProject(cwd: string = Deno.cwd()): Promise<InitResult>
     gitInitialized = true // already initialized
   }
 
-  // 6. age endorsement — best effort, interactive prompt only on first init.
-  //
-  // Encryption is OPTIONAL but the CLI actively recommends it: .env.age
-  // is safe to commit, .env is not. After init:
-  // - age missing → info-level tip + return
-  // - age present, key missing → ASK the user if they want rostok to
-  //   generate the keypair for them (rostok runs age-keygen, hides the
-  //   raw command from the user)
-  // - key present → silent
-  //
-  // Skipped on idempotent calls (created.length === 0) so the prompt
-  // doesn't repeat on every wizard run.
-  if (created.length > 0) {
-    await maybeOfferKeyGeneration(cwd)
-  }
-
-  return { created, skipped, gitInitialized }
+  // 6. age endorsement — best effort, interactive prompt only on first
+  // init. #212: the caller runs this (via maybeOfferKeyGeneration) only
+  // after it has printed the "Initialized: …" file list — see
+  // shouldOfferKeyGeneration's doc comment. Skipped on idempotent calls
+  // (created.length === 0) so the prompt doesn't repeat on every run.
+  return { created, skipped, gitInitialized, shouldOfferKeyGeneration: created.length > 0 }
 }
 
 /**
@@ -119,8 +117,12 @@ export async function initProject(cwd: string = Deno.cwd()): Promise<InitResult>
  * show the user a raw `age-keygen` command — when a key is missing, we
  * OFFER to generate it for them. Non-interactive calls skip the prompt
  * entirely (the user explicitly opted out of prompts by passing -n).
+ *
+ * #212: called by the wizard only when `InitResult.shouldOfferKeyGeneration`
+ * is true, and only after it has already printed the "Initialized: …"
+ * file list — so the prompt has context instead of appearing first.
  */
-async function maybeOfferKeyGeneration(cwd: string): Promise<void> {
+export async function maybeOfferKeyGeneration(cwd: string): Promise<void> {
   const ageInstalled = await checkAgeInstalled()
   if (!ageInstalled) {
     console.info(
