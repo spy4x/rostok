@@ -2,11 +2,15 @@
 //
 // Per docs/v1-cli.md §3.1 (Phase 5 user feedback):
 // - Writes to `servers/<server>/.env` (NOT `.env.root`).
-// - SSH target accepts any string: ssh_config alias (`homelab`),
-//   connection string (`user@host[:port]`), or just a hostname.
-//   No validation beyond the server name itself (see #208). If
-//   `user@host`, the user is parsed and used directly — the prompt is
-//   skipped entirely, interactive or not (design §3.1 step 2).
+// - SSH target accepts an ssh_config alias (`homelab`) or `user@host`,
+//   validated with `validateSshAddress` — the whole entered string, not
+//   just the host part, since it's handed to `ssh`/`rsync` verbatim and
+//   a leading `-` would be read as an option (`-oProxyCommand=...` runs
+//   a local command). If `user@host`, the user is parsed and used
+//   directly — the prompt is skipped entirely, interactive or not
+//   (design §3.1 step 2). PATH_APPS/VOLUMES_PATH are validated with
+//   `validateRemotePath` for the same reason: they reach the remote
+//   shell through rsync/ssh.
 // - The remote user is written as `SSH_USER` (#206/#209) — it replaces
 //   `USER` (what the pre-1.0.4 wizard wrote) and `HOMELAB_USER` (what
 //   deploy/ansible/syncthing read). An existing `.env` with either
@@ -40,7 +44,25 @@ import {
 } from "./env-files.ts"
 import { promptValue } from "./prompts.ts"
 import { tryCaptureStdout } from "./shell.ts"
-import { DEFAULT_PATH_APPS, serverDirFor, validateServerName } from "./server-keys.ts"
+import {
+  DEFAULT_PATH_APPS,
+  serverDirFor,
+  validateRemotePath,
+  validateServerName,
+  validateSshAddress,
+} from "./server-keys.ts"
+
+/** Adapt a throwing `validate*` function (server-keys.ts) to the `(v) => true | string` shape promptValue/cliffy expect. */
+function toValidator(fn: (value: string) => void): (v: string) => true | string {
+  return (v) => {
+    try {
+      fn(v)
+      return true
+    } catch (err) {
+      return err instanceof Error ? err.message : String(err)
+    }
+  }
+}
 
 /** Result of a server-create invocation. */
 export interface ServerCreateResult {
@@ -256,12 +278,14 @@ async function collectInput(
   }
   const existingByKey = new Map(existing.map((e) => [e.key, e.value]))
 
-  // SSH target — any string. No validation (per Phase 5 user feedback).
+  // SSH target — an ssh_config alias or user@host, validated against
+  // SSH_ADDRESS_PATTERN (security review): it's handed to `ssh`/`rsync`
+  // verbatim, so a leading `-` or a space must be rejected outright.
   const sshTarget = await ask(
     FIELDS.sshTarget,
     "SSH target (alias or user@host)?",
     existingByKey.get("SSH_ADDRESS"),
-    () => true,
+    toValidator(validateSshAddress),
   )
 
   const parsedSsh = parseSshTarget(sshTarget)
@@ -289,7 +313,9 @@ async function collectInput(
     providedPgid === undefined || needsRemoteUser
   ) {
     probed = await probeServer(sshTarget)
-    if (probed.reason) console.log(`rostok: ${probed.reason}`)
+    if (probed.reason) {
+      console.log(`rostok: ${probed.reason}${probeFallbackNote(probed, existingByKey)}`)
+    }
   }
 
   // User — skip the prompt entirely when the SSH target already told us
@@ -359,17 +385,20 @@ async function collectInput(
     existingByKey.get("PGID") ?? probed.pgid ?? puid,
     (v) => (/^\d+$/.test(v) ? true : "must be a numeric group ID"),
   )
+  // Remote paths reach the server's login shell through rsync/ssh
+  // (security review) — validateRemotePath rejects shell metacharacters
+  // (e.g. `/srv/$(x)`) and `..` segments, not just "starts with /".
   const volumesPath = await ask(
     FIELDS.volumesPath,
     "Host directory for compose volumes?",
     existingByKey.get("VOLUMES_PATH") ?? "/srv/volumes",
-    (v) => (v.startsWith("/") ? true : "must be an absolute path"),
+    toValidator((v) => validateRemotePath("VOLUMES_PATH", v)),
   )
   const pathApps = await ask(
     FIELDS.pathApps,
     "Host directory where stacks are deployed?",
     existingByKey.get("PATH_APPS") ?? DEFAULT_PATH_APPS,
-    (v) => (v.startsWith("/") ? true : "must be an absolute path"),
+    toValidator((v) => validateRemotePath("PATH_APPS", v)),
   )
 
   return {
@@ -468,7 +497,7 @@ export async function probeServer(
     return {
       reason: `couldn't probe ${target} over SSH: ${
         err instanceof Error ? err.message : String(err)
-      } — using default docker group ID / PUID / PGID.`,
+      }`,
     }
   }
 
@@ -496,15 +525,13 @@ export async function probeServer(
 
   if (timedOut) {
     return {
-      reason: `couldn't probe ${target} over SSH: timed out after ${deadlineMs}ms — ` +
-        "using default docker group ID / PUID / PGID.",
+      reason: `couldn't probe ${target} over SSH: timed out after ${deadlineMs}ms`,
     }
   }
   if (!success) {
     const firstLine = stderr.trim().split("\n")[0] ?? ""
     return {
-      reason: `couldn't probe ${target} over SSH: ${describeSshFailure(firstLine)} — ` +
-        "using default docker group ID / PUID / PGID.",
+      reason: `couldn't probe ${target} over SSH: ${describeSshFailure(firstLine)}`,
     }
   }
 
@@ -527,11 +554,35 @@ export async function probeServer(
       puid,
       pgid,
       sshUser,
-      reason:
-        `docker group not found on ${target} (is docker installed?) — using default docker group ID.`,
+      reason: `docker group not found on ${target} (is docker installed?)`,
     }
   }
   return { dockerGroupId: values.DOCKER_GID, puid, pgid, sshUser }
+}
+
+/**
+ * Build the trailing "— keeping the saved X / using the default Y" clause
+ * for a probe-failure `reason`, naming exactly which of DOCKER_GROUP_ID,
+ * PUID, PGID the probe didn't supply and whether each already has a
+ * value in the server's `.env` (review fix: "using default" was wrong —
+ * and worrying — on a re-run where the value survives untouched).
+ */
+function probeFallbackNote(
+  probed: ServerProbeResult,
+  existingByKey: Map<string, string>,
+): string {
+  const missing: string[] = []
+  if (probed.dockerGroupId === undefined) missing.push("DOCKER_GROUP_ID")
+  if (probed.puid === undefined) missing.push("PUID")
+  if (probed.pgid === undefined) missing.push("PGID")
+  if (missing.length === 0) return "."
+
+  const kept = missing.filter((k) => existingByKey.has(k))
+  const defaulted = missing.filter((k) => !existingByKey.has(k))
+  const parts: string[] = []
+  if (kept.length > 0) parts.push(`keeping the saved ${kept.join("/")}`)
+  if (defaulted.length > 0) parts.push(`using the default ${defaulted.join("/")}`)
+  return ` — ${parts.join(", ")}.`
 }
 
 /** Turn ssh's first stderr line into a short, specific reason instead of raw ssh text. */

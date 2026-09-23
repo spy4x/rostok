@@ -492,3 +492,172 @@ Deno.test("probeServer: enforces the deadline and kills a hanging ssh", async ()
     }
   })
 })
+
+// ─────────────────────────────────────────────────────────────────────
+// Security review — SSH_ADDRESS and remote paths (PATH_APPS,
+// VOLUMES_PATH) reach `ssh`/`rsync` verbatim. An unvalidated
+// SSH_ADDRESS starting with `-` is read as an ssh option
+// (`-oProxyCommand=...` runs an arbitrary local command); an
+// unvalidated remote path reaches the login shell through rsync.
+// ─────────────────────────────────────────────────────────────────────
+
+Deno.test("server create rejects an SSH_ADDRESS that looks like an ssh option", async () => {
+  await withTmpDir(async (dir) => {
+    await assertRejects(
+      () =>
+        serverCreate({
+          cwd: dir,
+          failFast: true,
+          providedVars: {
+            SERVER_NAME: "home",
+            SSH_ADDRESS: "-oProxyCommand=touch /tmp/pwned",
+            DOMAIN: "example.com",
+            CONTACT_EMAIL: "a@example.com",
+          },
+        }),
+      UserError,
+      "invalid SSH_ADDRESS",
+    )
+    const entries: string[] = []
+    for await (const e of Deno.readDir(dir)) entries.push(e.name)
+    assertEquals(entries, [], "server create must write nothing on a rejected SSH_ADDRESS")
+  })
+})
+
+Deno.test("server create rejects an SSH_ADDRESS containing a space", async () => {
+  await withTmpDir(async (dir) => {
+    await assertRejects(
+      () =>
+        serverCreate({
+          cwd: dir,
+          failFast: true,
+          providedVars: {
+            SERVER_NAME: "home",
+            SSH_ADDRESS: "root@host extra",
+            DOMAIN: "example.com",
+            CONTACT_EMAIL: "a@example.com",
+          },
+        }),
+      UserError,
+      "invalid SSH_ADDRESS",
+    )
+  })
+})
+
+Deno.test("server create rejects a PATH_APPS with a command substitution", async () => {
+  await withFakeSsh(OK_SSH, () =>
+    withTmpDir(async (dir) => {
+      await assertRejects(
+        () =>
+          serverCreate({
+            cwd: dir,
+            failFast: true,
+            providedVars: {
+              SERVER_NAME: "home",
+              SSH_ADDRESS: "root@192.0.2.1",
+              DOMAIN: "example.com",
+              CONTACT_EMAIL: "a@example.com",
+              PATH_APPS: "/srv/$(x)",
+            },
+          }),
+        UserError,
+        "invalid PATH_APPS",
+      )
+    }))
+})
+
+Deno.test("server create rejects a VOLUMES_PATH with a command substitution", async () => {
+  await withFakeSsh(OK_SSH, () =>
+    withTmpDir(async (dir) => {
+      await assertRejects(
+        () =>
+          serverCreate({
+            cwd: dir,
+            failFast: true,
+            providedVars: {
+              SERVER_NAME: "home",
+              SSH_ADDRESS: "root@192.0.2.1",
+              DOMAIN: "example.com",
+              CONTACT_EMAIL: "a@example.com",
+              VOLUMES_PATH: "/srv/$(x)",
+            },
+          }),
+        UserError,
+        "invalid VOLUMES_PATH",
+      )
+    }))
+})
+
+// ─────────────────────────────────────────────────────────────────────
+// Review fix #4 (round 4, cosmetic) — a failed probe on an existing
+// server must say the saved values are kept, not "using default" (they
+// aren't being defaulted, they're surviving untouched).
+// ─────────────────────────────────────────────────────────────────────
+
+Deno.test("a failed probe on an existing server says the saved values are kept, not defaulted", async () => {
+  await withFakeSsh(FAILING_SSH, () =>
+    withTmpDir(async (dir) => {
+      await seedServerEnv(
+        dir,
+        "home",
+        "PROJECT=hl\nSSH_ADDRESS=myhomelab\nSSH_USER=deploy\nDOMAIN=example.com\n" +
+          "CONTACT_EMAIL=a@example.com\nDOCKER_GROUP_ID=977\nPUID=1500\nPGID=1500\n",
+      )
+      const lines: string[] = []
+      const originalLog = console.log
+      console.log = (...args: unknown[]) => lines.push(args.join(" "))
+      try {
+        await serverCreate({ cwd: dir, failFast: true, providedVars: { SERVER_NAME: "home" } })
+      } finally {
+        console.log = originalLog
+      }
+      const probeLine = lines.find((l) => l.includes("couldn't probe"))
+      assertStringIncludes(probeLine ?? "", "keeping the saved")
+      assertEquals(probeLine?.includes("using default"), false, probeLine)
+    }))
+})
+
+Deno.test("a failed probe on a brand-new server says the defaults are used", async () => {
+  await withFakeSsh(FAILING_SSH, () =>
+    withTmpDir(async (dir) => {
+      const lines: string[] = []
+      const originalLog = console.log
+      console.log = (...args: unknown[]) => lines.push(args.join(" "))
+      try {
+        await serverCreate({
+          cwd: dir,
+          failFast: true,
+          providedVars: {
+            SERVER_NAME: "home",
+            SSH_ADDRESS: "myhomelab",
+            DOMAIN: "example.com",
+            CONTACT_EMAIL: "a@example.com",
+          },
+        })
+      } finally {
+        console.log = originalLog
+      }
+      const probeLine = lines.find((l) => l.includes("couldn't probe"))
+      assertStringIncludes(probeLine ?? "", "using the default")
+      assertEquals(probeLine?.includes("keeping the saved"), false, probeLine)
+    }))
+})
+
+Deno.test("server create re-validates an SSH_ADDRESS already sitting in .env", async () => {
+  // Defense in depth: a hand-edited or pre-this-fix .env shouldn't get a
+  // free pass just because the bad value is "existing" rather than
+  // freshly provided.
+  await withTmpDir(async (dir) => {
+    await seedServerEnv(
+      dir,
+      "home",
+      "PROJECT=hl\nSSH_ADDRESS=-oProxyCommand=touch /tmp/pwned\nDOMAIN=example.com\n" +
+        "CONTACT_EMAIL=a@example.com\n",
+    )
+    await assertRejects(
+      () => serverCreate({ cwd: dir, failFast: true, providedVars: { SERVER_NAME: "home" } }),
+      UserError,
+      "invalid SSH_ADDRESS",
+    )
+  })
+})
