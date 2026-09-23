@@ -293,6 +293,52 @@ Deno.test("a successful probe's docker GID wins over a stale existing value", as
     }))
 })
 
+// Review fix #1 (round 3) — a successful probe must NOT override a saved
+// PUID/PGID (or any other hand-set field): unlike DOCKER_GROUP_ID,
+// PUID/PGID aren't drift to correct, they're the ownership every volume
+// on disk was already chowned to. Regression: re-running server create
+// against a server that probes successfully as root rewrote PUID=1500
+// to 1000, so the next deploy chowned existing data to a different user.
+Deno.test("re-running server create with a successful probe keeps PUID/PGID and other hand-set fields", async () => {
+  await withFakeSsh(ROOT_SSH, () =>
+    withTmpDir(async (dir) => {
+      await seedServerEnv(
+        dir,
+        "home",
+        [
+          "PROJECT=myproj",
+          "SSH_ADDRESS=myhomelab",
+          "SSH_USER=deploy",
+          "DOMAIN=example.com",
+          "CONTACT_EMAIL=a@example.com",
+          "DOCKER_GROUP_ID=977",
+          "TIMEZONE=Europe/Berlin",
+          "PUID=1500",
+          "PGID=1500",
+          "VOLUMES_PATH=/custom/volumes",
+          "PATH_APPS=/custom/apps",
+        ].join("\n") + "\n",
+      )
+
+      const result = await serverCreate({
+        cwd: dir,
+        failFast: true,
+        providedVars: { SERVER_NAME: "home" },
+      })
+
+      const env = await readEnvFile(result.envPath)
+      const get = (k: string) => env.find((e) => e.key === k)?.value
+      assertEquals(get("PROJECT"), "myproj")
+      assertEquals(get("TIMEZONE"), "Europe/Berlin")
+      assertEquals(get("PUID"), "1500", "a saved PUID must survive even a successful (root) probe")
+      assertEquals(get("PGID"), "1500", "a saved PGID must survive even a successful (root) probe")
+      assertEquals(get("VOLUMES_PATH"), "/custom/volumes")
+      assertEquals(get("PATH_APPS"), "/custom/apps")
+      // DOCKER_GROUP_ID is the one field that DOES follow a successful probe.
+      assertEquals(get("DOCKER_GROUP_ID"), "988")
+    }))
+})
+
 // ─────────────────────────────────────────────────────────────────────
 // Review fix #2 — an alias target with no user anywhere (not provided,
 // not already in .env) asks the server (`id -un`) instead of guessing

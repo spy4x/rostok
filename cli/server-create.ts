@@ -17,9 +17,14 @@
 // - Re-running on an existing server defaults every field to what's
 //   already in .env, not a static default — otherwise a re-run without
 //   --var for every field would reset hand-tuned values (e.g. a
-//   corrected DOCKER_GROUP_ID) back to the guess. The one exception is
-//   DOCKER_GROUP_ID/PUID/PGID, where a successful SSH probe (#207) wins
-//   over the existing value, so drift on the real server self-corrects.
+//   corrected DOCKER_GROUP_ID, or a deliberately non-default PUID/PGID)
+//   back to a guess. DOCKER_GROUP_ID is the one field where a
+//   *successful* SSH probe (#207) wins over the existing value, so
+//   drift in the server's real docker group still self-corrects.
+//   PUID/PGID do NOT get this treatment: they're not drift to correct —
+//   they're the ownership every volume on disk was already chowned to,
+//   so an existing value always wins over the probe (a successful probe
+//   only fills the gap on a server that's never been created before).
 // - Encryption is optional. If `age` is missing, the wizard still
 //   runs to completion; the user runs `rostok env encrypt` manually
 //   after installing age.
@@ -337,16 +342,21 @@ async function collectInput(
   const tzDefault = existingByKey.get("TIMEZONE") ?? await detectTimezone()
   const timezone = await ask(FIELDS.timezone, "Timezone (IANA)?", tzDefault, () => true)
 
+  // Review fix: PUID/PGID are ownership already on disk, not drift to
+  // correct — an existing value always wins over the probe (unlike
+  // DOCKER_GROUP_ID above). A successful probe only fills the gap when
+  // there's no existing value yet (a server being created for the
+  // first time).
   const puid = await ask(
     FIELDS.puid,
     "Container user ID (PUID)?",
-    probed.puid ?? existingByKey.get("PUID") ?? "1000",
+    existingByKey.get("PUID") ?? probed.puid ?? "1000",
     (v) => (/^\d+$/.test(v) ? true : "must be a numeric user ID"),
   )
   const pgid = await ask(
     FIELDS.pgid,
     "Container group ID (PGID)?",
-    probed.pgid ?? existingByKey.get("PGID") ?? puid,
+    existingByKey.get("PGID") ?? probed.pgid ?? puid,
     (v) => (/^\d+$/.test(v) ? true : "must be a numeric group ID"),
   )
   const volumesPath = await ask(
