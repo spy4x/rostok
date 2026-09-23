@@ -81,6 +81,35 @@ Deno.test("writeEnvFile + readEnvFile: round-trip via tmp", async () => {
   await Deno.remove(tmp, { recursive: true })
 })
 
+// Security review — .env files hold secrets; they must never be
+// group/world readable.
+
+Deno.test("writeEnvFile: sets file mode 0600", async () => {
+  const tmp = await Deno.makeTempDir()
+  try {
+    const path = join(tmp, ".env")
+    await writeEnvFile(path, [{ key: "SECRET", value: "shh" }])
+    const info = await Deno.stat(path)
+    assertEquals((info.mode ?? 0) & 0o777, 0o600)
+  } finally {
+    await Deno.remove(tmp, { recursive: true })
+  }
+})
+
+Deno.test("writeEnvFile: tightens permissions on rewrite of a looser-mode existing file", async () => {
+  const tmp = await Deno.makeTempDir()
+  try {
+    const path = join(tmp, ".env")
+    await Deno.writeTextFile(path, "OLD=1\n")
+    await Deno.chmod(path, 0o644)
+    await writeEnvFile(path, [{ key: "NEW", value: "2" }])
+    const info = await Deno.stat(path)
+    assertEquals((info.mode ?? 0) & 0o777, 0o600)
+  } finally {
+    await Deno.remove(tmp, { recursive: true })
+  }
+})
+
 Deno.test("writeEnvFile: atomic via .tmp rename", async () => {
   const tmp = await Deno.makeTempDir()
   const path = join(tmp, ".env")

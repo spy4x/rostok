@@ -72,11 +72,21 @@ export async function readEnvFile(path: string): Promise<EnvEntry[]> {
   }
 }
 
-/** Write .env atomically: write to .tmp then rename. */
+/**
+ * Write .env atomically: write to .tmp then rename. `.env` files hold
+ * secrets — chmod both the tmp file and the final path to 0600 (owner
+ * read/write only) explicitly, rather than relying only on `mode` in
+ * `writeTextFile` (which only applies when the OS creates a new inode,
+ * so it wouldn't tighten a `.tmp` left over with looser permissions
+ * from before this fix) or on `rename` carrying the tmp file's mode
+ * onto `path` (true on Linux, not guaranteed by POSIX in general).
+ */
 export async function writeEnvFile(path: string, entries: EnvEntry[]): Promise<void> {
   const tmp = `${path}.tmp`
-  await Deno.writeTextFile(tmp, serializeEnv(entries))
+  await Deno.writeTextFile(tmp, serializeEnv(entries), { mode: 0o600 })
+  await Deno.chmod(tmp, 0o600)
   await Deno.rename(tmp, path)
+  await Deno.chmod(path, 0o600)
 }
 
 /** Legacy remote-user keys, in fallback order (see cli/server-keys.ts SSH_USER). */
