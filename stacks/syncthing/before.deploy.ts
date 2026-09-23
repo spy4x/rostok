@@ -242,8 +242,13 @@ export function collectHostPaths(
 
 // ── Shell helpers (tested via integration) ────────────────────────────
 
-function getUser(): string {
-  return Deno.env.get("HOMELAB_USER") ?? "spy4x"
+/**
+ * Remote user owning the host paths Syncthing needs. `SSH_USER` is the
+ * current key (#206); `HOMELAB_USER` is what older `servers/<n>/.env`
+ * files still carry. Exported for tests covering both.
+ */
+export function getUser(): string {
+  return Deno.env.get("SSH_USER") ?? Deno.env.get("HOMELAB_USER") ?? "spy4x"
 }
 
 /**
