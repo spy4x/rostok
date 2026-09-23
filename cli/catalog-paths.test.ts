@@ -50,3 +50,32 @@ export default {
     await Deno.remove(tmp, { recursive: true })
   }
 })
+
+// #208 review fix — a relative --catalog path used to crash inside the
+// dynamic import with "Could not convert URL to file path", because a
+// relative path fed straight into `new URL("file://" + path)` puts the
+// first path segment in the URL's host instead of its path.
+Deno.test("loadCatalogFromDir: resolves a relative path against cwd", async () => {
+  const tmp = await Deno.makeTempDir({ prefix: "rostok-catalog-" })
+  const originalCwd = Deno.cwd()
+  try {
+    await Deno.mkdir(join(tmp, "catalog", "demo"), { recursive: true })
+    await Deno.writeTextFile(
+      join(tmp, "catalog", "demo", "+meta.ts"),
+      `import type { StackMeta } from "@rostok/cli"
+export default {
+  name: "demo",
+  description: "fixture",
+  variables: [],
+} satisfies StackMeta
+`,
+    )
+    Deno.chdir(tmp)
+    const entries = await loadCatalogFromDir("catalog")
+    assertEquals(entries.length, 1)
+    assertEquals(entries[0].name, "demo")
+  } finally {
+    Deno.chdir(originalCwd)
+    await Deno.remove(tmp, { recursive: true })
+  }
+})

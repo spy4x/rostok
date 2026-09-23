@@ -6,7 +6,7 @@
 // territory); when set, `loadCatalogFromDir()` walks that directory
 // for `+meta.ts` files.
 
-import { join } from "@std/path"
+import { join, resolve } from "@std/path"
 import { type CatalogEntry, findStack } from "./catalog.ts"
 import { validateStackMeta } from "./stack-meta.ts"
 import { UserError } from "./errors.ts"
@@ -19,29 +19,44 @@ import { UserError } from "./errors.ts"
  * `+meta.ts` files are executed as code (dynamic `import`) — per #208,
  * `--catalog` must resolve to a directory the user trusts.
  *
- * Throws a UserError if the directory doesn't exist or isn't a
- * directory; throws on validation failure.
+ * `catalogDir` is resolved against `Deno.cwd()` first: a relative path
+ * (e.g. `--catalog ./my-stacks`) fed straight into a `file://` URL
+ * produces a malformed URL (the first path segment is parsed as the
+ * URL's host, not part of the path), so every check and the dynamic
+ * `import()` below need the absolute form.
+ *
+ * Throws a UserError if the directory doesn't exist, isn't readable, or
+ * isn't a directory; throws on validation failure.
  */
 export async function loadCatalogFromDir(catalogDir: string): Promise<CatalogEntry[]> {
+  const dir = resolve(catalogDir)
   let stat: Deno.FileInfo
   try {
-    stat = await Deno.stat(catalogDir)
-  } catch {
-    throw new UserError(`--catalog directory not found: ${catalogDir}`)
+    stat = await Deno.stat(dir)
+  } catch (err) {
+    if (err instanceof Deno.errors.NotFound) {
+      throw new UserError(`--catalog directory not found: ${dir}`)
+    }
+    if (err instanceof Deno.errors.PermissionDenied) {
+      throw new UserError(`--catalog directory not readable (permission denied): ${dir}`)
+    }
+    throw new UserError(
+      `can't read --catalog directory ${dir}: ${err instanceof Error ? err.message : String(err)}`,
+    )
   }
   if (!stat.isDirectory) {
-    throw new UserError(`--catalog must be a directory: ${catalogDir}`)
+    throw new UserError(`--catalog must be a directory: ${dir}`)
   }
 
   const subdirs: string[] = []
-  for await (const entry of Deno.readDir(catalogDir)) {
+  for await (const entry of Deno.readDir(dir)) {
     if (entry.isDirectory) subdirs.push(entry.name)
   }
   subdirs.sort()
 
   const entries: CatalogEntry[] = []
   for (const name of subdirs) {
-    const metaPath = join(catalogDir, name, "+meta.ts")
+    const metaPath = join(dir, name, "+meta.ts")
     try {
       await Deno.stat(metaPath)
     } catch {
