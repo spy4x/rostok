@@ -321,6 +321,27 @@ Deno.test("formatCliError: debug=false never appends a trace even if one exists"
 
 const MAIN_TS = join(import.meta.dirname!, "+main.ts")
 
+/** Run `deno run -A cli/+main.ts <args>` as a real subprocess against an existing cwd. */
+async function runMainIn(
+  cwd: string,
+  args: string[],
+  env: Record<string, string> = {},
+): Promise<{ code: number; stdout: string; stderr: string }> {
+  const cmd = new Deno.Command(Deno.execPath(), {
+    args: ["run", "-A", MAIN_TS, ...args],
+    cwd,
+    env,
+    stdout: "piped",
+    stderr: "piped",
+  })
+  const out = await cmd.output()
+  return {
+    code: out.code,
+    stdout: new TextDecoder().decode(out.stdout),
+    stderr: new TextDecoder().decode(out.stderr),
+  }
+}
+
 /** Run `deno run -A cli/+main.ts <args>` as a real subprocess, in a fresh temp cwd. */
 async function runMainSubprocess(
   args: string[],
@@ -328,19 +349,7 @@ async function runMainSubprocess(
 ): Promise<{ code: number; stdout: string; stderr: string }> {
   const tmp = await Deno.makeTempDir({ prefix: "rostok-main-subprocess-" })
   try {
-    const cmd = new Deno.Command(Deno.execPath(), {
-      args: ["run", "-A", MAIN_TS, ...args],
-      cwd: tmp,
-      env,
-      stdout: "piped",
-      stderr: "piped",
-    })
-    const out = await cmd.output()
-    return {
-      code: out.code,
-      stdout: new TextDecoder().decode(out.stdout),
-      stderr: new TextDecoder().decode(out.stderr),
-    }
+    return await runMainIn(tmp, args, env)
   } finally {
     await Deno.remove(tmp, { recursive: true }).catch(() => {})
   }
@@ -358,10 +367,33 @@ function assertNoStackFrame(text: string) {
 Deno.test({
   name: "subprocess: `stack add nope -s a -n` fails as rostok: <message>, no trace",
   async fn() {
-    const result = await runMainSubprocess(["stack", "add", "nope", "-s", "a", "-n"])
-    assertEquals(result.code, 1)
-    assertStringIncludes(result.stderr, "rostok: ")
-    assertNoStackFrame(result.stderr)
+    // Review fix — server "a" must exist first, or this hits "server not
+    // found" instead of ever reaching the catalog lookup the issue's
+    // example is actually about.
+    const tmp = await Deno.makeTempDir({ prefix: "rostok-main-subprocess-" })
+    try {
+      const create = await runMainIn(tmp, [
+        "server",
+        "create",
+        "a",
+        "-n",
+        "--var",
+        "SSH_ADDRESS=root@203.0.113.9",
+        "--var",
+        "DOMAIN=example.com",
+        "--var",
+        "CONTACT_EMAIL=a@example.com",
+      ])
+      assertEquals(create.code, 0, create.stderr)
+
+      const result = await runMainIn(tmp, ["stack", "add", "nope", "-s", "a", "-n"])
+      assertEquals(result.code, 1)
+      assertStringIncludes(result.stderr, "rostok: ")
+      assertStringIncludes(result.stderr, "not found in catalog")
+      assertNoStackFrame(result.stderr)
+    } finally {
+      await Deno.remove(tmp, { recursive: true }).catch(() => {})
+    }
   },
 })
 
@@ -382,7 +414,16 @@ Deno.test({
   async fn() {
     const result = await runMainSubprocess(["stack", "add", "traefik", "--bogus-flag"])
     assertEquals(result.code, 1)
-    assertStringIncludes(result.stderr, "rostok: ")
+    // Review fix — asserting the EXACT line (not just a "rostok: "
+    // substring) matters: cliffy's own ValidationError message would
+    // also satisfy a substring check if formatCliError mistakenly
+    // treated it as an "unexpected error" (a bug) instead of a plain
+    // user error — that branch also starts with "rostok: " but adds
+    // "unexpected error: " plus a second "this is a bug ..." line.
+    assertEquals(
+      result.stderr.trim(),
+      'rostok: Unknown option "--bogus-flag". Did you mean option "--catalog"?',
+    )
     assertNoStackFrame(result.stderr)
   },
 })
