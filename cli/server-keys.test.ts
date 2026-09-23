@@ -7,7 +7,9 @@ import {
   SERVER_KEYS,
   serverDirFor,
   stackKeyPrefix,
+  validateRemotePath,
   validateServerName,
+  validateSshAddress,
 } from "./server-keys.ts"
 
 Deno.test("accepts ordinary server names", () => {
@@ -61,4 +63,50 @@ Deno.test("isServerKey covers SERVER_KEYS and PATH_*", () => {
 Deno.test("stackKeyPrefix uppercases and replaces dashes", () => {
   assertEquals(stackKeyPrefix("librespeed"), "LIBRESPEED_")
   assertEquals(stackKeyPrefix("deepseek-harness"), "DEEPSEEK_HARNESS_")
+})
+
+Deno.test("accepts ordinary SSH targets", () => {
+  for (
+    const v of [
+      "homelab",
+      "192.0.2.1",
+      "root@192.0.2.1",
+      "deploy@host.example.com",
+      "2001:db8::1",
+      "my_alias",
+    ]
+  ) {
+    validateSshAddress(v)
+  }
+})
+
+Deno.test("rejects SSH targets that ssh would read as options", () => {
+  for (
+    const v of [
+      "",
+      "-oProxyCommand=touch x",
+      "-p",
+      "root@host x",
+      "host\n",
+      "a\tb",
+      "h;id",
+      "$(id)",
+    ]
+  ) {
+    assertThrows(() => validateSshAddress(v), UserError, "invalid SSH_ADDRESS")
+  }
+})
+
+Deno.test("accepts plain absolute remote paths", () => {
+  for (const v of ["/srv/apps", "/", "/home/deploy/apps_1", "/srv/v-1.2"]) {
+    validateRemotePath("PATH_APPS", v)
+  }
+})
+
+Deno.test("rejects remote paths with shell metacharacters or ..", () => {
+  for (
+    const v of ["srv/apps", "/srv/$(touch x)", "/srv/a;b", "/srv/a b", "/srv/../etc", "~/apps"]
+  ) {
+    assertThrows(() => validateRemotePath("PATH_APPS", v), UserError, "invalid PATH_APPS")
+  }
 })

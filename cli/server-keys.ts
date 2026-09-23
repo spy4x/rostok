@@ -83,3 +83,39 @@ export function serverDirFor(cwd: string, name: string): string {
   }
   return dir
 }
+
+/** An ssh_config alias, host, `user@host` or IPv6 address; never starts with `-`. */
+export const SSH_ADDRESS_PATTERN = /^[A-Za-z0-9_][A-Za-z0-9._@:-]*$/
+
+/**
+ * Throw a UserError unless `value` is safe to pass to `ssh` and `rsync` as
+ * the target: an ssh_config alias, `host` or `user@host`. A leading `-`
+ * would be read as an ssh option (`-oProxyCommand=…` runs a local
+ * command), and rsync re-spawns ssh with the target itself, so `--` alone
+ * can't protect it. Only letters, digits and `._-@:` are allowed.
+ */
+export function validateSshAddress(value: string): void {
+  if (!SSH_ADDRESS_PATTERN.test(value)) {
+    throw new UserError(
+      `invalid SSH_ADDRESS "${value}": use an ssh_config alias, a host or user@host, ` +
+        `with no spaces and not starting with "-".`,
+    )
+  }
+}
+
+/** Absolute path made of letters, digits, `.`, `_`, `-` and `/`. */
+export const REMOTE_PATH_PATTERN = /^\/[A-Za-z0-9._/-]*$/
+
+/**
+ * Throw a UserError unless `value` is a plain absolute path. Remote paths
+ * such as PATH_APPS and VOLUMES_PATH reach the server's login shell through
+ * rsync, so shell metacharacters and `..` segments are refused.
+ */
+export function validateRemotePath(key: string, value: string): void {
+  if (!REMOTE_PATH_PATTERN.test(value) || value.split("/").includes("..")) {
+    throw new UserError(
+      `invalid ${key} "${value}": use an absolute path of letters, digits, ".", "_", "-" ` +
+        `and "/", e.g. /srv/apps.`,
+    )
+  }
+}
