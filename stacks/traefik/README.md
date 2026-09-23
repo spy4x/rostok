@@ -31,10 +31,11 @@ TRAEFIK_BASIC_AUTH_PASSWORD=...         # Dashboard auth (default: generated, 24
 ```
 
 `before.deploy.ts` bcrypt-hashes `TRAEFIK_BASIC_AUTH_PASSWORD` into
-`dynamic/.htpasswd` on every deploy — no manual `htpasswd` step. Servers
-whose `.env` still carries the pre-#210 `BASIC_AUTH_USER` +
-`BASIC_AUTH_BASE64` (or an already-hashed `BASIC_AUTH_PASSWORD`) keep
-working: the hook falls back to those when the new keys are absent.
+`dynamic/.htpasswd` on every deploy — no manual `htpasswd` step.
+`TRAEFIK_BASIC_AUTH_USER`/`TRAEFIK_BASIC_AUTH_PASSWORD` are the only
+credential keys read; a server whose `.env` still carries the pre-#210
+`BASIC_AUTH_USER`/`BASIC_AUTH_BASE64`/`BASIC_AUTH_PASSWORD` must rename
+them (see the repo's PR that dropped the fallback).
 
 ## Access
 
@@ -48,7 +49,7 @@ Add [middlewares](https://doc.traefik.io/traefik/middlewares/http/overview/) for
 ```yaml
 labels:
   - "traefik.http.routers.myservice.middlewares=auth"
-  - "traefik.http.middlewares.auth.basicauth.users=${BASIC_AUTH_USER}:${BASIC_AUTH_PASSWORD}"
+  - "traefik.http.middlewares.auth.basicauth.users=${TRAEFIK_BASIC_AUTH_USER}:${TRAEFIK_BASIC_AUTH_PASSWORD}"
 ```
 
 ## Resources

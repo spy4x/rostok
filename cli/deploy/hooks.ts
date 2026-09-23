@@ -19,8 +19,8 @@
 //
 // Passing `env` as a plain object (instead of Deno's `--env-file`, which
 // mangles `$`) is the fix for the traefik hook's htpasswd workaround —
-// see stacks/traefik/before.deploy.ts's old comment about
-// BASIC_AUTH_BASE64.
+// see stacks/traefik/before.deploy.ts's TRAEFIK_BASIC_AUTH_PASSWORD
+// handling.
 //
 // One thing `.env`/`.env.root` content must NOT be allowed to do:
 // override the process-level variables a hook's own tool invocations

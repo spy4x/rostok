@@ -13,7 +13,7 @@
  * Generate a URL-safe random password of the requested length.
  *
  * @param length Output length in characters. Default 24 — matches the
- *               design doc's example for `BASIC_AUTH_PASSWORD`.
+ *               design doc's example for `TRAEFIK_BASIC_AUTH_PASSWORD`.
  * @throws RangeError when length is not a positive integer.
  */
 export function generatePassword(length = 24): string {

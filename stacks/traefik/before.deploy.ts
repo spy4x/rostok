@@ -45,10 +45,8 @@ export interface HtpasswdCredential {
 
 /**
  * Resolve the .htpasswd entry to write, from TRAEFIK_BASIC_AUTH_USER +
- * TRAEFIK_BASIC_AUTH_PASSWORD or the pre-#210 legacy inputs
- * (BASIC_AUTH_USER with either BASIC_AUTH_BASE64 or an already-hashed
- * BASIC_AUTH_PASSWORD). Pure — no I/O — so every branch is testable
- * without touching the filesystem.
+ * TRAEFIK_BASIC_AUTH_PASSWORD. Pure — no I/O — so every branch is
+ * testable without touching the filesystem.
  *
  * Throws, naming exactly which key is missing, instead of returning
  * null: dynamic/00-base.yml points dashboard-auth at .htpasswd
@@ -64,9 +62,6 @@ export function resolveHtpasswdCredential(
   if (user && password) {
     return { user, hash: hashPassword(password) }
   }
-  // Report a set-but-incomplete pair precisely, rather than falling
-  // through to the legacy branch and reporting "BASIC_AUTH_USER is not
-  // set" when the real problem is the new PASSWORD key.
   if (user && !password) {
     throw new Error(
       "TRAEFIK_BASIC_AUTH_USER is set but TRAEFIK_BASIC_AUTH_PASSWORD is not — both are required.",
@@ -78,41 +73,8 @@ export function resolveHtpasswdCredential(
     )
   }
 
-  // Neither new key set — legacy fallback (pre-#210 servers/*/.env).
-  const legacyUser = getEnv("BASIC_AUTH_USER")
-  if (!legacyUser) {
-    throw new Error(
-      "No basic-auth credentials set: TRAEFIK_BASIC_AUTH_USER/TRAEFIK_BASIC_AUTH_PASSWORD " +
-        "(and the legacy BASIC_AUTH_USER) are all unset.",
-    )
-  }
-
-  const base64Auth = getEnv("BASIC_AUTH_BASE64")
-  if (base64Auth) {
-    try {
-      const decoded = atob(base64Auth)
-      const colonIdx = decoded.indexOf(":")
-      const plainPassword = colonIdx > 0 ? decoded.substring(colonIdx + 1) : null
-      if (plainPassword) {
-        return { user: legacyUser, hash: hashPassword(plainPassword) }
-      }
-    } catch {
-      // Falls through to BASIC_AUTH_PASSWORD / the final throw below.
-    }
-  }
-
-  const legacyPassword = getEnv("BASIC_AUTH_PASSWORD")
-  if (legacyPassword?.startsWith("$2")) {
-    // Already a bcrypt hash — write it directly.
-    return { user: legacyUser, hash: legacyPassword }
-  }
-  if (legacyPassword) {
-    return { user: legacyUser, hash: hashPassword(legacyPassword) }
-  }
-
   throw new Error(
-    `BASIC_AUTH_USER is set ("${legacyUser}") but neither BASIC_AUTH_BASE64 nor a usable ` +
-      "BASIC_AUTH_PASSWORD provides a password. Set TRAEFIK_BASIC_AUTH_PASSWORD instead.",
+    "No basic-auth credentials set: TRAEFIK_BASIC_AUTH_USER/TRAEFIK_BASIC_AUTH_PASSWORD are unset.",
   )
 }
 

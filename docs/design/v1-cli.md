@@ -190,13 +190,13 @@ export default {
       required: true,
     },
     {
-      key: "BASIC_AUTH_USER",
+      key: "TRAEFIK_BASIC_AUTH_USER",
       question: "Traefik basic-auth username?",
       default: "admin",
       required: true,
     },
     {
-      key: "BASIC_AUTH_PASSWORD",
+      key: "TRAEFIK_BASIC_AUTH_PASSWORD",
       question: "Traefik basic-auth password?",
       default: () => generatePassword(24),
       required: true,

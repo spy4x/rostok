@@ -65,7 +65,7 @@ Deno.test("passwordEntropyBits: rejects negative or non-integer length", () => {
 })
 
 Deno.test("generatePassword + passwordEntropyBits: documented default is 144 bits", () => {
-  // The design doc picks 24 chars for BASIC_AUTH_PASSWORD.
+  // The design doc picks 24 chars for TRAEFIK_BASIC_AUTH_PASSWORD.
   // 24 chars × 6 bits = 144 bits — strong enough for an admin password.
   const pw = generatePassword()
   assertNotStrictEquals(pw, "")
