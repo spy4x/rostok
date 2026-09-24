@@ -483,6 +483,19 @@ Deno.test("probeServer: an SSH failure falls back to defaults with a reason", as
   })
 })
 
+// Security review — probeServer is exported and best-effort: it never
+// re-validates its own `target` beyond what validateSshAddress already
+// did upstream in the normal flow, so a direct caller passing a control
+// character must not get it echoed unescaped into the `reason` message.
+// This target fails parseSshAddress's own host-character check (a
+// control character isn't in SSH_HOST_CHARS_PATTERN), landing in
+// probeServer's outer catch, where `target` used to be interpolated raw.
+Deno.test("probeServer: strips control characters from the target before it reaches the reason message", async () => {
+  const result = await probeServer("root@192.0.2.1\x07evil")
+  assertEquals(result.reason?.includes("\x07"), false, result.reason)
+  assertStringIncludes(result.reason ?? "", "192.0.2.1evil")
+})
+
 Deno.test("server create uses the SSH probe's docker GID as the default", async () => {
   await withFakeSsh(OK_SSH, () =>
     withTmpDir(async (dir) => {
@@ -550,6 +563,33 @@ echo "SSH_USER=deploy"
     assertStringIncludes(argv, "BatchMode=yes")
     assertStringIncludes(argv, "StrictHostKeyChecking=accept-new")
     assertStringIncludes(argv, "-- root@192.0.2.1")
+  } finally {
+    await Deno.remove(argsFile).catch(() => {})
+  }
+})
+
+// #218 — SSH_ADDRESS=root@192.0.2.1:2222 must reach ssh as `-p 2222
+// root@192.0.2.1`, built via server-keys.ts's `sshArgs` — not as one
+// unresolvable "192.0.2.1:2222" hostname.
+Deno.test("probeServer: a port in SSH_ADDRESS reaches ssh as -p <port>, split from the host", async () => {
+  const argsFile = await Deno.makeTempFile({ prefix: "rostok-ssh-args-" })
+  try {
+    const script = `#!/bin/sh
+echo "$@" > "${argsFile}"
+echo "DOCKER_GID=988"
+echo "SSH_UID=1000"
+echo "SSH_GID=1000"
+echo "SSH_USER=deploy"
+`
+    await withFakeSsh(script, async () => {
+      await probeServer("root@192.0.2.1:2222")
+    })
+    const argv = (await Deno.readTextFile(argsFile)).trim()
+    assertStringIncludes(argv, "-p 2222")
+    assertStringIncludes(argv, "-- root@192.0.2.1")
+    // The port must never survive as part of the target string itself —
+    // that's the #218 bug (ssh reading "192.0.2.1:2222" as one hostname).
+    assertEquals(argv.includes("192.0.2.1:2222"), false, argv)
   } finally {
     await Deno.remove(argsFile).catch(() => {})
   }

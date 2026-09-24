@@ -6,16 +6,15 @@
 // verbatim in --help output).
 
 import { Command, ValidationError } from "@cliffy/command"
-import { join, relative } from "@std/path"
 import { DESCRIPTION, NAME, VERSION } from "./version.ts"
 import { UserError } from "./errors.ts"
 import { SERVER_VAR_ALIASES, SERVER_VAR_KEYS, serverCreate } from "./server-create.ts"
-import { stackAdd } from "./stack-add.ts"
-import { serverDirFor } from "./server-keys.ts"
-import { buildNextSteps } from "./next-steps.ts"
+import { parseStackFlags, parseVarFlags } from "./cli-flags.ts"
 import { deployCommand } from "./commands/deploy.ts"
 import { envCommand } from "./commands/env.ts"
 import { stackListCommand } from "./commands/list.ts"
+import { stackAddCommand } from "./commands/stack-add.ts"
+import { stackRemoveCommand } from "./commands/stack-remove.ts"
 // Side-effect import: keep arktype + StackMeta + defaults reachable through
 // the public barrel. The CLI entry is the canonical "load the package"
 // location.
@@ -41,6 +40,7 @@ Examples:
                                            # full wizard, non-interactive
     rostok server create home             # create one server, standalone
     rostok stack add traefik -s home      # add a stack to a server
+    rostok stack remove traefik -s home   # remove a stack from a server
     rostok stack list --tree              # browse the bundled catalog
     rostok deploy home                    # deploy (wraps deno task deploy)
     rostok env status                     # encryption posture + next steps`
@@ -129,63 +129,8 @@ Examples:
     "stack",
     new Command()
       .description("Manage stacks from the bundled catalog.")
-      .command(
-        "add",
-        new Command()
-          .arguments("<name:string>")
-          .option("-s, --server <name:string>", "target server", { required: true })
-          .option("-n, --non-interactive", "skip prompts, use defaults")
-          .option(
-            "--catalog <dir:string>",
-            "override bundled catalog directory (must exist; its stacks run as code)",
-          )
-          .option(
-            "--var <kv...:string[]>",
-            "repeatable; overrides one variable (KEY=VAL)",
-            { collect: true },
-          )
-          .description(
-            `Add a stack to a server (resolves variables, writes .env, encrypts).
-
-A value already in servers/<server>/.env is kept unless you pass --var
-for that key — re-running never clobbers another stack's key or
-rotates an existing secret.
-
-Examples:
-
-    rostok stack add traefik -s home                    # interactive
-    rostok stack add traefik -s home -n                 # non-interactive, defaults only
-    rostok stack add traefik -s home \\
-        --var DOMAIN=example.com \\
-        --var TRAEFIK_BASIC_AUTH_USER=admin              # pre-supply variables`,
-          )
-          .action(async (options, name: string) => {
-            const cwd = Deno.cwd()
-            const catalogDir = options.catalog ?? undefined
-            const providedVars = parseVarFlags(options.var)
-            const result = await stackAdd(name, options.server, {
-              cwd,
-              catalogDir,
-              providedVars,
-              nonInteractive: options.nonInteractive,
-            })
-            // #212: what was written and what to run next — a bare
-            // "added X to Y" summary left a first-timer with no idea
-            // what came after.
-            const serverDir = serverDirFor(cwd, options.server)
-            const lines = await buildNextSteps({
-              serverName: options.server,
-              serverDir,
-              written: [
-                relative(cwd, join(serverDir, ".env")),
-                relative(cwd, join(serverDir, "config.json")),
-              ],
-              missingRequires: result.declinedRequires,
-            })
-            console.log("")
-            for (const line of lines) console.log(line)
-          }),
-      )
+      .command("add", stackAddCommand)
+      .command("remove", stackRemoveCommand)
       .command(
         "list",
         stackListCommand,
@@ -242,47 +187,7 @@ if (import.meta.main) {
   await runCli(Deno.args)
 }
 
-/** Parse `--var KEY=VAL` flags into a record. */
-export function parseVarFlags(flags: unknown): Record<string, string> {
-  const out: Record<string, string> = {}
-  const flat = flattenCliffyCollect(flags)
-  for (const f of flat) {
-    const eq = f.indexOf("=")
-    if (eq < 0) {
-      throw new UserError(`--var requires KEY=VAL form, got: ${f}`)
-    }
-    out[f.slice(0, eq)] = f.slice(eq + 1)
-  }
-  return out
-}
-
-/** Parse repeatable `--stack <name>` flags into a plain string array. */
-export function parseStackFlags(flags: unknown): string[] {
-  return flattenCliffyCollect(flags)
-}
-
-/**
- * cliffy's `<...:string[]>` / `<...:string...>` with `collect: true`
- * produces a CIRCULAR structure: the last slot points back to the root
- * array. Walk to a bounded depth (strings live at depth 2 max) and bail
- * on cycles.
- */
-function flattenCliffyCollect(flags: unknown): string[] {
-  const flat: string[] = []
-  if (!flags) return flat
-  const seen = new WeakSet<object>()
-  const walk = (v: unknown, depth: number) => {
-    if (typeof v === "string") {
-      flat.push(v)
-      return
-    }
-    if (depth > 4 || v === null || typeof v !== "object") return
-    if (seen.has(v as object)) return // cycle — stop
-    seen.add(v as object)
-    if (Array.isArray(v)) {
-      for (const x of v) walk(x, depth + 1)
-    }
-  }
-  walk(flags, 0)
-  return flat
-}
+// Re-exported for 1.x import-site compatibility (cli/+main.test.ts and any
+// external caller import these from here) — the implementation lives in
+// cli-flags.ts so cli/commands/*.ts can use it without importing +main.ts.
+export { parseStackFlags, parseVarFlags } from "./cli-flags.ts"

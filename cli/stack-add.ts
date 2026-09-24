@@ -40,7 +40,7 @@ import {
   promptValue,
   withKeyLabel,
 } from "./prompts.ts"
-import { serverDirFor } from "./server-keys.ts"
+import { hasReservedStackKeyPrefix, serverDirFor, stackKeyPrefix } from "./server-keys.ts"
 import { UserError } from "./errors.ts"
 
 /** Result of a stack-add invocation. */
@@ -113,6 +113,20 @@ export async function stackAdd(
 
   const catalog = await resolveCatalog(opts.catalogDir)
   const entry = findStack(catalog, stackName)
+
+  // Same check `validateStackConfigs` (cli/deploy/validate-stack-config.ts)
+  // makes at deploy time, run here too so a reserved-prefix stack is
+  // refused at `stack add` instead of only failing later, at deploy, once
+  // it's already in config.json — its own key-prefix would let its
+  // .env-sourced keys collide with names tools a hook spawns treat
+  // specially (GIT_, DOCKER_, SSH_, ...).
+  if (hasReservedStackKeyPrefix(entry.name)) {
+    throw new UserError(
+      `stack "${entry.name}": its own key prefix "${
+        stackKeyPrefix(entry.name)
+      }" is reserved — rename the stack.`,
+    )
+  }
 
   // Review fix — a requires cycle (a requires b, b requires a) would
   // otherwise recurse forever. `_visiting` tracks every stack name

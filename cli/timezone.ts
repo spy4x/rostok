@@ -25,6 +25,8 @@
 // Each source is injectable so tests can check the exact order without
 // shelling out or touching the filesystem.
 
+import { parseSshAddress, sshArgs } from "./server-keys.ts"
+
 export interface TimezoneSources {
   /**
    * Remote `timedatectl` over the SSH target already probed for #207.
@@ -128,18 +130,17 @@ export async function remoteTimedatectlTimezone(
   const deadlineMs = opts.deadlineMs ?? 5_000
   let child: Deno.ChildProcess
   try {
+    // #218: same argv-building as server-create.ts's probeServer — a
+    // ported SSH_ADDRESS (`root@192.0.2.1:2222`) must reach ssh as
+    // `-p 2222 root@192.0.2.1`, not one unresolvable hostname string.
+    const sshTarget = parseSshAddress(target)
+    const args = [
+      "-o",
+      "StrictHostKeyChecking=accept-new",
+      ...sshArgs(sshTarget, ["timedatectl show -p Timezone --value"], { batchMode: true }),
+    ]
     child = new Deno.Command("ssh", {
-      args: [
-        "-o",
-        "BatchMode=yes",
-        "-o",
-        "ConnectTimeout=5",
-        "-o",
-        "StrictHostKeyChecking=accept-new",
-        "--",
-        target,
-        "timedatectl show -p Timezone --value",
-      ],
+      args,
       stdout: "piped",
       stderr: "null",
     }).spawn()

@@ -247,6 +247,7 @@ Deno.test("runWizard: multi-select — picking two stacks adds both", async () =
       catalogDir,
       serverInputs: SERVER_INPUTS,
       pickStacksFn: () => Promise.resolve(["traefik", "web"]),
+      offerKeyGeneration: () => Promise.resolve(),
     })
     assertEquals(result.stackAdds.map((r) => r.stackName).sort(), ["traefik", "web"])
   })
@@ -267,6 +268,7 @@ Deno.test("runWizard: the stack picker's options show each stack's description n
         seenOptions = options
         return Promise.resolve([])
       },
+      offerKeyGeneration: () => Promise.resolve(),
     })
     const traefikOption = seenOptions.find((o) => o.value === "traefik")
     assertEquals(traefikOption?.name, "traefik — reverse proxy")
@@ -290,6 +292,7 @@ Deno.test("runWizard: multi-select — picking traefik + web together never asks
       confirmFn: () => {
         throw new Error("should never be asked — traefik was in the same selection")
       },
+      offerKeyGeneration: () => Promise.resolve(),
     })
     assertEquals(result.stackAdds.map((r) => r.stackName), ["traefik", "web"])
     assertEquals(result.stackAdds.every((r) => r.declinedRequires.length === 0), true)
@@ -332,7 +335,16 @@ Deno.test("runWizard: the key-generation offer does NOT run in non-interactive m
 Deno.test("runWizard: the key-generation offer does NOT re-run on an already-initialized project", async () => {
   await withTmpDir(async (dir) => {
     // First run initializes the project (shouldOfferKeyGeneration: true).
-    await runWizard({ cwd: dir, serverInputs: SERVER_INPUTS, skipStackAdd: true })
+    // This call is interactive (no `nonInteractive`), so it must also
+    // inject `offerKeyGeneration` — otherwise it reaches the real
+    // cliffy Confirm.prompt and hangs on a real TTY (reproduced with
+    // `python3 -c 'import pty; pty.spawn(...)'`).
+    await runWizard({
+      cwd: dir,
+      serverInputs: SERVER_INPUTS,
+      skipStackAdd: true,
+      offerKeyGeneration: () => Promise.resolve(),
+    })
     let calls = 0
     await runWizard({
       cwd: dir,

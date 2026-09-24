@@ -10,6 +10,20 @@
 import { join } from "@std/path"
 import { readEnvFile } from "./env-files.ts"
 import { readServerConfig } from "./stack-add.ts"
+import { parseSshAddress as parseSshTarget } from "./server-keys.ts"
+
+/**
+ * Strip ASCII control characters before echoing an untrusted
+ * SSH_ADDRESS value into this hint text — same guard as server-keys.ts's
+ * private `sanitizeForLog`, duplicated here since that one isn't
+ * exported. `.env`'s SSH_ADDRESS is normally already validated by
+ * `validateSshAddress` at write time, but this function reads whatever
+ * is on disk, which a hand-edit could carry anything in.
+ */
+function sanitizeForLog(s: string): string {
+  // deno-lint-ignore no-control-regex
+  return s.replace(/[\x00-\x1f\x7f]/g, "")
+}
 
 export interface NextStepsInput {
   serverName: string
@@ -33,46 +47,39 @@ export interface NextStepsInput {
 
 type HostFamily = "ipv4" | "ipv6" | "other"
 
+/** IPv4 dotted-quad, for classifying an already-parsed host. */
+const IPV4_PATTERN = /^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/
+
 /**
- * Parse the host portion of an SSH_ADDRESS (after stripping `user@`),
- * matching the same rules #228's deploy-side parser uses: a bracketed
- * IPv6 literal may carry a `:port` suffix (stripped); a bare IPv6
- * literal never does (`:\d+$` is NOT stripped from it — that would
- * mangle the address itself, since a bare IPv6 literal's own trailing
- * segment can look like ":<hex>", not a port); IPv4 or a
- * hostname/alias may carry a single `:port` (stripped).
+ * Classify an already-parsed host (no user, no port, no brackets — see
+ * `parseSshAddress` in server-keys.ts) for the DNS record type it needs:
+ * `A` for IPv4, `AAAA` for anything with a `:` (IPv6 — bare or was
+ * bracketed), `other` for an alias/hostname.
  */
-function parseSshHost(afterUser: string): { host: string; family: HostFamily } {
-  // Bracketed IPv6, optionally with :port — e.g. [2001:db8::1]:2222
-  const bracketed = afterUser.match(/^\[([0-9a-fA-F:]+)\](?::\d+)?$/)
-  if (bracketed) {
-    return { host: bracketed[1], family: "ipv6" }
-  }
-
-  // A bare literal with 2+ colons and only hex/colon characters is an
-  // unbracketed IPv6 address (e.g. 2001:db8::1) — it never carries a
-  // port without brackets (SSH_ADDRESS_PATTERN allows it unbracketed
-  // precisely because ssh_config/ssh accept it that way), so nothing
-  // is stripped from it.
-  const colonCount = (afterUser.match(/:/g) ?? []).length
-  if (colonCount >= 2 && /^[0-9a-fA-F:]+$/.test(afterUser)) {
-    return { host: afterUser, family: "ipv6" }
-  }
-
-  // host[:port] — IPv4 or an alias/hostname. At most one colon reaches
-  // here (2+ was handled above), so stripping a trailing :port is safe.
-  const hostPart = afterUser.replace(/:\d+$/, "")
-  if (/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(hostPart)) {
-    return { host: hostPart, family: "ipv4" }
-  }
-  return { host: hostPart, family: "other" }
+function classifyHost(host: string): HostFamily {
+  if (IPV4_PATTERN.test(host)) return "ipv4"
+  if (host.includes(":")) return "ipv6"
+  return "other"
 }
 
-/** Strip `user@` from SSH_ADDRESS and parse the remaining host per {@link parseSshHost}. */
+/**
+ * Parse an SSH_ADDRESS for the DNS-record hint, via the same
+ * `parseSshAddress` deploy and the SSH probe use (server-keys.ts) — so
+ * a bracketed `[2001:db8::1]:2222` or a plain `203.0.113.9:2222` is
+ * stripped of its port exactly the same way everywhere. Falls back to
+ * `family: "other"` on anything `parseSshAddress` itself would reject
+ * (e.g. a value hand-edited into `.env` after the fact) rather than
+ * throwing — this is a display hint, not a validity check.
+ */
 function parseSshAddress(sshAddress: string): { host: string; family: HostFamily } {
-  const at = sshAddress.lastIndexOf("@")
-  const afterUser = at >= 0 ? sshAddress.slice(at + 1) : sshAddress
-  return parseSshHost(afterUser)
+  try {
+    const target = parseSshTarget(sshAddress)
+    return { host: target.host, family: classifyHost(target.host) }
+  } catch {
+    const at = sshAddress.lastIndexOf("@")
+    const host = at >= 0 ? sshAddress.slice(at + 1) : sshAddress
+    return { host, family: "other" }
+  }
 }
 
 /** Paths from `paths` that actually exist on disk right now (relative to the process cwd). */
@@ -148,8 +155,10 @@ export async function buildNextSteps(input: NextStepsInput): Promise<string[]> {
         lines.push(`  A ${domain} → <server IP>`)
         lines.push(`  A *.${domain} → <server IP>`)
         lines.push(
-          `  (SSH_ADDRESS "${sshAddress}" isn't a plain IP — look up the server's public IP ` +
-            "and use it for both records above.)",
+          `  (SSH_ADDRESS "${
+            sanitizeForLog(sshAddress)
+          }" isn't a plain IP — look up the server's public IP and use it for both records ` +
+            "above.)",
         )
       }
     }

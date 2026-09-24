@@ -510,3 +510,41 @@ Deno.test("a --var matching the existing value counts as kept, not new", async (
     assertEquals(result.keptCount, 1)
   })
 })
+
+// ─────────────────────────────────────────────────────────────────────
+// Leftover from #227 review — `stack add` must refuse a stack whose own
+// key prefix is reserved (same check validate-stack-config.ts makes at
+// deploy time), so it fails at add time instead of only surfacing once
+// it's already in config.json.
+// ─────────────────────────────────────────────────────────────────────
+
+const GIT_PREFIXED_STACK_META = `
+import type { StackMeta } from "@rostok/cli"
+export default {
+  name: "git-mirror",
+  description: "fixture — name collides with the reserved GIT_ prefix",
+  variables: [{ key: "GIT_MIRROR_URL", default: "https://example.com", required: false }],
+} satisfies StackMeta
+`
+
+Deno.test("stack add refuses a stack whose own key prefix is reserved (GIT_)", async () => {
+  await withTmpDir(async (dir) => {
+    const catalogDir = join(dir, "catalog")
+    await writeCatalog(catalogDir, { "git-mirror": GIT_PREFIXED_STACK_META })
+    await seedServer(dir, "test", { PROJECT: "hl", DOMAIN: "example.com" })
+
+    const err = await assertRejects(
+      () => stackAdd("git-mirror", "test", { cwd: dir, catalogDir, nonInteractive: true }),
+      UserError,
+    )
+    assertStringIncludes(
+      err.message,
+      `stack "git-mirror": its own key prefix "GIT_MIRROR_" is reserved — rename the stack.`,
+    )
+
+    // Mutation proof: nothing written when the refusal fires before any
+    // .env mutation.
+    const entries = await readEnvFile(join(dir, "servers", "test", ".env"))
+    assertEquals(entries.some((e) => e.key === "GIT_MIRROR_URL"), false)
+  })
+})
