@@ -1,11 +1,12 @@
 // Tests for stacks/syncthing/after.deploy.ts pure reconciliation logic.
 
-import { assertEquals } from "@std/assert"
+import { assertEquals, assertThrows } from "@std/assert"
 
 import { type Device, type FolderRef, validateConfig } from "./before.deploy.ts"
 import {
   type ApiDevice,
   type ApiFolder,
+  buildRunRemoteScriptArgs,
   deepEqual,
   desiredDevice,
   desiredFolder,
@@ -14,6 +15,7 @@ import {
   isSystemStatus,
   resolveFolderDeviceIds,
   runRemote,
+  sshOptionArgs,
 } from "./after.deploy.ts"
 
 const HOME_ID = "HOME-LOCAL-DEVICE-IDENTIFIER-PLACEHOLDER-DUMMY0"
@@ -372,5 +374,54 @@ Deno.test("runRemote: SSH_ADDRESS=root@192.0.2.1:2222 (parsed to SSH_HOST/SSH_PO
         "id",
       ])
     })
+  })
+})
+
+Deno.test("runRemote: no SSH_PORT — omits -p entirely (an ssh_config alias's own Port wins)", async () => {
+  await withFakeSsh(async () => {
+    await withEnv({ SSH_HOST: "homelab", SSH_USER: "root" }, async () => {
+      Deno.env.delete("SSH_PORT")
+      const result = await runRemote(["id"])
+      const argv = result.stdout.split("\n").filter((l) => l.length > 0)
+      assertEquals(argv, [
+        "-o",
+        "ConnectTimeout=10",
+        "-o",
+        "BatchMode=yes",
+        "--",
+        "root@homelab",
+        "id",
+      ])
+    })
+  })
+})
+
+Deno.test("sshOptionArgs: rejects a non-numeric SSH_PORT", async () => {
+  await withEnv({ SSH_HOST: "homelab", SSH_PORT: "abc" }, async () => {
+    assertThrows(() => sshOptionArgs(), Error, "invalid SSH_PORT")
+  })
+})
+
+Deno.test("buildRunRemoteScriptArgs: -T is ssh's own option, placed before '--', not after the target", async () => {
+  await withEnv({ SSH_HOST: "192.0.2.1", SSH_PORT: "2222", SSH_USER: "root" }, async () => {
+    const args = buildRunRemoteScriptArgs(["arg1"])
+    const dashDashIdx = args.indexOf("--")
+    const tIdx = args.indexOf("-T")
+    assertEquals(tIdx, 0)
+    assertEquals(tIdx < dashDashIdx, true, `-T (${tIdx}) must come before -- (${dashDashIdx})`)
+    assertEquals(args, [
+      "-T",
+      "-p",
+      "2222",
+      "-o",
+      "ConnectTimeout=10",
+      "-o",
+      "BatchMode=yes",
+      "--",
+      "root@192.0.2.1",
+      "bash",
+      "-s",
+      "arg1",
+    ])
   })
 })

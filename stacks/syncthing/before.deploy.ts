@@ -269,14 +269,34 @@ function targetHost(): string {
   return user ? `${user}@${host}` : host
 }
 
+/** Digits only, 1-65535 — the same range cli/server-keys.ts's parseSshAddress enforces. */
+function isValidPort(port: string): boolean {
+  if (!/^\d+$/.test(port)) return false
+  const n = Number(port)
+  return n >= 1 && n <= 65535
+}
+
 /**
- * The ssh options every remote call here gets: `-p <SSH_PORT>`, then
- * `-o ConnectTimeout=10`, `-o BatchMode=yes` — see cli/deploy/hooks.ts's
- * module comment for the SSH_PORT default-22 decision (#229). Exported
+ * The ssh options every remote call here gets: `-p <SSH_PORT>` only when
+ * SSH_PORT is set (SSH_ADDRESS carried an explicit port — never a
+ * default, see cli/deploy/hooks.ts's module comment), then `-o
+ * ConnectTimeout=10`, `-o BatchMode=yes`. Throws if SSH_PORT is set but
+ * not a valid 1-65535 port — defense in depth even though SSH_ADDRESS
+ * was already validated once before deploy ever set SSH_PORT. Exported
  * for tests.
  */
 export function sshOptionArgs(): string[] {
-  return ["-p", Deno.env.get("SSH_PORT") ?? "22", "-o", "ConnectTimeout=10", "-o", "BatchMode=yes"]
+  const port = Deno.env.get("SSH_PORT")
+  if (port !== undefined && !isValidPort(port)) {
+    throw new Error(`invalid SSH_PORT "${port}": expected digits 1-65535`)
+  }
+  return [
+    ...(port !== undefined ? ["-p", port] : []),
+    "-o",
+    "ConnectTimeout=10",
+    "-o",
+    "BatchMode=yes",
+  ]
 }
 
 /**
@@ -323,7 +343,18 @@ export async function runRemote(
  *
  * `args` are passed as bash positional parameters $1..$N (in order).
  * `$0` is always `bash` — don't prefix args with `--`.
+ *
+ * `-T` (disable pty allocation — this call streams a script over stdin,
+ * never an interactive session) is ssh's OWN option, so it goes before
+ * ssh's `--`, not after the target: once ssh sees `--`, everything past
+ * it is the remote command, and `-T` there would be sent to the remote
+ * shell as the literal first word of the command instead of read as an
+ * ssh flag — the fix (this hook used to place it after the target).
  */
+export function buildRunRemoteScriptArgs(bashArgs: string[]): string[] {
+  return ["-T", ...sshOptionArgs(), "--", targetHost(), "bash", "-s", ...bashArgs]
+}
+
 async function runRemoteScript(
   script: string,
   args: string[] = [],
@@ -331,7 +362,7 @@ async function runRemoteScript(
   const host = Deno.env.get("SSH_HOST")
   const proc = host
     ? new Deno.Command("ssh", {
-      args: [...sshOptionArgs(), "--", targetHost(), "-T", "bash", "-s", ...args],
+      args: buildRunRemoteScriptArgs(args),
       stdin: "piped",
       stdout: "piped",
       stderr: "piped",

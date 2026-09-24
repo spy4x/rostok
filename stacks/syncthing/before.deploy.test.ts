@@ -5,6 +5,7 @@ import { assertEquals, assertThrows } from "@std/assert"
 
 import {
   assertUsableApiKey,
+  buildRunRemoteScriptArgs,
   collectHostPaths,
   ConfigError,
   expandHome,
@@ -12,6 +13,7 @@ import {
   type Mount,
   resolveFolderHostPath,
   runRemote,
+  sshOptionArgs,
   validateConfig,
 } from "./before.deploy.ts"
 
@@ -350,7 +352,7 @@ Deno.test("runRemote: SSH_ADDRESS=root@192.0.2.1:2222 (parsed to SSH_HOST/SSH_PO
   })
 })
 
-Deno.test("runRemote: SSH_PORT defaults to 22 and no user means a bare host target", async () => {
+Deno.test("runRemote: an explicit SSH_PORT=22 still reaches ssh as -p, no user means a bare host target", async () => {
   const prevUser = Deno.env.get("SSH_USER")
   Deno.env.delete("SSH_USER")
   try {
@@ -375,4 +377,63 @@ Deno.test("runRemote: SSH_PORT defaults to 22 and no user means a bare host targ
     if (prevUser === undefined) Deno.env.delete("SSH_USER")
     else Deno.env.set("SSH_USER", prevUser)
   }
+})
+
+Deno.test("runRemote: no SSH_PORT — omits -p entirely (an ssh_config alias's own Port wins)", async () => {
+  await withFakeSsh(async () => {
+    await withEnv({ SSH_HOST: "homelab", SSH_USER: "root" }, async () => {
+      Deno.env.delete("SSH_PORT")
+      const result = await runRemote(["id"])
+      const argv = result.stdout.split("\n").filter((l) => l.length > 0)
+      assertEquals(argv, [
+        "-o",
+        "ConnectTimeout=10",
+        "-o",
+        "BatchMode=yes",
+        "--",
+        "root@homelab",
+        "id",
+      ])
+    })
+  })
+})
+
+Deno.test("sshOptionArgs: rejects a non-numeric SSH_PORT", async () => {
+  await withEnv({ SSH_HOST: "homelab", SSH_PORT: "abc" }, async () => {
+    assertThrows(() => sshOptionArgs(), Error, "invalid SSH_PORT")
+  })
+})
+
+Deno.test("sshOptionArgs: rejects a port outside 1-65535", async () => {
+  await withEnv({ SSH_HOST: "homelab", SSH_PORT: "0" }, async () => {
+    assertThrows(() => sshOptionArgs(), Error, "invalid SSH_PORT")
+  })
+})
+
+Deno.test("buildRunRemoteScriptArgs: -T is ssh's own option, placed before '--', not after the target", async () => {
+  await withEnv({ SSH_HOST: "192.0.2.1", SSH_PORT: "2222", SSH_USER: "root" }, async () => {
+    const args = buildRunRemoteScriptArgs(["arg1"])
+    // -T must appear strictly before "--": ssh stops parsing its own
+    // options at "--", so a "-T" placed after the target would be sent
+    // to the remote shell as the literal first word of the command
+    // instead of read as an ssh flag (the #229 bug this fixes).
+    const dashDashIdx = args.indexOf("--")
+    const tIdx = args.indexOf("-T")
+    assertEquals(tIdx, 0)
+    assertEquals(tIdx < dashDashIdx, true, `-T (${tIdx}) must come before -- (${dashDashIdx})`)
+    assertEquals(args, [
+      "-T",
+      "-p",
+      "2222",
+      "-o",
+      "ConnectTimeout=10",
+      "-o",
+      "BatchMode=yes",
+      "--",
+      "root@192.0.2.1",
+      "bash",
+      "-s",
+      "arg1",
+    ])
+  })
 })
