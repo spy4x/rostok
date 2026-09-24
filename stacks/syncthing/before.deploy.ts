@@ -260,24 +260,45 @@ export function getUser(): string {
 }
 
 /**
- * Run a command on the remote host (or locally if SSH_ADDRESS is unset),
- * passing arguments via argv. NEVER compose a shell command string from
- * user-controlled paths — that allows command injection if a path
- * contains spaces, quotes, or backticks.
+ * `[user@]host` — no brackets: ssh gets host and -p <port> as separate
+ * argv slots.
+ */
+function targetHost(): string {
+  const host = Deno.env.get("SSH_HOST")!
+  const user = Deno.env.get("SSH_USER")
+  return user ? `${user}@${host}` : host
+}
+
+/**
+ * The ssh options every remote call here gets: `-p <SSH_PORT>`, then
+ * `-o ConnectTimeout=10`, `-o BatchMode=yes` — see cli/deploy/hooks.ts's
+ * module comment for the SSH_PORT default-22 decision (#229). Exported
+ * for tests.
+ */
+export function sshOptionArgs(): string[] {
+  return ["-p", Deno.env.get("SSH_PORT") ?? "22", "-o", "ConnectTimeout=10", "-o", "BatchMode=yes"]
+}
+
+/**
+ * Run a command on the remote host (or locally if SSH_HOST is unset —
+ * used by this hook's own tests), passing arguments via argv. NEVER
+ * compose a shell command string from user-controlled paths — that
+ * allows command injection if a path contains spaces, quotes, or
+ * backticks.
  *
  * Each shell op is a separate command. We chain them via `&&` inside the
  * shell, but the path/user args are passed as positional parameters so
  * they are not interpreted by the shell.
  */
-async function runRemote(
+export async function runRemote(
   argv: string[],
 ): Promise<{ code: number; stdout: string; stderr: string }> {
-  const ssh = Deno.env.get("SSH_ADDRESS")
+  const host = Deno.env.get("SSH_HOST")
   const cmd0 = argv[0]
   const cmdArgs = argv.slice(1)
-  const proc = ssh
+  const proc = host
     ? new Deno.Command("ssh", {
-      args: [ssh, "--", cmd0, ...cmdArgs],
+      args: [...sshOptionArgs(), "--", targetHost(), cmd0, ...cmdArgs],
       stdout: "piped",
       stderr: "piped",
     })
@@ -307,10 +328,10 @@ async function runRemoteScript(
   script: string,
   args: string[] = [],
 ): Promise<{ code: number; stdout: string; stderr: string }> {
-  const ssh = Deno.env.get("SSH_ADDRESS")
-  const proc = ssh
+  const host = Deno.env.get("SSH_HOST")
+  const proc = host
     ? new Deno.Command("ssh", {
-      args: [ssh, "-T", "bash", "-s", ...args],
+      args: [...sshOptionArgs(), "--", targetHost(), "-T", "bash", "-s", ...args],
       stdin: "piped",
       stdout: "piped",
       stderr: "piped",

@@ -163,24 +163,44 @@ const API_KEY = Deno.env.get("SYNCTHING_API_KEY") ?? ""
 const CONTAINER = "hl-syncthing"
 
 /**
- * Run a command on the remote host (or locally if SSH_ADDRESS is unset),
- * passing arguments via argv. NEVER compose a shell command string from
- * user-controlled paths.
+ * `[user@]host` — no brackets: ssh gets host and -p <port> as separate
+ * argv slots.
+ */
+function targetHost(): string {
+  const host = Deno.env.get("SSH_HOST")!
+  const user = Deno.env.get("SSH_USER")
+  return user ? `${user}@${host}` : host
+}
+
+/**
+ * The ssh options every remote call here gets: `-p <SSH_PORT>`, then
+ * `-o ConnectTimeout=10`, `-o BatchMode=yes` — see cli/deploy/hooks.ts's
+ * module comment for the SSH_PORT default-22 decision (#229). Exported
+ * for tests.
+ */
+export function sshOptionArgs(): string[] {
+  return ["-p", Deno.env.get("SSH_PORT") ?? "22", "-o", "ConnectTimeout=10", "-o", "BatchMode=yes"]
+}
+
+/**
+ * Run a command on the remote host (or locally if SSH_HOST is unset —
+ * used by this hook's own tests), passing arguments via argv. NEVER
+ * compose a shell command string from user-controlled paths.
  *
  * `argv[0]` is the program name; the rest are its arguments. We never
  * embed `argv` itself as the args list — that would double-include the
  * program name and confuse CLIs like docker exec (which treats leading
  * flags from a doubled argv as its own flags).
  */
-async function runRemote(
+export async function runRemote(
   argv: string[],
 ): Promise<{ code: number; stdout: string; stderr: string }> {
-  const ssh = Deno.env.get("SSH_ADDRESS")
+  const host = Deno.env.get("SSH_HOST")
   const cmd0 = argv[0]
   const cmdArgs = argv.slice(1)
-  const proc = ssh
+  const proc = host
     ? new Deno.Command("ssh", {
-      args: [ssh, "--", cmd0, ...cmdArgs],
+      args: [...sshOptionArgs(), "--", targetHost(), cmd0, ...cmdArgs],
       stdout: "piped",
       stderr: "piped",
     })
@@ -215,10 +235,10 @@ async function runRemoteScript(
   script: string,
   args: string[] = [],
 ): Promise<{ code: number; stdout: string; stderr: string }> {
-  const ssh = Deno.env.get("SSH_ADDRESS")
-  const proc = ssh
+  const host = Deno.env.get("SSH_HOST")
+  const proc = host
     ? new Deno.Command("ssh", {
-      args: [ssh, "-T", "bash", "-s", ...args],
+      args: [...sshOptionArgs(), "--", targetHost(), "-T", "bash", "-s", ...args],
       stdin: "piped",
       stdout: "piped",
       stderr: "piped",
@@ -268,13 +288,12 @@ async function dockerExecStdin(
   cmd: readonly string[],
   stdinPayload: Uint8Array,
 ): Promise<{ code: number; stdout: string; stderr: string }> {
-  const ssh = Deno.env.get("SSH_ADDRESS")
+  const host = Deno.env.get("SSH_HOST")
   // `docker exec -i <container> <cmd>` runs the cmd with the host's
   // stdin piped in. We then run `curl ... --data-binary @-` to read it.
-  const proc = ssh
+  const proc = host
     ? new Deno.Command("ssh", {
-      // ssh is the program name; sshPrefix excludes it (avoid double-pass).
-      args: [ssh, "--", "docker", "exec", "-i", CONTAINER, ...cmd],
+      args: [...sshOptionArgs(), "--", targetHost(), "docker", "exec", "-i", CONTAINER, ...cmd],
       stdin: "piped",
       stdout: "piped",
       stderr: "piped",

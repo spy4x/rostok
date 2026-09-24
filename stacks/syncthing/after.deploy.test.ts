@@ -13,6 +13,7 @@ import {
   isFolderArray,
   isSystemStatus,
   resolveFolderDeviceIds,
+  runRemote,
 } from "./after.deploy.ts"
 
 const HOME_ID = "HOME-LOCAL-DEVICE-IDENTIFIER-PLACEHOLDER-DUMMY0"
@@ -317,4 +318,59 @@ Deno.test("isDeviceArray: accepts valid, rejects bad entries", () => {
   assertEquals(isDeviceArray([{ deviceID: "X" }]), false) // missing name
   assertEquals(isDeviceArray([{ name: "n" }]), false) // missing deviceID
   assertEquals(isDeviceArray([{ deviceID: 42, name: "n" }]), false)
+})
+
+/** Install a fake `ssh` on PATH that prints its own argv, one per line, as its own stdout. */
+async function withFakeSsh<T>(fn: () => Promise<T>): Promise<T> {
+  const binDir = await Deno.makeTempDir({ prefix: "rostok-fake-ssh-syncthing-after-" })
+  try {
+    const script = `#!/bin/sh\nfor a in "$@"; do printf '%s\\n' "$a"; done\n`
+    await Deno.writeTextFile(`${binDir}/ssh`, script, { mode: 0o755 })
+    const previousPath = Deno.env.get("PATH") ?? ""
+    Deno.env.set("PATH", `${binDir}:${previousPath}`)
+    try {
+      return await fn()
+    } finally {
+      Deno.env.set("PATH", previousPath)
+    }
+  } finally {
+    await Deno.remove(binDir, { recursive: true })
+  }
+}
+
+/** Set `keys` for the duration of `fn`, restoring whatever was there afterward. */
+async function withEnv<T>(vars: Record<string, string>, fn: () => Promise<T>): Promise<T> {
+  const previous = new Map(Object.keys(vars).map((k) => [k, Deno.env.get(k)]))
+  for (const [k, v] of Object.entries(vars)) Deno.env.set(k, v)
+  try {
+    return await fn()
+  } finally {
+    for (const [k, v] of previous) {
+      if (v === undefined) Deno.env.delete(k)
+      else Deno.env.set(k, v)
+    }
+  }
+}
+
+Deno.test("runRemote: SSH_ADDRESS=root@192.0.2.1:2222 (parsed to SSH_HOST/SSH_PORT/SSH_USER) reaches ssh as -p 2222 (#229)", async () => {
+  await withFakeSsh(async () => {
+    await withEnv({ SSH_HOST: "192.0.2.1", SSH_PORT: "2222", SSH_USER: "root" }, async () => {
+      const result = await runRemote(["docker", "exec", "hl-syncthing", "id"])
+      const argv = result.stdout.split("\n").filter((l) => l.length > 0)
+      assertEquals(argv, [
+        "-p",
+        "2222",
+        "-o",
+        "ConnectTimeout=10",
+        "-o",
+        "BatchMode=yes",
+        "--",
+        "root@192.0.2.1",
+        "docker",
+        "exec",
+        "hl-syncthing",
+        "id",
+      ])
+    })
+  })
 })
