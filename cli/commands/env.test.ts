@@ -112,6 +112,29 @@ async function gitQuiet(cwd: string, ...args: string[]): Promise<void> {
   }
 }
 
+/**
+ * `runEnvSetup` → `checkAgeKeyPresent` → `resolveKeyFile` (cli/age.ts)
+ * spawns `git rev-parse --git-common-dir` with NO env override of its
+ * own — it inherits whatever GIT_DIR/etc THIS process currently has. A
+ * poisoned GIT_DIR here would make it resolve `worktree`'s key against
+ * the wrong repo entirely, not `main`. Clearing these four vars for the
+ * duration of the call guarantees the test proves what it claims,
+ * regardless of the ambient environment.
+ */
+async function withoutGitEnv<T>(fn: () => Promise<T>): Promise<T> {
+  const keys = ["GIT_DIR", "GIT_COMMON_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE"]
+  const saved = new Map(keys.map((k) => [k, Deno.env.get(k)]))
+  for (const k of keys) Deno.env.delete(k)
+  try {
+    return await fn()
+  } finally {
+    for (const [k, v] of saved) {
+      if (v === undefined) Deno.env.delete(k)
+      else Deno.env.set(k, v)
+    }
+  }
+}
+
 Deno.test("runEnvSetup: in a worktree without its own key, names the MAIN checkout's key path, not the worktree's", async () => {
   const root = await Deno.makeTempDir({ prefix: "rostok-env-setup-worktree-" })
   try {
@@ -138,7 +161,7 @@ Deno.test("runEnvSetup: in a worktree without its own key, names the MAIN checko
 
     // Note: no .age/key.txt in `worktree` — resolveKeyFile must fall
     // back to `main`'s.
-    const result = await runEnvSetup(worktree)
+    const result = await withoutGitEnv(() => runEnvSetup(worktree))
     assertEquals(result.ok, true)
     assertEquals(result.alreadyExisted, true)
     const messageLine = result.lines.find((l) => l.includes("already exists at"))
