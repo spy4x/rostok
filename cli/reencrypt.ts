@@ -27,12 +27,11 @@ import { ageStatus, encryptEnvFiles } from "@spy4x/server/env-age64"
  *   silently stale) instead of a swallowed failure nobody sees.
  */
 export async function reencryptAfterWrite(cwd: string): Promise<void> {
-  const status = await ageStatus(cwd)
-  if (!status.keyPresent) {
-    console.info("rostok: no encryption key yet — run `rostok env setup` to enable it.")
-    return
-  }
   try {
+    if (!(await ageStatus(cwd)).keyPresent) {
+      console.info("rostok: no encryption key yet — run `rostok env setup` to enable it.")
+      return
+    }
     await encryptEnvFiles(cwd)
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)

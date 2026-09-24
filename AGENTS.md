@@ -168,10 +168,9 @@ Per-value encryption: only changed lines re-encrypt. No churn on
 unrelated keys.
 
 `deno task env:encrypt`/`env:decrypt` (`jsr:@spy4x/server/env-age64/cli`)
-now exit 1 when `.age/key.txt` is missing, instead of the old tool's
-silent "age not installed, skipping" — there's no `age` binary to be
-missing any more, so a missing key is a real error, not an optional
-prerequisite. That means `hooks:pre-commit` (`deno task check && deno
+now exit 1 when `.age/key.txt` is missing. The old tool printed that
+the key was missing and exited 0. A missing key is now a real error,
+not an optional prerequisite. That means `hooks:pre-commit` (`deno task check && deno
 task env:encrypt`) fails on a project that hasn't run `rostok env
 setup` yet. This is a deliberate choice, not an oversight: run `rostok
 env setup` once per project before the first commit that touches

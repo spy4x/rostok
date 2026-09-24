@@ -244,6 +244,33 @@ Deno.test("stack remove --drop-env: a bad line elsewhere in .env warns '.env.age
   })
 })
 
+// Review fix: the key check itself (`ageStatus`) refuses a symlinked
+// `.env*`. It must warn like any other re-encrypt failure, not throw
+// after `.env` was already written.
+Deno.test("stack add: a symlinked .env file warns '.env.age NOT updated', doesn't throw", async () => {
+  await withTmpDir(async (dir) => {
+    const catalogDir = join(dir, "catalog")
+    await writeLibrespeedCatalog(catalogDir)
+    await seedServer(dir, "home", { DOMAIN: "example.com" })
+    await generateAgeKey(dir)
+    const target = join(dir, "elsewhere.env")
+    await Deno.writeTextFile(target, "A=1\n")
+    await Deno.symlink(target, join(dir, "servers", "home", ".env.local"))
+
+    const warnings: string[] = []
+    const originalWarn = console.warn
+    console.warn = (...args: unknown[]) => warnings.push(args.join(" "))
+    try {
+      await addLibrespeed(dir, catalogDir)
+    } finally {
+      console.warn = originalWarn
+    }
+
+    const matching = warnings.filter((l) => l.includes(".env.age NOT updated"))
+    assertEquals(matching.length, 1, warnings.join("\n"))
+  })
+})
+
 Deno.test("stack remove interactive: confirming drops env keys, declining leaves them", async () => {
   await withTmpDir(async (dir) => {
     const catalogDir = join(dir, "catalog")
