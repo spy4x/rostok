@@ -45,12 +45,13 @@
 
     // #region Encryption
     // age64 — per-value age encryption. Each value independent — only changed lines diff.
+    // Runs in-process (jsr:@age/age-encryption) — no `age` binary, no --allow-run.
     "env:encrypt": {
-      "command": "deno run -R -W=. --allow-run=age,git --allow-env=GIT_DIR,GIT_COMMON_DIR,GIT_WORK_TREE,GIT_INDEX_FILE scripts/encryption/encrypt.ts",
+      "command": "deno run --no-prompt -R -W=. jsr:@spy4x/server@1.2.0/env-age64/cli encrypt",
       "description": "🔐 Encrypt .env → .env.age (only changed values re-encrypted)"
     },
     "env:decrypt": {
-      "command": "deno run -R -W=. --allow-run=age,git --allow-env=GIT_DIR,GIT_COMMON_DIR,GIT_WORK_TREE,GIT_INDEX_FILE scripts/encryption/decrypt.ts",
+      "command": "deno run --no-prompt -R -W=. jsr:@spy4x/server@1.2.0/env-age64/cli decrypt",
       "description": "🔓 Decrypt .env.age → .env (decrypts age64 values)"
     },
     // #endregion Encryption
@@ -132,6 +133,7 @@
     "@std/encoding": "jsr:@std/encoding@^1.0.9",
     "@std/fs": "jsr:@std/fs@^1.0.21",
     "@std/path": "jsr:@std/path@^1.1.4",
+    "@spy4x/server": "jsr:@spy4x/server@1.2.0",
     "arktype": "npm:arktype@^2.2.3",
     "yaml": "npm:yaml@^2.8.2"
   },

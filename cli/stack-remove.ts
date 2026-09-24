@@ -38,7 +38,7 @@
 // guessing by prefix could delete another stack's key.
 
 import { join } from "@std/path"
-import { encryptEnvFiles } from "./encrypt.ts"
+import { encryptEnvFiles } from "@spy4x/server/env-age64"
 import { readEnvFile, writeEnvFilePreservingFormat } from "./env-files.ts"
 import { type CatalogEntry, findStack, StackNotFoundError } from "./catalog.ts"
 import { resolveCatalog } from "./catalog-paths.ts"
@@ -248,7 +248,7 @@ export async function stackRemove(
     result.keptOwnKeys = []
   }
 
-  await encryptEnvFiles(cwd)
+  await encryptEnvFiles(cwd).catch(() => {})
 
   const droppedWord = result.droppedKeys.length === 1 ? "value" : "values"
   console.log(

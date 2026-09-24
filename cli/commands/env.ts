@@ -1,29 +1,27 @@
 // `rostok env encrypt|decrypt|status|setup` — explicit encryption commands.
 //
 // The wizard auto-runs encrypt after every `.env` write (see
-// `cli/encrypt.ts`). These commands let users invoke the same logic
-// directly — useful for backfilling `.env.age` after installing `age`,
-// or for decrypting `.env.age` into a fresh clone.
+// `cli/server-create.ts`/`cli/stack-add.ts`/`cli/stack-remove.ts`). These
+// commands let users invoke the same logic directly — useful for
+// backfilling `.env.age` after `rostok env setup`, or for decrypting
+// `.env.age` into a fresh clone.
 //
-// `rostok env status` reports the encryption posture: is `age`
-// installed? Is `.age/key.txt` present? How many `.env`/`.env.age`
-// files exist?
+// `rostok env status` reports the encryption posture: is `.age/key.txt`
+// present? How many `.env`/`.env.age` files exist?
 //
 // `rostok env setup` generates `.age/key.txt` for the user. rostok
-// hides the underlying `age-keygen` invocation — the user never has to
-// know that command exists.
+// hides the underlying key generation — the user never has to know
+// `age-keygen` exists.
 
 import { Command } from "@cliffy/command"
 import { relative } from "@std/path"
 import {
   ageStatus,
-  checkAgeInstalled,
-  checkAgeKeyPresent,
   decryptEnvFiles,
   encryptEnvFiles,
   generateAgeKey,
-} from "../encrypt.ts"
-import { resolveKeyFile } from "../age.ts"
+  readAgeKey,
+} from "@spy4x/server/env-age64"
 import { ensureAgeIgnored } from "../init.ts"
 
 /** `rostok env encrypt` — run the encrypt task directly. */
@@ -32,20 +30,16 @@ export const envEncryptCommand = new Command()
   .action(async () => {
     const cwd = Deno.cwd()
     const status = await ageStatus(cwd)
-    if (!status.ageInstalled) {
-      console.error(
-        "rostok env encrypt: age not installed. install with `apt install age`.",
-      )
-      Deno.exit(1)
-    }
-    if (!status.ageKeyPresent) {
+    if (!status.keyPresent) {
       console.error(
         "rostok env encrypt: .age/key.txt missing. run `rostok env setup` to generate one.",
       )
       Deno.exit(1)
     }
-    const result = await encryptEnvFiles(cwd)
-    if (!result.ok && !result.skipped) {
+    try {
+      await encryptEnvFiles(cwd)
+    } catch (error) {
+      console.error(error instanceof Error ? error.message : String(error))
       Deno.exit(1)
     }
   })
@@ -56,20 +50,16 @@ export const envDecryptCommand = new Command()
   .action(async () => {
     const cwd = Deno.cwd()
     const status = await ageStatus(cwd)
-    if (!status.ageInstalled) {
-      console.error(
-        "rostok env decrypt: age not installed. install with `apt install age`.",
-      )
-      Deno.exit(1)
-    }
-    if (!status.ageKeyPresent) {
+    if (!status.keyPresent) {
       console.error(
         "rostok env decrypt: .age/key.txt missing. can't decrypt without a key.",
       )
       Deno.exit(1)
     }
-    const result = await decryptEnvFiles(cwd)
-    if (!result.ok && !result.skipped) {
+    try {
+      await decryptEnvFiles(cwd)
+    } catch (error) {
+      console.error(error instanceof Error ? error.message : String(error))
       Deno.exit(1)
     }
   })
@@ -81,15 +71,14 @@ export const envDecryptCommand = new Command()
  */
 export const envStatusCommand = new Command()
   .description(
-    "Show encryption posture (age installed?, key present?, env files, age files).",
+    "Show encryption posture (key present?, env files, age files).",
   )
   .action(async () => {
     const cwd = Deno.cwd()
     const status = await ageStatus(cwd)
     const rel = (p: string) => relative(cwd, p) || p
 
-    console.log(`age installed:      ${status.ageInstalled ? "yes" : "NO"}`)
-    console.log(`.age/key.txt:       ${status.ageKeyPresent ? "present" : "missing"}`)
+    console.log(`.age/key.txt:       ${status.keyPresent ? "present" : "missing"}`)
     console.log(`.env files (${status.envFiles.length}):`)
     if (status.envFiles.length === 0) {
       console.log("  (none)")
@@ -104,20 +93,13 @@ export const envStatusCommand = new Command()
     }
 
     // Friendly recommendation. Per Phase 5b UX feedback, we never expose
-    // raw `age-keygen` commands — the CLI runs age-keygen internally
+    // raw `age-keygen` commands — the CLI generates the key internally
     // when the user invokes `rostok env setup` (or accepts the prompt
     // during `rostok`).
-    if (!status.ageInstalled) {
+    if (!status.keyPresent) {
       console.log("")
       console.log(
-        "rostok: install `age` (e.g. `apt install age`) and re-run `rostok` — " +
-          "it will offer to set up encryption for you.",
-      )
-    } else if (!status.ageKeyPresent) {
-      console.log("")
-      console.log(
-        "rostok: age is installed but no encryption key. " +
-          "run `rostok env setup` to generate one.",
+        "rostok: no encryption key. run `rostok env setup` to generate one.",
       )
     } else if (status.envFiles.length > status.ageFiles.length) {
       console.log("")
@@ -141,9 +123,8 @@ export interface EnvSetupResult {
 
 /**
  * Core logic for `rostok env setup` — generate `.age/key.txt` for the
- * user. This is how the CLI hides `age-keygen`: the user never has to
- * invoke that command themselves. Run after installing `age` to enable
- * encryption.
+ * user. This is how the CLI hides key generation: the user never has to
+ * invoke `age-keygen` themselves.
  *
  * Always runs {@link ensureAgeIgnored} before returning success, even
  * when a key already existed — a project created by 1.0.0–1.0.3 has a
@@ -151,26 +132,21 @@ export interface EnvSetupResult {
  * one command such a user is likely to run again.
  */
 export async function runEnvSetup(cwd: string): Promise<EnvSetupResult> {
-  if (!(await checkAgeInstalled())) {
-    return {
-      ok: false,
-      lines: ["rostok env setup: age not installed. install with `apt install age` and retry."],
-    }
-  }
   // #204: guarantee .age/key.txt can never be committed — before we
   // write a fresh key, and even when one already exists.
   const gitignoreFix = await ensureAgeIgnored(cwd)
-  if (await checkAgeKeyPresent(cwd)) {
-    // #236: print the path `checkAgeKeyPresent` (via `resolveKeyFile`)
-    // actually found, not a hardcoded `<cwd>/.age/key.txt` — in a linked
-    // worktree with no key of its own, resolution falls back to the MAIN
-    // checkout's key, so the old message named a path that didn't even
-    // have a file on it.
+  const status = await ageStatus(cwd)
+  if (status.keyPresent) {
+    // #236: print the path the key actually resolved to, not a
+    // hardcoded `<cwd>/.age/key.txt` — in a linked worktree with no key
+    // of its own, resolution falls back to the MAIN checkout's key, so
+    // the old message named a path that didn't even have a file on it.
+    const key = await readAgeKey(cwd)
     return {
       ok: true,
       alreadyExisted: true,
       lines: [
-        `rostok env setup: .age/key.txt already exists at ${resolveKeyFile(cwd)}`,
+        `rostok env setup: .age/key.txt already exists at ${key.path}`,
         // Review fix: this run may still have changed .gitignore even
         // though the key itself is untouched — "no changes made" would
         // be false in that case.
@@ -178,18 +154,27 @@ export async function runEnvSetup(cwd: string): Promise<EnvSetupResult> {
       ],
     }
   }
-  const result = await generateAgeKey(cwd)
-  if (!result.ok) {
-    return { ok: false, lines: [`rostok env setup: failed: ${result.error}`] }
+  let result: { path: string; recipient: string }
+  try {
+    result = await generateAgeKey(cwd)
+  } catch (error) {
+    return {
+      ok: false,
+      lines: [
+        `rostok env setup: failed: ${error instanceof Error ? error.message : String(error)}`,
+      ],
+    }
   }
-  const lines = [`rostok env setup: generated ${result.path}`]
-  if (result.publicKey) {
-    lines.push(`  public key (safe to share): ${result.publicKey}`)
-    lines.push("  secret key in .age/key.txt — already gitignored.")
+  return {
+    ok: true,
+    lines: [
+      `rostok env setup: generated ${result.path}`,
+      `  public key (safe to share): ${result.recipient}`,
+      "  secret key in .age/key.txt — already gitignored.",
+      "",
+      "next: run `rostok env encrypt` to backfill any existing .env files.",
+    ],
   }
-  lines.push("")
-  lines.push("next: run `rostok env encrypt` to backfill any existing .env files.")
-  return { ok: true, lines }
 }
 
 /**
@@ -198,7 +183,7 @@ export async function runEnvSetup(cwd: string): Promise<EnvSetupResult> {
  */
 export const envSetupCommand = new Command()
   .description(
-    "Generate the project's age encryption key (rostok hides age-keygen for you).",
+    "Generate the project's age encryption key (rostok hides key generation for you).",
   )
   .action(async () => {
     const result = await runEnvSetup(Deno.cwd())
@@ -217,8 +202,8 @@ but you can also invoke manually for backfills and fresh clones.
 
 Examples:
 
-    rostok env status         # see whether age + key are set up
-    rostok env setup          # generate .age/key.txt (rostok runs age-keygen)
+    rostok env status         # see whether a key is set up
+    rostok env setup          # generate .age/key.txt (rostok hides key generation)
     rostok env encrypt        # backfill .env.age for any missing files
     rostok env decrypt        # run after a fresh git clone`,
   )

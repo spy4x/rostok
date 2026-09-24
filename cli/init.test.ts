@@ -3,7 +3,7 @@
 import { assertEquals, assertExists } from "@std/assert"
 import { join } from "@std/path"
 import { ensureAgeIgnored, initProject } from "./init.ts"
-import { generateAgeKey } from "./encrypt.ts"
+import { generateAgeKey } from "@spy4x/server/env-age64"
 
 // #236 item 1 — a parent git process (this repo's own pre-commit hook, or a
 // shell with GIT_DIR exported by hand) can point every git invocation in
@@ -158,8 +158,7 @@ Deno.test("initProject + key generation leaves .age/key.txt gitignored", async (
   try {
     await gitFixture(tmp, "init")
     await withoutGitEnv(() => initProject(tmp))
-    const key = await generateAgeKey(tmp)
-    assertEquals(key.ok, true)
+    await generateAgeKey(tmp)
     assertEquals(await gitCheckIgnoresAgeKey(tmp), true)
   } finally {
     await Deno.remove(tmp, { recursive: true })

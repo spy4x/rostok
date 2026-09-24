@@ -27,12 +27,12 @@
 //   they're the ownership every volume on disk was already chowned to,
 //   so an existing value always wins over the probe (a successful probe
 //   only fills the gap on a server that's never been created before).
-// - Encryption is optional. If `age` is missing, the wizard still
-//   runs to completion; the user runs `rostok env encrypt` manually
-//   after installing age.
+// - Encryption is optional. If no `.age/key.txt` exists yet, the wizard
+//   still runs to completion; the user runs `rostok env setup` then
+//   `rostok env encrypt` manually afterward.
 
 import { join } from "@std/path"
-import { encryptEnvFiles } from "./encrypt.ts"
+import { encryptEnvFiles } from "@spy4x/server/env-age64"
 import { type EnvEntry, readEnvFile, writeEnvFilePreservingFormat } from "./env-files.ts"
 import { type PromptFn, promptValue, withKeyLabel } from "./prompts.ts"
 import { tryCaptureStdout } from "./shell.ts"
@@ -142,8 +142,8 @@ export const SERVER_VAR_ALIASES: readonly string[] = Object.values(FIELDS).map((
 
 /**
  * Run the server creation flow. Writes `servers/<name>/.env` and the
- * `configs/` subdirectory. Re-encrypts the per-server `.env.age` (no-op
- * if `age` isn't installed — see cli/encrypt.ts).
+ * `configs/` subdirectory. Re-encrypts the per-server `.env.age`
+ * (non-fatal — e.g. no `.age/key.txt` yet).
  */
 export async function serverCreate(opts: ServerCreateOptions = {}): Promise<ServerCreateResult> {
   const cwd = opts.cwd ?? Deno.cwd()
@@ -192,8 +192,8 @@ export async function serverCreate(opts: ServerCreateOptions = {}): Promise<Serv
   // comments/blank lines the user added by hand survive too.
   await writeEnvFilePreservingFormat(envPath, incoming)
 
-  // Re-encrypt (non-fatal — see cli/encrypt.ts).
-  await encryptEnvFiles(cwd)
+  // Re-encrypt (non-fatal — e.g. no `.age/key.txt` yet).
+  await encryptEnvFiles(cwd).catch(() => {})
 
   return {
     serverName: input.serverName,
