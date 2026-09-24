@@ -108,7 +108,12 @@ if (script.includes("getent group docker")) {
 Deno.exit(0)
 `
 
-const FAKE_RSYNC = `#!/usr/bin/env -S deno run --allow-read --allow-write --allow-env
+// A POSIX sh script, never a deno script (review round — a deno-script
+// fake is a full process per spawn; an earlier version of this rsync
+// fake in cli/deploy/run-deploy.test.ts recursed into itself via a
+// PATH lookup and spawned ~4,900 processes). "cp", never "rsync", so
+// no test here can ever reach a real or fake rsync binary at all.
+//
 // Copies the local staging dir (second-to-last arg, "src") into
 // FAKE_REMOTE_DIR + the remote path from the last arg ("user@host:/path/"),
 // standing in for the real server the deploy would rsync to.
@@ -116,36 +121,49 @@ const FAKE_RSYNC = `#!/usr/bin/env -S deno run --allow-read --allow-write --allo
 // #233: run-deploy.ts's per-stack sync (runRemoteSyncEntry, exec.ts)
 // gives SRC no trailing slash — real rsync then treats it as one named
 // entry to place INSIDE the destination, not merge its own contents
-// into it (see exec.test.ts's real-rsync symlink tests for why: that's
-// what lets a symlinked destination be replaced instead of followed).
-// This fake replicates that one distinction — everything else about it
-// stays a plain recursive copy, never real rsync's --delete/symlink
-// semantics (those are proven against a REAL rsync elsewhere).
-const args = Deno.args
-const destArg = args[args.length - 1]
-const srcArg = args[args.length - 2]
-const srcHasTrailingSlash = srcArg.endsWith("/")
-const src = srcArg.replace(/\\/$/, "")
-const colonIdx = destArg.indexOf(":")
-const remotePath = destArg.slice(colonIdx + 1)
-const remoteRoot = Deno.env.get("FAKE_REMOTE_DIR")!
-const destParent = remoteRoot + remotePath
-const destDir = srcHasTrailingSlash ? destParent : destParent + src.split("/").pop()
-
-async function copyDir(s: string, d: string) {
-  await Deno.mkdir(d, { recursive: true })
-  for await (const entry of Deno.readDir(s)) {
-    const sp = \`\${s}/\${entry.name}\`
-    const dp = \`\${d}/\${entry.name}\`
-    if (entry.isDirectory) {
-      await copyDir(sp, dp)
-    } else if (entry.isFile) {
-      await Deno.copyFile(sp, dp)
-    }
-  }
-}
-await copyDir(src, destDir)
-Deno.exit(0)
+// into it (real rsync's own symlink-replacement behavior that depends
+// on this distinction is proven separately, by argv-shape assertions —
+// see run-deploy.test.ts and the PR body's manual VM step). This fake
+// only replicates the entry-vs-merge distinction with a plain
+// recursive copy, never rsync's own --delete/symlink semantics.
+const FAKE_RSYNC = `#!/bin/sh
+set -eu
+exclude_stacks=0
+prev=""
+last=""
+for a in "$@"; do
+  case "$a" in
+    --exclude=/stacks) exclude_stacks=1 ;;
+  esac
+  prev="$last"
+  last="$a"
+done
+src="$prev"
+dest="$last"
+remote_path="\${dest#*:}"
+dest_parent="$FAKE_REMOTE_DIR$remote_path"
+mkdir -p "$dest_parent"
+case "$src" in
+  */)
+    # Contents-merge (the root sync): copy every top-level entry,
+    # dotfiles included — "\${src}"* alone would skip .env/.env.root,
+    # POSIX glob doesn't match a leading dot. Honors --exclude=/stacks
+    # (a real deploy's root sync always carries it) so this fake never
+    # double-copies stacks/ once the per-stack entry sync below also
+    # runs for it.
+    find "$src" -mindepth 1 -maxdepth 1 | while IFS= read -r entry; do
+      name=$(basename "$entry")
+      if [ "$exclude_stacks" = 1 ] && [ "$name" = "stacks" ]; then continue; fi
+      cp -a "$entry" "$dest_parent/"
+    done
+    ;;
+  *)
+    # Entry sync (a stack's own per-stack rsync, runRemoteSyncEntry):
+    # replace the destination entry entirely, matching --delete.
+    base=$(basename "$src")
+    rm -rf "$dest_parent/$base"
+    cp -a "$src" "$dest_parent/$base" ;;
+esac
 `
 
 interface Fixture {
