@@ -3,20 +3,49 @@
 // create the Workflow + WorkflowStep + WorkflowsOnEventTypes records if
 // they don't already exist. This avoids manual SQL steps.
 //
-// Environment: SSH_ADDRESS, PATH_APPS from deploy context.
+// Environment: SSH_HOST, SSH_PORT, SSH_USER, PATH_APPS from deploy
+// context. SSH_HOST/SSH_PORT/SSH_USER are contract keys parsed once from
+// SSH_ADDRESS by cli/deploy/hooks.ts's buildHookEnv (#229) — see its
+// module comment. Building ssh's argv from these instead of the raw
+// SSH_ADDRESS string is what lets a non-default port reach ssh as
+// `-p <port>` instead of being read as part of an unresolvable
+// "host:port" hostname.
 
-const SSH = Deno.env.get("SSH_ADDRESS") ?? ""
+/**
+ * Build the argv for `ssh -p <port> -o ConnectTimeout=10 -o
+ * BatchMode=yes -- [user@]host <remoteCommand>`. Exported for tests —
+ * no I/O. See cli/deploy/hooks.ts's module comment for the SSH_PORT
+ * default-22 decision (#229).
+ */
+export function buildSshArgs(
+  host: string,
+  port: string,
+  user: string | undefined,
+  remoteCommand: string,
+): string[] {
+  const target = user ? `${user}@${host}` : host
+  return ["-p", port, "-o", "ConnectTimeout=10", "-o", "BatchMode=yes", "--", target, remoteCommand]
+}
+
+const SSH_HOST = Deno.env.get("SSH_HOST") ?? ""
+const SSH_PORT = Deno.env.get("SSH_PORT") ?? ""
+const SSH_USER = Deno.env.get("SSH_USER") || undefined
 const APPS = Deno.env.get("PATH_APPS") ?? ""
 
-if (!SSH || !APPS) {
-  console.error("after.deploy.ts: SSH_ADDRESS and PATH_APPS must be set")
+if (import.meta.main && (!SSH_HOST || !SSH_PORT || !APPS)) {
+  console.error("after.deploy.ts: SSH_HOST, SSH_PORT and PATH_APPS must be set")
   Deno.exit(1)
 }
 
 /** Run SQL via psql on the remote caldiy-db container, return stdout */
 async function psql(sql: string): Promise<string> {
   const proc = new Deno.Command("ssh", {
-    args: [SSH, "docker exec -i hl-caldiy-db psql -U caldiy -d caldiy -t -A"],
+    args: buildSshArgs(
+      SSH_HOST,
+      SSH_PORT,
+      SSH_USER,
+      "docker exec -i hl-caldiy-db psql -U caldiy -d caldiy -t -A",
+    ),
     stdin: "piped",
     stdout: "piped",
     stderr: "piped",
@@ -103,9 +132,11 @@ COMMIT;
   }
 }
 
-try {
-  await main()
-} catch (err) {
-  console.error("after.deploy.ts FAILED:", err instanceof Error ? err.message : String(err))
-  Deno.exit(1)
+if (import.meta.main) {
+  try {
+    await main()
+  } catch (err) {
+    console.error("after.deploy.ts FAILED:", err instanceof Error ? err.message : String(err))
+    Deno.exit(1)
+  }
 }
