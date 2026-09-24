@@ -84,6 +84,12 @@ if (script.includes("getent group docker")) {
   // Default: root (uid 0) — matches SSH_ADDRESS=deploy@remote.test in the
   // fixtures below, which is a placeholder address, not a real login.
   console.log(Deno.env.get("FAKE_REMOTE_UID") ?? "0")
+} else if (script.includes("readlink -f")) {
+  // checkRemotePathsNotNested (docker-preflight.ts, #233 review): two
+  // readlink -f calls joined by "---". Sibling, non-nested real paths —
+  // none of these fixtures test a server-side symlink (that's covered
+  // directly in docker-preflight.test.ts).
+  console.log("/srv/apps\\n---\\n/srv/volumes")
 } else if (script.includes("DEPLOY_START:")) {
   // FAKE_DEPLOY_FAIL_STACK lets a test simulate a stack whose
   // \`docker compose up\` fails on the remote — everything else about
@@ -103,16 +109,28 @@ Deno.exit(0)
 `
 
 const FAKE_RSYNC = `#!/usr/bin/env -S deno run --allow-read --allow-write --allow-env
-// Copies the local staging dir (second-to-last arg, "src/") into
+// Copies the local staging dir (second-to-last arg, "src") into
 // FAKE_REMOTE_DIR + the remote path from the last arg ("user@host:/path/"),
 // standing in for the real server the deploy would rsync to.
+//
+// #233: run-deploy.ts's per-stack sync (runRemoteSyncEntry, exec.ts)
+// gives SRC no trailing slash — real rsync then treats it as one named
+// entry to place INSIDE the destination, not merge its own contents
+// into it (see exec.test.ts's real-rsync symlink tests for why: that's
+// what lets a symlinked destination be replaced instead of followed).
+// This fake replicates that one distinction — everything else about it
+// stays a plain recursive copy, never real rsync's --delete/symlink
+// semantics (those are proven against a REAL rsync elsewhere).
 const args = Deno.args
-const dest = args[args.length - 1]
-const src = args[args.length - 2].replace(/\\/$/, "")
-const colonIdx = dest.indexOf(":")
-const remotePath = dest.slice(colonIdx + 1)
+const destArg = args[args.length - 1]
+const srcArg = args[args.length - 2]
+const srcHasTrailingSlash = srcArg.endsWith("/")
+const src = srcArg.replace(/\\/$/, "")
+const colonIdx = destArg.indexOf(":")
+const remotePath = destArg.slice(colonIdx + 1)
 const remoteRoot = Deno.env.get("FAKE_REMOTE_DIR")!
-const destDir = remoteRoot + remotePath
+const destParent = remoteRoot + remotePath
+const destDir = srcHasTrailingSlash ? destParent : destParent + src.split("/").pop()
 
 async function copyDir(s: string, d: string) {
   await Deno.mkdir(d, { recursive: true })
