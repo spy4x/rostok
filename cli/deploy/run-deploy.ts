@@ -78,7 +78,7 @@
 import { dirname, join, toFileUrl } from "@std/path"
 import { parseEnv, readEnvFile } from "../env-files.ts"
 import { serverDirFor } from "../server-keys.ts"
-import { UserError } from "../errors.ts"
+import { serverNotFoundMessage, UserError } from "../errors.ts"
 import { resolveDeployEnv } from "./env.ts"
 import { checkDockerGroup, checkRemotePathsNotNested, needsRemoteSudo } from "./docker-preflight.ts"
 import { type ResolvedStackFiles, resolveStackFiles } from "./stack-files.ts"
@@ -117,9 +117,7 @@ export async function runDeploy(opts: DeployOptions): Promise<DeployRunResult> {
   const serverDir = serverDirFor(cwd, server)
   const envPath = join(serverDir, ".env")
   if (!(await pathExists(envPath))) {
-    throw new UserError(
-      `server '${server}' not found at ${envPath}. Run \`rostok server create ${server}\` first.`,
-    )
+    throw new UserError(serverNotFoundMessage(server, envPath))
   }
 
   const env = entriesToRecord(await readEnvFile(envPath))
