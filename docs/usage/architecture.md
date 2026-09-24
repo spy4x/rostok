@@ -22,7 +22,7 @@ the values each stack needs, and re-encrypts the secrets for git.
 │  │  compose.yml │   │  cli/wizard.ts                  │     │
 │  │  backup.ts   │   │                                 │     │
 │  │  README.md   │   │  depends on:                    │     │
-│  └──────────────┘   │    scripts/encryption/          │     │
+│  └──────────────┘   │    @spy4x/server/env-age64      │     │
 │       │             │    scripts/hooks/               │     │
 │       │             └─────────────────────────────────┘     │
 │       │                        │                            │
@@ -91,11 +91,12 @@ for interactive input. `npm:arktype@^2` for runtime validation.
 
 See `docs/design/v1-cli.md` for the full source-map and rollout.
 
-### `scripts/encryption/` — age64
+### `@spy4x/server/env-age64` — age64
 
-Per-value age encryption. Each `KEY=age64:...` line is encrypted
-independently. Only changed lines re-encrypt. Avoids the
-"re-encrypt everything on every run" problem with SOPS.
+Per-value age encryption, published on JSR (jsr:@spy4x/server), not a
+local script. Each `KEY=age64:...` line is encrypted independently. Only
+changed lines re-encrypt. Avoids the "re-encrypt everything on every
+run" problem with SOPS.
 
 ### `scripts/hooks/` — git hooks
 

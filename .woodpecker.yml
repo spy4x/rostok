@@ -6,9 +6,9 @@ steps:
   check:
     image: denoland/deno:2.9.0
     commands:
-      # Install age for the encryption tests (cli/encrypt.test.ts assumes
-      # age + age-keygen are on PATH) and git for the .gitignore checks
-      # (cli/init.test.ts runs `git check-ignore`). The slim image ships
-      # with neither; both match the dev box environment.
-      - apt-get update && apt-get install -y age git
+      # Install git for the .gitignore checks (cli/init.test.ts runs
+      # `git check-ignore`) and worktree/hook fixtures elsewhere. `age`
+      # is no longer needed: encryption runs in-process
+      # (@spy4x/server/env-age64), no binary on PATH required.
+      - apt-get update && apt-get install -y git
       - deno task check

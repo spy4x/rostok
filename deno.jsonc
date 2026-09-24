@@ -104,12 +104,12 @@
       "description": "📘 Type-check TypeScript files"
     },
     "test": {
-      // -R/-W: findEnvFiles() tests build a throwaway dir tree (nested
+      // -R/-W: env/worktree tests build a throwaway dir tree (nested
       // worktree fixtures) under the system temp dir and walk it.
-      // --allow-run: cli/encrypt.ts shells out to `age` for detection,
-      // `age-keygen` for test fixtures, and `deno task env:encrypt` for
-      // the re-encrypt hook. Broad run access mirrors the production
-      // encrypt/decrypt task permissions.
+      // --allow-run: env encryption itself needs no subprocess any more
+      // (@spy4x/server/env-age64 runs in-process) — this is for `git`
+      // (worktree/gitignore fixtures), `ssh`/`rsync` (deploy tests) and
+      // spawning `deno` itself (CLI integration tests).
       "command": "deno test --allow-env --allow-run -R -W",
       "description": "🧪 Run tests"
     },

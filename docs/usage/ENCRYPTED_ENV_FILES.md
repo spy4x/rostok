@@ -9,8 +9,11 @@ show in git diff — no more 200-line re-encryption noise from SOPS.
 KEY=age64:YWdlLWVuY3J5cHRpb24ub3JnL3Yx...
 ```
 
-Each `age64:base64...` is an age ciphertext for a single value. Non-secret values
-stay as plaintext `KEY=VALUE` — readable in PRs.
+Each `age64:base64...` is an age ciphertext for a single value. A comment or blank
+line in `.env.age` passes through verbatim, but every `KEY=` assignment must be
+`age64:...` — a plaintext `KEY=VALUE` line inside `.env.age` is rejected on decrypt
+(a sign the file was hand-edited or corrupted), not silently passed through. Keep
+non-secret values in `.env`/`.env.example`, not in the encrypted file.
 
 ## Prerequisites
 

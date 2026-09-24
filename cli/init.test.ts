@@ -10,10 +10,10 @@ import { generateAgeKey } from "@spy4x/server/env-age64"
 // this file at a completely different repo, regardless of `cwd`. Before
 // this fix, this file's own `git init`/`git add` fixture setup inherited
 // that GIT_DIR and staged `.age/key.txt` into the OTHER repo's index and
-// flipped its `core.bare`. cli/age.test.ts hit the same failure mode
-// first — this mirrors its fix: every git spawn here (this file's own
-// fixture setup, and the git-touching init.ts functions under test)
-// clears these four vars for its duration.
+// flipped its `core.bare`. Another test file's fixture setup hit the
+// same failure mode first — this mirrors its fix: every git spawn here
+// (this file's own fixture setup, and the git-touching init.ts functions
+// under test) clears these four vars for its duration.
 const GIT_ENV_POISON = ["GIT_DIR", "GIT_COMMON_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE"]
 
 function strippedGitEnv(): Record<string, string> {
