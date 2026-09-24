@@ -96,6 +96,16 @@ async function withEnv<T>(
   }
 }
 
+// A test that asks git where the main checkout is must not inherit a
+// GIT_DIR from whoever runs it (a git hook, or a shell that exported it):
+// resolveKeyFile would then skip the git lookup and the test would fail.
+const NO_GIT_ENV = {
+  GIT_DIR: undefined,
+  GIT_COMMON_DIR: undefined,
+  GIT_WORK_TREE: undefined,
+  GIT_INDEX_FILE: undefined,
+}
+
 Deno.test("resolveKeyFile: a local .age/key.txt wins outright, no git involved", async () => {
   const tmp = await Deno.makeTempDir({ prefix: "rostok-agekey-local-" })
   try {
@@ -116,24 +126,25 @@ Deno.test("resolveKeyFile: falls back to <cwd>/.age/key.txt when cwd isn't a git
   }
 })
 
-Deno.test("resolveKeyFile: a linked worktree with no key of its own falls back to the main checkout's", async () => {
-  const root = await Deno.makeTempDir({ prefix: "rostok-agekey-worktree-" })
-  const main = join(root, "main")
-  const worktree = join(root, "worktree")
-  try {
-    await Deno.mkdir(main)
-    await initRepoWithCommit(main)
-    await Deno.mkdir(join(main, ".age"))
-    await Deno.writeTextFile(join(main, ".age", "key.txt"), "main-checkout-key")
-    await git(main, "worktree", "add", "--detach", worktree)
+Deno.test("resolveKeyFile: a linked worktree with no key of its own falls back to the main checkout's", () =>
+  withEnv(NO_GIT_ENV, async () => {
+    const root = await Deno.makeTempDir({ prefix: "rostok-agekey-worktree-" })
+    const main = join(root, "main")
+    const worktree = join(root, "worktree")
+    try {
+      await Deno.mkdir(main)
+      await initRepoWithCommit(main)
+      await Deno.mkdir(join(main, ".age"))
+      await Deno.writeTextFile(join(main, ".age", "key.txt"), "main-checkout-key")
+      await git(main, "worktree", "add", "--detach", worktree)
 
-    // The worktree itself has no .age/key.txt — resolution must fall
-    // through git's own --git-common-dir to the main checkout's.
-    assertEquals(resolveKeyFile(worktree), join(main, ".age", "key.txt"))
-  } finally {
-    await Deno.remove(root, { recursive: true })
-  }
-})
+      // The worktree itself has no .age/key.txt — resolution must fall
+      // through git's own --git-common-dir to the main checkout's.
+      assertEquals(resolveKeyFile(worktree), join(main, ".age", "key.txt"))
+    } finally {
+      await Deno.remove(root, { recursive: true })
+    }
+  }))
 
 Deno.test(
   "resolveKeyFile: GIT_DIR pointing at a decoy repo skips the git lookup entirely, never reads the decoy's key (#226 review round)",
@@ -320,38 +331,39 @@ Deno.test("encryptEnvFiles: without any --allow-env, a missing local key fails l
 // binary (Deno.errors.NotFound) — any other spawn failure (denied
 // --allow-run, for instance) must surface too, not be treated the same
 // as "git isn't installed".
-Deno.test("resolveKeyFile: a denied --allow-run=git surfaces, isn't treated like a missing git binary", async () => {
-  const repo = await Deno.makeTempDir({ prefix: "rostok-agekey-norun-perm-" })
-  try {
-    await initRepoWithCommit(repo)
+Deno.test("resolveKeyFile: a denied --allow-run=git surfaces, isn't treated like a missing git binary", () =>
+  withEnv(NO_GIT_ENV, async () => {
+    const repo = await Deno.makeTempDir({ prefix: "rostok-agekey-norun-perm-" })
+    try {
+      await initRepoWithCommit(repo)
 
-    const script = `
+      const script = `
       import { resolveKeyFile } from "${new URL("./age.ts", import.meta.url).href}"
       console.log(resolveKeyFile(${JSON.stringify(repo)}))
     `
-    const scriptPath = join(repo, "run.ts")
-    await Deno.writeTextFile(scriptPath, script)
+      const scriptPath = join(repo, "run.ts")
+      await Deno.writeTextFile(scriptPath, script)
 
-    const denoConfigPath = fromFileUrl(new URL("../deno.jsonc", import.meta.url))
-    // Full env access, but NO --allow-run at all — git can't even be
-    // spawned to check whether it's installed.
-    const command = new Deno.Command(Deno.execPath(), {
-      args: ["run", "--config", denoConfigPath, "--allow-read", "--allow-env", scriptPath],
-      stdout: "piped",
-      stderr: "piped",
-    })
-    const output = await command.output()
-    assertEquals(
-      output.success,
-      false,
-      `expected a non-zero exit (the run-permission error surfacing), got success`,
-    )
-    const stderr = new TextDecoder().decode(output.stderr)
-    assertEquals(stderr.includes("NotCapable") || stderr.includes("run"), true, stderr)
-  } finally {
-    await Deno.remove(repo, { recursive: true })
-  }
-})
+      const denoConfigPath = fromFileUrl(new URL("../deno.jsonc", import.meta.url))
+      // Full env access, but NO --allow-run at all — git can't even be
+      // spawned to check whether it's installed.
+      const command = new Deno.Command(Deno.execPath(), {
+        args: ["run", "--config", denoConfigPath, "--allow-read", "--allow-env", scriptPath],
+        stdout: "piped",
+        stderr: "piped",
+      })
+      const output = await command.output()
+      assertEquals(
+        output.success,
+        false,
+        `expected a non-zero exit (the run-permission error surfacing), got success`,
+      )
+      const stderr = new TextDecoder().decode(output.stderr)
+      assertEquals(stderr.includes("NotCapable") || stderr.includes("run"), true, stderr)
+    } finally {
+      await Deno.remove(repo, { recursive: true })
+    }
+  }))
 
 Deno.test("resolveKeyFile: a linked worktree with its OWN key uses it, not the main checkout's (review round)", async () => {
   // The earlier "local key wins" test used a standalone dir with no git

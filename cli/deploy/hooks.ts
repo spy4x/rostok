@@ -211,18 +211,16 @@ function sanitizeForLog(s: string): string {
 }
 
 /**
- * Strips one matching quote layer, no escape or comment processing —
- * `'...'`/`"..."` around the WHOLE value only. No backslash-escape
- * handling inside the quotes, no `#` comment stripping mid-value, no
- * unmatched or nested-quote awareness beyond the single outer pair:
- * this is the same, deliberately minimal thing docker compose's
- * `env_file` and Deno's `--env-file` do when they actually load a
- * `.env` (verified directly against both; see cli/env-files.ts's
- * header comment). `cli/age.ts`'s own `parseEnvFile` deliberately keeps
- * a value's quotes for the FILE round trip (#226), so a hook — which
- * runs the same way a container reads the file, not the way this repo
- * re-encrypts it — needs this done on its way into the subprocess env,
- * once, here.
+ * Strips one matching quote layer (`'...'` or `"..."` around the whole
+ * value), and nothing else: no backslash escapes, no `#` comment
+ * stripping. docker compose's `env_file` and Deno's `--env-file` do more
+ * than this: both turn `\n` inside double quotes into a real newline and
+ * drop a trailing ` # comment` from an unquoted value. For those forms a
+ * hook can see a different value than its container, so a key a hook
+ * reads should not rely on escapes or trailing comments. The common case,
+ * a quoted value with spaces, matches. `cli/age.ts`'s `parseEnvFile`
+ * keeps a value's quotes for the file round trip (#226), so the stripping
+ * happens here, once, on the way into the hook's environment.
  */
 function stripOneQuoteLayer(value: string): string {
   if (value.length >= 2) {
