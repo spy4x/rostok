@@ -83,6 +83,14 @@ export function generateStaleStackCleanupScript(
     // folder that's already gone, from a container label scan). Reused
     // for both, so there's exactly one code path that ever stops a
     // container or removes a folder — never two that could drift.
+    // Returns non-zero on ANY failure (a stop that failed, or an rm
+    // that failed) — never on a name it merely decided to skip (that's
+    // reported and treated as handled, not as this stack's failure).
+    // Callers (both phases) must check this return value: a piped
+    // `while` loop's own `exit`/`return` only ever escapes the SUBSHELL
+    // that loop runs in, never the calling shell, so a caller that
+    // ignores the return value would silently keep going past a stop
+    // that never actually happened (review round).
     "stop_and_remove() {",
     '  name="$1"',
     // Defence in depth: `name` only ever reaches here from this
@@ -91,9 +99,14 @@ export function generateStaleStackCleanupScript(
     // pattern) — but a container's own labels are attacker-influenced
     // in theory (anyone with docker access on the remote can set them),
     // so re-validate the shape before it's used to build a
-    // `docker ps --filter` value or an rm target.
+    // `docker ps --filter` value or an rm target. Reported, not silent
+    // (review round): an operator staring at a cleanup run that skipped
+    // something must be able to tell why.
     '  case "$name" in',
-    "    ''|*[!A-Za-z0-9_-]*) return 0 ;;",
+    "    ''|*[!A-Za-z0-9_-]*)",
+    "      echo \"skipped '$name': unsafe name\"",
+    "      return 0",
+    "      ;;",
     "  esac",
     '  dir="$STACKS_DIR/$name"',
     // Every container whose OWN working_dir label equals this stack's
@@ -101,45 +114,72 @@ export function generateStaleStackCleanupScript(
     // below for why that distinction matters), stopped via its compose
     // PROJECT label, never via `cd`+`docker compose down` (see the
     // module comment for why that fails for name:-setting stacks).
-    '  docker ps -a --filter "label=com.docker.compose.project.working_dir=$dir" ' +
+    // `seen` dedupes: several containers can share one project label,
+    // and `docker compose -p <project> down` already stops all of a
+    // project's containers in one call — calling it again per
+    // container printed (and risked failing) once per CONTAINER instead
+    // of once per project (review round: "smaller" item).
+    "  seen=' '",
+    '  if ! docker ps -a --filter "label=com.docker.compose.project.working_dir=$dir" ' +
     "--format '{{.ID}}|{{.Label \"com.docker.compose.project\"}}' 2>/dev/null | " +
     "while IFS='|' read -r id proj; do",
     '    case "$proj" in',
     "      ''|*[!A-Za-z0-9_.-]*) continue ;;",
     "    esac",
+    '    case "$seen" in',
+    '      *" $proj "*) continue ;;',
+    "    esac",
+    '    seen="$seen$proj "',
     '    if ! docker compose -p "$proj" down --remove-orphans; then',
     "      echo \"FAILED to stop project '$proj' for stale stack '$name'\"",
     "      exit 1",
     "    fi",
-    "  done || FAILED=1",
+    "  done; then",
+    // The stop failed: never remove the folder — the operator needs
+    // its compose file to retry or investigate — and never print
+    // "Removed"/"Stopped" (review round).
+    `    echo "FAILED to stop stale stack '$name': its folder was left in place."`,
+    "    FAILED=1",
+    "    return 1",
+    "  fi",
     // Absolute path, no trailing slash, `--` first — see the module
     // comment for why each of those three matters.
     '  if [ -e "$dir" ] || [ -L "$dir" ]; then',
     '    if ! rm -rf -- "$dir"; then',
     '      echo "FAILED to remove $dir"',
     "      FAILED=1",
-    "    else",
-    `      echo "Removed stale stack '$name'. Data kept at '${volumesPath}/$name'."`,
+    "      return 1",
     "    fi",
+    `    echo "Removed stale stack '$name'. Data kept at '${volumesPath}/$name'."`,
     "  else",
     `    echo "Stopped stale stack '$name' (its folder was already gone). Data kept at ` +
     `'${volumesPath}/$name'."`,
     "  fi",
+    "  return 0",
     "}",
     "",
-    // Phase 1: every directory entry under STACKS_DIR not in the active
-    // list, found via a STACKS_DIR-prefixed glob (never a bare `*/`
-    // after a `cd`) so an empty or missing STACKS_DIR never iterates a
-    // literal, non-existent "*" — `[ -e "$entry" ]` is what actually
-    // guards that: an unmatched glob stays a literal pattern in every
-    // POSIX shell without nullglob, so this must never assume the loop
-    // only ever sees real entries.
-    `for entry in ${quotedStacksDir}/*/; do`,
-    '  [ -e "$entry" ] || continue',
-    '  dir_name="${entry%/}"',
-    '  dir_name="${dir_name##*/}"',
+    // Phase 1: every entry under STACKS_DIR not in the active list,
+    // found via a STACKS_DIR-prefixed glob (never a bare `*` after a
+    // `cd`) so an empty or missing STACKS_DIR never iterates a literal,
+    // non-existent "*" — `[ -e "$entry" ] || [ -L "$entry" ]` is what
+    // actually guards that: an unmatched glob stays a literal pattern in
+    // every POSIX shell without nullglob, so this must never assume the
+    // loop only ever sees real entries. No trailing slash on the glob
+    // (review round): a trailing-slash glob (`*/`) silently drops
+    // anything that isn't already a directory — including a FILE
+    // symlink under stacks/ — before this loop ever sees it, which is
+    // exactly the silent-skip the review flagged. `-L` (not just `-e`)
+    // keeps a BROKEN symlink in scope too, so it gets the same reported
+    // "not a directory" skip instead of vanishing from both checks.
+    `for entry in ${quotedStacksDir}/*; do`,
+    '  [ -e "$entry" ] || [ -L "$entry" ] || continue',
+    '  dir_name="${entry##*/}"',
+    '  if [ ! -d "$entry" ]; then',
+    "    echo \"skipped '$dir_name': not a directory\"",
+    "    continue",
+    "  fi",
     '  case " ${dir_name} " in',
-    `${keepArm}      *) stop_and_remove \"$dir_name\" ;;`,
+    `${keepArm}      *) stop_and_remove "$dir_name" || FAILED=1 ;;`,
     "  esac",
     "done",
     "",
@@ -157,9 +197,15 @@ export function generateStaleStackCleanupScript(
     `      rel=\${wd#${quotedStacksDir}/}`,
     '      case "$rel" in */*) continue ;; esac',
     '      case " $rel " in',
-    `${
-      activePattern.length > 0 ? `        ${activePattern}) ;;\n` : ""
-    }        *) stop_and_remove \"$rel\" ;;`,
+    `${activePattern.length > 0 ? `        ${activePattern}) ;;\n` : ""
+      // `|| exit 1` here is load-bearing, not decorative (review
+      // round): this call runs inside a piped `while` loop, which
+      // POSIX runs in its own subshell — a failure `stop_and_remove`
+      // reports via its return value would otherwise be swallowed the
+      // moment this iteration ends, never reaching the `done ||
+      // FAILED=1` below. `exit 1` here terminates THIS subshell
+      // immediately, which IS what that `done || FAILED=1` observes.
+    }        *) stop_and_remove "$rel" || exit 1 ;;`,
     "      esac",
     "      ;;",
     "  esac",
