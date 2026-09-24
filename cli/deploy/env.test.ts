@@ -474,6 +474,28 @@ Deno.test("expandEnvRefs: a key merely containing PATH_ or ending in PATH-like t
   }
 })
 
+Deno.test("resolveDeployEnv: refuses a one-folder PATH_APPS such as /srv", () => {
+  const err = assertThrows(
+    () =>
+      resolveDeployEnv(
+        { ...VALID_BASE, PATH_APPS: "/srv", VOLUMES_PATH: "/data" },
+        "servers/home/.env",
+        ROOT_ENV_PATH,
+      ),
+    UserError,
+  )
+  assertStringIncludes(err.message, "PATH_APPS")
+})
+
+Deno.test("resolveDeployEnv: accepts a one-folder VOLUMES_PATH such as /data", () => {
+  const env = resolveDeployEnv(
+    { ...VALID_BASE, VOLUMES_PATH: "/data" },
+    "servers/home/.env",
+    ROOT_ENV_PATH,
+  )
+  assertEquals(env.env.VOLUMES_PATH, "/data")
+})
+
 Deno.test("resolveDeployEnv: refuses VOLUMES_PATH inside PATH_APPS, with migration steps (#233)", () => {
   const err = assertThrows(
     () =>
@@ -486,8 +508,9 @@ Deno.test("resolveDeployEnv: refuses VOLUMES_PATH inside PATH_APPS, with migrati
   )
   assertStringIncludes(err.message, "/srv/apps/.volumes")
   assertStringIncludes(err.message, "/srv/apps")
-  assertStringIncludes(err.message, "docker compose -p")
-  assertStringIncludes(err.message, "--env-file .env.root --env-file .env")
+  assertStringIncludes(err.message, "docker compose -p <project> down --remove-orphans")
+  assertStringIncludes(err.message, "com.docker.compose.project.working_dir")
+  assertEquals(err.message.includes("-p <name>"), false, "an aliased stack runs under deployAs")
   assertStringIncludes(err.message, "mv ")
   assertStringIncludes(err.message, "rostok env encrypt")
 })

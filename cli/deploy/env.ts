@@ -78,10 +78,11 @@ import { UserError } from "../errors.ts"
  */
 function buildNestedPathsError(pathApps: string, volumesPath: string, envPath: string): string {
   const reencrypt = "re-encrypt (`rostok env encrypt`)"
-  const stopStacks = "stop each stack on the server (from PATH_APPS, run `docker compose -p " +
-    "<name> --env-file .env.root --env-file .env -f stacks/<name>/compose.yml down` for each " +
-    "stacks/<name> — a plain `docker compose down` run from inside the folder can silently " +
-    "target the wrong project for a stack whose compose.yml sets `name: ${PROJECT}`)"
+  const stopStacks = "stop each stack on the server: for each stacks/<name>, find its project " +
+    "with `docker ps -a --filter label=com.docker.compose.project.working_dir=<PATH_APPS>/" +
+    "stacks/<name> --format '{{.Label \"com.docker.compose.project\"}}'` and run " +
+    "`docker compose -p <project> down --remove-orphans` (use the project the label reports, " +
+    "not the folder name: an aliased stack runs under its deployAs name)"
 
   if (pathApps === volumesPath) {
     return `VOLUMES_PATH and PATH_APPS must not be the same directory ("${pathApps}") — a ` +
