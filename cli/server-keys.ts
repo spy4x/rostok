@@ -298,40 +298,53 @@ export function parseSshAddress(value: string): SshTarget {
       portText = rest.slice(idx + 1)
       if (host === "") throw sshAddressError(value)
     } else {
-      const lastColon = rest.lastIndexOf(":")
-      const maybeHost = rest.slice(0, lastColon)
-      const maybePort = rest.slice(lastColon + 1)
-      // `maybeHost.includes("::")` is the pre-existing ambiguous-IPv6-
-      // with-port case (bracket it instead): a "::" run is exactly what
-      // makes ssh unable to tell where the host ends and a port begins.
-      // Without a "::", a trailing all-digit segment after 2+ colons is
-      // still ambiguous — it could be a port, or (for a rare, fully
-      // written-out IPv6 literal) just another hex group that happens to
-      // be all decimal digits. Only that second case is accepted as a
-      // host with no port (see the module comment) — told apart by
-      // whether everything before the last colon is hex-digits-and-
-      // colons, the only alphabet an IPv6 literal uses. `root@host:22:33`
-      // (#236) has letters outside a-f in "host:22", so it falls to the
-      // plain rejection below instead of being silently accepted as a
-      // literal hostname containing colons.
-      if (
-        /^\d+$/.test(maybePort) && (maybeHost.includes("::") || !HEX_COLON_PATTERN.test(maybeHost))
-      ) {
-        if (maybeHost.includes("::")) {
+      // 2+ colons — either a genuine, unbracketed IPv6 literal, or
+      // something ambiguous that ssh (and getaddrinfo) can't reliably
+      // read as one or the other, refused rather than guessed at.
+      if (rest.includes("::")) {
+        // Abbreviated form. If, after splitting off whatever sits after
+        // the LAST colon, everything before it still contains "::" AND
+        // that last segment is all digits, the whole thing reads
+        // equally well as "abbreviated IPv6" or "IPv6 with a trailing
+        // port" — ssh can't tell, so it's refused; bracket it instead
+        // (e.g. "2001:db8::1:2222"). Otherwise (the "::" pair sits right
+        // at the split point, e.g. "2001:db8::1", or the last segment
+        // isn't numeric) it's accepted whole, as a bare IPv6 host.
+        const lastColon = rest.lastIndexOf(":")
+        const maybeHost = rest.slice(0, lastColon)
+        const maybePort = rest.slice(lastColon + 1)
+        if (/^\d+$/.test(maybePort) && maybeHost.includes("::")) {
           throw new UserError(
             `invalid SSH_ADDRESS "${sanitizeForLog(value)}": bracket an IPv6 address that ` +
               `carries a port — use "[${sanitizeForLog(maybeHost)}]:${sanitizeForLog(maybePort)}".`,
           )
         }
-        throw new UserError(
-          `invalid SSH_ADDRESS "${sanitizeForLog(value)}": "${
-            sanitizeForLog(rest)
-          }" has more than one colon and isn't a recognizable IPv6 address — ssh can't tell a ` +
-            `host from a port here. Use a single "host:port", or configure the port on an ` +
-            `ssh_config alias instead.`,
-        )
+        if (!HEX_COLON_PATTERN.test(rest)) throw sshAddressError(value)
+        host = rest
+      } else {
+        // No "::" at all — only a REAL, full IPv6 literal (exactly 8
+        // colon-separated groups, each 1-4 hex digits) is accepted as a
+        // bare host; anything else with 2+ colons is refused outright,
+        // whether or not it merely LOOKS hex ("cafe:22:33",
+        // "deadbeef:22:33" — every character is a valid hex digit, but
+        // 3 groups isn't a real IPv6 shape) or doesn't ("host:22:33",
+        // #236). A real 8-group literal can legitimately end in an
+        // all-digit group (see the accepted-cases test table), so no
+        // separate host/port split is needed for this branch.
+        const groups = rest.split(":")
+        const isFullIpv6 = groups.length === 8 &&
+          groups.every((g) => /^[0-9a-fA-F]{1,4}$/.test(g))
+        if (!isFullIpv6) {
+          throw new UserError(
+            `invalid SSH_ADDRESS "${sanitizeForLog(value)}": "${
+              sanitizeForLog(rest)
+            }" has more than one colon and isn't a recognizable IPv6 address — ssh can't tell ` +
+              `a host from a port here. Use a single "host:port", or configure the port on an ` +
+              `ssh_config alias instead.`,
+          )
+        }
+        host = rest
       }
-      host = rest
     }
   }
 
@@ -418,9 +431,17 @@ export function rsyncDestination(target: SshTarget, remotePath: string): string 
 export const REMOTE_PATH_PATTERN = /^\/[A-Za-z0-9._/-]*$/
 
 /**
- * Throw a UserError unless `value` is a plain absolute path. Remote paths
- * such as PATH_APPS and VOLUMES_PATH reach the server's login shell through
- * rsync, so shell metacharacters and `..` segments are refused.
+ * Throw a UserError unless `value` is a plain absolute path with at
+ * least two components (`/srv/apps`, never `/` or `/srv`). Remote paths
+ * such as PATH_APPS and VOLUMES_PATH reach the server's login shell
+ * through rsync, so shell metacharacters and `..` segments are refused.
+ *
+ * The two-component floor (#233 review) is a "rostok owns this
+ * directory entirely" guard: `PATH_APPS=/` or `PATH_APPS=/home` would
+ * make a full deploy's `rsync --delete` (run-deploy.ts) delete
+ * everything else already on the server under that path — `/srv` is
+ * shallow enough that a typo or a copy-pasted default (`/home` instead
+ * of `/home/deploy/apps`) is a real risk, not a hypothetical one.
  */
 export function validateRemotePath(key: string, value: string): void {
   if (!REMOTE_PATH_PATTERN.test(value) || value.split("/").includes("..")) {
@@ -429,11 +450,31 @@ export function validateRemotePath(key: string, value: string): void {
         `and "/", e.g. /srv/apps.`,
     )
   }
+  if (pathComponents(value).length < 2) {
+    throw new UserError(
+      `invalid ${key} "${value}": must be a directory rostok owns entirely, at least two path ` +
+        `components deep (e.g. /srv/apps, not /srv or /) — a deploy deletes stale files under ` +
+        `it and must never reach anything else already on the server.`,
+    )
+  }
 }
 
 /** `path`, split into its non-empty, non-"." components — the same shape whether it has a trailing slash, a doubled slash, or a `./` segment. `validateRemotePath` already refuses a `..` segment before this runs. */
-function pathComponents(path: string): string[] {
+export function pathComponents(path: string): string[] {
   return path.split("/").filter((c) => c !== "" && c !== ".")
+}
+
+/**
+ * Normalise `path` — collapse doubled slashes, drop a trailing slash
+ * and `.` segments — into one canonical absolute-path string, so every
+ * later comparison (`pathsNestedOrEqual`, an error message, a remote
+ * shell command) works from the same value instead of re-deriving it
+ * (and risking a different normalisation) each time. `validateRemotePath`
+ * has already refused a `..` segment and confirmed `path` is absolute
+ * before this is meant to run.
+ */
+export function normalizeRemotePath(path: string): string {
+  return `/${pathComponents(path).join("/")}`
 }
 
 /**

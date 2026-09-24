@@ -5,7 +5,9 @@ import {
   DEPLOY_REQUIRED_KEYS,
   hasReservedStackKeyPrefix,
   isServerKey,
+  normalizeRemotePath,
   parseSshAddress,
+  pathComponents,
   pathsNestedOrEqual,
   rsyncDestination,
   rsyncSshOption,
@@ -219,6 +221,17 @@ Deno.test("still accepts a genuine unbracketed IPv6 literal with no port", () =>
   })
 })
 
+Deno.test('rejects "cafe:22:33" and "root@deadbeef:22:33" — every char is hex, but 3 groups isn\'t real IPv6 (review round)', () => {
+  // A "looks hex" check alone (HEX_COLON_PATTERN on the pre-port slice)
+  // wrongly accepted these: "cafe"/"deadbeef" ARE valid hex, so the old
+  // heuristic mistook them for the rare-full-IPv6-literal case instead
+  // of requiring the real shape (exactly 8 groups, or "::").
+  for (const input of ["cafe:22:33", "root@deadbeef:22:33"]) {
+    const err = assertThrows(() => parseSshAddress(input), UserError, "invalid SSH_ADDRESS")
+    assertStringIncludes(err.message, "more than one colon")
+  }
+})
+
 Deno.test("rejects a port outside 1-65535", () => {
   for (
     const v of ["host:0", "host:65536", "host:999999", "[2001:db8::1]:0", "[2001:db8::1]:70000"]
@@ -315,8 +328,8 @@ Deno.test("rsyncSshOption and rsyncDestination carry the port and bracket a bare
   )
 })
 
-Deno.test("accepts plain absolute remote paths", () => {
-  for (const v of ["/srv/apps", "/", "/home/deploy/apps_1", "/srv/v-1.2"]) {
+Deno.test("accepts plain absolute remote paths, two components or deeper", () => {
+  for (const v of ["/srv/apps", "/home/deploy/apps_1", "/srv/v-1.2"]) {
     validateRemotePath("PATH_APPS", v)
   }
 })
@@ -327,6 +340,29 @@ Deno.test("rejects remote paths with shell metacharacters or ..", () => {
   ) {
     assertThrows(() => validateRemotePath("PATH_APPS", v), UserError, "invalid PATH_APPS")
   }
+})
+
+Deno.test("rejects / and any one-component path — rostok must own the whole directory (#233)", () => {
+  // /srv or /home as PATH_APPS would make a full deploy's rsync --delete
+  // (run-deploy.ts) delete everything ELSE already on the server under
+  // that path, not just what rostok put there.
+  for (const v of ["/", "/srv", "/home", "/apps"]) {
+    assertThrows(() => validateRemotePath("PATH_APPS", v), UserError, "must be a directory")
+  }
+})
+
+Deno.test('pathComponents: splits a path into its non-empty, non-"." components', () => {
+  assertEquals(pathComponents("/srv/apps"), ["srv", "apps"])
+  assertEquals(pathComponents("/srv//apps/"), ["srv", "apps"])
+  assertEquals(pathComponents("/srv/./apps"), ["srv", "apps"])
+  assertEquals(pathComponents("/"), [])
+})
+
+Deno.test("normalizeRemotePath: collapses doubled slashes, a trailing slash and . segments", () => {
+  assertEquals(normalizeRemotePath("/srv/apps"), "/srv/apps")
+  assertEquals(normalizeRemotePath("/srv/apps/"), "/srv/apps")
+  assertEquals(normalizeRemotePath("/srv//apps"), "/srv/apps")
+  assertEquals(normalizeRemotePath("/srv/./apps"), "/srv/apps")
 })
 
 Deno.test("accepts plain ssh/system usernames", () => {

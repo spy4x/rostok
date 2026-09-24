@@ -71,4 +71,9 @@ export const SSH_ADDRESS_TEST_CASES: SshAddressCase[] = [
   // "host:22:33" instead of being read as an ambiguous port form (#236).
   { input: "host:22:33" },
   { input: "root@host:22:33" },
+  // Rejected: every character IS a valid hex digit, but 3 groups isn't a
+  // real IPv6 shape (needs 8, or "::") — a "looks hex" check alone
+  // wrongly accepted these as a literal host (review round).
+  { input: "cafe:22:33" },
+  { input: "root@deadbeef:22:33" },
 ]
