@@ -19,7 +19,7 @@ import { stackAdd, type StackAddResult } from "./stack-add.ts"
 import { resolveCatalog } from "./catalog-paths.ts"
 import { serverDirFor, validateServerName } from "./server-keys.ts"
 import { buildNextSteps } from "./next-steps.ts"
-import { type ConfirmFn, type PromptFn } from "./prompts.ts"
+import { assertInteractiveStdin, type ConfirmFn, type PromptFn } from "./prompts.ts"
 import { join, relative } from "@std/path"
 
 export interface WizardOptions {
@@ -214,8 +214,12 @@ async function pickStacksInteractive(
     name: `${e.name} — ${e.meta.description}`,
     value: e.name,
   }))
-  const pick = pickStacksFn ?? ((opts) =>
-    Checkbox.prompt({
+  const pick = pickStacksFn ?? ((opts) => {
+    // #235: guard before the real cliffy call, same as defaultPromptFn/
+    // defaultConfirmFn in prompts.ts — Checkbox.prompt redraws forever
+    // against a non-TTY stdin instead of failing.
+    assertInteractiveStdin()
+    return Checkbox.prompt({
       // cliffy's Checkbox defaults to `confirmSubmit: true` (its own
       // default, not set here) — the first Enter arms submission and
       // shows its own "press enter again" hint, the second Enter
@@ -224,6 +228,7 @@ async function pickStacksInteractive(
       // reasonably think the prompt was stuck.
       message: "Pick stacks to add (space to select, enter twice to confirm; none to skip):",
       options: opts,
-    }))
+    })
+  })
   return await pick(options)
 }

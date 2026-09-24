@@ -18,6 +18,7 @@ import { join } from "@std/path"
 import { Confirm } from "@cliffy/prompt"
 import { checkAgeInstalled, checkAgeKeyPresent, generateAgeKey } from "./encrypt.ts"
 import { isCommandOnPath } from "./shell.ts"
+import { assertInteractiveStdin } from "./prompts.ts"
 
 const DENO_JSONC_TEMPLATE = `{
   "imports": {
@@ -132,10 +133,12 @@ export async function maybeOfferKeyGeneration(cwd: string): Promise<void> {
     return
   }
   if (await checkAgeKeyPresent(cwd)) return // already set up — silent
-  // Skip the prompt entirely when stdin isn't a TTY (CI, test runners,
-  // non-interactive mode). Confirm.prompt redraws forever in non-TTY
-  // mode, so we check upfront rather than catching a hang.
-  if (!Deno.stdin.isTerminal()) return
+  // #235: fail loudly (one shared guard, prompts.ts) instead of
+  // Confirm.prompt's own behavior of redrawing forever against a non-TTY
+  // stdin. This offer only runs when the caller already decided the run
+  // is interactive (opts.nonInteractive is false) — a non-TTY stdin here
+  // means the caller forgot `-n`, same as any other prompt in the CLI.
+  assertInteractiveStdin()
   const answer = await Confirm.prompt({
     message: "no encryption key found. generate one now? (so .env.age can be committed)",
     default: true,

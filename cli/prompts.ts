@@ -16,6 +16,29 @@
 import { Confirm, Input, Secret } from "@cliffy/prompt"
 import { UserError } from "./errors.ts"
 
+/**
+ * Guard for every REAL interactive prompt (see {@link defaultPromptFn},
+ * {@link defaultConfirmFn}, and the wizard's checkbox picker in
+ * wizard.ts). Throws before cliffy ever reads stdin.
+ *
+ * #235: cliffy's own prompt loop redraws forever against a non-TTY stdin
+ * instead of failing — `rostok stack remove foo -s home </dev/null`
+ * produced 5+ MB of redrawn output before this fix. The check has to run
+ * upfront, not inside a catch, since cliffy never throws or returns.
+ *
+ * Only ever called from the REAL cliffy call path — a test-injected
+ * `promptFn`/`confirmFn`/pick function bypasses this entirely (it never
+ * calls `Deno.stdin.isTerminal()` itself), so tests stay deterministic
+ * without needing a real TTY.
+ */
+export function assertInteractiveStdin(): void {
+  if (!Deno.stdin.isTerminal()) {
+    throw new UserError(
+      "stdin is not a terminal: pass -n (--non-interactive) and --var KEY=VALUE for the values you want to set",
+    )
+  }
+}
+
 /** The subset of cliffy's Input/Secret.prompt options promptValue actually uses. */
 export interface PromptBase {
   message: string
@@ -32,14 +55,19 @@ export interface PromptBase {
 export type PromptFn = (base: PromptBase, secret: boolean) => Promise<string>
 
 /** Real prompt: cliffy's `Secret.prompt` when `secret`, `Input.prompt` otherwise. */
-export const defaultPromptFn: PromptFn = (base, secret) =>
-  secret ? Secret.prompt(base) : Input.prompt(base)
+export const defaultPromptFn: PromptFn = (base, secret) => {
+  assertInteractiveStdin()
+  return secret ? Secret.prompt(base) : Input.prompt(base)
+}
 
 /** Replaces cliffy's `Confirm.prompt` for yes/no questions (e.g. stack-add's requires prompt). */
 export type ConfirmFn = (opts: { message: string; default?: boolean }) => Promise<boolean>
 
 /** Real confirm: cliffy's `Confirm.prompt`. */
-export const defaultConfirmFn: ConfirmFn = (opts) => Confirm.prompt(opts)
+export const defaultConfirmFn: ConfirmFn = (opts) => {
+  assertInteractiveStdin()
+  return Confirm.prompt(opts)
+}
 
 /**
  * Append the `--var` key to a human prompt label, e.g.

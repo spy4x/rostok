@@ -327,11 +327,13 @@ async function runMainIn(
   cwd: string,
   args: string[],
   env: Record<string, string> = {},
+  stdin: "inherit" | "piped" | "null" = "inherit",
 ): Promise<{ code: number; stdout: string; stderr: string }> {
   const cmd = new Deno.Command(Deno.execPath(), {
     args: ["run", "-A", MAIN_TS, ...args],
     cwd,
     env,
+    stdin,
     stdout: "piped",
     stderr: "piped",
   })
@@ -433,5 +435,150 @@ Deno.test({
       'rostok: Unknown option "--bogus-flag". Did you mean option "--catalog"?',
     )
     assertNoStackFrame(result.stderr)
+  },
+})
+
+// ─────────────────────────────────────────────────────────────────────
+// #235 — stdin isn't a terminal and `-n` is missing: every interactive
+// prompt must fail fast instead of redrawing forever. The reviewer's own
+// reproduction of the bug on main measured 5,355,313 bytes of redrawn
+// output from `stack remove librespeed -s home </dev/null` in 10
+// seconds; `stack add` on main did the same (2.6 MB). Each case here
+// runs the exact scenario as a real subprocess (`stdin: "null"`, the
+// same shape a CI job's `</dev/null` produces) and checks all three:
+// exit 1, exactly one `rostok:` line on stderr, and a time bound well
+// under the old 10s timeout (a couple hundred ms of real work plus a
+// generous margin for a loaded CI runner — a genuine hang would blow
+// past this by orders of magnitude, not narrowly miss it).
+// ─────────────────────────────────────────────────────────────────────
+
+const NON_TTY_TIME_BOUND_MS = 5_000
+
+/** Fresh, non-tty subprocess run: stdin is `null`, same as a script's `</dev/null`. */
+function runNonTty(
+  cwd: string,
+  args: string[],
+): Promise<{ code: number; stdout: string; stderr: string }> {
+  return runMainIn(cwd, args, {}, "null")
+}
+
+function assertOneRostokLine(stderr: string): void {
+  const lines = stderr.trim().split("\n")
+  assertEquals(lines.length, 1, `expected exactly one stderr line, got:\n${stderr}`)
+  assertStringIncludes(lines[0], "rostok: stdin is not a terminal")
+}
+
+/** Creates a server (`home`) with valid, network-free `--var`s, non-interactively. */
+async function createFixtureServer(cwd: string): Promise<void> {
+  const result = await runMainIn(cwd, [
+    "server",
+    "create",
+    "home",
+    "-n",
+    "--var",
+    "SSH_ADDRESS=root@203.0.113.9",
+    "--var",
+    "DOMAIN=example.com",
+    "--var",
+    "CONTACT_EMAIL=a@example.com",
+    // Pre-supplied so server create skips the SSH probe entirely (it
+    // would otherwise block on an unreachable RFC 5737 address) — fixture
+    // setup, not the behavior under test.
+    "--var",
+    "DOCKER_GROUP_ID=990",
+    "--var",
+    "PUID=1000",
+    "--var",
+    "PGID=1000",
+  ])
+  assertEquals(result.code, 0, result.stderr)
+}
+
+Deno.test({
+  name: "subprocess: bare wizard, non-tty stdin, no -n — fails fast with one rostok: line",
+  async fn() {
+    const tmp = await Deno.makeTempDir({ prefix: "rostok-nontty-" })
+    try {
+      const start = performance.now()
+      const result = await runNonTty(tmp, [])
+      const elapsedMs = performance.now() - start
+      assertEquals(result.code, 1)
+      assertOneRostokLine(result.stderr)
+      assertNoStackFrame(result.stderr)
+      if (elapsedMs >= NON_TTY_TIME_BOUND_MS) {
+        throw new Error(`expected < ${NON_TTY_TIME_BOUND_MS}ms, took ${elapsedMs}ms`)
+      }
+    } finally {
+      await Deno.remove(tmp, { recursive: true }).catch(() => {})
+    }
+  },
+})
+
+Deno.test({
+  name: "subprocess: server create, non-tty stdin, no -n — fails fast with one rostok: line",
+  async fn() {
+    const tmp = await Deno.makeTempDir({ prefix: "rostok-nontty-" })
+    try {
+      const start = performance.now()
+      const result = await runNonTty(tmp, ["server", "create", "other"])
+      const elapsedMs = performance.now() - start
+      assertEquals(result.code, 1)
+      assertOneRostokLine(result.stderr)
+      assertNoStackFrame(result.stderr)
+      if (elapsedMs >= NON_TTY_TIME_BOUND_MS) {
+        throw new Error(`expected < ${NON_TTY_TIME_BOUND_MS}ms, took ${elapsedMs}ms`)
+      }
+    } finally {
+      await Deno.remove(tmp, { recursive: true }).catch(() => {})
+    }
+  },
+})
+
+Deno.test({
+  name: "subprocess: stack add, non-tty stdin, no -n — fails fast with one rostok: line",
+  async fn() {
+    const tmp = await Deno.makeTempDir({ prefix: "rostok-nontty-" })
+    try {
+      await createFixtureServer(tmp)
+      const start = performance.now()
+      // librespeed isn't installed yet — stack add must still hit an
+      // interactive prompt for its own variables (e.g. LIBRESPEED_DOMAIN).
+      const result = await runNonTty(tmp, ["stack", "add", "librespeed", "-s", "home"])
+      const elapsedMs = performance.now() - start
+      assertEquals(result.code, 1)
+      assertOneRostokLine(result.stderr)
+      assertNoStackFrame(result.stderr)
+      if (elapsedMs >= NON_TTY_TIME_BOUND_MS) {
+        throw new Error(`expected < ${NON_TTY_TIME_BOUND_MS}ms, took ${elapsedMs}ms`)
+      }
+    } finally {
+      await Deno.remove(tmp, { recursive: true }).catch(() => {})
+    }
+  },
+})
+
+Deno.test({
+  name: "subprocess: stack remove, non-tty stdin, no -n — fails fast with one rostok: line",
+  async fn() {
+    const tmp = await Deno.makeTempDir({ prefix: "rostok-nontty-" })
+    try {
+      await createFixtureServer(tmp)
+      const add = await runMainIn(tmp, ["stack", "add", "librespeed", "-s", "home", "-n"])
+      assertEquals(add.code, 0, add.stderr)
+
+      const start = performance.now()
+      // librespeed has its own values in .env now (LIBRESPEED_DOMAIN,
+      // etc.) — stack remove reaches the "drop these too?" confirm.
+      const result = await runNonTty(tmp, ["stack", "remove", "librespeed", "-s", "home"])
+      const elapsedMs = performance.now() - start
+      assertEquals(result.code, 1)
+      assertOneRostokLine(result.stderr)
+      assertNoStackFrame(result.stderr)
+      if (elapsedMs >= NON_TTY_TIME_BOUND_MS) {
+        throw new Error(`expected < ${NON_TTY_TIME_BOUND_MS}ms, took ${elapsedMs}ms`)
+      }
+    } finally {
+      await Deno.remove(tmp, { recursive: true }).catch(() => {})
+    }
   },
 })
