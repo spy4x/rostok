@@ -55,23 +55,25 @@ import {
 import { UserError } from "../errors.ts"
 
 /**
- * True for a key safe to substitute into VOLUMES_PATH/PATH_APPS:
- * PATH_APPS/VOLUMES_PATH themselves, or any other `PATH_*` server key
- * (isServerKey()'s own pattern — e.g. PATH_MEDIA). Deliberately NOT
- * every server key (DOMAIN, SSH_ADDRESS, ...), and never a stack's own
- * secret (STALWART_ADMIN_PASSWORD and friends can live in the same
- * server `.env`) — see expandEnvRefs's own comment for why the
- * allow-list is this narrow.
+ * True for a key safe to substitute into VOLUMES_PATH/PATH_APPS: a
+ * path-SHAPED name — `PATH_*` (isServerKey()'s own pattern, e.g.
+ * PATH_MEDIA) or `*_PATH` (VOLUMES_PATH itself, and a server's own
+ * naming for a shared root, e.g. BASE_PATH=/home/user/apps with
+ * PATH_APPS=${BASE_PATH}/rostok) — never a value's own content.
+ * Deliberately NOT every server key (DOMAIN, SSH_ADDRESS, ...), and
+ * never a stack's own secret (STALWART_ADMIN_PASSWORD and friends can
+ * live in the same server `.env`) — see expandEnvRefs's own comment
+ * for why the allow-list goes by name, not by value.
  */
 function isExpandablePathKey(key: string): boolean {
-  return key === "PATH_APPS" || key === "VOLUMES_PATH" || /^PATH_[A-Z0-9_]+$/.test(key)
+  return /^PATH_[A-Z0-9_]+$/.test(key) || /^[A-Z0-9_]+_PATH$/.test(key)
 }
 
 /**
  * Expand `${VAR}` and bare `$VAR` references in `value` against `env`,
- * the way docker compose resolves the same `.env` file — but ONLY for
- * `VOLUMES_PATH`/`PATH_APPS`/other `PATH_*` server keys
- * (`isExpandablePathKey`), never any other name. `validateRemotePath`
+ * the way docker compose resolves the same `.env` file — but ONLY for a
+ * path-shaped key name, `PATH_*` or `*_PATH` (`isExpandablePathKey`),
+ * never any other name. `validateRemotePath`
  * echoes its OWN argument back verbatim in its error message once this
  * returns, so a reference to an arbitrary key (`VOLUMES_PATH=/x/${
  * STALWART_ADMIN_PASSWORD}`, say — a stack secret can live in the same
@@ -103,8 +105,8 @@ export function expandEnvRefs(key: string, value: string, env: Record<string, st
       const ref = braced ?? bare!
       if (!isExpandablePathKey(ref)) {
         throw new UserError(
-          `invalid ${key} "${value}": references "${ref}", which isn't PATH_APPS, ` +
-            `VOLUMES_PATH or another PATH_* server key — refusing to expand it.`,
+          `invalid ${key} "${value}": references "${ref}", which isn't a PATH_*/*_PATH ` +
+            `server key — refusing to expand it.`,
         )
       }
       const resolvedRef = env[ref]

@@ -393,3 +393,22 @@ Deno.test("resolveDeployEnv: a VOLUMES_PATH referencing a stack secret in the sa
   assertStringIncludes(err.message, "STALWART_ADMIN_PASSWORD")
   assertEquals(err.message.includes("super-secret-value"), false)
 })
+
+Deno.test("expandEnvRefs: BASE_PATH (a *_PATH name, not PATH_*) is expandable (review round)", () => {
+  // The owner's own home server sets PATH_APPS=${BASE_PATH}/rostok —
+  // BASE_PATH doesn't match the PATH_* prefix pattern, only the *_PATH
+  // suffix one. Both are path-shaped names, not secrets.
+  assertEquals(
+    expandEnvRefs("PATH_APPS", "${BASE_PATH}/rostok", { BASE_PATH: "/home/user/apps" }),
+    "/home/user/apps/rostok",
+  )
+})
+
+Deno.test("resolveDeployEnv: PATH_APPS=${BASE_PATH}/rostok expands and passes validation (review round)", () => {
+  const resolved = resolveDeployEnv(
+    { ...VALID_BASE, PATH_APPS: "${BASE_PATH}/rostok", BASE_PATH: "/home/user/apps" },
+    "servers/home/.env",
+    ROOT_ENV_PATH,
+  )
+  assertEquals(resolved.env.PATH_APPS, "/home/user/apps/rostok")
+})
