@@ -17,11 +17,16 @@
 // (`cli/+main.ts`, as a real subprocess, for #211/#227's error-
 // formatting wrapper) either fails before the deploy would ever reach a
 // sync step, or is interrupted (SIGINT/SIGTERM/SIGHUP) before reaching
-// one — `FAKE_SSH` alone (a POSIX-adjacent deno script, kept from
-// before this review round, never `ssh`/`rsync`/`deno` internally
-// dangerous since it never re-execs a name on PATH) is enough for
-// those; no `rsync` binary needs to exist on `PATH` at all for any test
-// in this file.
+// one — `FAKE_SSH` alone (a plain POSIX `sh` script — never a `deno`
+// script: the owner's rule is no fake binary may be a Deno process,
+// since each spawn is a full process, and this one never re-execs
+// anything by a bare name on PATH, so it can't recurse the way an
+// earlier fake `rsync` elsewhere in this PR did) is enough for those; no
+// `rsync` binary needs to exist on `PATH` at all for any test in this
+// file — every fixture that can lose its "kill before the sync step"
+// race also sets `FAKE_SSH_HANG_ON` (see runInterruptedDeploy and the
+// ~1,500-file staging test) so a late signal still lands on this fake,
+// harmless, never on the system's real `rsync`.
 //
 // If cli/deploy/shipped-stacks.ts under-lists a catalog stack's files
 // (or run-deploy.ts fails to stage one), the corresponding assertion
@@ -32,100 +37,137 @@ import { dirname, join } from "@std/path"
 import { runDeploy, type RunDeployIO } from "../deploy/run-deploy.ts"
 import type { CommandResult } from "../deploy/exec.ts"
 
-const FAKE_SSH = `#!/usr/bin/env -S deno run --allow-read --allow-write --allow-env
-// Records every invocation to FAKE_SSH_LOG, then fakes just enough of a
-// remote host for a deploy to complete: the docker-group + remote-UID
-// preflights, the readlink -f symlink guard, and the per-stack
-// DEPLOY_START/DEPLOY_SUCCESS markers the real deploy script would
-// print after a successful \`docker compose up\`. Anything else (proxy
-// network, stale-stack cleanup, volume mkdir/chown) is accepted
-// silently, matching a healthy remote. Never calls \`ssh\`, \`rsync\` or
-// \`deno\` itself — it only ever prints to its own stdout/stderr — so it
-// can't recurse the way an earlier fake \`rsync\` elsewhere in this PR
-// did.
-//
-// Every real call is \`ssh -o ConnectTimeout=10 [-o BatchMode=yes] [-p <port>]
-// -- <target> <command...>\` (cli/deploy/exec.ts's sshArgs, see
-// cli/server-keys.ts) — the target and command sit right after the
-// first \`--\`, wherever the options before it land.
-const args = Deno.args
-const dashDashIdx = args.indexOf("--")
-const script = args.slice(dashDashIdx + 2).join(" ")
-const logPath = Deno.env.get("FAKE_SSH_LOG")
-if (logPath) {
-  await Deno.writeTextFile(logPath, script + "\\n---\\n", { append: true })
-}
-// FAKE_SSH_UNREACHABLE simulates a dead/unreachable server. A real ssh
-// enforces -o ConnectTimeout=10 itself, so this fake only needs to
-// check the flag is actually in argv: present -> fail immediately the
-// way ssh does on a real timeout (proving the wiring works, without
-// spending 10 real seconds on it); ABSENT -> really hang, the way an
-// unreachable host would without that flag, so a regression that drops
-// ConnectTimeout turns this test red instead of quietly slow.
-if (Deno.env.get("FAKE_SSH_UNREACHABLE")) {
-  if (args.includes("ConnectTimeout=10")) {
-    console.error("ssh: connect to host remote.test port 22: Connection timed out")
-    Deno.exit(255)
-  }
-  // No ConnectTimeout in argv: really hang, the way an unreachable host
-  // would. Killing the top-level "deno run mainTs" test subprocess
-  // doesn't necessarily reach THIS grandchild (Deno.Command exposes no
-  // process-group kill), so this gets its own hard deadline — 20s, well
-  // past every test's own bounded wait — instead of relying only on
-  // being killed from outside.
-  setTimeout(() => Deno.exit(1), 20_000)
-  setInterval(() => {}, 1000)
-  await new Promise(() => {})
-}
-// FAKE_SSH_HANG_ON hangs forever the first time \`script\` contains this
-// text — used to hold a deploy open mid-run so a test can send it a
-// signal while the staging directory still exists. setInterval (not a
-// bare unresolved Promise) keeps this process genuinely busy, the way
-// a real blocked ssh call would be — needed so the SIGINT/SIGTERM
-// tests below prove deploy actually KILLS this child, not just that it
-// happened to already exit on its own. Same self-deadline as above, in
-// case deploy's own signal handling regresses and never reaches this
-// grandchild.
-const hangOn = Deno.env.get("FAKE_SSH_HANG_ON")
-if (hangOn && script.includes(hangOn)) {
-  // FAKE_SSH_PID_FILE: record this process's own pid before hanging, so
-  // a test can prove deploy actually killed THIS process (not just
-  // that deploy itself exited) by checking the pid is gone afterward.
-  const pidFile = Deno.env.get("FAKE_SSH_PID_FILE")
-  if (pidFile) await Deno.writeTextFile(pidFile, String(Deno.pid))
-  setTimeout(() => Deno.exit(1), 20_000)
-  setInterval(() => {}, 1000)
-  await new Promise(() => {})
-}
-if (script.includes("getent group docker")) {
-  const gid = Deno.env.get("FAKE_DOCKER_GID") ?? "988"
-  console.log(\`docker:x:\${gid}:\`)
-} else if (script === "id -u") {
-  // Default: root (uid 0) — matches SSH_ADDRESS=deploy@remote.test in the
-  // fixtures below, which is a placeholder address, not a real login.
-  console.log(Deno.env.get("FAKE_REMOTE_UID") ?? "0")
-} else if (script.includes("readlink -f")) {
-  // checkRemotePathsNotNested (docker-preflight.ts, #233 review): two
-  // readlink -f calls joined by "---". Sibling, non-nested real paths —
-  // none of these fixtures test a server-side symlink (that's covered
-  // directly in docker-preflight.test.ts).
-  console.log("/srv/apps\\n---\\n/srv/volumes")
-} else if (script.includes("DEPLOY_START:")) {
-  // FAKE_DEPLOY_FAIL_STACK lets a test simulate a stack whose
-  // \`docker compose up\` fails on the remote — everything else about
-  // the fake remote (docker group, uid) stays healthy.
-  const failStack = Deno.env.get("FAKE_DEPLOY_FAIL_STACK")
-  for (const m of script.matchAll(/DEPLOY_START:(\\S+):(\\S+)/g)) {
-    console.log(\`DEPLOY_START:\${m[1]}:\${m[2]}\`)
-    if (m[1] === failStack) {
-      console.log("simulated docker compose failure")
-      console.log(\`DEPLOY_FAILED:\${m[1]}:\${m[2]}\`)
-    } else {
-      console.log(\`DEPLOY_SUCCESS:\${m[1]}:\${m[2]}\`)
-    }
-  }
-}
-Deno.exit(0)
+const FAKE_SSH = `#!/bin/sh
+# Records every invocation to FAKE_SSH_LOG, then fakes just enough of a
+# remote host for a deploy to complete: the docker-group + remote-UID
+# preflights, the readlink -f symlink guard, and the per-stack
+# DEPLOY_START/DEPLOY_SUCCESS markers the real deploy script would print
+# after a successful \`docker compose up\`. Anything else (proxy network,
+# stale-stack cleanup, volume mkdir/chown) is accepted silently, matching
+# a healthy remote. Never calls \`ssh\`, \`rsync\` or any other name by
+# looking it up on PATH — it only ever prints to its own stdout/stderr —
+# so it can't recurse the way an earlier fake \`rsync\` elsewhere in this
+# PR did. Plain POSIX \`sh\`, never a \`deno\` script (owner's rule: no fake
+# binary may be a Deno process — each spawn is a full process).
+#
+# Every real call is \`ssh -o ConnectTimeout=10 [-o BatchMode=yes] [-p <port>]
+# -- <target> <command...>\` (cli/deploy/exec.ts's sshArgs, see
+# cli/server-keys.ts) — the target and command sit right after the first
+# \`--\`, wherever the options before it land.
+set -u
+
+found_dashdash=0
+skip_target=0
+script=""
+for a in "$@"; do
+  if [ "$found_dashdash" = 1 ] && [ "$skip_target" = 1 ]; then
+    if [ -z "$script" ]; then
+      script=$a
+    else
+      script="$script $a"
+    fi
+  elif [ "$found_dashdash" = 1 ]; then
+    skip_target=1
+  elif [ "$a" = "--" ]; then
+    found_dashdash=1
+  fi
+done
+
+if [ -n "\${FAKE_SSH_LOG:-}" ]; then
+  printf '%s\\n---\\n' "$script" >> "$FAKE_SSH_LOG"
+fi
+
+# FAKE_SSH_UNREACHABLE simulates a dead/unreachable server. A real ssh
+# enforces -o ConnectTimeout=10 itself, so this fake only needs to check
+# the flag is actually in argv: present -> fail immediately the way ssh
+# does on a real timeout (proving the wiring works, without spending 10
+# real seconds on it); ABSENT -> really hang, the way an unreachable host
+# would without that flag, so a regression that drops ConnectTimeout
+# turns this test red instead of quietly slow.
+if [ -n "\${FAKE_SSH_UNREACHABLE:-}" ]; then
+  case " $* " in
+    *" ConnectTimeout=10 "*)
+      echo "ssh: connect to host remote.test port 22: Connection timed out" >&2
+      exit 255
+      ;;
+  esac
+  # No ConnectTimeout in argv: really hang, the way an unreachable host
+  # would, until killed — or this self-deadline (well past every test's
+  # own bounded wait) fires in case deploy's own signal handling
+  # regresses and never reaches this child. \`exec\` (not a plain
+  # foregrounded \`sleep\`) replaces THIS shell's own process image with
+  # sleep's: some shells (bash included, even in --posix/sh mode) defer
+  # their own termination on a caught-by-default signal until the
+  # foreground command they're waiting on finishes — a plain \`sleep 20\`
+  # would silently absorb the test's SIGTERM/SIGINT/SIGHUP for the full
+  # 20s instead of dying immediately. Once \`exec\`'d, there's no shell
+  # left to defer anything: the pid IS sleep's own, and sleep terminates
+  # on the signal's ordinary default disposition right away.
+  exec sleep 20
+fi
+
+# FAKE_SSH_HANG_ON hangs forever the first time \`script\` contains this
+# text — used to hold a deploy open mid-run so a test can send it a
+# signal while the staging directory still exists, and needed so the
+# SIGINT/SIGTERM tests below prove deploy actually KILLS this child, not
+# just that it happened to already exit on its own. Same self-deadline as
+# above.
+if [ -n "\${FAKE_SSH_HANG_ON:-}" ]; then
+  case "$script" in
+    *"\${FAKE_SSH_HANG_ON}"*)
+      # FAKE_SSH_PID_FILE: record this process's own pid before hanging,
+      # so a test can prove deploy actually killed THIS process (not
+      # just that deploy itself exited) by checking the pid is gone
+      # afterward.
+      if [ -n "\${FAKE_SSH_PID_FILE:-}" ]; then
+        echo "$$" > "$FAKE_SSH_PID_FILE"
+      fi
+      # \`exec\` — see the FAKE_SSH_UNREACHABLE branch above for why a
+      # plain foregrounded \`sleep\` would let a signal go unnoticed for
+      # the full 20s on some shells. The pid just written is still
+      # correct after \`exec\`: it never forks, it replaces this same
+      # process.
+      exec sleep 20
+      ;;
+  esac
+fi
+
+case "$script" in
+  *"getent group docker"*)
+    echo "docker:x:\${FAKE_DOCKER_GID:-988}:"
+    ;;
+  "id -u")
+    # Default: root (uid 0) — matches SSH_ADDRESS=deploy@remote.test in
+    # the fixtures below, which is a placeholder address, not a real
+    # login.
+    echo "\${FAKE_REMOTE_UID:-0}"
+    ;;
+  *"readlink -f"*)
+    # checkRemotePathsNotNested (docker-preflight.ts, #233 + review
+    # round): three readlink -f calls (PATH_APPS, VOLUMES_PATH,
+    # PATH_APPS/stacks) joined by "---". Sibling, non-nested real paths,
+    # stacks/ resolving to PATH_APPS's own stacks dir — none of these
+    # fixtures test a server-side symlink (that's covered directly in
+    # docker-preflight.test.ts).
+    printf '/srv/apps\\n---\\n/srv/volumes\\n---\\n/srv/apps/stacks\\n'
+    ;;
+  *"DEPLOY_START:"*)
+    # FAKE_DEPLOY_FAIL_STACK lets a test simulate a stack whose
+    # \`docker compose up\` fails on the remote — everything else about
+    # the fake remote (docker group, uid) stays healthy.
+    echo "$script" | grep -oE 'DEPLOY_START:[^ ]+:[^ ]+' |
+    while IFS=: read -r _tag stack id; do
+      echo "DEPLOY_START:$stack:$id"
+      if [ "$stack" = "\${FAKE_DEPLOY_FAIL_STACK:-}" ]; then
+        echo "simulated docker compose failure"
+        echo "DEPLOY_FAILED:$stack:$id"
+      else
+        echo "DEPLOY_SUCCESS:$stack:$id"
+      fi
+    done
+    ;;
+esac
+exit 0
 `
 
 interface Fixture {
@@ -1048,21 +1090,42 @@ async function waitForFileToInclude(path: string, text: string): Promise<void> {
 }
 
 /**
+ * The hang point every SIGINT/SIGTERM/SIGHUP test below blocks on:
+ * run-deploy.ts's post-staging `mkdir -p -- PATH_APPS/stacks` call
+ * (#233 point 2) — the first remote call after staging finishes, and
+ * the first one this fixture's FAKE_SSH answers, so it's the natural
+ * hang point. Neither a bare "mkdir -p" substring NOR just
+ * "-- '/srv/apps/stacks'" is enough (review round, found by actually
+ * running this fixture and watching the ssh log): checkRemotePathsNotNested's
+ * own preflight (docker-preflight.ts, fixed this round to `mkdir -p`
+ * before `readlink -f` on a fresh server) runs BEFORE staging even
+ * starts, and its script is `mkdir -p -- '/srv/apps' '/srv/volumes'
+ * '/srv/apps/stacks' && readlink -f -- '/srv/apps' && ... && readlink -f
+ * -- '/srv/apps/stacks'` — its OWN trailing readlink call also contains
+ * "-- '/srv/apps/stacks'" verbatim, so that substring alone still
+ * matched the preflight and hung the deploy before staging even began.
+ * The full literal "mkdir -p -- '/srv/apps/stacks'" (this exact
+ * sequence, immediately adjacent) only ever appears in run-deploy.ts's
+ * own post-staging call — the preflight's own "mkdir -p --" is followed
+ * by '/srv/apps' first, never directly by the stacks path.
+ */
+const POST_STAGING_MKDIR_HANG_POINT = `mkdir -p -- '/srv/apps/stacks'`
+
+/**
  * Spawn `rostok deploy test` with FAKE_SSH_HANG_ON set (holds the fake
  * ssh call busy — see FAKE_SSH above — after the staging dir is
  * created and populated, but BEFORE any sync would run — #233 review:
  * this file has no `rsync` binary on PATH at all anymore, so the hang
  * point has to be a remote SHELL call, not the old "docker network
- * inspect proxy" (which ran AFTER both syncs). `mkdir -p PATH_APPS/
- * stacks` (run-deploy.ts, #233 point 2) is the first remote call after
- * staging finishes and the first one this fixture's FAKE_SSH answers,
- * so it's the natural hang point.) Waits for the fake ssh's own log to
- * actually show the blocking command — not just for the staging dir to
- * exist, which can appear well before that ssh call starts — before
- * sending `signal`. Returns the exit code, whether the staging dir
- * survived, and whether the fake ssh's own pid (written to a file
- * right before it hangs) is still alive afterward — the real proof
- * that deploy KILLED it, not just that deploy itself exited.
+ * inspect proxy" (which ran AFTER both syncs). See
+ * POST_STAGING_MKDIR_HANG_POINT above for which call and why.) Waits
+ * for the fake ssh's own log to actually show the blocking command —
+ * not just for the staging dir to exist, which can appear well before
+ * that ssh call starts — before sending `signal`. Returns the exit
+ * code, whether the staging dir survived, and whether the fake ssh's
+ * own pid (written to a file right before it hangs) is still alive
+ * afterward — the real proof that deploy KILLED it, not just that
+ * deploy itself exited.
  */
 async function runInterruptedDeploy(
   f: Fixture,
@@ -1087,7 +1150,7 @@ async function runInterruptedDeploy(
         FAKE_SSH_LOG: f.logPath,
         // Hold the deploy open after staging is fully populated but
         // before the first sync (see this function's own comment).
-        FAKE_SSH_HANG_ON: "mkdir -p",
+        FAKE_SSH_HANG_ON: POST_STAGING_MKDIR_HANG_POINT,
         FAKE_SSH_PID_FILE: pidFile,
         TMPDIR: tmpRoot,
       },
@@ -1096,7 +1159,7 @@ async function runInterruptedDeploy(
     })
     const child = command.spawn()
 
-    await waitForFileToInclude(f.logPath, "mkdir -p")
+    await waitForFileToInclude(f.logPath, POST_STAGING_MKDIR_HANG_POINT)
     // The blocking ssh call writes its pid before it starts hanging —
     // by the time its own invocation shows up in the log, the pid file
     // exists too, but poll briefly in case of a write-then-flush gap.
@@ -1171,9 +1234,16 @@ Deno.test("e2e: SIGINT during a ~1,500-file stage leaves no staging directory be
   // walking and deleting it — observed to survive the signal 3 times
   // out of 5 with a ~1,500-file stack. The fix makes the handler fully
   // synchronous (no `await` anywhere in it), closing the interleaving
-  // window entirely. This test never reaches any remote call at all
-  // (killed mid-staging, purely local file writes), so it needs no
-  // `rsync` binary any more than it ever needed a real `ssh` one.
+  // window entirely. This test means to catch the signal mid-staging,
+  // never reaching any remote call at all — but the signal race it's
+  // testing is exactly a race: if it loses (signal delivered late,
+  // after staging already finished), deploy would carry on into the
+  // first sync step, and this fixture has NO `rsync` on PATH at all
+  // (#233 review) — a late signal would fall through to the system's
+  // REAL rsync. FAKE_SSH_HANG_ON holds it at the first remote shell call
+  // instead (same hang point the three dedicated signal tests below
+  // use), so a late signal still lands somewhere `sh`-fake and harmless,
+  // never at a real sync step.
   const f = await setupFixture()
   const tmpRoot = await Deno.makeTempDir({ prefix: "rostok-e2e-tmproot-" })
   try {
@@ -1199,6 +1269,9 @@ Deno.test("e2e: SIGINT during a ~1,500-file stage leaves no staging directory be
         PATH: `${f.binDir}:${Deno.env.get("PATH") ?? ""}`,
         FAKE_REMOTE_DIR: f.remoteDir,
         FAKE_SSH_LOG: f.logPath,
+        // Never let a late signal fall through staging into a real sync
+        // step — see this test's own comment above.
+        FAKE_SSH_HANG_ON: POST_STAGING_MKDIR_HANG_POINT,
         TMPDIR: tmpRoot,
       },
       stdout: "piped",
