@@ -8,7 +8,8 @@
 //   cwd = the local staging directory. The hook receives every KEY IT'S
 //   ENTITLED TO from `.env.root` and the server `.env` (parsed by
 //   rostok, no `$` expansion) — see the allowlist below — plus
-//   SSH_ADDRESS, SSH_USER, PATH_APPS and DEPLOY_AS.
+//   SSH_ADDRESS, SSH_HOST, SSH_PORT, SSH_USER, PATH_APPS and DEPLOY_AS
+//   (SSH_HOST/SSH_PORT: #229, see the module comment further down).
 //
 // `-A` means a hook is FULLY TRUSTED CODE: read/write/net/run/env, no
 // sandbox. rostok runs it exactly the way it would run any other script
@@ -63,9 +64,50 @@
 // when this Deno build and OS support process-group signalling, so
 // SIGINT/SIGTERM reaches the hook's own children too — see
 // process-registry.ts and docs/contributing/adding-services.md.
+//
+// (#229) SSH_HOST and SSH_PORT contract keys. Several hooks (syncthing,
+// stalwart, caldiy, open-webui, plus traefik/gatus before this round)
+// spawn `ssh` themselves to reach the deploy target — for a health
+// check, a restart, a one-off remote command. Every one of them used to
+// hand the raw SSH_ADDRESS string straight to `ssh`/`rsync`, which reads
+// "host:port" as a literal (unresolvable) hostname the moment
+// SSH_ADDRESS carries a port — a deploy that otherwise succeeds then
+// fails inside that one hook. `buildHookEnv` now parses SSH_ADDRESS once
+// with `parseSshAddress` (the same parser `cli/deploy/exec.ts` uses for
+// rostok's own ssh/rsync calls) and sets:
+//
+//   - SSH_HOST — the bare host/ssh_config-alias, never the port.
+//   - SSH_PORT — set ONLY when SSH_ADDRESS carries an explicit port
+//     (never a default). A hook adds `-p <SSH_PORT>` to its ssh argv
+//     only when SSH_PORT is non-empty, and validates it as digits
+//     1-65535 before use (defense in depth: SSH_ADDRESS was already
+//     validated once by parseSshAddress here, but a hook's own argv
+//     builder re-checks anyway, since it's the last place before the
+//     value reaches `ssh`). This mirrors `cli/deploy/exec.ts`'s own
+//     `sshArgs()`, which deploy's core ssh/rsync calls already use — see
+//     the Decision below for why.
+//
+// SSH_USER is unchanged: it was already a contract key sourced from
+// resolveDeployEnv's own required SSH_USER (server create always writes
+// one, whether typed separately or extracted from a `user@host`
+// SSH_ADDRESS at server-create time) — not re-derived from SSH_ADDRESS
+// here, so it's unaffected by whether THIS SSH_ADDRESS happens to embed
+// a user. `cli/deploy/env.ts`'s `resolveDeployEnv` now also checks that
+// SSH_USER agrees with the user part of SSH_ADDRESS when SSH_ADDRESS has
+// one — a hook and deploy's own ssh calls must log in as the same user.
+//
+// Decision: SSH_PORT is set only for an explicit port, matching
+// `sshArgs()`'s own rule for deploy's core ssh/rsync calls. An earlier
+// version of this defaulted SSH_PORT to "22" and had every hook pass
+// `-p 22` unconditionally, which would override a bare ssh_config
+// alias's own non-default `Port` directive — the exact regression
+// "an ssh_config alias target must keep working" warns against. Omitting
+// `-p` when SSH_PORT is unset lets ssh consult `~/.ssh/config` for that
+// alias, the same as before #229 and the same as every non-hook ssh call
+// deploy makes.
 
 import { UserError } from "../errors.ts"
-import { isServerKey, stackKeyPrefix } from "../server-keys.ts"
+import { isServerKey, parseSshAddress, stackKeyPrefix } from "../server-keys.ts"
 import { setsidAvailable, supportsProcessGroupKill, trackChild } from "./process-registry.ts"
 
 export interface HookContext {
@@ -169,6 +211,29 @@ function sanitizeForLog(s: string): string {
 }
 
 /**
+ * Strips one matching quote layer (`'...'` or `"..."` around the whole
+ * value), and nothing else: no backslash escapes, no `#` comment
+ * stripping. docker compose's `env_file` and Deno's `--env-file` do more
+ * than this: both turn `\n` inside double quotes into a real newline and
+ * drop a trailing ` # comment` from an unquoted value. For those forms a
+ * hook can see a different value than its container, so a key a hook
+ * reads should not rely on escapes or trailing comments. The common case,
+ * a quoted value with spaces, matches. `cli/age.ts`'s `parseEnvFile`
+ * keeps a value's quotes for the file round trip (#226), so the stripping
+ * happens here, once, on the way into the hook's environment.
+ */
+function stripOneQuoteLayer(value: string): string {
+  if (value.length >= 2) {
+    const first = value[0]
+    const last = value[value.length - 1]
+    if ((first === '"' && last === '"') || (first === "'" && last === "'")) {
+      return value.slice(1, -1)
+    }
+  }
+  return value
+}
+
+/**
  * Build the environment a hook subprocess runs with.
  *
  * Starts from the deploying process's own real environment (a hook's
@@ -186,7 +251,13 @@ function sanitizeForLog(s: string): string {
  *   `.env`/`.env.root` VALUE WINS, even over a same-named parent
  *   variable — a shell that happens to export `DOMAIN` or `PROJECT`
  *   must not silently steer what stack-owned keys a hook sees; the
- *   deploy-time value is authoritative there.
+ *   deploy-time value is authoritative there. Its quotes are stripped
+ *   once (`stripOneQuoteLayer`) before it reaches the hook's env — a
+ *   `.env` value keeps its quotes on disk (#226), but docker compose's
+ *   `env_file` and Deno's `--env-file` both strip them when they
+ *   actually load the file, so a hook (which reads the same values a
+ *   container does) needs the same treatment to see what its container
+ *   sees.
  *
  * The contract keys (SSH_ADDRESS/SSH_USER/PATH_APPS/DEPLOY_AS) are set
  * last, unconditionally, from rostok's own validated values.
@@ -224,8 +295,10 @@ export function buildHookEnv(
       }
       continue
     }
-    // Allowed: the .env/.env.root value wins outright.
-    resolved[key] = value
+    // Allowed: the .env/.env.root value wins outright — quotes stripped
+    // once here, so the hook sees exactly what its own container would
+    // (docker compose's env_file/Deno's --env-file both strip them too).
+    resolved[key] = stripOneQuoteLayer(value)
   }
 
   const warnings: string[] = [...deniedWarnings]
@@ -236,7 +309,18 @@ export function buildHookEnv(
     )
   }
 
+  const target = parseSshAddress(ctx.sshAddress)
   resolved.SSH_ADDRESS = ctx.sshAddress
+  resolved.SSH_HOST = target.host
+  // Set only for an explicit port — never a default. Deleted rather than
+  // left unset so an ambient SSH_PORT in the deploying process's own
+  // shell can't leak through as if it were authoritative (see the
+  // module comment's Decision above).
+  if (target.port !== undefined) {
+    resolved.SSH_PORT = String(target.port)
+  } else {
+    delete resolved.SSH_PORT
+  }
   resolved.SSH_USER = ctx.sshUser
   resolved.PATH_APPS = ctx.pathApps
   resolved.DEPLOY_AS = ctx.deployAs

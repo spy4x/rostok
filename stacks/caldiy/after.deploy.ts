@@ -3,20 +3,74 @@
 // create the Workflow + WorkflowStep + WorkflowsOnEventTypes records if
 // they don't already exist. This avoids manual SQL steps.
 //
-// Environment: SSH_ADDRESS, PATH_APPS from deploy context.
+// Environment: SSH_HOST, SSH_PORT, SSH_USER, PATH_APPS from deploy
+// context. SSH_HOST/SSH_PORT/SSH_USER are contract keys parsed once from
+// SSH_ADDRESS by cli/deploy/hooks.ts's buildHookEnv (#229) — see its
+// module comment. Building ssh's argv from these instead of the raw
+// SSH_ADDRESS string is what lets a non-default port reach ssh as
+// `-p <port>` instead of being read as part of an unresolvable
+// "host:port" hostname. SSH_PORT is set ONLY when SSH_ADDRESS carried an
+// explicit port — never a default — so `-p` is added only when it's
+// non-empty.
 
-const SSH = Deno.env.get("SSH_ADDRESS") ?? ""
+/** Digits only, 1-65535 — the same range cli/server-keys.ts's parseSshAddress enforces. */
+function isValidPort(port: string): boolean {
+  if (!/^\d+$/.test(port)) return false
+  const n = Number(port)
+  return n >= 1 && n <= 65535
+}
+
+/**
+ * Build the argv for `ssh [-p <port>] -o ConnectTimeout=10 -o
+ * BatchMode=yes -- [user@]host <remoteCommand>`. `port` is omitted from
+ * the argv entirely when undefined (SSH_ADDRESS had no explicit port) —
+ * a hook must never invent a default port a bare alias's own
+ * ~/.ssh/config might already override. Throws if `port` is set but not
+ * a valid 1-65535 port — defense in depth even though SSH_ADDRESS was
+ * already validated once before deploy ever set SSH_PORT. Exported for
+ * tests — no I/O. See cli/deploy/hooks.ts's module comment (#229).
+ */
+export function buildSshArgs(
+  host: string,
+  port: string | undefined,
+  user: string | undefined,
+  remoteCommand: string,
+): string[] {
+  if (port !== undefined && !isValidPort(port)) {
+    throw new Error(`invalid SSH_PORT "${port}": expected digits 1-65535`)
+  }
+  const target = user ? `${user}@${host}` : host
+  return [
+    ...(port !== undefined ? ["-p", port] : []),
+    "-o",
+    "ConnectTimeout=10",
+    "-o",
+    "BatchMode=yes",
+    "--",
+    target,
+    remoteCommand,
+  ]
+}
+
+const SSH_HOST = Deno.env.get("SSH_HOST") ?? ""
+const SSH_PORT = Deno.env.get("SSH_PORT") || undefined
+const SSH_USER = Deno.env.get("SSH_USER") || undefined
 const APPS = Deno.env.get("PATH_APPS") ?? ""
 
-if (!SSH || !APPS) {
-  console.error("after.deploy.ts: SSH_ADDRESS and PATH_APPS must be set")
+if (import.meta.main && (!SSH_HOST || !APPS)) {
+  console.error("after.deploy.ts: SSH_HOST and PATH_APPS must be set")
   Deno.exit(1)
 }
 
 /** Run SQL via psql on the remote caldiy-db container, return stdout */
 async function psql(sql: string): Promise<string> {
   const proc = new Deno.Command("ssh", {
-    args: [SSH, "docker exec -i hl-caldiy-db psql -U caldiy -d caldiy -t -A"],
+    args: buildSshArgs(
+      SSH_HOST,
+      SSH_PORT,
+      SSH_USER,
+      "docker exec -i hl-caldiy-db psql -U caldiy -d caldiy -t -A",
+    ),
     stdin: "piped",
     stdout: "piped",
     stderr: "piped",
@@ -103,9 +157,11 @@ COMMIT;
   }
 }
 
-try {
-  await main()
-} catch (err) {
-  console.error("after.deploy.ts FAILED:", err instanceof Error ? err.message : String(err))
-  Deno.exit(1)
+if (import.meta.main) {
+  try {
+    await main()
+  } catch (err) {
+    console.error("after.deploy.ts FAILED:", err instanceof Error ? err.message : String(err))
+    Deno.exit(1)
+  }
 }

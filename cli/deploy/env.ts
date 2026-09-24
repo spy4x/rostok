@@ -18,14 +18,106 @@
 // on the machine running rostok the moment ssh (or rsync, which
 // re-spawns ssh with the same target) parses it as an option instead of
 // a destination.
+//
+// (#223) VOLUMES_PATH written as `${PATH_APPS}/.volumes` (or
+// `$PATH_APPS/...`) is expanded against the already-loaded env — the
+// same reference docker compose itself resolves when it reads the same
+// `.env` — before the plain-absolute-path check runs. `server
+// create`'s own prompt already rejects a `${...}` value outright
+// (`validateRemotePath` disallows `$`/`{`/`}`), so this only matters for
+// a `.env` written or edited by hand, or by an older rostok version, and
+// never for one `server create` (as of #223) still produces. An
+// undefined reference is a UserError naming it — silently leaving
+// `${TYPO}` in the path would otherwise reach ssh/rsync as a literal,
+// nonexistent directory name.
+//
+// SSH_USER/SSH_ADDRESS agreement: a hook must log in as the same user
+// deploy's own ssh/rsync calls do. Deploy's login user is the user part
+// of SSH_ADDRESS when it has one (or ssh_config's own User for a bare
+// alias — rostok never sees that). SSH_USER is the separate remote
+// username `server create` writes (normally the same user, extracted
+// from `user@host` at server-create time, but a `--var` flag can set
+// it independently). When SSH_ADDRESS DOES carry a user and it disagrees
+// with SSH_USER, a hook (which gets SSH_USER, not the address's own
+// user) would silently log in as someone else than deploy's own ssh
+// calls do — refused as a UserError naming both values. A bare-alias
+// SSH_ADDRESS (no user part) has nothing to compare against, so it's
+// never flagged here.
 
 import {
   DEFAULT_PATH_APPS,
   DEPLOY_REQUIRED_KEYS,
+  parseSshAddress,
   validateRemotePath,
   validateSshAddress,
+  validateSshUser,
 } from "../server-keys.ts"
 import { UserError } from "../errors.ts"
+
+/**
+ * True for a key safe to substitute into VOLUMES_PATH/PATH_APPS: a
+ * path-SHAPED name — `PATH_*` (isServerKey()'s own pattern, e.g.
+ * PATH_MEDIA) or `*_PATH` (VOLUMES_PATH itself, and a server's own
+ * naming for a shared root, e.g. BASE_PATH=/home/user/apps with
+ * PATH_APPS=${BASE_PATH}/rostok) — never a value's own content.
+ * Deliberately NOT every server key (DOMAIN, SSH_ADDRESS, ...), and
+ * never a stack's own secret (STALWART_ADMIN_PASSWORD and friends can
+ * live in the same server `.env`) — see expandEnvRefs's own comment
+ * for why the allow-list goes by name, not by value.
+ */
+function isExpandablePathKey(key: string): boolean {
+  return /^PATH_[A-Z0-9_]+$/.test(key) || /^[A-Z0-9_]+_PATH$/.test(key)
+}
+
+/**
+ * Expand `${VAR}` and bare `$VAR` references in `value` against `env`,
+ * the way docker compose resolves the same `.env` file — but ONLY for a
+ * path-shaped key name, `PATH_*` or `*_PATH` (`isExpandablePathKey`),
+ * never any other name. `validateRemotePath`
+ * echoes its OWN argument back verbatim in its error message once this
+ * returns, so a reference to an arbitrary key (`VOLUMES_PATH=/x/${
+ * STALWART_ADMIN_PASSWORD}`, say — a stack secret can live in the same
+ * server `.env`) would print that secret's value straight into a
+ * UserError, which reaches logs/terminals. Refusing the reference
+ * outright, naming only the KEY it names (never a value, from either
+ * side), closes that: the error below is always safe to print.
+ *
+ * `$$` is compose's own escape for a literal `$` (never a reference) —
+ * handled the same way here so `VOLUMES_PATH=/x/$$literal` behaves
+ * identically to how compose itself would read it.
+ *
+ * Only a plain variable reference is supported — no `:-default`,
+ * `:?msg`, or nesting (VOLUMES_PATH/PATH_APPS never need those;
+ * compose's own fuller grammar is out of scope here). Throws a
+ * UserError naming `key` and the undefined/disallowed reference — a
+ * silently-unexpanded `${TYPO}` would otherwise reach ssh/rsync as a
+ * literal, nonexistent path segment.
+ */
+export function expandEnvRefs(key: string, value: string, env: Record<string, string>): string {
+  // Placeholder outside the printable-path alphabet, swapped back to a
+  // literal "$" at the end — keeps the $$-escape and the ${VAR}/$VAR
+  // substitution below from interfering with each other.
+  const DOLLAR_PLACEHOLDER = "\u0000"
+  const withEscapesHidden = value.replaceAll("$$", DOLLAR_PLACEHOLDER)
+  const expanded = withEscapesHidden.replace(
+    /\$\{([A-Za-z_][A-Za-z0-9_]*)\}|\$([A-Za-z_][A-Za-z0-9_]*)/g,
+    (_match, braced: string | undefined, bare: string | undefined) => {
+      const ref = braced ?? bare!
+      if (!isExpandablePathKey(ref)) {
+        throw new UserError(
+          `invalid ${key} "${value}": references "${ref}", which isn't a PATH_*/*_PATH ` +
+            `server key — refusing to expand it.`,
+        )
+      }
+      const resolvedRef = env[ref]
+      if (resolvedRef === undefined) {
+        throw new UserError(`invalid ${key} "${value}": references undefined variable "${ref}".`)
+      }
+      return resolvedRef
+    },
+  )
+  return expanded.replaceAll(DOLLAR_PLACEHOLDER, "$")
+}
 
 export interface ResolvedValue {
   value: string
@@ -112,12 +204,38 @@ export function resolveDeployEnv(
     )
   }
 
+  // Expand ${VAR}/$VAR references (e.g. VOLUMES_PATH=${PATH_APPS}/.volumes)
+  // before the plain-absolute-path check — see the module comment (#223).
+  // PATH_APPS expands first so a VOLUMES_PATH that references it sees the
+  // final value, not an unexpanded one.
+  resolved.PATH_APPS = expandEnvRefs("PATH_APPS", resolved.PATH_APPS, resolved)
+  resolved.VOLUMES_PATH = expandEnvRefs("VOLUMES_PATH", resolved.VOLUMES_PATH, resolved)
+
   // Before any of these reaches ssh/rsync or a remote shell command:
-  // reject an SSH_ADDRESS that could be read as an option, and a
-  // PATH_APPS/VOLUMES_PATH that isn't a plain absolute path.
+  // reject an SSH_ADDRESS that could be read as an option, a
+  // PATH_APPS/VOLUMES_PATH that isn't a plain absolute path, and an
+  // SSH_USER that isn't a safe username — checked regardless of what
+  // form SSH_ADDRESS takes (a bare ssh_config alias has no user@ part
+  // for parseSshAddress to validate on its own, so this is the only
+  // check SSH_USER gets; a hook can build an unquoted remote shell
+  // command from it, e.g. syncthing's `chown ${user}:${user} <path>`).
   validateSshAddress(resolved.SSH_ADDRESS)
   validateRemotePath("PATH_APPS", resolved.PATH_APPS)
   validateRemotePath("VOLUMES_PATH", resolved.VOLUMES_PATH)
+  validateSshUser(resolved.SSH_USER)
+
+  // A hook logs in with SSH_USER (cli/deploy/hooks.ts's contract key);
+  // deploy's own ssh/rsync calls log in with SSH_ADDRESS's own user part
+  // when it has one. The two must agree, or a hook silently logs in as
+  // someone else than the rest of deploy does — see the module comment.
+  const addressUser = parseSshAddress(resolved.SSH_ADDRESS).user
+  if (addressUser !== undefined && addressUser !== resolved.SSH_USER) {
+    throw new UserError(
+      `SSH_ADDRESS's user "${addressUser}" disagrees with SSH_USER "${resolved.SSH_USER}" ` +
+        `(${envPath}) — a hook logs in as SSH_USER, deploy's own ssh/rsync calls log in as ` +
+        `SSH_ADDRESS's user; they must be the same account.`,
+    )
+  }
 
   return { env: resolved, notices }
 }

@@ -1,12 +1,37 @@
 // .env file read/write helpers.
 //
 // Format: `KEY=value` per line. Lines starting with `#` are comments.
-// Empty lines ignored. No quoting/escaping rules beyond plain text values
-// (matches what scripts/encryption/encrypt.ts produces and consumes).
+// Empty lines ignored.
 //
-// The CLI never quotes values; it writes them verbatim as supplied by
-// stack defaults, --var flags, or interactive prompts. Stacks that need
-// multi-line values compose them in shell, not in .env.
+// Quoting convention (#226): a value's surrounding quotes (`'...'` or
+// `"..."`, one layer) are part of the value, verbatim, AS FAR AS THIS
+// FILE AND THE TRACKED .env/.env.age GO — parseEnv/serializeEnv never
+// strip or add them. `KEY="has a space"` parses to `value:
+// '"has a space"'`, quotes included, and serializes back
+// byte-identical. That is deliberately NOT what a container ends up
+// seeing: docker compose's `env_file` and Deno's `--env-file` each
+// strip exactly one matching layer of quotes when they load a `.env`
+// (verified directly: `docker compose config` turns `FOO="has a
+// space"` into the environment value `has a space`, no quotes; `deno
+// --env-file` does the same for `Deno.env.get`). A hook process
+// launched by `cli/deploy/hooks.ts` is handed the same stripped form —
+// see `buildHookEnv`'s own comment — so this file's job is only to keep
+// the FILE ROUND TRIP (read a `.env`, write it back, or re-encrypt it)
+// byte-identical; it is not the place that mimics compose's runtime
+// stripping.
+//
+// The CLI never adds quotes; it writes a value verbatim as supplied by
+// stack defaults, --var flags, or interactive prompts — a value that
+// needs quoting to survive some other consumer's parser must be typed
+// with the quotes already included. Stacks that need multi-line values
+// compose them in shell, not in .env.
+//
+// This module's own round trip already preserves quotes byte-identical
+// (see env-files.test.ts) — it never had the bug #226 reported. The
+// actual quote-stripping bug was in `cli/age.ts`'s `parseEnvFile` (used
+// by the real `rostok env encrypt`/`decrypt` path, not this file), which
+// stripped one layer of matching quotes on read and never restored it on
+// write — fixed there, with its own test.
 
 import { dirname, join } from "@std/path"
 

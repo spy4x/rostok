@@ -15,10 +15,9 @@ import {
   validateRemotePath,
   validateServerName,
   validateSshAddress,
+  validateSshUser,
 } from "./server-keys.ts"
 import { SSH_ADDRESS_TEST_CASES } from "./deploy/ssh-address-test-cases.ts"
-import { parseSshAddress as parseSshAddressTraefik } from "../stacks/traefik/after.deploy.ts"
-import { parseSshAddress as parseSshAddressGatus } from "../stacks/gatus/after.deploy.ts"
 
 Deno.test("accepts ordinary server names", () => {
   for (const name of ["home", "cloud-1", "a", "0", "x".repeat(63)]) {
@@ -238,23 +237,23 @@ Deno.test("rejects a host starting with -, with or without a user", () => {
   }
 })
 
-Deno.test("parseSshAddress and both hooks' inlined copies agree on every shared test case", () => {
+// #229: traefik and gatus no longer carry their own inlined SSH_ADDRESS
+// parser — every hook now gets SSH_HOST/SSH_PORT/SSH_USER as contract
+// keys, already parsed once by cli/deploy/hooks.ts's buildHookEnv (see
+// its module comment). SSH_ADDRESS_TEST_CASES stays in use below,
+// proving parseSshAddress itself handles every case in that shared
+// table; buildHookEnv's own use of it is covered by
+// cli/deploy/hooks.test.ts.
+Deno.test("parseSshAddress agrees with every case in the shared SSH_ADDRESS test table", () => {
   for (const { input, expected } of SSH_ADDRESS_TEST_CASES) {
-    const parsers: [string, (v: string) => unknown][] = [
-      ["cli", parseSshAddress],
-      ["traefik hook", parseSshAddressTraefik],
-      ["gatus hook", parseSshAddressGatus],
-    ]
-    for (const [label, parse] of parsers) {
-      if (expected === undefined) {
-        assertThrows(() => parse(input), Error, undefined, `${label} should reject "${input}"`)
-      } else {
-        assertEquals(
-          parse(input),
-          { user: undefined, port: undefined, ...expected },
-          `${label} disagrees on "${input}"`,
-        )
-      }
+    if (expected === undefined) {
+      assertThrows(() => parseSshAddress(input), Error, undefined, `should reject "${input}"`)
+    } else {
+      assertEquals(
+        parseSshAddress(input),
+        { user: undefined, port: undefined, ...expected },
+        `disagrees on "${input}"`,
+      )
     }
   }
 })
@@ -300,5 +299,23 @@ Deno.test("rejects remote paths with shell metacharacters or ..", () => {
     const v of ["srv/apps", "/srv/$(touch x)", "/srv/a;b", "/srv/a b", "/srv/../etc", "~/apps"]
   ) {
     assertThrows(() => validateRemotePath("PATH_APPS", v), UserError, "invalid PATH_APPS")
+  }
+})
+
+Deno.test("accepts plain ssh/system usernames", () => {
+  for (const v of ["root", "deploy", "deploy-1", "deploy.user", "_svc", "a"]) {
+    validateSshUser(v)
+  }
+})
+
+Deno.test("rejects an SSH_USER with shell metacharacters, spaces or a colon", () => {
+  // These reach an unquoted remote shell command a hook builds by hand
+  // (e.g. syncthing's `chown ${user}:${user} <path>`) — a bare
+  // ssh_config alias SSH_ADDRESS has no user@ part for parseSshAddress
+  // to validate on its own, so this is the only check SSH_USER gets.
+  for (
+    const v of ["x $HOME", "root; rm -rf /", "root:x", "$(id)", "`id`", "us'er", "", "-oProxy"]
+  ) {
+    assertThrows(() => validateSshUser(v), UserError, "invalid SSH_USER")
   }
 })

@@ -1,18 +1,22 @@
 // Tests for stacks/syncthing/after.deploy.ts pure reconciliation logic.
 
-import { assertEquals } from "@std/assert"
+import { assertEquals, assertThrows } from "@std/assert"
 
 import { type Device, type FolderRef, validateConfig } from "./before.deploy.ts"
 import {
   type ApiDevice,
   type ApiFolder,
+  buildRunRemoteScriptArgs,
   deepEqual,
   desiredDevice,
   desiredFolder,
+  dockerExecStdin,
   isDeviceArray,
   isFolderArray,
   isSystemStatus,
   resolveFolderDeviceIds,
+  runRemote,
+  sshOptionArgs,
 } from "./after.deploy.ts"
 
 const HOME_ID = "HOME-LOCAL-DEVICE-IDENTIFIER-PLACEHOLDER-DUMMY0"
@@ -317,4 +321,160 @@ Deno.test("isDeviceArray: accepts valid, rejects bad entries", () => {
   assertEquals(isDeviceArray([{ deviceID: "X" }]), false) // missing name
   assertEquals(isDeviceArray([{ name: "n" }]), false) // missing deviceID
   assertEquals(isDeviceArray([{ deviceID: 42, name: "n" }]), false)
+})
+
+/** Install a fake `ssh` on PATH that prints its own argv, one per line, as its own stdout. */
+async function withFakeSsh<T>(fn: () => Promise<T>): Promise<T> {
+  const binDir = await Deno.makeTempDir({ prefix: "rostok-fake-ssh-syncthing-after-" })
+  try {
+    const script = `#!/bin/sh\nfor a in "$@"; do printf '%s\\n' "$a"; done\n`
+    await Deno.writeTextFile(`${binDir}/ssh`, script, { mode: 0o755 })
+    const previousPath = Deno.env.get("PATH") ?? ""
+    Deno.env.set("PATH", `${binDir}:${previousPath}`)
+    try {
+      return await fn()
+    } finally {
+      Deno.env.set("PATH", previousPath)
+    }
+  } finally {
+    await Deno.remove(binDir, { recursive: true })
+  }
+}
+
+/** Set `keys` for the duration of `fn`, restoring whatever was there afterward. */
+async function withEnv<T>(vars: Record<string, string>, fn: () => Promise<T>): Promise<T> {
+  const previous = new Map(Object.keys(vars).map((k) => [k, Deno.env.get(k)]))
+  for (const [k, v] of Object.entries(vars)) Deno.env.set(k, v)
+  try {
+    return await fn()
+  } finally {
+    for (const [k, v] of previous) {
+      if (v === undefined) Deno.env.delete(k)
+      else Deno.env.set(k, v)
+    }
+  }
+}
+
+Deno.test("runRemote: SSH_ADDRESS=root@192.0.2.1:2222 (parsed to SSH_HOST/SSH_PORT/SSH_USER) reaches ssh as -p 2222 (#229)", async () => {
+  await withFakeSsh(async () => {
+    await withEnv({ SSH_HOST: "192.0.2.1", SSH_PORT: "2222", SSH_USER: "root" }, async () => {
+      const result = await runRemote(["docker", "exec", "hl-syncthing", "id"])
+      const argv = result.stdout.split("\n").filter((l) => l.length > 0)
+      assertEquals(argv, [
+        "-p",
+        "2222",
+        "-o",
+        "ConnectTimeout=10",
+        "-o",
+        "BatchMode=yes",
+        "--",
+        "root@192.0.2.1",
+        "docker",
+        "exec",
+        "hl-syncthing",
+        "id",
+      ])
+    })
+  })
+})
+
+Deno.test("runRemote: no SSH_PORT — omits -p entirely (an ssh_config alias's own Port wins)", async () => {
+  await withFakeSsh(async () => {
+    await withEnv({ SSH_HOST: "homelab", SSH_USER: "root" }, async () => {
+      Deno.env.delete("SSH_PORT")
+      const result = await runRemote(["id"])
+      const argv = result.stdout.split("\n").filter((l) => l.length > 0)
+      assertEquals(argv, [
+        "-o",
+        "ConnectTimeout=10",
+        "-o",
+        "BatchMode=yes",
+        "--",
+        "root@homelab",
+        "id",
+      ])
+    })
+  })
+})
+
+Deno.test("sshOptionArgs: rejects a non-numeric SSH_PORT", async () => {
+  await withEnv({ SSH_HOST: "homelab", SSH_PORT: "abc" }, async () => {
+    assertThrows(() => sshOptionArgs(), Error, "invalid SSH_PORT")
+  })
+})
+
+Deno.test("buildRunRemoteScriptArgs: -T is ssh's own option, placed before '--', not after the target", async () => {
+  await withEnv({ SSH_HOST: "192.0.2.1", SSH_PORT: "2222", SSH_USER: "root" }, async () => {
+    const args = buildRunRemoteScriptArgs(["arg1"])
+    const dashDashIdx = args.indexOf("--")
+    const tIdx = args.indexOf("-T")
+    assertEquals(tIdx, 0)
+    assertEquals(tIdx < dashDashIdx, true, `-T (${tIdx}) must come before -- (${dashDashIdx})`)
+    assertEquals(args, [
+      "-T",
+      "-p",
+      "2222",
+      "-o",
+      "ConnectTimeout=10",
+      "-o",
+      "BatchMode=yes",
+      "--",
+      "root@192.0.2.1",
+      "bash",
+      "-s",
+      "arg1",
+    ])
+  })
+})
+
+/**
+ * Install a fake `ssh` on PATH that prints its own argv (one per line)
+ * then drains and discards stdin before exiting — dockerExecStdin pipes
+ * a payload in, and a fake that doesn't read it risks the writer seeing
+ * EPIPE before the argv is even captured.
+ */
+async function withFakeSshDrainingStdin<T>(fn: () => Promise<T>): Promise<T> {
+  const binDir = await Deno.makeTempDir({ prefix: "rostok-fake-ssh-syncthing-stdin-" })
+  try {
+    const script = `#!/bin/sh\nfor a in "$@"; do printf '%s\\n' "$a"; done\ncat > /dev/null\n`
+    await Deno.writeTextFile(`${binDir}/ssh`, script, { mode: 0o755 })
+    const previousPath = Deno.env.get("PATH") ?? ""
+    Deno.env.set("PATH", `${binDir}:${previousPath}`)
+    try {
+      return await fn()
+    } finally {
+      Deno.env.set("PATH", previousPath)
+    }
+  } finally {
+    await Deno.remove(binDir, { recursive: true })
+  }
+}
+
+Deno.test("dockerExecStdin: -- reaches ssh before the target (review round — this call site was untested)", async () => {
+  await withFakeSshDrainingStdin(async () => {
+    await withEnv({ SSH_HOST: "192.0.2.1", SSH_PORT: "2222", SSH_USER: "root" }, async () => {
+      const result = await dockerExecStdin(
+        ["curl", "-s", "http://localhost:8384/"],
+        new Uint8Array(),
+      )
+      const argv = result.stdout.split("\n").filter((l) => l.length > 0)
+      assertEquals(argv, [
+        "-p",
+        "2222",
+        "-o",
+        "ConnectTimeout=10",
+        "-o",
+        "BatchMode=yes",
+        "--",
+        "root@192.0.2.1",
+        "docker",
+        "exec",
+        "-i",
+        "hl-syncthing",
+        "curl",
+        "-s",
+        "http://localhost:8384/",
+      ])
+    })
+  })
 })

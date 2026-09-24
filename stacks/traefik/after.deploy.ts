@@ -6,121 +6,82 @@
 // stack directory (deploy runs this file from the installed package,
 // an https:// URL when installed from JSR, where a relative parent
 // import can't resolve).
+//
+// Uses the SSH_HOST/SSH_PORT/SSH_USER contract keys every hook gets
+// (parsed once from SSH_ADDRESS by cli/deploy/hooks.ts's buildHookEnv —
+// see its module comment) instead of parsing SSH_ADDRESS itself (#229)
+// — this hook used to hand the raw address straight to `ssh`, which
+// read "host:port" as a literal, unresolvable hostname whenever
+// SSH_ADDRESS carried a port.
+//
+// SSH_PORT is set ONLY when SSH_ADDRESS carried an explicit port —
+// never a default — so `-p` is added only when SSH_PORT is non-empty;
+// omitting it otherwise lets ssh consult ~/.ssh/config for a bare alias
+// (see cli/deploy/hooks.ts's module comment for why a default-22 would
+// have broken an alias with its own non-default Port).
 
-// Same parsing rule as cli/server-keys.ts's parseSshAddress, inlined
-// because this hook can't import it (it ships and runs standalone, as
-// a bare file:// or https:// URL — see the module comment above). An
-// ssh_config alias, host, user@host, host:port, user@host:port, a bare
-// IPv6 address, or [IPv6]:port, no spaces, never starting with "-" —
-// which ssh's own argument parser would otherwise read as an option
-// (e.g. "-oProxyCommand=..." runs a local command).
-const SSH_HOST_CHARS_PATTERN = /^[A-Za-z0-9_.:-]+$/
-/** Same as cli/server-keys.ts's SSH_USER_PATTERN — see its comment. */
-const SSH_USER_PATTERN = /^[A-Za-z0-9_][A-Za-z0-9._-]*$/
-
-export interface SshTarget {
-  user?: string
-  host: string
-  port?: number
+/** `[user@]host` — no brackets: ssh gets host and -p <port> as separate argv slots. */
+function targetHost(host: string, user: string | undefined): string {
+  return user ? `${user}@${host}` : host
 }
 
-/** Same grammar as cli/server-keys.ts's parseSshAddress — kept in sync by a shared test table. Exported for tests. */
-export function parseSshAddress(value: string): SshTarget {
-  if (value.startsWith("-")) throw new Error(`invalid SSH_ADDRESS "${value}"`)
-
-  let rest = value
-  let user: string | undefined
-  const atIdx = rest.indexOf("@")
-  if (atIdx !== -1) {
-    user = rest.slice(0, atIdx)
-    rest = rest.slice(atIdx + 1)
-    if (user === "" || !SSH_USER_PATTERN.test(user)) {
-      throw new Error(`invalid SSH_ADDRESS "${value}"`)
-    }
-  }
-  if (rest === "") throw new Error(`invalid SSH_ADDRESS "${value}"`)
-  if (rest.startsWith("-")) throw new Error(`invalid SSH_ADDRESS "${value}"`)
-
-  let host: string
-  let portText: string | undefined
-
-  if (rest.startsWith("[")) {
-    const closeIdx = rest.indexOf("]")
-    if (closeIdx === -1) throw new Error(`invalid SSH_ADDRESS "${value}"`)
-    host = rest.slice(1, closeIdx)
-    const after = rest.slice(closeIdx + 1)
-    if (after !== "") {
-      if (!after.startsWith(":")) throw new Error(`invalid SSH_ADDRESS "${value}"`)
-      portText = after.slice(1)
-    }
-    if (host === "") throw new Error(`invalid SSH_ADDRESS "${value}"`)
-  } else {
-    const colonCount = rest.split(":").length - 1
-    if (colonCount === 0) {
-      host = rest
-    } else if (colonCount === 1) {
-      const idx = rest.indexOf(":")
-      host = rest.slice(0, idx)
-      portText = rest.slice(idx + 1)
-      if (host === "") throw new Error(`invalid SSH_ADDRESS "${value}"`)
-    } else {
-      const lastColon = rest.lastIndexOf(":")
-      const maybeHost = rest.slice(0, lastColon)
-      const maybePort = rest.slice(lastColon + 1)
-      if (maybeHost.includes("::") && /^\d+$/.test(maybePort)) {
-        throw new Error(`invalid SSH_ADDRESS "${value}": bracket the IPv6 address and its port`)
-      }
-      host = rest
-    }
-  }
-
-  if (!SSH_HOST_CHARS_PATTERN.test(host)) throw new Error(`invalid SSH_ADDRESS "${value}"`)
-
-  let port: number | undefined
-  if (portText !== undefined) {
-    if (!/^\d+$/.test(portText)) throw new Error(`invalid SSH_ADDRESS "${value}"`)
-    port = Number(portText)
-    if (port < 1 || port > 65535) throw new Error(`invalid SSH_ADDRESS "${value}": bad port`)
-  }
-
-  return { user, host, port }
-}
-
-// Never brackets an IPv6 host: ssh gets the target and -p <port> as
-// separate argv slots below, so there's no combined "host:port" string
-// for a bare colon to be ambiguous inside.
-function targetHost(target: SshTarget): string {
-  return target.user ? `${target.user}@${target.host}` : target.host
+/** Digits only, 1-65535 — the same range cli/server-keys.ts's parseSshAddress enforces. */
+function isValidPort(port: string): boolean {
+  if (!/^\d+$/.test(port)) return false
+  const n = Number(port)
+  return n >= 1 && n <= 65535
 }
 
 /**
- * Build the argv for `ssh -o ConnectTimeout=10 -o BatchMode=yes [-p
- * <port>] -- <address> docker restart <container>`. Throws when
- * `sshAddress` doesn't parse. `BatchMode=yes` is unconditional here —
- * this hook's own `ssh` call is spawned with `stdin: "null"` below, so
- * it can never answer an interactive prompt anyway. "--" goes before
- * the address as a second, independent guard: even a value that
- * somehow slipped past parsing can't be read as an ssh option once
- * "--" ends option parsing. Exported for tests — no I/O.
+ * Build the argv for `ssh [-p <port>] -o ConnectTimeout=10 -o
+ * BatchMode=yes -- [user@]host docker restart <container>`. `port` is
+ * omitted from the argv entirely when undefined (SSH_ADDRESS had no
+ * explicit port) — a hook must never invent a default port an alias's
+ * own ~/.ssh/config might already override. Throws if `port` is set but
+ * not a valid 1-65535 port — defense in depth even though SSH_ADDRESS
+ * was already validated once before deploy ever set SSH_PORT.
+ * `BatchMode=yes` is unconditional here — this hook's own `ssh` call is
+ * spawned with `stdin: "null"` below, so it can never answer an
+ * interactive prompt anyway. "--" ends ssh's own option parsing before
+ * the target — a second guard even though SSH_HOST was already
+ * validated (as part of SSH_ADDRESS) before deploy ever set it.
+ * Exported for tests — no I/O.
  */
-export function buildRestartCommand(sshAddress: string, container: string): string[] {
-  const target = parseSshAddress(sshAddress)
-  const args = ["-o", "ConnectTimeout=10", "-o", "BatchMode=yes"]
-  if (target.port !== undefined) args.push("-p", String(target.port))
-  args.push("--", targetHost(target), "docker", "restart", container)
-  return args
+export function buildRestartCommand(
+  host: string,
+  port: string | undefined,
+  user: string | undefined,
+  container: string,
+): string[] {
+  if (port !== undefined && !isValidPort(port)) {
+    throw new Error(`invalid SSH_PORT "${port}": expected digits 1-65535`)
+  }
+  return [
+    ...(port !== undefined ? ["-p", port] : []),
+    "-o",
+    "ConnectTimeout=10",
+    "-o",
+    "BatchMode=yes",
+    "--",
+    targetHost(host, user),
+    "docker",
+    "restart",
+    container,
+  ]
 }
 
 if (import.meta.main) {
-  const SSH_ADDRESS = Deno.env.get("SSH_ADDRESS")
-  if (!SSH_ADDRESS) {
-    console.error("after.deploy.ts FAILED: SSH_ADDRESS not set")
+  const SSH_HOST = Deno.env.get("SSH_HOST")
+  const SSH_PORT = Deno.env.get("SSH_PORT") || undefined
+  const SSH_USER = Deno.env.get("SSH_USER") || undefined
+  if (!SSH_HOST) {
+    console.error("after.deploy.ts FAILED: SSH_HOST not set")
     Deno.exit(1)
   }
 
   let args: string[]
   try {
-    args = buildRestartCommand(SSH_ADDRESS, "hl-traefik")
+    args = buildRestartCommand(SSH_HOST, SSH_PORT, SSH_USER, "hl-traefik")
   } catch (err) {
     console.error("after.deploy.ts FAILED:", err instanceof Error ? err.message : String(err))
     Deno.exit(1)

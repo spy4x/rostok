@@ -13,7 +13,13 @@
 
 import { assertEquals, assertExists } from "@std/assert"
 import { join } from "@std/path"
-import { ageStatus, checkAgeInstalled, encryptEnvFiles, generateAgeKey } from "./encrypt.ts"
+import {
+  ageStatus,
+  checkAgeInstalled,
+  decryptEnvFiles,
+  encryptEnvFiles,
+  generateAgeKey,
+} from "./encrypt.ts"
 
 Deno.test("checkAgeInstalled: returns true on this machine (age is on PATH)", async () => {
   // The test runner has age installed (CI/dev box). If this fails, the
@@ -113,6 +119,50 @@ Deno.test("generateAgeKey: writes .age/key.txt and returns public key", async ()
     // The key file exists with the expected marker line.
     const content = await Deno.readTextFile(result.path)
     assertExists(content.match(/# public key: /))
+  } finally {
+    await Deno.remove(tmp, { recursive: true })
+  }
+})
+
+// #226: a value written with surrounding quotes must keep them through the
+// REAL `rostok env encrypt` + `env decrypt` path (encryptEnvFiles →
+// decryptEnvFiles, shelling out to the real `age` binary) — not just
+// through cli/env-files.ts's own parse/serialize, which never had this
+// bug (see cli/env-files.test.ts). The actual bug was in cli/age.ts's
+// parseEnvFile, which stripped one layer of matching quotes on read and
+// neither renderAgeContent nor decryptEnvFiles ever restored it on write.
+Deno.test("env encrypt + env decrypt: a quoted .env value keeps its quotes (#226)", async () => {
+  const tmp = await Deno.makeTempDir({ prefix: "rostok-quote-roundtrip-" })
+  try {
+    const keyResult = await generateAgeKey(tmp)
+    assertEquals(keyResult.ok, true)
+
+    const envPath = join(tmp, ".env")
+    await Deno.writeTextFile(
+      envPath,
+      "DOUBLE=\"has a space\"\nSINGLE='has a space too'\nPLAIN=nospaces\n",
+    )
+
+    // encryptEnvFiles/decryptEnvFiles resolve the key from the `cwd`
+    // argument itself (cli/age.ts's resolveKeyFile) — no chdir needed to
+    // line this test's key up with the one generateAgeKey(tmp) just wrote.
+    const encryptResult = await encryptEnvFiles(tmp)
+    assertEquals(encryptResult.ok, true, encryptResult.output)
+
+    const ageContent = await Deno.readTextFile(`${envPath}.age`)
+    // Ciphertext lines only — the plaintext quotes must not appear in
+    // .env.age (that would defeat the point of encrypting the value).
+    assertEquals(ageContent.includes("age64:"), true)
+
+    // Overwrite .env with garbage, then decrypt to prove the round trip
+    // reconstructs the original quoted content, not the encryption step
+    // alone.
+    await Deno.writeTextFile(envPath, "DOUBLE=wiped\n")
+    const decryptResult = await decryptEnvFiles(tmp)
+    assertEquals(decryptResult.ok, true, decryptResult.output)
+
+    const roundTripped = await Deno.readTextFile(envPath)
+    assertEquals(roundTripped, "DOUBLE=\"has a space\"\nSINGLE='has a space too'\nPLAIN=nospaces\n")
   } finally {
     await Deno.remove(tmp, { recursive: true })
   }

@@ -5,12 +5,15 @@ import { assertEquals, assertThrows } from "@std/assert"
 
 import {
   assertUsableApiKey,
+  buildRunRemoteScriptArgs,
   collectHostPaths,
   ConfigError,
   expandHome,
   getUser,
   type Mount,
   resolveFolderHostPath,
+  runRemote,
+  sshOptionArgs,
   validateConfig,
 } from "./before.deploy.ts"
 
@@ -292,4 +295,145 @@ Deno.test({
       restore()
     }
   },
+})
+
+/** Install a fake `ssh` on PATH that prints its own argv, one per line, as its own stdout. */
+async function withFakeSsh<T>(fn: () => Promise<T>): Promise<T> {
+  const binDir = await Deno.makeTempDir({ prefix: "rostok-fake-ssh-syncthing-before-" })
+  try {
+    const script = `#!/bin/sh\nfor a in "$@"; do printf '%s\\n' "$a"; done\n`
+    await Deno.writeTextFile(`${binDir}/ssh`, script, { mode: 0o755 })
+    const previousPath = Deno.env.get("PATH") ?? ""
+    Deno.env.set("PATH", `${binDir}:${previousPath}`)
+    try {
+      return await fn()
+    } finally {
+      Deno.env.set("PATH", previousPath)
+    }
+  } finally {
+    await Deno.remove(binDir, { recursive: true })
+  }
+}
+
+/** Set `keys` for the duration of `fn`, restoring whatever was there afterward. */
+async function withEnv<T>(vars: Record<string, string>, fn: () => Promise<T>): Promise<T> {
+  const previous = new Map(Object.keys(vars).map((k) => [k, Deno.env.get(k)]))
+  for (const [k, v] of Object.entries(vars)) Deno.env.set(k, v)
+  try {
+    return await fn()
+  } finally {
+    for (const [k, v] of previous) {
+      if (v === undefined) Deno.env.delete(k)
+      else Deno.env.set(k, v)
+    }
+  }
+}
+
+Deno.test("runRemote: SSH_ADDRESS=root@192.0.2.1:2222 (parsed to SSH_HOST/SSH_PORT/SSH_USER) reaches ssh as -p 2222 (#229)", async () => {
+  await withFakeSsh(async () => {
+    await withEnv({ SSH_HOST: "192.0.2.1", SSH_PORT: "2222", SSH_USER: "root" }, async () => {
+      const result = await runRemote(["mkdir", "-p", "--", "/srv/data"])
+      const argv = result.stdout.split("\n").filter((l) => l.length > 0)
+      assertEquals(argv, [
+        "-p",
+        "2222",
+        "-o",
+        "ConnectTimeout=10",
+        "-o",
+        "BatchMode=yes",
+        "--",
+        "root@192.0.2.1",
+        "mkdir",
+        "-p",
+        "--",
+        "/srv/data",
+      ])
+    })
+  })
+})
+
+Deno.test("runRemote: an explicit SSH_PORT=22 still reaches ssh as -p, no user means a bare host target", async () => {
+  const prevUser = Deno.env.get("SSH_USER")
+  Deno.env.delete("SSH_USER")
+  try {
+    await withFakeSsh(async () => {
+      await withEnv({ SSH_HOST: "homelab", SSH_PORT: "22" }, async () => {
+        const result = await runRemote(["id"])
+        const argv = result.stdout.split("\n").filter((l) => l.length > 0)
+        assertEquals(argv, [
+          "-p",
+          "22",
+          "-o",
+          "ConnectTimeout=10",
+          "-o",
+          "BatchMode=yes",
+          "--",
+          "homelab",
+          "id",
+        ])
+      })
+    })
+  } finally {
+    if (prevUser === undefined) Deno.env.delete("SSH_USER")
+    else Deno.env.set("SSH_USER", prevUser)
+  }
+})
+
+Deno.test("runRemote: no SSH_PORT — omits -p entirely (an ssh_config alias's own Port wins)", async () => {
+  await withFakeSsh(async () => {
+    await withEnv({ SSH_HOST: "homelab", SSH_USER: "root" }, async () => {
+      Deno.env.delete("SSH_PORT")
+      const result = await runRemote(["id"])
+      const argv = result.stdout.split("\n").filter((l) => l.length > 0)
+      assertEquals(argv, [
+        "-o",
+        "ConnectTimeout=10",
+        "-o",
+        "BatchMode=yes",
+        "--",
+        "root@homelab",
+        "id",
+      ])
+    })
+  })
+})
+
+Deno.test("sshOptionArgs: rejects a non-numeric SSH_PORT", async () => {
+  await withEnv({ SSH_HOST: "homelab", SSH_PORT: "abc" }, async () => {
+    assertThrows(() => sshOptionArgs(), Error, "invalid SSH_PORT")
+  })
+})
+
+Deno.test("sshOptionArgs: rejects a port outside 1-65535", async () => {
+  await withEnv({ SSH_HOST: "homelab", SSH_PORT: "0" }, async () => {
+    assertThrows(() => sshOptionArgs(), Error, "invalid SSH_PORT")
+  })
+})
+
+Deno.test("buildRunRemoteScriptArgs: -T is ssh's own option, placed before '--', not after the target", async () => {
+  await withEnv({ SSH_HOST: "192.0.2.1", SSH_PORT: "2222", SSH_USER: "root" }, async () => {
+    const args = buildRunRemoteScriptArgs(["arg1"])
+    // -T must appear strictly before "--": ssh stops parsing its own
+    // options at "--", so a "-T" placed after the target would be sent
+    // to the remote shell as the literal first word of the command
+    // instead of read as an ssh flag (the #229 bug this fixes).
+    const dashDashIdx = args.indexOf("--")
+    const tIdx = args.indexOf("-T")
+    assertEquals(tIdx, 0)
+    assertEquals(tIdx < dashDashIdx, true, `-T (${tIdx}) must come before -- (${dashDashIdx})`)
+    assertEquals(args, [
+      "-T",
+      "-p",
+      "2222",
+      "-o",
+      "ConnectTimeout=10",
+      "-o",
+      "BatchMode=yes",
+      "--",
+      "root@192.0.2.1",
+      "bash",
+      "-s",
+      "arg1",
+    ])
+  })
 })
