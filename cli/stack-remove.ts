@@ -22,6 +22,20 @@
 // (#212), unless `--force` — resolved the same way `stack add`'s own
 // `unmetRequires` check reads the graph (by the `name` config.json
 // stores, i.e. each entry's `meta.name`).
+//
+// Review fix — every question is asked BEFORE any file is written:
+// the old order wrote config.json first, then asked about .env. A
+// decline (or a crash between the two) left config.json changed while
+// .env wasn't, an inconsistent state for something a "did it work?"
+// rerun couldn't cleanly retry. config.json and .env (when confirmed)
+// are now written back to back, once the answer is known.
+//
+// Review fix — a stack that's in config.json but no longer resolves in
+// the catalog (removed from a `--catalog` override, or dropped from the
+// bundled catalog between versions) can still be removed: its
+// config.json entry is dropped, but its own env keys are left alone —
+// there's no `+meta.ts` left to say which keys are its own, and
+// guessing by prefix could delete another stack's key.
 
 import { join } from "@std/path"
 import { encryptEnvFiles } from "./encrypt.ts"
@@ -56,13 +70,28 @@ export interface StackRemoveResult {
   droppedKeys: string[]
   /** This stack's own env keys that exist in .env but were left alone. */
   keptOwnKeys: string[]
+  /**
+   * True when `stackName` no longer resolves in the catalog — its
+   * config.json entry was still removed, but env cleanup was skipped
+   * entirely (no `+meta.ts` to say which keys are its own).
+   */
+  envCleanupSkipped?: boolean
+}
+
+/** Try to resolve `stackName` in `catalog`; `undefined` instead of throwing when it's not there. */
+function tryFindStack(catalog: CatalogEntry[], stackName: string): CatalogEntry | undefined {
+  try {
+    return findStack(catalog, stackName)
+  } catch {
+    return undefined
+  }
 }
 
 /**
  * Remove a stack from a server: drops it from `config.json`, and — on
  * confirmation, `--drop-env`, or never in non-interactive mode without
  * that flag — its own env keys from `.env`. Re-encrypts afterward, same
- * as `stackAdd`.
+ * as `stackAdd`. Every question is asked before anything is written.
  */
 export async function stackRemove(
   stackName: string,
@@ -79,46 +108,65 @@ export async function stackRemove(
   }
 
   const catalog = await resolveCatalog(opts.catalogDir)
-  const entry = findStack(catalog, stackName)
+  const entry = tryFindStack(catalog, stackName)
+  // `resolvedName` is what config.json actually stores: `entry.meta.name`
+  // when the catalog still knows the stack, otherwise the raw name the
+  // caller passed (it must match a config.json entry exactly — there's
+  // no alias resolution left once the catalog can't help).
+  const resolvedName = entry?.meta.name ?? stackName
 
   const cfg = await readServerConfig(serverDir)
-  if (!cfg.stacks.some((s) => s.name === entry.meta.name)) {
-    throw new UserError(`stack '${entry.meta.name}' is not installed on '${serverName}'`)
+  if (!cfg.stacks.some((s) => s.name === resolvedName)) {
+    throw new UserError(`stack '${resolvedName}' is not installed on '${serverName}'`)
   }
 
   // #225 — refuse when another still-installed stack `requires` this
   // one, naming the dependent(s), unless --force. A dependent whose own
-  // `+meta.ts` can't be resolved (removed from a `--catalog` override
-  // between installs) is skipped rather than crashing the removal —
-  // there's nothing to name it by anyway.
+  // `+meta.ts` can't be resolved is skipped rather than crashing the
+  // removal — there's nothing to name it by anyway. Works whether or
+  // not `entry` itself resolved, since `requires` graphs reference
+  // `resolvedName` either way.
   const dependents: string[] = []
   for (const installed of cfg.stacks) {
-    if (installed.name === entry.meta.name) continue
-    let depEntry: CatalogEntry
-    try {
-      depEntry = findStack(catalog, installed.name)
-    } catch {
-      continue
-    }
-    if ((depEntry.meta.requires ?? []).includes(entry.meta.name)) {
+    if (installed.name === resolvedName) continue
+    const depEntry = tryFindStack(catalog, installed.name)
+    if (!depEntry) continue
+    if ((depEntry.meta.requires ?? []).includes(resolvedName)) {
       dependents.push(installed.name)
     }
   }
   if (dependents.length > 0 && !opts.force) {
     throw new UserError(
-      `can't remove '${entry.meta.name}': required by ${
+      `can't remove '${resolvedName}': required by ${
         dependents.join(", ")
       } — pass --force to remove anyway.`,
     )
   }
 
-  // Drop the stack from config.json first — this is unconditional; only
-  // the .env cleanup below is optional/confirmed.
-  const remainingStacks = cfg.stacks.filter((s) => s.name !== entry.meta.name)
-  await Deno.writeTextFile(
-    join(serverDir, "config.json"),
-    JSON.stringify({ ...cfg, stacks: remainingStacks }, null, 2) + "\n",
-  )
+  const remainingStacks = cfg.stacks.filter((s) => s.name !== resolvedName)
+
+  const result: StackRemoveResult = {
+    stackName: resolvedName,
+    serverName,
+    droppedKeys: [],
+    keptOwnKeys: [],
+  }
+
+  if (!entry) {
+    // No `+meta.ts` left to say which env keys are this stack's own —
+    // guessing by prefix could delete another stack's key, so env
+    // cleanup is skipped outright rather than attempted unsafely.
+    await writeConfig(serverDir, cfg, remainingStacks)
+    await encryptEnvFiles(cwd)
+    result.envCleanupSkipped = true
+    console.log(
+      `rostok: '${resolvedName}' isn't in the catalog anymore — removed it from ` +
+        `${serverName}'s config.json, but left its values in servers/${serverName}/.env alone ` +
+        `(no +meta.ts left to say which keys are its own). Remove them by hand if you no ` +
+        `longer need them.`,
+    )
+    return result
+  }
 
   // Candidate keys: only what THIS stack's own +meta.ts declares (never
   // "anything with a matching prefix" — see module comment), minus any
@@ -129,12 +177,8 @@ export async function stackRemove(
   )
   const otherDeclaredKeys = new Set<string>()
   for (const installed of remainingStacks) {
-    let otherEntry: CatalogEntry
-    try {
-      otherEntry = findStack(catalog, installed.name)
-    } catch {
-      continue
-    }
+    const otherEntry = tryFindStack(catalog, installed.name)
+    if (!otherEntry) continue
     for (const v of otherEntry.meta.variables) {
       otherDeclaredKeys.add(normalizeVariableSpec(v).key)
     }
@@ -144,47 +188,42 @@ export async function stackRemove(
   const candidateKeys = existing
     .map((e) => e.key)
     .filter((key) => ownDeclaredKeys.has(key) && !isServerKey(key) && !otherDeclaredKeys.has(key))
+  result.keptOwnKeys = [...candidateKeys]
 
-  const result: StackRemoveResult = {
-    stackName: entry.meta.name,
-    serverName,
-    droppedKeys: [],
-    keptOwnKeys: [...candidateKeys],
-  }
-
-  if (candidateKeys.length === 0) {
-    await encryptEnvFiles(cwd)
-    console.log(`removed ${entry.meta.name} from ${serverName}`)
-    return result
-  }
-
+  // Decide whether to drop the env keys BEFORE writing anything — see
+  // the module comment on write ordering.
   let shouldDrop = false
-  if (opts.dropEnv) {
-    shouldDrop = true
-  } else if (opts.nonInteractive) {
-    console.log(
-      `rostok: kept ${candidateKeys.length} ${
-        candidateKeys.length === 1 ? "value" : "values"
-      } for ${entry.meta.name} in ${serverName}/.env (${
-        candidateKeys.join(", ")
-      }) — pass --drop-env to remove them, or run interactively.`,
-    )
-  } else {
-    const confirmFn = opts.confirmFn ?? defaultConfirmFn
-    shouldDrop = await confirmFn({
-      message: `Also remove ${entry.meta.name}'s own values from ${serverName}/.env (${
-        candidateKeys.join(", ")
-      })?`,
-      default: false,
-    })
-    if (!shouldDrop) {
+  if (candidateKeys.length > 0) {
+    if (opts.dropEnv) {
+      shouldDrop = true
+    } else if (opts.nonInteractive) {
       console.log(
-        `rostok: kept ${entry.meta.name}'s values in ${serverName}/.env — remove them later ` +
-          `by hand, or re-run \`rostok stack remove ${entry.meta.name} -s ${serverName} --drop-env\`.`,
+        `rostok: kept ${candidateKeys.length} ${
+          candidateKeys.length === 1 ? "value" : "values"
+        } for ${resolvedName} in servers/${serverName}/.env (${
+          candidateKeys.join(", ")
+        }) — pass --drop-env to remove them, or run interactively.`,
       )
+    } else {
+      const confirmFn = opts.confirmFn ?? defaultConfirmFn
+      shouldDrop = await confirmFn({
+        message: `Also remove ${resolvedName}'s own values from servers/${serverName}/.env (${
+          candidateKeys.join(", ")
+        })?`,
+        default: false,
+      })
+      if (!shouldDrop) {
+        console.log(
+          `rostok: kept ${resolvedName}'s values in servers/${serverName}/.env — remove them ` +
+            `later by hand, or re-run \`rostok stack remove ${resolvedName} -s ${serverName} ` +
+            `--drop-env\`.`,
+        )
+      }
     }
   }
 
+  // Now write: config.json unconditionally, .env only if confirmed.
+  await writeConfig(serverDir, cfg, remainingStacks)
   if (shouldDrop) {
     const updated = existing.filter((e: EnvEntry) => !candidateKeys.includes(e.key))
     await writeEnvFile(envPath, updated)
@@ -196,8 +235,20 @@ export async function stackRemove(
 
   const droppedWord = result.droppedKeys.length === 1 ? "value" : "values"
   console.log(
-    `removed ${entry.meta.name} from ${serverName}: ${result.droppedKeys.length} env ${droppedWord} dropped`,
+    `removed ${resolvedName} from ${serverName}: ${result.droppedKeys.length} env ${droppedWord} dropped`,
   )
 
   return result
+}
+
+/** Write config.json with `stacks` replaced by `remainingStacks`, preserving any other field. */
+async function writeConfig(
+  serverDir: string,
+  cfg: { stacks: { name: string }[] },
+  remainingStacks: { name: string }[],
+): Promise<void> {
+  await Deno.writeTextFile(
+    join(serverDir, "config.json"),
+    JSON.stringify({ ...cfg, stacks: remainingStacks }, null, 2) + "\n",
+  )
 }

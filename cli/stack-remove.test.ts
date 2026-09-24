@@ -6,6 +6,8 @@ import { UserError } from "./errors.ts"
 import { readEnvFile } from "./env-files.ts"
 import { readServerConfig, stackAdd } from "./stack-add.ts"
 import { stackRemove } from "./stack-remove.ts"
+import { generateAgeKey } from "./encrypt.ts"
+import { parseEnvFile } from "./age.ts"
 
 async function withTmpDir<T>(fn: (dir: string) => Promise<T>): Promise<T> {
   const dir = await Deno.makeTempDir({ prefix: "rostok-stack-remove-" })
@@ -269,5 +271,223 @@ Deno.test("stack remove --force: removes a required stack anyway", async () => {
 
     const cfg = await readServerConfig(join(dir, "servers", "home"))
     assertEquals(cfg.stacks.map((s) => s.name), ["web"])
+  })
+})
+
+// ─────────────────────────────────────────────────────────────────────
+// Review fix — ask before writing anything (config.json used to be
+// written before the "drop env values too?" question). confirmFn now
+// runs while config.json still lists the stack; both files change only
+// after the answer is known.
+// ─────────────────────────────────────────────────────────────────────
+
+Deno.test("stack remove: config.json still lists the stack when the drop-env question is asked; both change only after answering", async () => {
+  await withTmpDir(async (dir) => {
+    const catalogDir = join(dir, "catalog")
+    await writeLibrespeedCatalog(catalogDir)
+    await seedServer(dir, "home", { DOMAIN: "example.com" })
+    await addLibrespeed(dir, catalogDir)
+
+    let stackStillListedWhenAsked = false
+    await stackRemove("librespeed", "home", {
+      cwd: dir,
+      catalogDir,
+      confirmFn: async () => {
+        const cfg = await readServerConfig(join(dir, "servers", "home"))
+        stackStillListedWhenAsked = cfg.stacks.some((s) => s.name === "librespeed")
+        return true
+      },
+    })
+    assertEquals(stackStillListedWhenAsked, true)
+
+    // After answering, both config.json and .env reflect the removal.
+    const cfg = await readServerConfig(join(dir, "servers", "home"))
+    assertEquals(cfg.stacks.some((s) => s.name === "librespeed"), false)
+    const entries = await readEnvFile(join(dir, "servers", "home", ".env"))
+    assertEquals(entries.some((e) => e.key === "LIBRESPEED_PASSWORD"), false)
+  })
+})
+
+// ─────────────────────────────────────────────────────────────────────
+// Review fix — a stack that's in config.json but no longer resolves in
+// the catalog can still be removed: config.json entry dropped, env
+// cleanup skipped (no +meta.ts to say which keys are its own).
+// ─────────────────────────────────────────────────────────────────────
+
+Deno.test("stack remove: a stack no longer in the catalog is removed from config.json, env cleanup skipped", async () => {
+  await withTmpDir(async (dir) => {
+    const catalogDir = join(dir, "catalog")
+    await writeLibrespeedCatalog(catalogDir)
+    await seedServer(dir, "home", { DOMAIN: "example.com" })
+    await addLibrespeed(dir, catalogDir)
+
+    // Simulate the stack having been dropped from the catalog since it
+    // was added — remove its +meta.ts, leaving the config.json entry
+    // and its .env values in place.
+    await Deno.remove(join(catalogDir, "librespeed"), { recursive: true })
+
+    const result = await stackRemove("librespeed", "home", {
+      cwd: dir,
+      catalogDir,
+      dropEnv: true, // must be ignored — there's no +meta.ts to resolve keys from
+      confirmFn: () => {
+        throw new Error("must not ask — there's nothing to ask about without +meta.ts")
+      },
+    })
+    assertEquals(result.envCleanupSkipped, true)
+    assertEquals(result.droppedKeys, [])
+
+    const cfg = await readServerConfig(join(dir, "servers", "home"))
+    assertEquals(cfg.stacks.some((s) => s.name === "librespeed"), false)
+
+    // Its env values are untouched.
+    const entries = await readEnvFile(join(dir, "servers", "home", ".env"))
+    assertEquals(entries.some((e) => e.key === "LIBRESPEED_PASSWORD"), true)
+  })
+})
+
+Deno.test("stack remove: a stack no longer in the catalog can still be blocked by a requires dependent", async () => {
+  await withTmpDir(async (dir) => {
+    const catalogDir = join(dir, "catalog")
+    await writeTraefikWebCatalog(catalogDir)
+    await seedServer(dir, "home", { DOMAIN: "example.com", CONTACT_EMAIL: "ops@example.com" })
+    await stackAdd("traefik", "home", { cwd: dir, catalogDir, nonInteractive: true })
+    await stackAdd("web", "home", { cwd: dir, catalogDir, nonInteractive: true })
+
+    // traefik drops out of the catalog, but web (still installed, still
+    // resolvable) still requires it.
+    await Deno.remove(join(catalogDir, "traefik"), { recursive: true })
+
+    const err = await assertRejects(
+      () => stackRemove("traefik", "home", { cwd: dir, catalogDir }),
+      UserError,
+    )
+    assertStringIncludes(err.message, "required by web")
+
+    const cfg = await readServerConfig(join(dir, "servers", "home"))
+    assertEquals(cfg.stacks.map((s) => s.name).sort(), ["traefik", "web"])
+  })
+})
+
+// ─────────────────────────────────────────────────────────────────────
+// Review fix — prove the re-encryption actually happens: .env.age must
+// no longer contain a dropped key's line, not just .env. Removing the
+// stackRemove's encryptEnvFiles(cwd) call leaves the OLD ciphertext
+// line (including the now-deleted key) sitting in .env.age forever.
+// ─────────────────────────────────────────────────────────────────────
+
+Deno.test("stack remove --drop-env: the dropped key's line is gone from .env.age too, not just .env", async () => {
+  const originalCwd = Deno.cwd()
+  await withTmpDir(async (dir) => {
+    // age.ts resolves .age/key.txt relative to the process cwd (via `git
+    // rev-parse --git-common-dir`, falling back to cwd) — chdir so the
+    // key this test generates is the one encryptEnvFiles actually uses.
+    Deno.chdir(dir)
+    try {
+      const catalogDir = join(dir, "catalog")
+      await writeLibrespeedCatalog(catalogDir)
+      await seedServer(dir, "home", { DOMAIN: "example.com" })
+      const keyResult = await generateAgeKey(dir)
+      assertEquals(keyResult.ok, true, keyResult.error)
+
+      await addLibrespeed(dir, catalogDir)
+      const agePath = join(dir, "servers", "home", ".env.age")
+      const beforeAge = parseEnvFile(await Deno.readTextFile(agePath))
+      assertEquals(
+        beforeAge.some((e) => e.key === "LIBRESPEED_PASSWORD"),
+        true,
+        "sanity: .env.age must hold the key before removal",
+      )
+
+      await stackRemove("librespeed", "home", { cwd: dir, catalogDir, dropEnv: true })
+
+      const afterAge = parseEnvFile(await Deno.readTextFile(agePath))
+      assertEquals(afterAge.some((e) => e.key === "LIBRESPEED_PASSWORD"), false)
+    } finally {
+      Deno.chdir(originalCwd)
+    }
+  })
+})
+
+// ─────────────────────────────────────────────────────────────────────
+// Review fix — the otherDeclaredKeys guard (#210 double-check): a key
+// two stacks both declare (shouldn't happen per #210, but checked
+// anyway) must survive removing one of them while the other stays
+// installed.
+// ─────────────────────────────────────────────────────────────────────
+
+async function writeSharedKeyCatalog(catalogDir: string): Promise<void> {
+  for (const name of ["shared-a", "shared-b"]) {
+    await Deno.mkdir(join(catalogDir, name), { recursive: true })
+    await Deno.writeTextFile(
+      join(catalogDir, name, "+meta.ts"),
+      `import type { StackMeta } from "@rostok/cli"
+export default {
+  name: "${name}",
+  description: "fixture — declares a key another fixture stack also declares",
+  variables: [
+    { key: "${name.toUpperCase().replace("-", "_")}_OWN", default: "x", required: false },
+    { key: "SHARED_TOKEN", default: "shared-default", required: false },
+  ],
+} satisfies StackMeta
+`,
+    )
+  }
+}
+
+Deno.test("stack remove: a key two installed stacks both declare survives removing one of them", async () => {
+  await withTmpDir(async (dir) => {
+    const catalogDir = join(dir, "catalog")
+    await writeSharedKeyCatalog(catalogDir)
+    await seedServer(dir, "home", { DOMAIN: "example.com" })
+    await stackAdd("shared-a", "home", { cwd: dir, catalogDir, nonInteractive: true })
+    await stackAdd("shared-b", "home", {
+      cwd: dir,
+      catalogDir,
+      nonInteractive: true,
+      // shared-b's stackAdd sees SHARED_TOKEN already set by shared-a
+      // and keeps it (#210) — nothing more to arrange here.
+    })
+
+    const result = await stackRemove("shared-a", "home", {
+      cwd: dir,
+      catalogDir,
+      dropEnv: true,
+    })
+    // SHARED_A_OWN is genuinely shared-a's own key; SHARED_TOKEN must be
+    // excluded because shared-b (still installed) also declares it.
+    assertEquals(result.droppedKeys, ["SHARED_A_OWN"])
+
+    const entries = await readEnvFile(join(dir, "servers", "home", ".env"))
+    assertEquals(entries.some((e) => e.key === "SHARED_TOKEN"), true)
+    assertEquals(entries.some((e) => e.key === "SHARED_B_OWN"), true)
+  })
+})
+
+// ─────────────────────────────────────────────────────────────────────
+// Security review — an undeclared key that merely shares this stack's
+// prefix (a hand-added `.env` line, or a value an earlier `stack
+// remove -n` left behind) must never be treated as "this stack's own"
+// just because it starts with the right prefix — only what `+meta.ts`
+// actually declares is ever a removal candidate (module comment above).
+// ─────────────────────────────────────────────────────────────────────
+
+Deno.test("stack remove --drop-env: an undeclared key sharing the stack's prefix survives", async () => {
+  await withTmpDir(async (dir) => {
+    const catalogDir = join(dir, "catalog")
+    await writeLibrespeedCatalog(catalogDir)
+    await seedServer(dir, "home", { DOMAIN: "example.com" })
+    await addLibrespeed(dir, catalogDir)
+    // Not declared by librespeed's +meta.ts (only LIBRESPEED_PASSWORD
+    // and LIBRESPEED_DOMAIN are) — e.g. a hand-added line, or a key an
+    // earlier stack version used and dropped.
+    const envPath = join(dir, "servers", "home", ".env")
+    await Deno.writeTextFile(envPath, (await Deno.readTextFile(envPath)) + "LIBRESPEED_EXTRA=x\n")
+
+    const result = await stackRemove("librespeed", "home", { cwd: dir, catalogDir, dropEnv: true })
+    assertEquals(result.droppedKeys.sort(), ["LIBRESPEED_DOMAIN", "LIBRESPEED_PASSWORD"])
+
+    const entries = await readEnvFile(envPath)
+    assertEquals(entries.some((e) => e.key === "LIBRESPEED_EXTRA"), true)
   })
 })
