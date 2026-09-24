@@ -1,7 +1,7 @@
 // Tests for stacks/open-webui/after.deploy.ts's pure ssh argv helpers.
 // (No shell interaction — that runs via the deploy script.)
 
-import { assertEquals } from "@std/assert"
+import { assertEquals, assertThrows } from "@std/assert"
 import { buildSshOptionArgs, targetHost } from "./after.deploy.ts"
 
 Deno.test("buildSshOptionArgs: -p then the standard options", () => {
@@ -28,6 +28,19 @@ Deno.test("buildSshOptionArgs: carries the port from SSH_ADDRESS's :2222 form (#
     "-o",
     "BatchMode=yes",
   ])
+})
+
+Deno.test("buildSshOptionArgs: no port — omits -p entirely (an ssh_config alias's own Port wins)", () => {
+  assertEquals(buildSshOptionArgs(undefined), ["-o", "ConnectTimeout=10", "-o", "BatchMode=yes"])
+})
+
+Deno.test("buildSshOptionArgs: rejects a non-numeric port", () => {
+  assertThrows(() => buildSshOptionArgs("abc"), Error, "invalid SSH_PORT")
+})
+
+Deno.test("buildSshOptionArgs: rejects a port outside 1-65535", () => {
+  assertThrows(() => buildSshOptionArgs("0"), Error, "invalid SSH_PORT")
+  assertThrows(() => buildSshOptionArgs("65536"), Error, "invalid SSH_PORT")
 })
 
 Deno.test("targetHost: user@host when a user is set", () => {
@@ -89,6 +102,37 @@ Deno.test("after.deploy.ts subprocess: SSH_ADDRESS=root@192.0.2.1:2222 reaches s
     assertEquals(lines.slice(0, 8), [
       "-p",
       "2222",
+      "-o",
+      "ConnectTimeout=10",
+      "-o",
+      "BatchMode=yes",
+      "--",
+      "root@192.0.2.1",
+    ])
+  })
+})
+
+Deno.test("after.deploy.ts subprocess: no SSH_PORT — omits -p entirely (fake ssh)", async () => {
+  await withFakeSsh(async (logPath) => {
+    const env = { ...Deno.env.toObject() }
+    delete env.SSH_PORT
+    const command = new Deno.Command(Deno.execPath(), {
+      args: ["run", "-A", import.meta.resolve("./after.deploy.ts")],
+      env: {
+        ...env,
+        SSH_HOST: "192.0.2.1",
+        SSH_USER: "root",
+        PATH_APPS: "/srv/apps",
+        OPEN_WEBUI_OPENAI_API_KEYS: "sk-test",
+        OPEN_WEBUI_OPENAI_API_BASE_URLS: "https://example.com/v1",
+      },
+      stdout: "null",
+      stderr: "null",
+    })
+    await command.output()
+    const logged = await Deno.readTextFile(logPath)
+    const lines = logged.split("\n")
+    assertEquals(lines.slice(0, 6), [
       "-o",
       "ConnectTimeout=10",
       "-o",

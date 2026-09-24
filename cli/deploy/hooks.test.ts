@@ -91,7 +91,7 @@ Deno.test("runHook: runs from cwd=staging with allowed .env.root/.env keys + con
     assertEquals(written.env.TEST_STACK_TOKEN, "server-value")
     assertEquals(written.env.SSH_ADDRESS, "root@example.com")
     assertEquals(written.env.SSH_HOST, "example.com")
-    assertEquals(written.env.SSH_PORT, "22")
+    assertEquals(written.env.SSH_PORT, undefined)
     assertEquals(written.env.SSH_USER, "deploy")
     assertEquals(written.env.PATH_APPS, "/srv/apps")
     assertEquals(written.env.DEPLOY_AS, "test-stack")
@@ -105,18 +105,26 @@ Deno.test("buildHookEnv: SSH_HOST/SSH_PORT parsed once from SSH_ADDRESS (#229)",
   assertEquals(env.SSH_PORT, "2222")
 })
 
-Deno.test("buildHookEnv: SSH_PORT defaults to 22 when SSH_ADDRESS carries none", () => {
+Deno.test("buildHookEnv: SSH_PORT is unset (not defaulted) when SSH_ADDRESS carries no port", () => {
   const ctx: HookContext = { ...BASE_CTX, sshAddress: "root@192.0.2.1" }
   const { env } = buildHookEnv(ctx, STACK_NAME, {})
   assertEquals(env.SSH_HOST, "192.0.2.1")
-  assertEquals(env.SSH_PORT, "22")
+  assertEquals(env.SSH_PORT, undefined)
+})
+
+Deno.test("buildHookEnv: an ambient SSH_PORT in the parent process can't leak through when SSH_ADDRESS has no port", () => {
+  // A hook must never see a stale/ambient SSH_PORT as if it were
+  // authoritative — SSH_PORT is either the real explicit port or absent.
+  const ctx: HookContext = { ...BASE_CTX, sshAddress: "root@192.0.2.1" }
+  const { env } = buildHookEnv(ctx, STACK_NAME, { SSH_PORT: "9999" })
+  assertEquals(env.SSH_PORT, undefined)
 })
 
 Deno.test("buildHookEnv: an ssh_config alias parses as SSH_HOST with no port", () => {
   const ctx: HookContext = { ...BASE_CTX, sshAddress: "homelab" }
   const { env } = buildHookEnv(ctx, STACK_NAME, {})
   assertEquals(env.SSH_HOST, "homelab")
-  assertEquals(env.SSH_PORT, "22")
+  assertEquals(env.SSH_PORT, undefined)
 })
 
 Deno.test("isDeniedEnvKey: covers LD_/NPM_CONFIG_/DENO_/NODE_ (#7 — restoring coverage for the deny-list prefixes)", () => {
@@ -632,7 +640,7 @@ Deno.test("buildHookEnv: contract keys beat both a .env value and the parent env
   const { env } = buildHookEnv(ctx, STACK_NAME, { SSH_USER: "shell-user", DEPLOY_AS: "shell" })
   assertEquals(env.SSH_ADDRESS, BASE_CTX.sshAddress)
   assertEquals(env.SSH_HOST, "example.com")
-  assertEquals(env.SSH_PORT, "22")
+  assertEquals(env.SSH_PORT, undefined)
   assertEquals(env.PATH_APPS, BASE_CTX.pathApps)
   assertEquals(env.SSH_USER, BASE_CTX.sshUser)
   assertEquals(env.DEPLOY_AS, BASE_CTX.deployAs)

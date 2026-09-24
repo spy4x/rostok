@@ -1,7 +1,7 @@
 // Tests for stacks/caldiy/after.deploy.ts's pure ssh argv builder.
 // (No shell interaction beyond the fake ssh below.)
 
-import { assertEquals } from "@std/assert"
+import { assertEquals, assertThrows } from "@std/assert"
 import { buildSshArgs } from "./after.deploy.ts"
 
 Deno.test("buildSshArgs: -p, the standard options, then '--' then the target and command", () => {
@@ -38,6 +38,20 @@ Deno.test("buildSshArgs: no user — bare host as the target", () => {
     "homelab",
     "id",
   ])
+})
+
+Deno.test("buildSshArgs: no SSH_PORT — omits -p entirely (an ssh_config alias's own Port wins)", () => {
+  const args = buildSshArgs("homelab", undefined, undefined, "id")
+  assertEquals(args, ["-o", "ConnectTimeout=10", "-o", "BatchMode=yes", "--", "homelab", "id"])
+})
+
+Deno.test("buildSshArgs: rejects a non-numeric SSH_PORT", () => {
+  assertThrows(() => buildSshArgs("homelab", "abc", undefined, "id"), Error, "invalid SSH_PORT")
+})
+
+Deno.test("buildSshArgs: rejects a port outside 1-65535", () => {
+  assertThrows(() => buildSshArgs("homelab", "0", undefined, "id"), Error, "invalid SSH_PORT")
+  assertThrows(() => buildSshArgs("homelab", "65536", undefined, "id"), Error, "invalid SSH_PORT")
 })
 
 /**
@@ -92,6 +106,35 @@ Deno.test("after.deploy.ts subprocess: SSH_ADDRESS=root@192.0.2.1:2222 reaches s
     assertEquals(lines.slice(0, 8), [
       "-p",
       "2222",
+      "-o",
+      "ConnectTimeout=10",
+      "-o",
+      "BatchMode=yes",
+      "--",
+      "root@192.0.2.1",
+    ])
+  })
+})
+
+Deno.test("after.deploy.ts subprocess: no SSH_PORT — omits -p entirely (fake ssh)", async () => {
+  await withFakeSsh(async (logPath) => {
+    const env = { ...Deno.env.toObject() }
+    delete env.SSH_PORT
+    const command = new Deno.Command(Deno.execPath(), {
+      args: ["run", "-A", import.meta.resolve("./after.deploy.ts")],
+      env: {
+        ...env,
+        SSH_HOST: "192.0.2.1",
+        SSH_USER: "root",
+        PATH_APPS: "/srv/apps",
+      },
+      stdout: "null",
+      stderr: "null",
+    })
+    await command.output()
+    const logged = await Deno.readTextFile(logPath)
+    const lines = logged.split("\n")
+    assertEquals(lines.slice(0, 6), [
       "-o",
       "ConnectTimeout=10",
       "-o",

@@ -25,37 +25,62 @@ const NEATSOFT_DOMAIN = Deno.env.get("STALWART_NEATSOFT_DOMAIN") ?? ""
 // by cli/deploy/hooks.ts's buildHookEnv (#229) — see its module comment.
 // Building ssh's argv from these instead of the raw SSH_ADDRESS string
 // is what lets a non-default port reach ssh as `-p <port>` instead of
-// being read as part of an unresolvable "host:port" hostname.
+// being read as part of an unresolvable "host:port" hostname. SSH_PORT
+// is set ONLY when SSH_ADDRESS carried an explicit port — never a
+// default — so `-p` is added only when it's non-empty.
 const SSH_HOST = Deno.env.get("SSH_HOST") ?? ""
-const SSH_PORT = Deno.env.get("SSH_PORT") ?? ""
+const SSH_PORT = Deno.env.get("SSH_PORT") || undefined
 const SSH_USER = Deno.env.get("SSH_USER") || undefined
 const INITIAL_DEPLOY = Deno.env.get("STALWART_INITIAL_DEPLOY") === "true"
 
 if (
   import.meta.main &&
-  (!PASSWORD || !DOMAIN || !NEATSOFT_DOMAIN || !SSH_HOST || !SSH_PORT)
+  (!PASSWORD || !DOMAIN || !NEATSOFT_DOMAIN || !SSH_HOST)
 ) {
   console.error(
-    "after.deploy.ts: STALWART_ADMIN_PASSWORD, DOMAIN, STALWART_NEATSOFT_DOMAIN, " +
-      "SSH_HOST and SSH_PORT must be set",
+    "after.deploy.ts: STALWART_ADMIN_PASSWORD, DOMAIN, STALWART_NEATSOFT_DOMAIN and " +
+      "SSH_HOST must be set",
   )
   Deno.exit(1)
 }
 
+/** Digits only, 1-65535 — the same range cli/server-keys.ts's parseSshAddress enforces. */
+function isValidPort(port: string): boolean {
+  if (!/^\d+$/.test(port)) return false
+  const n = Number(port)
+  return n >= 1 && n <= 65535
+}
+
 /**
- * Build the argv for `ssh -p <port> -o ConnectTimeout=10 -o
- * BatchMode=yes -- [user@]host <command...>`. Exported for tests — no
- * I/O. See cli/deploy/hooks.ts's module comment for the SSH_PORT
- * default-22 decision (#229).
+ * Build the argv for `ssh [-p <port>] -o ConnectTimeout=10 -o
+ * BatchMode=yes -- [user@]host <command...>`. `port` is omitted from the
+ * argv entirely when undefined (SSH_ADDRESS had no explicit port) — a
+ * hook must never invent a default port a bare alias's own
+ * ~/.ssh/config might already override. Throws if `port` is set but not
+ * a valid 1-65535 port — defense in depth even though SSH_ADDRESS was
+ * already validated once before deploy ever set SSH_PORT. Exported for
+ * tests — no I/O. See cli/deploy/hooks.ts's module comment (#229).
  */
 export function buildSshArgs(
   host: string,
-  port: string,
+  port: string | undefined,
   user: string | undefined,
   command: string[],
 ): string[] {
+  if (port !== undefined && !isValidPort(port)) {
+    throw new Error(`invalid SSH_PORT "${port}": expected digits 1-65535`)
+  }
   const target = user ? `${user}@${host}` : host
-  return ["-p", port, "-o", "ConnectTimeout=10", "-o", "BatchMode=yes", "--", target, ...command]
+  return [
+    ...(port !== undefined ? ["-p", port] : []),
+    "-o",
+    "ConnectTimeout=10",
+    "-o",
+    "BatchMode=yes",
+    "--",
+    target,
+    ...command,
+  ]
 }
 
 const SUBNET = "172.18.0.0/16"

@@ -6,7 +6,7 @@
 // job now, exercised by cli/deploy/hooks.test.ts and cli/server-keys.test.ts.
 // These tests are only about this hook's own argv shape.
 
-import { assertEquals } from "@std/assert"
+import { assertEquals, assertThrows } from "@std/assert"
 import { buildRestartCommand } from "./after.deploy.ts"
 
 Deno.test("buildRestartCommand: -p, the standard options, then '--' then the target", () => {
@@ -78,4 +78,40 @@ Deno.test("buildRestartCommand: a bare IPv6 host is never bracketed here", () =>
     "restart",
     "hl-traefik",
   ])
+})
+
+Deno.test("buildRestartCommand: no SSH_PORT — omits -p entirely (an ssh_config alias's own Port wins)", () => {
+  const args = buildRestartCommand("homelab", undefined, undefined, "hl-traefik")
+  assertEquals(args, [
+    "-o",
+    "ConnectTimeout=10",
+    "-o",
+    "BatchMode=yes",
+    "--",
+    "homelab",
+    "docker",
+    "restart",
+    "hl-traefik",
+  ])
+})
+
+Deno.test("buildRestartCommand: rejects a non-numeric SSH_PORT", () => {
+  assertThrows(
+    () => buildRestartCommand("192.0.2.10", "abc", "user", "hl-traefik"),
+    Error,
+    "invalid SSH_PORT",
+  )
+})
+
+Deno.test("buildRestartCommand: rejects a port outside 1-65535", () => {
+  assertThrows(
+    () => buildRestartCommand("192.0.2.10", "0", "user", "hl-traefik"),
+    Error,
+    "invalid SSH_PORT",
+  )
+  assertThrows(
+    () => buildRestartCommand("192.0.2.10", "65536", "user", "hl-traefik"),
+    Error,
+    "invalid SSH_PORT",
+  )
 })

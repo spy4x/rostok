@@ -28,11 +28,14 @@ export const SERVER_KEYS = [
   "PROJECT",
   "SSH_ADDRESS",
   // SSH_HOST/SSH_PORT: not written to .env — cli/deploy/hooks.ts's
-  // buildHookEnv derives them from SSH_ADDRESS (via parseSshAddress) and
-  // sets them unconditionally on every hook run, the same way it already
-  // does for SSH_ADDRESS/SSH_USER/PATH_APPS/DEPLOY_AS (#229). Listed here
-  // so a hook reading them passes cli/catalog.test.ts's "every host-env
-  // key is a server key or carries the stack's own prefix" check.
+  // buildHookEnv derives them from SSH_ADDRESS (via parseSshAddress) on
+  // every hook run, the same way it already does for
+  // SSH_ADDRESS/SSH_USER/PATH_APPS/DEPLOY_AS (#229). SSH_HOST is always
+  // set; SSH_PORT only when SSH_ADDRESS carries an explicit port (never
+  // a default — see buildHookEnv's own module comment for why). Listed
+  // here so a hook reading them passes cli/catalog.test.ts's "every
+  // host-env key is a server key or carries the stack's own prefix"
+  // check.
   "SSH_HOST",
   "SSH_PORT",
   "SSH_USER",

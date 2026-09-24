@@ -24,21 +24,41 @@
 // module comment. Building ssh's argv from these instead of the raw
 // SSH_ADDRESS string is what lets a non-default port reach ssh as
 // `-p <port>` instead of being read as part of an unresolvable
-// "host:port" hostname.
+// "host:port" hostname. SSH_PORT is set ONLY when SSH_ADDRESS carried an
+// explicit port — never a default — so `-p` is added only when it's
+// non-empty.
 //
 // On failure: exit non-zero so deploy fails loudly. Provider sync is
 // not optional — without it, the service is functionally broken.
 
 import { error, log, runCommand, success } from "../../scripts/+lib.ts"
 
+/** Digits only, 1-65535 — the same range cli/server-keys.ts's parseSshAddress enforces. */
+function isValidPort(port: string): boolean {
+  if (!/^\d+$/.test(port)) return false
+  const n = Number(port)
+  return n >= 1 && n <= 65535
+}
+
 /**
- * The ssh option argv every remote call here gets: `-p <port>`, `-o
- * ConnectTimeout=10`, `-o BatchMode=yes`. Exported for tests — no I/O.
- * See cli/deploy/hooks.ts's module comment for the SSH_PORT default-22
- * decision (#229).
+ * The ssh option argv every remote call here gets: `-p <port>` only when
+ * `port` is set (SSH_ADDRESS carried an explicit port), then `-o
+ * ConnectTimeout=10`, `-o BatchMode=yes`. Throws if `port` is set but
+ * not a valid 1-65535 port — defense in depth even though SSH_ADDRESS
+ * was already validated once before deploy ever set SSH_PORT. Exported
+ * for tests — no I/O. See cli/deploy/hooks.ts's module comment (#229).
  */
-export function buildSshOptionArgs(port: string): string[] {
-  return ["-p", port, "-o", "ConnectTimeout=10", "-o", "BatchMode=yes"]
+export function buildSshOptionArgs(port: string | undefined): string[] {
+  if (port !== undefined && !isValidPort(port)) {
+    throw new Error(`invalid SSH_PORT "${port}": expected digits 1-65535`)
+  }
+  return [
+    ...(port !== undefined ? ["-p", port] : []),
+    "-o",
+    "ConnectTimeout=10",
+    "-o",
+    "BatchMode=yes",
+  ]
 }
 
 /** `[user@]host` — no brackets: ssh gets host and -p <port> as separate argv slots. */
@@ -48,7 +68,7 @@ export function targetHost(host: string, user: string | undefined): string {
 
 if (import.meta.main) {
   const SSH_HOST = Deno.env.get("SSH_HOST")
-  const SSH_PORT = Deno.env.get("SSH_PORT")
+  const SSH_PORT = Deno.env.get("SSH_PORT") || undefined
   const SSH_USER = Deno.env.get("SSH_USER") || undefined
   const PATH_APPS = Deno.env.get("PATH_APPS")
   // Container-side names (OPENAI_API_KEYS/OPENAI_API_BASE_URLS, exported
@@ -57,13 +77,19 @@ if (import.meta.main) {
   const OPENAI_API_KEYS = Deno.env.get("OPEN_WEBUI_OPENAI_API_KEYS")
   const OPENAI_API_BASE_URLS = Deno.env.get("OPEN_WEBUI_OPENAI_API_BASE_URLS")
 
-  if (!SSH_HOST || !SSH_PORT || !PATH_APPS) {
-    error("after.deploy.ts: SSH_HOST, SSH_PORT and PATH_APPS must be set")
+  if (!SSH_HOST || !PATH_APPS) {
+    error("after.deploy.ts: SSH_HOST and PATH_APPS must be set")
     Deno.exit(1)
   }
 
   const SSH_TARGET = targetHost(SSH_HOST, SSH_USER)
-  const SSH_OPTION_ARGS = buildSshOptionArgs(SSH_PORT)
+  let SSH_OPTION_ARGS: string[]
+  try {
+    SSH_OPTION_ARGS = buildSshOptionArgs(SSH_PORT)
+  } catch (err) {
+    error("after.deploy.ts:", err instanceof Error ? err.message : String(err))
+    Deno.exit(1)
+  }
   if (!OPENAI_API_KEYS || !OPENAI_API_BASE_URLS) {
     error(
       "after.deploy.ts: OPEN_WEBUI_OPENAI_API_KEYS and OPEN_WEBUI_OPENAI_API_BASE_URLS must be set in .env",

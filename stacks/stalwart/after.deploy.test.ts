@@ -5,7 +5,7 @@
 // stacks/caldiy/after.deploy.test.ts for a fake-ssh subprocess proof of
 // this exact argv shape reaching a real `ssh` binary.
 
-import { assertEquals } from "@std/assert"
+import { assertEquals, assertThrows } from "@std/assert"
 import { buildSshArgs } from "./after.deploy.ts"
 
 Deno.test("buildSshArgs: -p, the standard options, then '--' then the target and command", () => {
@@ -49,4 +49,26 @@ Deno.test("buildSshArgs: no user — bare host as the target", () => {
     "homelab",
     "id",
   ])
+})
+
+Deno.test("buildSshArgs: no SSH_PORT — omits -p entirely (an ssh_config alias's own Port wins)", () => {
+  const args = buildSshArgs("homelab", undefined, undefined, ["id"])
+  assertEquals(args, ["-o", "ConnectTimeout=10", "-o", "BatchMode=yes", "--", "homelab", "id"])
+})
+
+Deno.test("buildSshArgs: rejects a non-numeric SSH_PORT", () => {
+  assertThrows(
+    () => buildSshArgs("homelab", "abc", undefined, ["id"]),
+    Error,
+    "invalid SSH_PORT",
+  )
+})
+
+Deno.test("buildSshArgs: rejects a port outside 1-65535", () => {
+  assertThrows(() => buildSshArgs("homelab", "0", undefined, ["id"]), Error, "invalid SSH_PORT")
+  assertThrows(
+    () => buildSshArgs("homelab", "65536", undefined, ["id"]),
+    Error,
+    "invalid SSH_PORT",
+  )
 })

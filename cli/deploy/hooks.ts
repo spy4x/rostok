@@ -77,33 +77,34 @@
 // rostok's own ssh/rsync calls) and sets:
 //
 //   - SSH_HOST — the bare host/ssh_config-alias, never the port.
-//   - SSH_PORT — always set, defaulting to "22" when SSH_ADDRESS doesn't
-//     carry one. A hook builds its own ssh argv as `-p <SSH_PORT> -o
-//     ConnectTimeout=10 -o BatchMode=yes -- [user@]<SSH_HOST> ...` — see
-//     docs/contributing/adding-services.md's hook-contract section for
-//     the exact shape every fixed hook now shares.
+//   - SSH_PORT — set ONLY when SSH_ADDRESS carries an explicit port
+//     (never a default). A hook adds `-p <SSH_PORT>` to its ssh argv
+//     only when SSH_PORT is non-empty, and validates it as digits
+//     1-65535 before use (defense in depth: SSH_ADDRESS was already
+//     validated once by parseSshAddress here, but a hook's own argv
+//     builder re-checks anyway, since it's the last place before the
+//     value reaches `ssh`). This mirrors `cli/deploy/exec.ts`'s own
+//     `sshArgs()`, which deploy's core ssh/rsync calls already use — see
+//     the Decision below for why.
 //
 // SSH_USER is unchanged: it was already a contract key sourced from
 // resolveDeployEnv's own required SSH_USER (server create always writes
 // one, whether typed separately or extracted from a `user@host`
 // SSH_ADDRESS at server-create time) — not re-derived from SSH_ADDRESS
 // here, so it's unaffected by whether THIS SSH_ADDRESS happens to embed
-// a user.
+// a user. `cli/deploy/env.ts`'s `resolveDeployEnv` now also checks that
+// SSH_USER agrees with the user part of SSH_ADDRESS when SSH_ADDRESS has
+// one — a hook and deploy's own ssh calls must log in as the same user.
 //
-// Decision: SSH_PORT defaults to "22" and every fixed hook passes `-p
-// <SSH_PORT>` unconditionally, even for a bare ssh_config alias with no
-// port in SSH_ADDRESS. For the common case (no custom ~/.ssh/config
-// Port, or one that already matches) this is a no-op. It's a real,
-// narrow regression only for an alias whose ~/.ssh/config sets a
-// non-default Port AND whose SSH_ADDRESS never mentions a port —
-// `-p 22` would then override that config file's Port. `cli/deploy/
-// exec.ts`'s own ssh/rsync calls (rostok's core sync, not a hook) avoid
-// this by omitting `-p` entirely when SSH_ADDRESS has no explicit port;
-// hooks can't cheaply tell "port omitted" from "port is 22" once it's
-// flattened through a single always-set SSH_PORT string, and the task's
-// own hook-contract shape spells out `-p <port>` unconditionally. The
-// alias STRING itself keeps resolving correctly either way (SSH_HOST is
-// the alias, unchanged) — what "must keep working" means here.
+// Decision: SSH_PORT is set only for an explicit port, matching
+// `sshArgs()`'s own rule for deploy's core ssh/rsync calls. An earlier
+// version of this defaulted SSH_PORT to "22" and had every hook pass
+// `-p 22` unconditionally, which would override a bare ssh_config
+// alias's own non-default `Port` directive — the exact regression
+// "an ssh_config alias target must keep working" warns against. Omitting
+// `-p` when SSH_PORT is unset lets ssh consult `~/.ssh/config` for that
+// alias, the same as before #229 and the same as every non-hook ssh call
+// deploy makes.
 
 import { UserError } from "../errors.ts"
 import { isServerKey, parseSshAddress, stackKeyPrefix } from "../server-keys.ts"
@@ -280,7 +281,15 @@ export function buildHookEnv(
   const target = parseSshAddress(ctx.sshAddress)
   resolved.SSH_ADDRESS = ctx.sshAddress
   resolved.SSH_HOST = target.host
-  resolved.SSH_PORT = String(target.port ?? 22)
+  // Set only for an explicit port — never a default. Deleted rather than
+  // left unset so an ambient SSH_PORT in the deploying process's own
+  // shell can't leak through as if it were authoritative (see the
+  // module comment's Decision above).
+  if (target.port !== undefined) {
+    resolved.SSH_PORT = String(target.port)
+  } else {
+    delete resolved.SSH_PORT
+  }
   resolved.SSH_USER = ctx.sshUser
   resolved.PATH_APPS = ctx.pathApps
   resolved.DEPLOY_AS = ctx.deployAs
