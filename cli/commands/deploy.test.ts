@@ -50,8 +50,14 @@ Deno.test("validateDeployArgs: error when servers/<server>/ is missing", async (
   try {
     const result = await validateDeployArgs(tmp, "home", undefined)
     assertEquals(result.ok, false)
-    assertStringIncludes(result.error ?? "", "server 'home' not found")
-    assertStringIncludes(result.error ?? "", "rostok server create")
+    // #236: exact text — matches cli/deploy/run-deploy.ts:108 and
+    // stack-remove.ts's own "server not found" wording, which used to
+    // differ from this one.
+    const envPath = join(tmp, "servers", "home", ".env")
+    assertEquals(
+      result.error,
+      `server 'home' not found at ${envPath}. Run \`rostok server create home\` first.`,
+    )
   } finally {
     await Deno.remove(tmp, { recursive: true })
   }
@@ -64,7 +70,11 @@ Deno.test("validateDeployArgs: error when .env is missing in server dir", async 
     // No .env file.
     const result = await validateDeployArgs(tmp, "home", undefined)
     assertEquals(result.ok, false)
-    assertStringIncludes(result.error ?? "", "server 'home' not found")
+    const envPath = join(tmp, "servers", "home", ".env")
+    assertEquals(
+      result.error,
+      `server 'home' not found at ${envPath}. Run \`rostok server create home\` first.`,
+    )
   } finally {
     await Deno.remove(tmp, { recursive: true })
   }
