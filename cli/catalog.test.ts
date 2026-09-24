@@ -1033,13 +1033,57 @@ Deno.test("findRawSshAddressSpawns: a hook using SSH_HOST/SSH_PORT (no SSH_ADDRE
   assertEquals(findRawSshAddressSpawns(text), [])
 })
 
-Deno.test("findRawSshAddressSpawns: reading SSH_ADDRESS without spawning ssh/rsync is not flagged", () => {
+/**
+ * Strip `//` line comments and block comments (`/star ... star/`) from TS source —
+ * naive (doesn't understand strings that happen to contain `//` or
+ * `/*`), but every catalog hook file is plain, so this is sufficient
+ * to keep a comment mentioning "SSH_ADDRESS" (documentation, like this
+ * very file's own module comments) from tripping the check below.
+ */
+export function stripTsComments(source: string): string {
+  return source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "")
+}
+
+/**
+ * True when `hookText` mentions `SSH_ADDRESS` at all outside a comment
+ * — a `Deno.env.get("SSH_ADDRESS")`, a hook's injected `getEnv(...)`
+ * callback reading it, or any other reference. #229's fix means every
+ * catalog hook gets SSH_HOST/SSH_PORT/SSH_USER as contract keys
+ * already parsed by cli/deploy/hooks.ts — a hook has no legitimate
+ * reason to read SSH_ADDRESS at all any more, so the rule is now a flat
+ * "never mentioned", not just "never handed to an ssh/rsync spawn"
+ * (the narrower, now-subsumed check `findRawSshAddressSpawns` above
+ * still covers, in case a future contract key is added the same way).
+ */
+export function referencesSshAddress(hookText: string): boolean {
+  return /SSH_ADDRESS/.test(stripTsComments(hookText))
+}
+
+Deno.test('referencesSshAddress: flags Deno.env.get("SSH_ADDRESS") even with no ssh/rsync spawn nearby', () => {
   const text = `const addr = Deno.env.get("SSH_ADDRESS") ?? ""\nconsole.log(addr)\n`
-  assertEquals(findRawSshAddressSpawns(text), [])
+  assertEquals(referencesSshAddress(text), true)
+})
+
+Deno.test("referencesSshAddress: flags a bare string reference, not just Deno.env.get", () => {
+  const text = `const keys = ["SSH_ADDRESS", "PATH_APPS"]\n`
+  assertEquals(referencesSshAddress(text), true)
+})
+
+Deno.test("referencesSshAddress: a mention only inside a comment is not flagged", () => {
+  const text = `// SSH_ADDRESS used to be read here; now uses SSH_HOST/SSH_PORT.\n` +
+    `/* also mentioned in a block comment: SSH_ADDRESS */\n` +
+    `const host = Deno.env.get("SSH_HOST")\n`
+  assertEquals(referencesSshAddress(text), false)
+})
+
+Deno.test("referencesSshAddress: a hook using only SSH_HOST/SSH_PORT/SSH_USER is clean", () => {
+  const text = `const host = Deno.env.get("SSH_HOST")\nconst port = Deno.env.get("SSH_PORT")\n` +
+    `const user = Deno.env.get("SSH_USER")\n`
+  assertEquals(referencesSshAddress(text), false)
 })
 
 Deno.test(
-  "catalog: no stack hook reads SSH_ADDRESS and hands it straight to an ssh/rsync spawn (#229)",
+  "catalog: no stacks/*/*.deploy.ts reads SSH_ADDRESS at all any more (review round — #229)",
   async () => {
     const stacksDir = fromFileUrl(new URL("../stacks", import.meta.url))
     const violations: string[] = []
@@ -1048,8 +1092,8 @@ Deno.test(
       for (const hookName of ["before.deploy.ts", "after.deploy.ts"]) {
         const hookText = await readIfExists(join(stacksDir, entry.name, hookName))
         if (!hookText) continue
-        for (const v of findRawSshAddressSpawns(hookText)) {
-          violations.push(`${entry.name}/${hookName}: ${v}`)
+        if (referencesSshAddress(hookText)) {
+          violations.push(`${entry.name}/${hookName}: still mentions SSH_ADDRESS`)
         }
       }
     }
