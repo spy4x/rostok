@@ -1,7 +1,10 @@
 // `rostok stack remove` — the subcommand (#225).
 
 import { Command } from "@cliffy/command"
+import { join } from "@std/path"
 import { stackRemove, type StackRemoveResult } from "../stack-remove.ts"
+import { readEnvFile } from "../env-files.ts"
+import { serverDirFor } from "../server-keys.ts"
 import type { ConfirmFn } from "../prompts.ts"
 
 export interface StackRemoveCommandOptions {
@@ -23,7 +26,11 @@ export interface StackRemoveCommandOverrides {
  * server (cli/deploy/run-deploy.ts's stale-stack cleanup), but it does
  * NOT stop or remove that stack's containers first — they're only
  * managed through the compose file that deploy is about to delete, so
- * they keep running, unmanaged, until stopped by hand.
+ * they keep running, unmanaged, until stopped by hand. The message
+ * below names the real directory (`<PATH_APPS>/stacks/<name>`, read
+ * from the server's own `.env`) and a real command (`docker compose
+ * down` there) — never a `container-*` glob, which docker doesn't
+ * expand.
  */
 export async function runStackRemove(
   name: string,
@@ -39,15 +46,28 @@ export async function runStackRemove(
     force: options.force,
     confirmFn: overrides.confirmFn,
   })
+
+  const serverDir = serverDirFor(cwd, options.server)
+  const entries = await readEnvFile(join(serverDir, ".env"))
+  const pathApps = entries.find((e) => e.key === "PATH_APPS")?.value
+
   console.log("")
   console.log("Next steps:")
   console.log(`  rostok deploy ${options.server}`)
-  console.log(
-    `  (this deletes ${result.stackName}'s files on the server but does not stop its ` +
-      `containers — stop them yourself first, e.g. \`docker compose down\` in its directory ` +
-      `on the server, or \`docker stop\`/\`docker rm\` its hl-${result.stackName}-* containers ` +
-      `afterward.)`,
-  )
+  if (pathApps) {
+    const stackDir = `${pathApps}/stacks/${result.stackName}`
+    console.log(
+      `  (deletes ${stackDir} on the server, but does not stop its containers — run ` +
+        `\`docker compose down\` in ${stackDir} on the server first, or stop them by hand ` +
+        `afterward.)`,
+    )
+  } else {
+    console.log(
+      `  (deletes ${result.stackName}'s directory on the server, but does not stop its ` +
+        `containers — run \`docker compose down\` in that stack's directory on the server ` +
+        `first, or stop them by hand afterward.)`,
+    )
+  }
   return result
 }
 

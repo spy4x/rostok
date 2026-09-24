@@ -2,7 +2,8 @@
 // wiring (next-steps message truthfulness in particular: deploy deletes
 // the stack's directory but doesn't stop its containers — see
 // cli/deploy/run-deploy.ts's stale-stack cleanup, a `rm -rf`, not a
-// `docker compose down`).
+// `docker compose down` — and the message must name a real directory
+// and a real command, never a `container-*` glob docker can't expand).
 
 import { assertEquals } from "@std/assert"
 import { join } from "@std/path"
@@ -32,16 +33,19 @@ export default {
   )
 }
 
-async function seedServer(dir: string, name: string): Promise<void> {
+async function seedServer(dir: string, name: string, pathApps: string): Promise<void> {
   await Deno.mkdir(join(dir, "servers", name), { recursive: true })
-  await Deno.writeTextFile(join(dir, "servers", name, ".env"), "DOMAIN=example.com\n")
+  await Deno.writeTextFile(
+    join(dir, "servers", name, ".env"),
+    `DOMAIN=example.com\nPATH_APPS=${pathApps}\n`,
+  )
 }
 
-Deno.test("runStackRemove: next steps say deploy, and that it does not stop the stack's containers", async () => {
+Deno.test("runStackRemove: next steps name the stack's real directory and docker compose down, not a glob", async () => {
   await withTmpDir(async (dir) => {
     const catalogDir = join(dir, "catalog")
     await writeLibrespeedCatalog(catalogDir)
-    await seedServer(dir, "home")
+    await seedServer(dir, "home", "/srv/apps")
     await stackAdd("librespeed", "home", { cwd: dir, catalogDir, nonInteractive: true })
 
     const lines: string[] = []
@@ -56,9 +60,49 @@ Deno.test("runStackRemove: next steps say deploy, and that it does not stop the 
     } finally {
       console.log = originalLog
     }
-    const output = lines.join("\n")
-    assertEquals(output.includes("rostok deploy home"), true, output)
-    assertEquals(output.includes("does not stop its"), true, output)
-    assertEquals(output.includes("hl-librespeed"), true, output)
+    assertEquals(lines.includes("  rostok deploy home"), true, lines.join("\n"))
+    // Exact line: the real PATH_APPS-derived directory, a real command
+    // (docker compose down there), no hl-<name>-* glob.
+    assertEquals(
+      lines.includes(
+        "  (deletes /srv/apps/stacks/librespeed on the server, but does not stop its " +
+          "containers — run `docker compose down` in /srv/apps/stacks/librespeed on the " +
+          "server first, or stop them by hand afterward.)",
+      ),
+      true,
+      lines.join("\n"),
+    )
+  })
+})
+
+Deno.test("runStackRemove: falls back to a generic notice when PATH_APPS isn't known", async () => {
+  await withTmpDir(async (dir) => {
+    const catalogDir = join(dir, "catalog")
+    await writeLibrespeedCatalog(catalogDir)
+    await Deno.mkdir(join(dir, "servers", "home"), { recursive: true })
+    await Deno.writeTextFile(join(dir, "servers", "home", ".env"), "DOMAIN=example.com\n")
+    await stackAdd("librespeed", "home", { cwd: dir, catalogDir, nonInteractive: true })
+
+    const lines: string[] = []
+    const originalLog = console.log
+    console.log = (...args: unknown[]) => lines.push(args.join(" "))
+    try {
+      await runStackRemove(
+        "librespeed",
+        { server: "home", catalog: catalogDir, dropEnv: true },
+        dir,
+      )
+    } finally {
+      console.log = originalLog
+    }
+    assertEquals(
+      lines.includes(
+        "  (deletes librespeed's directory on the server, but does not stop its containers " +
+          "— run `docker compose down` in that stack's directory on the server first, or " +
+          "stop them by hand afterward.)",
+      ),
+      true,
+      lines.join("\n"),
+    )
   })
 })
