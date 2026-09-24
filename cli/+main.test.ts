@@ -533,8 +533,8 @@ Deno.test({
     const tmp = await Deno.makeTempDir({ prefix: "rostok-nontty-" })
     try {
       const result = await runNonTty(tmp, [])
-      assertEquals(result.code, 1)
       assertOneRostokLine(result)
+      assertEquals(result.code, 1)
       assertNoStackFrame(result.stderr)
     } finally {
       await Deno.remove(tmp, { recursive: true }).catch(() => {})
@@ -548,8 +548,8 @@ Deno.test({
     const tmp = await Deno.makeTempDir({ prefix: "rostok-nontty-" })
     try {
       const result = await runNonTty(tmp, ["server", "create", "other"])
-      assertEquals(result.code, 1)
       assertOneRostokLine(result)
+      assertEquals(result.code, 1)
       assertNoStackFrame(result.stderr)
     } finally {
       await Deno.remove(tmp, { recursive: true }).catch(() => {})
@@ -566,8 +566,8 @@ Deno.test({
       // librespeed isn't installed yet — stack add must still hit an
       // interactive prompt for its own variables (e.g. LIBRESPEED_DOMAIN).
       const result = await runNonTty(tmp, ["stack", "add", "librespeed", "-s", "home"])
-      assertEquals(result.code, 1)
       assertOneRostokLine(result)
+      assertEquals(result.code, 1)
       assertNoStackFrame(result.stderr)
     } finally {
       await Deno.remove(tmp, { recursive: true }).catch(() => {})
@@ -587,8 +587,8 @@ Deno.test({
       // librespeed has its own values in .env now (LIBRESPEED_DOMAIN,
       // etc.) — stack remove reaches the "drop these too?" confirm.
       const result = await runNonTty(tmp, ["stack", "remove", "librespeed", "-s", "home"])
-      assertEquals(result.code, 1)
       assertOneRostokLine(result)
+      assertEquals(result.code, 1)
       assertNoStackFrame(result.stderr)
     } finally {
       await Deno.remove(tmp, { recursive: true }).catch(() => {})
@@ -649,8 +649,8 @@ Deno.test({
       assertEquals(setup.code, 0, setup.stderr)
 
       const result = await runNonTty(tmp, ALL_SERVER_VARS)
-      assertEquals(result.code, 1)
       assertOneRostokLine(result)
+      assertEquals(result.code, 1)
       assertNoStackFrame(result.stderr)
     } finally {
       await Deno.remove(tmp, { recursive: true }).catch(() => {})
