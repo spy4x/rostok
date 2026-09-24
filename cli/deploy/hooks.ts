@@ -55,6 +55,17 @@
 //     parent variable — a shell that happens to export `DOMAIN` or
 //     `PROJECT` must not silently steer what a stack-owned key resolves
 //     to; the deploy-time value is authoritative for those.
+// (#234) A key that isn't allowed for the CURRENT stack but carries
+// another stack's own prefix, and that other stack is also installed on
+// this server, is dropped silently — no warning. This is the expected,
+// correct case on any server with more than one stack (traefik's hook
+// dropping librespeed's LIBRESPEED_* keys, say): the allow-list itself
+// doesn't change (buildHookEnv still only ever hands a hook ITS OWN
+// keys, proven by a test asserting the resolved hook env is unchanged),
+// only the warning does. A key matching NO installed stack — a typo, or
+// a leftover from a stack `stack remove` already dropped from
+// config.json — still gets one warning line naming it.
+//
 // DENIED_ENV_KEY_NAMES/PREFIXES is a backstop that runs BEFORE the
 // allowlist check: a stack whose own prefix happens to collide with a
 // dangerous name (a stack literally named "ld" → prefix "LD_" → would
@@ -121,6 +132,16 @@ export interface HookContext {
   sshUser: string
   pathApps: string
   deployAs: string
+  /**
+   * Every catalog stack name deployed on this server (config.json's full
+   * list, not filtered down to a single-stack deploy) — #234. A key
+   * dropped from `.env`/`.env.root` because it isn't THIS stack's own
+   * (`isAllowedFileEnvKey` below) is still routine, not a warning, when
+   * it carries another INSTALLED stack's prefix: e.g. librespeed's
+   * `LIBRESPEED_*` keys reaching the traefik hook. Only a key matching no
+   * installed stack (and no server key) still gets a warning.
+   */
+  installedStackNames: string[]
 }
 
 /**
@@ -288,7 +309,15 @@ export function buildHookEnv(
       continue
     }
     if (!isAllowedFileEnvKey(key, stackName)) {
-      if (!(key in processEnv)) {
+      // #234: a key carrying another INSTALLED stack's own prefix is
+      // routine — every stack's keys sit in the same server .env, and a
+      // hook only ever gets its own. Only a key matching no installed
+      // stack (and no server key, already handled by
+      // isAllowedFileEnvKey/isServerKey above) still warns.
+      const ownedByAnotherInstalledStack = ctx.installedStackNames.some(
+        (otherStack) => otherStack !== stackName && key.startsWith(stackKeyPrefix(otherStack)),
+      )
+      if (!(key in processEnv) && !ownedByAnotherInstalledStack) {
         const list = droppedByFile.get(source) ?? []
         list.push(sanitizeForLog(key))
         droppedByFile.set(source, list)

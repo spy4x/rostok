@@ -22,6 +22,7 @@ const BASE_CTX: HookContext = {
   sshUser: "deploy",
   pathApps: "/srv/apps",
   deployAs: "test-stack",
+  installedStackNames: ["test-stack"],
 }
 const STACK_NAME = "test-stack"
 
@@ -632,6 +633,52 @@ Deno.test("buildHookEnv: dropped keys collapse into one warning with control cha
   assertEquals(controlChars, [], JSON.stringify(warnings[0]))
 })
 
+Deno.test("buildHookEnv: a key owned by another INSTALLED stack is dropped silently, no warning (#234)", () => {
+  const ctx: HookContext = {
+    ...BASE_CTX,
+    serverEnv: { LIBRESPEED_IMAGE_TAG: "latest" },
+    installedStackNames: ["test-stack", "librespeed"],
+  }
+  const { env, warnings } = buildHookEnv(ctx, STACK_NAME, {})
+  assertEquals(warnings, [])
+  // The allow-list itself is unchanged — the key still never reaches
+  // this hook's own environment, only the warning is gone.
+  assertEquals(env.LIBRESPEED_IMAGE_TAG, undefined)
+})
+
+Deno.test("buildHookEnv: a key matching no installed stack (and no server key) still warns (#234)", () => {
+  const ctx: HookContext = {
+    ...BASE_CTX,
+    serverEnv: { LIBRESPEED_IMAGE_TAG: "latest" },
+    // librespeed isn't installed on this server — e.g. `stack remove`
+    // already dropped it from config.json, or the key is a plain typo.
+    installedStackNames: ["test-stack"],
+  }
+  const { env, warnings } = buildHookEnv(ctx, STACK_NAME, {})
+  assertEquals(warnings.length, 1, warnings.join("\n"))
+  assertStringIncludes(warnings[0], "LIBRESPEED_IMAGE_TAG")
+  assertEquals(env.LIBRESPEED_IMAGE_TAG, undefined)
+})
+
+Deno.test("buildHookEnv: installedStackNames never lets a key through for the wrong stack (#234)", () => {
+  // #234 only silences the WARNING — a key belonging to another
+  // installed stack must still never reach THIS stack's hook env, the
+  // same security behaviour as before.
+  const ctx: HookContext = {
+    ...BASE_CTX,
+    serverEnv: { TEST_STACK_TOKEN: "server-value", LIBRESPEED_PASSWORD: "secret" },
+    installedStackNames: ["test-stack", "librespeed"],
+  }
+  const withInstalled = buildHookEnv(ctx, STACK_NAME, {})
+  const withoutOthers = buildHookEnv(
+    { ...ctx, installedStackNames: ["test-stack"] },
+    STACK_NAME,
+    {},
+  )
+  assertEquals(withInstalled.env, withoutOthers.env)
+  assertEquals(withInstalled.env.LIBRESPEED_PASSWORD, undefined)
+})
+
 Deno.test("buildHookEnv: contract keys beat both a .env value and the parent environment", () => {
   const ctx: HookContext = {
     ...BASE_CTX,
@@ -647,10 +694,16 @@ Deno.test("buildHookEnv: contract keys beat both a .env value and the parent env
 })
 
 Deno.test("buildHookEnv: strips one matching layer of quotes from an allowed value (review round)", () => {
-  // docker compose's env_file and Deno's --env-file both strip exactly
-  // one layer of quotes when they load a .env (verified directly) — a
-  // hook must see the same thing its container does, even though the
-  // tracked .env/.env.age keeps the quotes on disk (#226).
+  // stripOneQuoteLayer strips exactly one matching layer of quotes
+  // (`'...'`/`"..."` around the whole value) and nothing else — the same
+  // one layer docker compose's env_file and Deno's --env-file strip when
+  // they load a .env. Neither this function nor buildHookEnv goes
+  // further: compose and Deno also expand `\n` inside double quotes into
+  // a real newline and drop a trailing ` # comment` from an unquoted
+  // value, so for THOSE forms a hook can see a different value than its
+  // container. The tracked .env/.env.age keeps the quotes on disk
+  // either way (#226) — this stripping only happens here, once, on the
+  // way into the hook's own environment.
   const ctx: HookContext = {
     ...BASE_CTX,
     serverEnv: { DOMAIN: '"example.com"', TEST_STACK_TOKEN: "'single-quoted'" },
