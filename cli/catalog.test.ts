@@ -111,6 +111,50 @@ export function findEscapingImports(hookText: string): string[] {
   return specifiers
 }
 
+/**
+ * Flag a hook that reads `SSH_ADDRESS` and hands the same identifier to
+ * an `ssh`/`rsync` spawn — the #229 bug (a "host:port" SSH_ADDRESS reads
+ * as one unresolvable hostname once handed to ssh/rsync directly). A
+ * hook should build its argv from the SSH_HOST/SSH_PORT/SSH_USER
+ * contract keys instead (already parsed once by cli/deploy/hooks.ts's
+ * buildHookEnv) — see docs/contributing/adding-services.md's
+ * hook-contract section.
+ *
+ * Static scan, not a real flow analysis: finds every identifier assigned
+ * directly from `Deno.env.get("SSH_ADDRESS")`, then checks whether that
+ * identifier's own name appears near an `ssh`/`rsync` spawn (`new
+ * Deno.Command("ssh"|"rsync", ...)` or `runCommand(["ssh"|"rsync", ...)`
+ * — the two spawn shapes every catalog hook actually uses). Good enough
+ * to catch "this hook read SSH_ADDRESS and gave it straight to ssh",
+ * which is the only shape #229 found across the catalog; it isn't a
+ * general dataflow prover.
+ */
+export function findRawSshAddressSpawns(hookText: string): string[] {
+  const violations: string[] = []
+  const identRe =
+    /\b(?:const|let)\s+([A-Za-z_$][\w$]*)\s*=\s*Deno\.env\.get\(\s*["']SSH_ADDRESS["']\s*\)/g
+  const idents = new Set<string>()
+  let m: RegExpExecArray | null
+  while ((m = identRe.exec(hookText)) !== null) idents.add(m[1])
+  if (idents.size === 0) return violations
+
+  const spawnRe =
+    /(?:new\s+Deno\.Command\(\s*["'](ssh|rsync)["']|runCommand\(\s*\[\s*["'](ssh|rsync)["'])/g
+  while ((m = spawnRe.exec(hookText)) !== null) {
+    const program = m[1] ?? m[2]
+    // The call's own argument list — a fixed window is enough for every
+    // real spawn shape in this catalog (each is a few lines).
+    const window = hookText.slice(m.index, Math.min(hookText.length, m.index + 400))
+    for (const ident of idents) {
+      if (new RegExp(`\\b${ident}\\b`).test(window)) {
+        violations.push(`spawns ${program} using raw SSH_ADDRESS (via "${ident}")`)
+        break
+      }
+    }
+  }
+  return violations
+}
+
 /** Files a +meta.ts key must be read by — compose.yml or a hook, nothing else (not the README). */
 const READABLE_FILES = ["compose.yml", "before.deploy.ts", "after.deploy.ts"]
 
@@ -964,6 +1008,49 @@ Deno.test(
       if (!entry.isDirectory) continue
       if (hasReservedStackKeyPrefix(entry.name)) {
         violations.push(`${entry.name} -> prefix "${stackKeyPrefix(entry.name)}" is reserved`)
+      }
+    }
+    assertEquals(violations, [], violations.join("\n"))
+  },
+)
+
+Deno.test('findRawSshAddressSpawns: flags a var read from SSH_ADDRESS handed to Deno.Command("ssh")', () => {
+  const text = `const SSH = Deno.env.get("SSH_ADDRESS") ?? ""\n` +
+    `new Deno.Command("ssh", { args: [SSH, "docker", "restart", "x"] })\n`
+  assertEquals(findRawSshAddressSpawns(text).length, 1)
+})
+
+Deno.test('findRawSshAddressSpawns: flags runCommand(["ssh", SSH, ...])', () => {
+  const text = `const ssh = Deno.env.get("SSH_ADDRESS")\n` +
+    `await runCommand(["ssh", ssh, "docker restart x"])\n`
+  assertEquals(findRawSshAddressSpawns(text).length, 1)
+})
+
+Deno.test("findRawSshAddressSpawns: a hook using SSH_HOST/SSH_PORT (no SSH_ADDRESS) is clean", () => {
+  const text = `const host = Deno.env.get("SSH_HOST")\n` +
+    `const port = Deno.env.get("SSH_PORT") ?? "22"\n` +
+    `new Deno.Command("ssh", { args: ["-p", port, "--", host, "docker", "restart", "x"] })\n`
+  assertEquals(findRawSshAddressSpawns(text), [])
+})
+
+Deno.test("findRawSshAddressSpawns: reading SSH_ADDRESS without spawning ssh/rsync is not flagged", () => {
+  const text = `const addr = Deno.env.get("SSH_ADDRESS") ?? ""\nconsole.log(addr)\n`
+  assertEquals(findRawSshAddressSpawns(text), [])
+})
+
+Deno.test(
+  "catalog: no stack hook reads SSH_ADDRESS and hands it straight to an ssh/rsync spawn (#229)",
+  async () => {
+    const stacksDir = fromFileUrl(new URL("../stacks", import.meta.url))
+    const violations: string[] = []
+    for await (const entry of Deno.readDir(stacksDir)) {
+      if (!entry.isDirectory) continue
+      for (const hookName of ["before.deploy.ts", "after.deploy.ts"]) {
+        const hookText = await readIfExists(join(stacksDir, entry.name, hookName))
+        if (!hookText) continue
+        for (const v of findRawSshAddressSpawns(hookText)) {
+          violations.push(`${entry.name}/${hookName}: ${v}`)
+        }
       }
     }
     assertEquals(violations, [], violations.join("\n"))
