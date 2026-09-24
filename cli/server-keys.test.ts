@@ -351,6 +351,25 @@ Deno.test("rejects / and any one-component path — rostok must own the whole di
   }
 })
 
+Deno.test("accepts a ONE-component VOLUMES_PATH like /data (review round: minComponents 1)", () => {
+  // The two-component floor is a "rostok owns this directory entirely"
+  // guard for PATH_APPS, where a deploy's rsync --delete actually
+  // deletes stale files under it. VOLUMES_PATH is never synced or
+  // deleted-under as a whole tree — only individual
+  // VOLUMES_PATH/<stack> entries are ever named — so a shallow,
+  // perfectly common layout like /data must be accepted, not rejected
+  // by the same floor PATH_APPS needs.
+  validateRemotePath("VOLUMES_PATH", "/data", 1)
+})
+
+Deno.test("still rejects a bare / for VOLUMES_PATH even with minComponents 1", () => {
+  assertThrows(
+    () => validateRemotePath("VOLUMES_PATH", "/", 1),
+    UserError,
+    "must be a directory",
+  )
+})
+
 Deno.test('pathComponents: splits a path into its non-empty, non-"." components', () => {
   assertEquals(pathComponents("/srv/apps"), ["srv", "apps"])
   assertEquals(pathComponents("/srv//apps/"), ["srv", "apps"])

@@ -277,7 +277,7 @@ export function resolveDeployEnv(
   // `chown ${user}:${user} <path>`).
   validateSshAddress(resolved.SSH_ADDRESS)
   validateRemotePath("PATH_APPS", resolved.PATH_APPS)
-  validateRemotePath("VOLUMES_PATH", resolved.VOLUMES_PATH)
+  validateRemotePath("VOLUMES_PATH", resolved.VOLUMES_PATH, 1)
   validateSshUser(resolved.SSH_USER)
 
   // Normalised ONCE, right after validation, so every later consumer

@@ -252,6 +252,21 @@ Deno.test("resolveDeployEnv: VOLUMES_PATH=$BASE_PATH/volumes (no braces) also ex
   assertEquals(resolved.env.VOLUMES_PATH, "/srv/volumes")
 })
 
+Deno.test("resolveDeployEnv: accepts a ONE-component VOLUMES_PATH like /data (review round)", () => {
+  // The two-component floor (validateRemotePath's minComponents) is a
+  // "rostok owns this whole directory" guard that only makes sense for
+  // PATH_APPS, which a deploy's rsync --delete actually syncs and
+  // deletes stale files under. VOLUMES_PATH is never synced as a whole
+  // tree, so a shallow, common layout like /data must resolve cleanly,
+  // not be rejected by the same floor PATH_APPS needs.
+  const resolved = resolveDeployEnv(
+    { ...VALID_BASE, VOLUMES_PATH: "/data" },
+    "servers/home/.env",
+    ROOT_ENV_PATH,
+  )
+  assertEquals(resolved.env.VOLUMES_PATH, "/data")
+})
+
 Deno.test("resolveDeployEnv: a VOLUMES_PATH referencing an undefined var still fails loudly", () => {
   const err = assertThrows(
     () =>
@@ -425,6 +440,20 @@ Deno.test("resolveDeployEnv: PATH_APPS=${BASE_PATH}/rostok expands and passes va
     ROOT_ENV_PATH,
   )
   assertEquals(resolved.env.PATH_APPS, "/home/user/apps/rostok")
+})
+
+Deno.test("resolveDeployEnv: normalises PATH_APPS itself, not just VOLUMES_PATH (review round)", () => {
+  // env.ts normalises PATH_APPS and VOLUMES_PATH right after validation
+  // so every later consumer (run-deploy.ts's rsync/cleanup scripts, the
+  // remote readlink -f guard) works from the exact same string. Nothing
+  // in this file proved the PATH_APPS half of that — only VOLUMES_PATH
+  // had its own doubled-slash/trailing-slash coverage elsewhere.
+  const resolved = resolveDeployEnv(
+    { ...VALID_BASE, PATH_APPS: "/srv//apps/" },
+    "servers/home/.env",
+    ROOT_ENV_PATH,
+  )
+  assertEquals(resolved.env.PATH_APPS, "/srv/apps")
 })
 
 Deno.test("expandEnvRefs: a key merely containing PATH_ or ending in PATH-like text, not shaped as PATH_*/*_PATH, is refused (#236)", () => {

@@ -431,30 +431,39 @@ export function rsyncDestination(target: SshTarget, remotePath: string): string 
 export const REMOTE_PATH_PATTERN = /^\/[A-Za-z0-9._/-]*$/
 
 /**
- * Throw a UserError unless `value` is a plain absolute path with at
- * least two components (`/srv/apps`, never `/` or `/srv`). Remote paths
- * such as PATH_APPS and VOLUMES_PATH reach the server's login shell
- * through rsync, so shell metacharacters and `..` segments are refused.
+ * Throw a UserError unless `value` is a plain absolute path. Remote
+ * paths such as PATH_APPS and VOLUMES_PATH reach the server's login
+ * shell through rsync, so shell metacharacters and `..` segments are
+ * refused.
  *
- * The two-component floor (#233 review) is a "rostok owns this
- * directory entirely" guard: `PATH_APPS=/` or `PATH_APPS=/home` would
- * make a full deploy's `rsync --delete` (run-deploy.ts) delete
- * everything else already on the server under that path — `/srv` is
- * shallow enough that a typo or a copy-pasted default (`/home` instead
- * of `/home/deploy/apps`) is a real risk, not a hypothetical one.
+ * `minComponents` (default 2) is a "rostok owns this directory
+ * entirely" guard, and applies to PATH_APPS only (review round):
+ * `PATH_APPS=/` or `PATH_APPS=/home` would make a full deploy's
+ * `rsync --delete` (run-deploy.ts) delete everything else already on
+ * the server under that path — `/srv` is shallow enough that a typo or
+ * a copy-pasted default (`/home` instead of `/home/deploy/apps`) is a
+ * real risk, not a hypothetical one. VOLUMES_PATH is never synced or
+ * deleted-under by rostok itself (only individual `VOLUMES_PATH/<stack>`
+ * entries are ever named, never the whole tree), so `VOLUMES_PATH=/data`
+ * — one component — is a legitimate, common layout and must be accepted
+ * (review round: it was wrongly rejected by the same floor as
+ * PATH_APPS). Pass `minComponents: 1` for VOLUMES_PATH.
  */
-export function validateRemotePath(key: string, value: string): void {
+export function validateRemotePath(key: string, value: string, minComponents = 2): void {
   if (!REMOTE_PATH_PATTERN.test(value) || value.split("/").includes("..")) {
     throw new UserError(
       `invalid ${key} "${value}": use an absolute path of letters, digits, ".", "_", "-" ` +
         `and "/", e.g. /srv/apps.`,
     )
   }
-  if (pathComponents(value).length < 2) {
+  if (pathComponents(value).length < minComponents) {
+    const detail = minComponents >= 2
+      ? `at least ${minComponents} path components deep (e.g. /srv/apps, not /srv or /) — a ` +
+        `deploy deletes stale files under it and must never reach anything else already on the ` +
+        `server`
+      : `not the filesystem root (/) itself`
     throw new UserError(
-      `invalid ${key} "${value}": must be a directory rostok owns entirely, at least two path ` +
-        `components deep (e.g. /srv/apps, not /srv or /) — a deploy deletes stale files under ` +
-        `it and must never reach anything else already on the server.`,
+      `invalid ${key} "${value}": must be a directory rostok owns entirely, ${detail}.`,
     )
   }
 }

@@ -417,7 +417,7 @@ async function collectInput(
     FIELDS.volumesPath,
     "Folder on the server where app data is stored",
     existingByKey.get("VOLUMES_PATH") ?? "/srv/volumes",
-    toValidator((v) => validateRemotePath("VOLUMES_PATH", v)),
+    toValidator((v) => validateRemotePath("VOLUMES_PATH", v, 1)),
   )
   const pathApps = await ask(
     FIELDS.pathApps,
