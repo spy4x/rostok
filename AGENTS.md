@@ -194,8 +194,10 @@ change, leave the PR open and tell the user.
 - All commits relate to one feature → `gh pr merge --squash --delete-branch`
 - Some commits fix independent things → `gh pr merge --rebase --delete-branch`
 
-`deno publish` is the exception: JSR versions are immutable, so never
-publish without the user's explicit OK for that version.
+Publishing follows the same rule: once the version-bump PR is merged
+and both gates are green, run `deno publish` without asking (see
+"Publish flow" below). JSR versions are immutable, so publish only
+from a clean checkout of `main` at the merged bump commit.
 
 Then clean up. Worktrees live in the sibling `worktrees/rostok/`; these
 commands work from any directory inside the repo or a worktree. `-D` is
@@ -261,12 +263,16 @@ Semver:
 
 ### Publish flow
 
-After merge to `main`, and only with the user's explicit OK for this
-version (see the merge protocol):
+After the version-bump PR merges to `main`. No need to ask first:
 
 1. Confirm `deno task check` passes on the bumped source.
-2. `deno publish` from `main`. Browser OAuth; need a JSR token from
-   `jsr.io/account/tokens` for non-interactive shells.
+2. `deno publish` from a clean checkout of `main`, for example a
+   detached worktree at the bump commit. Untracked files in the main
+   checkout, such as `.claude/scheduled_tasks.lock`, would otherwise
+   ship: run `deno publish --dry-run` and read the file list first.
+   Authentication is browser OAuth. It needs a terminal, so an agent
+   runs it in a pty; a shell with no terminal needs a JSR token from
+   `jsr.io/account/tokens`.
 3. Verify the new version with `deno install -A --global
    --minimum-dependency-age=0 -n rostok --force jsr:@rostok/cli`
    (the dep-age flag bypasses deno's 24h install delay on fresh
