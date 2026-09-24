@@ -145,11 +145,11 @@ case "$script" in
   *"readlink -f"*)
     # checkRemotePathsNotNested (docker-preflight.ts, #233 + review
     # round): three readlink -f calls (PATH_APPS, VOLUMES_PATH,
-    # PATH_APPS/stacks) joined by "---". Sibling, non-nested real paths,
+    # PATH_APPS/stacks), one path per line. Sibling, non-nested real paths,
     # stacks/ resolving to PATH_APPS's own stacks dir — none of these
     # fixtures test a server-side symlink (that's covered directly in
     # docker-preflight.test.ts).
-    printf '/srv/apps\\n---\\n/srv/volumes\\n---\\n/srv/apps/stacks\\n'
+    printf '/srv/apps\\n/srv/volumes\\n/srv/apps/stacks\\n'
     ;;
   *"DEPLOY_START:"*)
     # FAKE_DEPLOY_FAIL_STACK lets a test simulate a stack whose
@@ -1109,6 +1109,24 @@ async function waitForFileToInclude(path: string, text: string): Promise<void> {
  * own post-staging call — the preflight's own "mkdir -p --" is followed
  * by '/srv/apps' first, never directly by the stacks path.
  */
+/**
+ * Stop a CLI child a signal test spawned but never saw exit (the test
+ * threw first), so it can never carry on past the hang point into a
+ * later deploy step.
+ */
+async function killUnfinishedChild(
+  child: Deno.ChildProcess | undefined,
+  done: boolean,
+): Promise<void> {
+  if (!child || done) return
+  try {
+    child.kill("SIGKILL")
+  } catch {
+    // Already exited.
+  }
+  await child.output().catch(() => {})
+}
+
 const POST_STAGING_MKDIR_HANG_POINT = `mkdir -p -- '/srv/apps/stacks'`
 
 /**
@@ -1136,6 +1154,8 @@ async function runInterruptedDeploy(
   // own staging dir.
   const tmpRoot = await Deno.makeTempDir({ prefix: "rostok-e2e-tmproot-" })
   const pidFile = join(tmpRoot, "fake-ssh.pid")
+  let child: Deno.ChildProcess | undefined
+  let childDone = false
   try {
     await writeServer(f.projectDir, [], ["librespeed"])
 
@@ -1157,7 +1177,7 @@ async function runInterruptedDeploy(
       stdout: "piped",
       stderr: "piped",
     })
-    const child = command.spawn()
+    child = command.spawn()
 
     await waitForFileToInclude(f.logPath, POST_STAGING_MKDIR_HANG_POINT)
     // The blocking ssh call writes its pid before it starts hanging —
@@ -1173,6 +1193,7 @@ async function runInterruptedDeploy(
 
     child.kill(signal)
     const output = await child.output()
+    childDone = true
 
     let stagingDirName: string | undefined
     for await (const entry of Deno.readDir(tmpRoot)) {
@@ -1186,6 +1207,7 @@ async function runInterruptedDeploy(
     const sshStillAlive = await isPidAliveAfter(pid)
     return { code: output.code, stagingDirSurvived, sshStillAlive }
   } finally {
+    await killUnfinishedChild(child, childDone)
     await Deno.remove(tmpRoot, { recursive: true }).catch(() => {})
   }
 }
@@ -1246,6 +1268,8 @@ Deno.test("e2e: SIGINT during a ~1,500-file stage leaves no staging directory be
   // never at a real sync step.
   const f = await setupFixture()
   const tmpRoot = await Deno.makeTempDir({ prefix: "rostok-e2e-tmproot-" })
+  let child: Deno.ChildProcess | undefined
+  let childDone = false
   try {
     const stackDir = join(f.projectDir, "stacks", "big-stack")
     await Deno.mkdir(stackDir, { recursive: true })
@@ -1277,7 +1301,7 @@ Deno.test("e2e: SIGINT during a ~1,500-file stage leaves no staging directory be
       stdout: "piped",
       stderr: "piped",
     })
-    const child = command.spawn()
+    child = command.spawn()
 
     // Send the signal the instant `stacks/` shows up in the staging
     // dir — as early as possible in the file-copy loop, to give the
@@ -1298,10 +1322,12 @@ Deno.test("e2e: SIGINT during a ~1,500-file stage leaves no staging directory be
 
     child.kill("SIGINT")
     const output = await child.output()
+    childDone = true
     assertEquals(output.code, 130)
 
     await assertNotExists(stagingDirPath)
   } finally {
+    await killUnfinishedChild(child, childDone)
     await Deno.remove(tmpRoot, { recursive: true }).catch(() => {})
     await teardownFixture(f)
   }

@@ -127,17 +127,28 @@ export async function needsRemoteSudo(sshAddress: string): Promise<boolean> {
  * exist yet, which a mocked `runRemoteShell` can't demonstrate either
  * way.
  */
-export function buildPathsCheckScript(pathApps: string, volumesPath: string): string {
+export function buildPathsCheckScript(
+  pathApps: string,
+  volumesPath: string,
+  needsSudo = false,
+): string {
   const stacksDir = `${pathApps}/stacks`
+  // VOLUMES_PATH gets `sudo -n` like volumes.ts's own mkdir of the same
+  // tree: its parent is often root-owned (/srv). PATH_APPS never does,
+  // since rsync writes there as the deploy user anyway.
+  const sudo = needsSudo ? "sudo -n " : ""
   // A single script STRING (runRemoteShell), never several argv
   // elements handed to runRemoteCommand — ssh joins trailing argv with
   // plain spaces before sending it to the remote shell, which would
   // reparse (and break) a multi-word command built that way; every
   // other multi-step remote script in cli/deploy/ already goes through
   // runRemoteShell for the same reason.
-  return `mkdir -p -- ${shQuote(pathApps)} ${shQuote(volumesPath)} ` +
-    `${shQuote(stacksDir)} && readlink -f -- ${shQuote(pathApps)} && printf '\\n---\\n' && ` +
-    `readlink -f -- ${shQuote(volumesPath)} && printf '\\n---\\n' && ` +
+  // One `readlink -f` per line; the caller requires exactly three
+  // lines, so a resolved path that itself holds a newline is refused.
+  return `mkdir -p -- ${shQuote(pathApps)} ${shQuote(stacksDir)} && ` +
+    `${sudo}mkdir -p -- ${shQuote(volumesPath)} && ` +
+    `readlink -f -- ${shQuote(pathApps)} && ` +
+    `readlink -f -- ${shQuote(volumesPath)} && ` +
     `readlink -f -- ${shQuote(stacksDir)}`
 }
 
@@ -145,9 +156,10 @@ export async function checkRemotePathsNotNested(
   sshAddress: string,
   pathApps: string,
   volumesPath: string,
+  needsSudo = false,
 ): Promise<void> {
   const stacksDir = `${pathApps}/stacks`
-  const script = buildPathsCheckScript(pathApps, volumesPath)
+  const script = buildPathsCheckScript(pathApps, volumesPath, needsSudo)
   const result = await runRemoteShell(sshAddress, script)
   if (result.code === SSH_CONNECTION_FAILURE_CODE) {
     throw new UserError(
@@ -160,13 +172,12 @@ export async function checkRemotePathsNotNested(
         `${sshAddress} (\`mkdir -p\`/\`readlink -f\` failed): ${result.error.trim()}`,
     )
   }
-  const [realPathApps, realVolumesPath, realStacksDir] = result.output.split("---").map((s) =>
-    s.trim()
-  )
-  if (!realPathApps || !realVolumesPath || !realStacksDir) {
+  const lines = result.output.replace(/\n$/, "").split("\n")
+  const [realPathApps, realVolumesPath, realStacksDir] = lines
+  if (lines.length !== 3 || lines.some((l) => !l.startsWith("/"))) {
     throw new UserError(
       `could not resolve PATH_APPS "${pathApps}" or VOLUMES_PATH "${volumesPath}" on ` +
-        `${sshAddress} — \`readlink -f\` returned nothing for at least one of them.`,
+        `${sshAddress} — \`readlink -f\` didn't return exactly one absolute path for each.`,
     )
   }
   if (pathsNestedOrEqual(realPathApps, realVolumesPath)) {
