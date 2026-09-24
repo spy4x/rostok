@@ -1,7 +1,12 @@
 import { assertEquals, assertRejects, assertStringIncludes } from "@std/assert"
 import { join } from "@std/path"
 import { UserError } from "../errors.ts"
-import { checkDockerGroup, checkRemotePathsNotNested, needsRemoteSudo } from "./docker-preflight.ts"
+import {
+  buildPathsCheckScript,
+  checkDockerGroup,
+  checkRemotePathsNotNested,
+  needsRemoteSudo,
+} from "./docker-preflight.ts"
 
 /** Install a fake `ssh` on PATH that prints `sshReply` to stdout and exits 0. */
 async function withFakeSsh<T>(sshReply: string, fn: () => Promise<T>): Promise<T> {
@@ -106,8 +111,8 @@ Deno.test("checkDockerGroup: names the step and says the server is unreachable, 
   )
 })
 
-Deno.test("checkRemotePathsNotNested: passes when the real, resolved paths are siblings", async () => {
-  await withFakeSsh("/srv/apps\n---\n/srv/volumes\n", async () => {
+Deno.test("checkRemotePathsNotNested: passes when the real, resolved paths are siblings and stacks/ resolves correctly", async () => {
+  await withFakeSsh("/srv/apps\n---\n/srv/volumes\n---\n/srv/apps/stacks\n", async () => {
     await checkRemotePathsNotNested("root@example.com", "/srv/apps", "/srv/volumes")
   })
 })
@@ -118,7 +123,7 @@ Deno.test("checkRemotePathsNotNested: refuses when a SYMLINK makes the real path
   // VOLUMES_PATH is secretly a symlink pointing inside PATH_APPS. A
   // string-only comparison (env.ts's own pathsNestedOrEqual check)
   // can't catch this; only asking the real server can.
-  await withFakeSsh("/srv/apps\n---\n/srv/apps/.volumes\n", async () => {
+  await withFakeSsh("/srv/apps\n---\n/srv/apps/.volumes\n---\n/srv/apps/stacks\n", async () => {
     const err = await assertRejects(
       () => checkRemotePathsNotNested("root@example.com", "/srv/apps", "/srv/volumes"),
       UserError,
@@ -127,6 +132,58 @@ Deno.test("checkRemotePathsNotNested: refuses when a SYMLINK makes the real path
     assertStringIncludes(err.message, "/srv/apps/.volumes")
     assertStringIncludes(err.message, "readlink -f")
   })
+})
+
+Deno.test("checkRemotePathsNotNested: refuses when PATH_APPS/stacks resolves elsewhere — a symlinked stacks/ into VOLUMES_PATH (review round)", async () => {
+  // PATH_APPS and VOLUMES_PATH themselves are still genuine siblings —
+  // only the stacks/ FOLDER has been replaced with a symlink pointing
+  // into VOLUMES_PATH. Every stale-stack removal and per-stack sync
+  // runs under PATH_APPS/stacks, so this must be caught even though the
+  // first (PATH_APPS vs VOLUMES_PATH) check alone would pass.
+  await withFakeSsh(
+    "/srv/apps\n---\n/srv/volumes\n---\n/srv/volumes/actual-data\n",
+    async () => {
+      const err = await assertRejects(
+        () => checkRemotePathsNotNested("root@example.com", "/srv/apps", "/srv/volumes"),
+        UserError,
+      )
+      assertStringIncludes(err.message, "PATH_APPS/stacks")
+      assertStringIncludes(err.message, "/srv/volumes/actual-data")
+      assertStringIncludes(err.message, "/srv/apps/stacks")
+    },
+  )
+})
+
+Deno.test("buildPathsCheckScript: passes on a fresh server where BOTH parent directory levels are missing (review round)", async () => {
+  // readlink -f (GNU and BusyBox, verified directly) exits 1 with no
+  // output the moment any component before the last is missing — the
+  // exact shape of a genuinely fresh server. This runs the REAL script
+  // through a REAL sh, never a mock, so it actually proves the mkdir -p
+  // fix, not just that the higher-level function parses canned output
+  // correctly.
+  const remoteRoot = await Deno.makeTempDir({ prefix: "rostok-preflight-fresh-test-" })
+  try {
+    const pathApps = join(remoteRoot, "fresh", "srv", "apps")
+    const volumesPath = join(remoteRoot, "fresh", "srv", "volumes")
+    // Neither "fresh" nor "fresh/srv" exists yet — two missing parent levels.
+    const parentExists = await Deno.stat(join(remoteRoot, "fresh")).then(() => true).catch(() =>
+      false
+    )
+    assertEquals(parentExists, false, "test bug: the fresh/ parent must not exist yet")
+
+    const script = buildPathsCheckScript(pathApps, volumesPath)
+    const proc = new Deno.Command("sh", { args: ["-c", script], stdout: "piped", stderr: "piped" })
+    const out = await proc.output()
+    const stdout = new TextDecoder().decode(out.stdout)
+    const stderr = new TextDecoder().decode(out.stderr)
+    assertEquals(out.success, true, `script failed: ${stderr}`)
+    const [realPathApps, realVolumesPath, realStacksDir] = stdout.split("---").map((s) => s.trim())
+    assertEquals(realPathApps, pathApps)
+    assertEquals(realVolumesPath, volumesPath)
+    assertEquals(realStacksDir, join(pathApps, "stacks"))
+  } finally {
+    await Deno.remove(remoteRoot, { recursive: true })
+  }
 })
 
 Deno.test("checkRemotePathsNotNested: names the step and says the server is unreachable on a connection failure", async () => {
