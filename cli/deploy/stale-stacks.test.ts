@@ -430,6 +430,31 @@ Deno.test("generateStaleStackCleanupScript: phase-2 label with a space ('a b') i
   }
 })
 
+Deno.test("generateStaleStackCleanupScript: an unsafe name is printed with escape bytes and newlines replaced", async () => {
+  // A label or folder name planted on the server must not reach the
+  // operator's terminal as an escape sequence or a fake extra line.
+  const pathApps = await makeStacksDir(["traefik"])
+  try {
+    const script = generateStaleStackCleanupScript(["traefik"], pathApps, "/srv/volumes")
+    const planted = "x\x1b]0;PWNED\x07\nRemoved stale stack 'traefik'"
+    const { success, stdout, log } = await runWithFakeDocker(script, {
+      broadOutput: `${join(pathApps, "stacks", "x\x1b]0;PWNED\x07")}\n`,
+    })
+    assert(success, log.join("\n"))
+    assertStringIncludes(stdout, "skipped 'x??0?PWNED?': unsafe name")
+    assertEquals(stdout.includes("\x1b"), false, stdout)
+    assertEquals(stdout.includes("\x07"), false, stdout)
+
+    // A folder whose name holds a newline prints as one line.
+    await Deno.mkdir(join(pathApps, "stacks", planted))
+    const second = await runWithFakeDocker(script)
+    assertStringIncludes(second.stdout, "skipped 'x??0?PWNED??Removed stale stack ?traefik?'")
+    assertEquals(second.stdout.includes("\nRemoved stale stack 'traefik'"), false, second.stdout)
+  } finally {
+    await Deno.remove(pathApps, { recursive: true })
+  }
+})
+
 Deno.test("generateStaleStackCleanupScript: a file symlink under stacks/ is skipped and reported, not silently ignored (review round)", async () => {
   const pathApps = await Deno.makeTempDir({ prefix: "rostok-stale-stacks-test-" })
   try {
@@ -468,7 +493,7 @@ Deno.test("generateStaleStackCleanupScript: removing the name-shape guard lets '
   try {
     const script = generateStaleStackCleanupScript(["traefik"], pathApps, "/srv/volumes")
     const mutated = script.replace(
-      "    ''|*[!A-Za-z0-9_-]*)\n      echo \"skipped '$name': unsafe name\"\n      return 0\n      ;;\n",
+      "    ''|*[!A-Za-z0-9_-]*)\n      echo \"skipped '$(printable \"$name\")': unsafe name\"\n      return 0\n      ;;\n",
       "    __never_matches__) return 0 ;;\n",
     )
     assert(mutated !== script, "mutation string not found in generated script")

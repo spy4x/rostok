@@ -38,6 +38,14 @@ interface FakeRemote {
   shellScripts: string[]
   rsyncCalls: { entry: boolean; src: string; destParent: string; flags: string[] }[]
   failStaleCleanup?: boolean
+  /** Stdout the stale-stack cleanup script "prints" on the remote. */
+  staleCleanupOutput?: string
+  /** Stderr of a failed stale-stack cleanup (default: a fixed message). */
+  staleCleanupError?: string
+  /** What needsRemoteSudo answers (default false: the remote user is root). */
+  remoteNeedsSudo?: boolean
+  /** The needsSudo value runDeploy handed to checkRemotePathsNotNested. */
+  pathsCheckSudo?: boolean
   failDeployStack?: string
 }
 
@@ -100,10 +108,11 @@ function makeFakeIO(remote: FakeRemote): RunDeployIO {
     },
     needsRemoteSudo: async () => {
       remote.calls.push("sudo")
-      return false
+      return remote.remoteNeedsSudo ?? false
     },
-    checkRemotePathsNotNested: async () => {
+    checkRemotePathsNotNested: async (_address, _pathApps, _volumesPath, needsSudo) => {
       remote.calls.push("readlink")
+      remote.pathsCheckSudo = needsSudo
     },
     runRemoteShell: async (_address: string, script: string) => {
       remote.shellScripts.push(script)
@@ -115,10 +124,16 @@ function makeFakeIO(remote: FakeRemote): RunDeployIO {
       }
       if (script.includes("stop_and_remove")) {
         remote.calls.push("stale-cleanup")
+        const output = remote.staleCleanupOutput ?? ""
         if (remote.failStaleCleanup) {
-          return { success: false, code: 1, output: "", error: "simulated stale-cleanup failure" }
+          return {
+            success: false,
+            code: 1,
+            output,
+            error: remote.staleCleanupError ?? "simulated stale-cleanup failure",
+          }
         }
-        return ok()
+        return ok(output)
       }
       const shaMatch = script.match(/^sha256sum '([^']*)'/)
       if (shaMatch) {
@@ -390,6 +405,62 @@ Deno.test("runDeploy: calls io.checkRemotePathsNotNested before any sync (review
         JSON.stringify(f.remote.calls)
       }`,
     )
+  } finally {
+    await teardownRunDeployFixture(f)
+  }
+})
+
+Deno.test("runDeploy: passes the remote's sudo need to the paths check, so VOLUMES_PATH is created with sudo -n", async () => {
+  const f = await setupRunDeployFixture()
+  try {
+    await writeLocalStack(f.projectDir, "alpha")
+    await writeRunDeployServer(f.projectDir, ["alpha"])
+    f.remote.remoteNeedsSudo = true
+
+    await runDeploy({ cwd: f.projectDir, server: "test" }, f.io)
+
+    assertEquals(f.remote.pathsCheckSudo, true)
+  } finally {
+    await teardownRunDeployFixture(f)
+  }
+})
+
+Deno.test("runDeploy: control characters in the stale-stack cleanup's output never reach the terminal", async () => {
+  // Folder names and docker labels on the server end up in this output;
+  // anyone with access there could shape them into escape sequences.
+  const f = await setupRunDeployFixture()
+  const logged: string[] = []
+  const originalLog = console.log
+  console.log = (...args: unknown[]) => logged.push(args.map(String).join(" "))
+  try {
+    await writeLocalStack(f.projectDir, "alpha")
+    await writeRunDeployServer(f.projectDir, ["alpha"])
+    f.remote.staleCleanupOutput = "skipped 'x\x1b]0;PWNED\x07\x1b[31mRED': unsafe name\n"
+
+    await runDeploy({ cwd: f.projectDir, server: "test" }, f.io)
+
+    const line = logged.find((l) => l.includes("unsafe name"))
+    assertEquals(line, "skipped 'x]0;PWNED[31mRED': unsafe name")
+  } finally {
+    console.log = originalLog
+    await teardownRunDeployFixture(f)
+  }
+})
+
+Deno.test("runDeploy: a failed stale-stack cleanup's error message carries no control characters", async () => {
+  const f = await setupRunDeployFixture()
+  try {
+    await writeLocalStack(f.projectDir, "alpha")
+    await writeRunDeployServer(f.projectDir, ["alpha"])
+    f.remote.failStaleCleanup = true
+    f.remote.staleCleanupError = "docker: bad label 'x\x1b[2J'\n"
+
+    const err = await assertRejects(
+      () => runDeploy({ cwd: f.projectDir, server: "test" }, f.io),
+      UserError,
+    )
+    assertStringIncludes(err.message, "docker: bad label 'x[2J'")
+    assertEquals(err.message.includes("\x1b"), false, err.message)
   } finally {
     await teardownRunDeployFixture(f)
   }

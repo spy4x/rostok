@@ -78,6 +78,14 @@ export function generateStaleStackCleanupScript(
     `STACKS_DIR=${quotedStacksDir}`,
     "FAILED=0",
     "",
+    // Prints a name that failed validation with every byte outside a
+    // plain allow-list replaced by `?`, so a directory name or label
+    // planted on the server can't send escape sequences or a fake
+    // line (a newline) to the operator's terminal.
+    "printable() {",
+    "  printf '%s' \"$1\" | tr -c 'A-Za-z0-9._ -' '?'",
+    "}",
+    "",
     // A stop-and-remove for one stack name, called for every stale name
     // discovered below (whether from a directory listing or, for a
     // folder that's already gone, from a container label scan). Reused
@@ -104,7 +112,7 @@ export function generateStaleStackCleanupScript(
     // something must be able to tell why.
     '  case "$name" in',
     "    ''|*[!A-Za-z0-9_-]*)",
-    "      echo \"skipped '$name': unsafe name\"",
+    '      echo "skipped \'$(printable "$name")\': unsafe name"',
     "      return 0",
     "      ;;",
     "  esac",
@@ -175,7 +183,7 @@ export function generateStaleStackCleanupScript(
     '  [ -e "$entry" ] || [ -L "$entry" ] || continue',
     '  dir_name="${entry##*/}"',
     '  if [ ! -d "$entry" ]; then',
-    "    echo \"skipped '$dir_name': not a directory\"",
+    '    echo "skipped \'$(printable "$dir_name")\': not a directory"',
     "    continue",
     "  fi",
     '  case " ${dir_name} " in',

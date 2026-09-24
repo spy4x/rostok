@@ -138,6 +138,17 @@ export interface DeployRunResult {
   results: DeployResult[]
 }
 
+/**
+ * Remove ASCII control characters except newline and tab from remote
+ * output before it reaches the terminal. The stale-stack cleanup prints
+ * folder names and docker labels from the server, which anyone with
+ * access there can shape into escape sequences.
+ */
+export function stripControlChars(s: string): string {
+  // deno-lint-ignore no-control-regex
+  return s.replace(/[\x00-\x08\x0b-\x1f\x7f]/g, "")
+}
+
 export async function runDeploy(
   opts: DeployOptions,
   io: RunDeployIO = defaultRunDeployIO,
@@ -197,7 +208,7 @@ export async function runDeploy(
   // pathsNestedOrEqual check, which only ever sees the `.env` strings —
   // asking the real server with `readlink -f` is the only way to catch
   // that. Refuses (nothing deleted) before any deletion below.
-  await io.checkRemotePathsNotNested(SSH_ADDRESS, PATH_APPS, VOLUMES_PATH)
+  await io.checkRemotePathsNotNested(SSH_ADDRESS, PATH_APPS, VOLUMES_PATH, needsSudo)
 
   // config.json → which stacks to deploy. Missing entirely (never run
   // `rostok server create`/no stacks added yet — distinct from an
@@ -418,11 +429,12 @@ export async function runDeploy(
         VOLUMES_PATH,
       )
       const staleCleanupResult = await io.runRemoteShell(SSH_ADDRESS, staleCleanupScript)
-      if (staleCleanupResult.output.trim()) console.log(staleCleanupResult.output.trim())
+      const cleanupOutput = stripControlChars(staleCleanupResult.output).trim()
+      if (cleanupOutput) console.log(cleanupOutput)
       if (!staleCleanupResult.success) {
         throw new UserError(
           `failed to clean up stale stacks on ${SSH_ADDRESS}: ` +
-            `${staleCleanupResult.error.trim() || staleCleanupResult.output.trim()}`,
+            `${stripControlChars(staleCleanupResult.error).trim() || cleanupOutput}`,
         )
       }
     }
