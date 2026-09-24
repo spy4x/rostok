@@ -1,11 +1,12 @@
 import { assertEquals, assertRejects } from "@std/assert"
 import { join } from "@std/path"
 import { UserError } from "../errors.ts"
+import { parseSshAddress } from "../server-keys.ts"
 import {
+  rsyncEntrySyncArgs,
+  rsyncSyncArgs,
   runRemoteCommand,
   runRemoteShell,
-  runRemoteSync,
-  runRemoteSyncEntry,
   shQuote,
 } from "./exec.ts"
 
@@ -91,234 +92,56 @@ Deno.test("runRemoteCommand: rejects a malicious SSH_ADDRESS before ssh is ever 
   })
 })
 
-/** Install a fake `rsync` on PATH that prints its own argv, one per line. */
-async function withFakeRsync<T>(fn: () => Promise<T>): Promise<T> {
-  const binDir = await Deno.makeTempDir({ prefix: "rostok-fake-rsync-argv-" })
-  try {
-    const script = `#!/bin/sh\nfor a in "$@"; do printf '%s\\n' "$a"; done\n`
-    await Deno.writeTextFile(join(binDir, "rsync"), script, { mode: 0o755 })
-    const previousPath = Deno.env.get("PATH") ?? ""
-    Deno.env.set("PATH", `${binDir}:${previousPath}`)
-    try {
-      return await fn()
-    } finally {
-      Deno.env.set("PATH", previousPath)
-    }
-  } finally {
-    await Deno.remove(binDir, { recursive: true })
-  }
-}
-
-Deno.test("runRemoteSync: -e carries -p, ConnectTimeout and BatchMode; brackets a bare IPv6 destination", async () => {
-  await withFakeRsync(async () => {
-    const result = await runRemoteSync("root@[2001:db8::1]:2222", "/local/staging", "/srv/apps", [
-      "-avhzru",
-    ])
-    const argv = result.output.split("\n").filter((l) => l.length > 0)
-    assertEquals(argv, [
-      "-avhzru",
-      "-e",
-      `ssh ${expectedOptions().join(" ")} -p 2222`,
-      "--",
-      "/local/staging/",
-      "root@[2001:db8::1]:/srv/apps/",
-    ])
+Deno.test("rsyncSyncArgs: -e carries -p, ConnectTimeout and BatchMode; trailing slash on both source and destination", () => {
+  const target = parseSshAddress("root@[2001:db8::1]:2222")
+  const argv = rsyncSyncArgs(target, "/local/staging", "/srv/apps", ["-avhzru"], {
+    batchMode: true,
   })
+  assertEquals(argv, [
+    "-avhzru",
+    "-e",
+    "ssh -o ConnectTimeout=10 -o BatchMode=yes -p 2222",
+    "--",
+    "/local/staging/",
+    "root@[2001:db8::1]:/srv/apps/",
+  ])
 })
 
-Deno.test("runRemoteSyncEntry: no trailing slash on the source; the remote parent path gets one", async () => {
-  await withFakeRsync(async () => {
-    const result = await runRemoteSyncEntry(
-      "root@example.com",
-      "/local/staging/stacks/traefik",
-      "/srv/apps/stacks",
-      ["-avhz", "--delete"],
-    )
-    const argv = result.output.split("\n").filter((l) => l.length > 0)
-    assertEquals(argv, [
-      "-avhz",
-      "--delete",
-      "-e",
-      `ssh ${expectedOptions().join(" ")}`,
-      "--",
-      "/local/staging/stacks/traefik",
-      "root@example.com:/srv/apps/stacks/",
-    ])
-  })
+Deno.test("rsyncEntrySyncArgs: no trailing slash on the source; the remote parent path gets one", () => {
+  const target = parseSshAddress("root@example.com")
+  const argv = rsyncEntrySyncArgs(
+    target,
+    "/local/staging/stacks/traefik",
+    "/srv/apps/stacks",
+    ["-avhz", "--delete"],
+    { batchMode: true },
+  )
+  assertEquals(argv, [
+    "-avhz",
+    "--delete",
+    "-e",
+    "ssh -o ConnectTimeout=10 -o BatchMode=yes",
+    "--",
+    "/local/staging/stacks/traefik",
+    "root@example.com:/srv/apps/stacks/",
+  ])
 })
 
-/**
- * Install a fake `ssh` that's a pure pass-through: it strips ssh's own
- * options and target, then `exec`s whatever argv rsync built for the
- * "remote" command AS SEPARATE ARGV ELEMENTS (never re-joined into one
- * shell string) — rsync's `-e` transport always invokes its remote
- * command that way. Since the command it built is `rsync --server ...`
- * with a REAL local path as the final argument (see the symlink test
- * below), this makes a REAL rsync-to-rsync protocol run end to end,
- * entirely on this machine — real symlink/--delete/mkdir semantics,
- * never a real network connection or a hand-rolled copy loop standing
- * in for them.
- */
-async function withPassthroughFakeSsh<T>(fn: () => Promise<T>): Promise<T> {
-  const binDir = await Deno.makeTempDir({ prefix: "rostok-passthrough-ssh-" })
-  try {
-    const script = `#!/usr/bin/env -S deno run --allow-run
-const args = Deno.args
-// Real ssh's own grammar: -o KEY=VALUE and -p PORT each consume the
-// following arg too; an optional "--" ends the option list; the next
-// token is the host; everything after that is the remote command,
-// passed on as SEPARATE argv slots — exactly what a real
-// "rsync --server" invocation needs to parse its own flags correctly.
-// rsync itself may split "user@host" into "-l user host" before
-// invoking its -e command (confirmed against a real rsync), so "-l" is
-// consumed the same way "-o"/"-p" are.
-// rsync's OWN invocation of its -e command never inserts "--" itself
-// (unlike cli/server-keys.ts's sshArgs, used by the DIRECT ssh spawns),
-// so this parses both shapes.
-let i = 0
-while (i < args.length) {
-  const a = args[i]
-  if (a === "-o" || a === "-p" || a === "-l") { i += 2; continue }
-  if (a === "--") { i += 1; break }
-  break
-}
-const remoteCommand = args.slice(i + 1)
-const child = new Deno.Command(remoteCommand[0], {
-  args: remoteCommand.slice(1),
-  stdin: "inherit",
-  stdout: "inherit",
-  stderr: "inherit",
-}).spawn()
-const status = await child.status
-Deno.exit(status.code)
-`
-    await Deno.writeTextFile(join(binDir, "ssh"), script, { mode: 0o755 })
-    const previousPath = Deno.env.get("PATH") ?? ""
-    Deno.env.set("PATH", `${binDir}:${previousPath}`)
-    try {
-      return await fn()
-    } finally {
-      Deno.env.set("PATH", previousPath)
-    }
-  } finally {
-    await Deno.remove(binDir, { recursive: true })
+Deno.test("rsyncEntrySyncArgs: never trails the source with a slash, for any stack name (mutation gap)", () => {
+  // The whole point of runRemoteSyncEntry over runRemoteSync — a
+  // trailing slash here would make rsync merge CONTENTS into the
+  // destination instead of replacing it as one named entry, the shape
+  // that lets a symlinked destination be followed into its target
+  // instead of replaced (#233 review — see this function's own comment
+  // in exec.ts; the actual rsync behavior is a manual VM step, not an
+  // automated one, since no test here may spawn rsync at all).
+  const target = parseSshAddress("root@example.com")
+  for (const name of ["alpha", "a-longer-stack-name"]) {
+    const argv = rsyncEntrySyncArgs(target, `/staging/stacks/${name}`, "/srv/apps/stacks", [], {})
+    const source = argv[argv.length - 2]
+    assertEquals(source.endsWith("/"), false, `source must not end with "/": ${source}`)
+    assertEquals(source, `/staging/stacks/${name}`)
   }
-}
-
-/** True if a real `rsync` binary is on PATH — the symlink tests below need one. */
-const rsyncAvailable = await new Deno.Command("rsync", { args: ["--version"], stdout: "null" })
-  .output().then((o) => o.success).catch(() => false)
-
-Deno.test({
-  name:
-    "runRemoteSyncEntry against a REAL rsync: a symlinked destination is replaced, never followed into its target (#233 review)",
-  ignore: !rsyncAvailable,
-  fn: async () => {
-    // Not a skip-when-missing shortcut (that's forbidden for a real CI
-    // dependency) — rsync is a required, documented CI/dev dependency
-    // for this repo now (.woodpecker.yml, this PR); `ignore` only
-    // covers a machine that genuinely doesn't have it, the same way
-    // Deno.test itself is skipped if the whole runtime were missing.
-    await withPassthroughFakeSsh(async () => {
-      const remoteRoot = await Deno.makeTempDir({ prefix: "rostok-symlink-remote-" })
-      const stagingDir = await Deno.makeTempDir({ prefix: "rostok-symlink-staging-" })
-      try {
-        // The "remote": PATH_APPS/stacks/evil is a SYMLINK into
-        // VOLUMES_PATH/evil-target, which holds real app data.
-        await Deno.mkdir(join(remoteRoot, "apps", "stacks"), { recursive: true })
-        const volumesTarget = join(remoteRoot, "volumes", "evil-target")
-        await Deno.mkdir(volumesTarget, { recursive: true })
-        await Deno.writeTextFile(join(volumesTarget, "important-data.txt"), "keep me")
-        await Deno.symlink(
-          volumesTarget,
-          join(remoteRoot, "apps", "stacks", "evil"),
-          { type: "dir" },
-        )
-
-        // The project's own staged copy of the "evil" stack.
-        await Deno.mkdir(join(stagingDir, "evil"), { recursive: true })
-        await Deno.writeTextFile(join(stagingDir, "evil", "compose.yml"), "new compose\n")
-
-        const result = await runRemoteSyncEntry(
-          "deploy@remote-test", // host is unused — the passthrough ssh ignores it
-          join(stagingDir, "evil"),
-          join(remoteRoot, "apps", "stacks"),
-          ["-avhz", "--delete"],
-        )
-        if (!result.success) throw new Error(`rsync failed: ${result.error}`)
-
-        // The symlink was replaced by a real directory with the
-        // project's file — never merged into or deleted from its
-        // former target.
-        const evilEntry = await Deno.lstat(join(remoteRoot, "apps", "stacks", "evil"))
-        assertEquals(evilEntry.isSymlink, false, "the symlink must be replaced, not followed")
-        assertEquals(evilEntry.isDirectory, true)
-        assertEquals(
-          await Deno.readTextFile(join(remoteRoot, "apps", "stacks", "evil", "compose.yml")),
-          "new compose\n",
-        )
-
-        // The volumes data the symlink used to point at is completely
-        // untouched — still there, still readable, unmodified.
-        assertEquals(
-          await Deno.readTextFile(join(volumesTarget, "important-data.txt")),
-          "keep me",
-        )
-      } finally {
-        await Deno.remove(remoteRoot, { recursive: true })
-        await Deno.remove(stagingDir, { recursive: true })
-      }
-    })
-  },
-})
-
-Deno.test({
-  name:
-    "runRemoteSyncEntry against a REAL rsync: a STALE symlinked stack (about to be removed) is unlinked, never followed either (#233 review)",
-  ignore: !rsyncAvailable,
-  fn: async () => {
-    // The stale-stack cleanup path removes a symlinked entry directly
-    // (stale-stacks.ts), never via rsync — this test proves the OTHER
-    // half of the same review point: even if a stale stack's directory
-    // is still present as a symlink when a LATER, unrelated per-stack
-    // sync runs (e.g. re-adding a stack under the same name after it
-    // was removed then re-created as a symlink by something else), the
-    // sync itself never writes into a symlink's target either.
-    await withPassthroughFakeSsh(async () => {
-      const remoteRoot = await Deno.makeTempDir({ prefix: "rostok-symlink-remote-" })
-      const stagingDir = await Deno.makeTempDir({ prefix: "rostok-symlink-staging-" })
-      try {
-        await Deno.mkdir(join(remoteRoot, "apps", "stacks"), { recursive: true })
-        const volumesTarget = join(remoteRoot, "volumes", "stale-target")
-        await Deno.mkdir(volumesTarget, { recursive: true })
-        await Deno.writeTextFile(join(volumesTarget, "important-data.txt"), "keep me too")
-        await Deno.symlink(
-          volumesTarget,
-          join(remoteRoot, "apps", "stacks", "stale"),
-          { type: "dir" },
-        )
-
-        await Deno.mkdir(join(stagingDir, "stale"), { recursive: true })
-        await Deno.writeTextFile(join(stagingDir, "stale", "compose.yml"), "new compose\n")
-
-        const result = await runRemoteSyncEntry(
-          "deploy@remote-test",
-          join(stagingDir, "stale"),
-          join(remoteRoot, "apps", "stacks"),
-          ["-avhz", "--delete"],
-        )
-        if (!result.success) throw new Error(`rsync failed: ${result.error}`)
-
-        assertEquals(
-          await Deno.readTextFile(join(volumesTarget, "important-data.txt")),
-          "keep me too",
-        )
-      } finally {
-        await Deno.remove(remoteRoot, { recursive: true })
-        await Deno.remove(stagingDir, { recursive: true })
-      }
-    })
-  },
 })
 
 Deno.test("shQuote: wraps a value in single quotes", () => {
