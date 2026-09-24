@@ -16,6 +16,7 @@ import { buildCommand, formatCliError, parseStackFlags, parseVarFlags } from "./
 import { DESCRIPTION, NAME, VERSION } from "./version.ts"
 import { readEnvFile } from "./env-files.ts"
 import { UserError } from "./errors.ts"
+import { loadCatalog } from "./catalog.ts"
 
 Deno.test("buildCommand: returns a fresh Command on every call", () => {
   // Important for tests — sharing one Command across cases would mutate state.
@@ -388,8 +389,15 @@ Deno.test({
 
       const result = await runMainIn(tmp, ["stack", "add", "nope", "-s", "a", "-n"])
       assertEquals(result.code, 1)
-      assertStringIncludes(result.stderr, "rostok: ")
-      assertStringIncludes(result.stderr, "not found in catalog")
+      // Review fix — the exact line, not a substring: a substring check
+      // would also pass if `catalog.ts`'s message text drifted (e.g.
+      // dropped the "available:" list) as long as "not found in
+      // catalog" still appeared somewhere.
+      const available = loadCatalog().map((e) => e.name).join(", ")
+      assertEquals(
+        result.stderr.trim(),
+        `rostok: stack 'nope' not found in catalog. available: ${available}`,
+      )
       assertNoStackFrame(result.stderr)
     } finally {
       await Deno.remove(tmp, { recursive: true }).catch(() => {})

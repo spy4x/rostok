@@ -44,8 +44,13 @@ export interface StackMeta {
    * can work — v1's only case is `["traefik"]` for every web stack (one
    * with a `Host()` Traefik router label in its `compose.yml`). #212:
    * `stack add`/the wizard offer to add a missing requirement first
-   * (non-interactive mode adds it automatically). v2 can grow this into a
-   * full dependency graph; v1 only reads this one level.
+   * (non-interactive mode adds it automatically), resolved recursively —
+   * `stackAdd` calls itself for each unmet requirement, which resolves
+   * its own requirements the same way, so a chain longer than one hop
+   * (`a` requires `b` requires `c`) still works; a cycle anywhere in the
+   * chain is caught and reported instead of recursing forever. v2 can
+   * still grow this into a richer dependency graph (version constraints,
+   * optional deps, ...).
    */
   requires?: string[]
 }

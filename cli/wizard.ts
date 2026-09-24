@@ -163,10 +163,12 @@ export async function runWizard(opts: WizardOptions = {}): Promise<WizardResult>
  * Reorder `chosen` (a batch of stack names picked in one wizard run) so
  * that any stack another chosen stack `requires` is added first —
  * within this batch only. A `requires` name NOT in `chosen` is left for
- * `stackAdd`'s own per-call requires resolution (#212 point 1); v1's
- * `requires` is one level deep (see stack-meta.ts), so a single pass
- * that moves each direct requirement ahead of its dependent is enough —
- * this never needs to handle a requires chain longer than one hop.
+ * `stackAdd`'s own per-call requires resolution (#212 point 1), which
+ * IS recursive (see stack-meta.ts) — a chain longer than one hop still
+ * resolves correctly there. This function only needs one pass over
+ * direct requirements because it's solving a narrower problem: ordering
+ * a flat, already-known batch so nothing in it gets asked about a
+ * dependency that's ALSO in the same batch — not resolving a graph.
  */
 function orderStacksByRequires(catalog: CatalogEntry[], chosen: string[]): string[] {
   const chosenSet = new Set(chosen)
@@ -214,7 +216,13 @@ async function pickStacksInteractive(
   }))
   const pick = pickStacksFn ?? ((opts) =>
     Checkbox.prompt({
-      message: "Pick stacks to add (space to select, enter to confirm; none to skip):",
+      // cliffy's Checkbox defaults to `confirmSubmit: true` (its own
+      // default, not set here) — the first Enter arms submission and
+      // shows its own "press enter again" hint, the second Enter
+      // actually submits. "enter to confirm" undersold that: a
+      // hobbyist pressing Enter once and seeing nothing happen would
+      // reasonably think the prompt was stuck.
+      message: "Pick stacks to add (space to select, enter twice to confirm; none to skip):",
       options: opts,
     }))
   return await pick(options)
