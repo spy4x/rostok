@@ -460,7 +460,10 @@ Deno.test("runDeploy: a full deploy's stale-stack cleanup uses the FULL config.s
 
     const log = await readSshLog(f)
     const cleanupScript = log.find((s) => s.includes("stop_and_remove"))
-    assert(cleanupScript, `expected a stale-cleanup script in the ssh log, got:\n${log.join("\n---\n")}`)
+    assert(
+      cleanupScript,
+      `expected a stale-cleanup script in the ssh log, got:\n${log.join("\n---\n")}`,
+    )
     assertStringIncludes(cleanupScript!, "' alpha '")
     assertStringIncludes(cleanupScript!, "' beta '")
   } finally {
@@ -509,7 +512,9 @@ Deno.test("runDeploy: hooks get the FULL config.stacks list even during a single
       console.error = originalConsoleError
     }
 
-    const droppedWarning = errorLines.find((l) => l.includes("dropped") && l.includes("BETA_IMAGE_TAG"))
+    const droppedWarning = errorLines.find((l) =>
+      l.includes("dropped") && l.includes("BETA_IMAGE_TAG")
+    )
     assertEquals(
       droppedWarning,
       undefined,
@@ -632,7 +637,9 @@ Deno.test("runDeploy: a watched file that a later deploy no longer ships still t
     const log = await readSshLog(f)
     assert(
       log.some((s) => s.includes("RESTARTING:alpha:alpha") || s.includes("restart")),
-      `expected a restart for alpha after its watched file was removed, got:\n${log.join("\n---\n")}`,
+      `expected a restart for alpha after its watched file was removed, got:\n${
+        log.join("\n---\n")
+      }`,
     )
   } finally {
     await teardownRunDeployFixture(f)

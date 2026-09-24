@@ -80,7 +80,7 @@ import { parseEnv, readEnvFile } from "../env-files.ts"
 import { serverDirFor } from "../server-keys.ts"
 import { UserError } from "../errors.ts"
 import { resolveDeployEnv } from "./env.ts"
-import { checkDockerGroup, needsRemoteSudo } from "./docker-preflight.ts"
+import { checkDockerGroup, checkRemotePathsNotNested, needsRemoteSudo } from "./docker-preflight.ts"
 import { type ResolvedStackFiles, resolveStackFiles } from "./stack-files.ts"
 import { validateStackConfigs } from "./validate-stack-config.ts"
 import { type HookContext, runHook } from "./hooks.ts"
@@ -93,7 +93,7 @@ import {
   printDeploySummary,
   type StackConfig,
 } from "./deploy-script.ts"
-import { runRemoteShell, runRemoteSync } from "./exec.ts"
+import { runRemoteShell, runRemoteSync, runRemoteSyncEntry, shQuote } from "./exec.ts"
 import { killActiveChildren } from "./process-registry.ts"
 import { generateStaleStackCleanupScript } from "./stale-stacks.ts"
 
@@ -163,14 +163,38 @@ export async function runDeploy(opts: DeployOptions): Promise<DeployRunResult> {
   const dockerGroupIdSource = env.DOCKER_GROUP_ID ? envPath : rootEnvPath
   await checkDockerGroup(SSH_ADDRESS, DOCKER_GROUP_ID, dockerGroupIdSource)
   const needsSudo = await needsRemoteSudo(SSH_ADDRESS)
+  // #233 review: a symlink ON THE SERVER ITSELF (VOLUMES_PATH pointing
+  // inside PATH_APPS, or the reverse) can defeat env.ts's own
+  // pathsNestedOrEqual check, which only ever sees the `.env` strings —
+  // asking the real server with `readlink -f` is the only way to catch
+  // that. Refuses (nothing deleted) before any deletion below.
+  await checkRemotePathsNotNested(SSH_ADDRESS, PATH_APPS, VOLUMES_PATH)
 
-  // config.json → which stacks to deploy.
+  // config.json → which stacks to deploy. Missing entirely (never run
+  // `rostok server create`/no stacks added yet — distinct from an
+  // explicit `"stacks": []`, which IS the project's real truth and does
+  // trigger cleanup below) must never be read as "delete every stack
+  // and every file already on the server" (#233 review) — decision:
+  // skip the destructive steps (stale-stack cleanup, the root sync's
+  // --delete) entirely and say so, rather than refuse the whole deploy;
+  // there's nothing useful to deploy either way (`stacks` ends up
+  // empty), and a typo'd server dir or a config.json genuinely not
+  // written yet shouldn't be treated as "wipe the server".
   const configPath = join(serverDir, "config.json")
   let config: { stacks?: StackConfig[] } = {}
+  let configFileFound = true
   try {
     config = JSON.parse(await Deno.readTextFile(configPath))
   } catch (err) {
-    if (!(err instanceof Deno.errors.NotFound)) throw err
+    if (err instanceof Deno.errors.NotFound) {
+      configFileFound = false
+      console.error(
+        `Notice: ${configPath} not found — skipping stale-stack cleanup and the deletion side ` +
+          `of the file sync. Nothing to deploy either way; run \`rostok stack add\` first.`,
+      )
+    } else {
+      throw err
+    }
   }
   // Every stack's name/deployAs, validated before anything is built (a
   // newline in either could otherwise break out of a `#` comment line in
@@ -321,27 +345,57 @@ export async function runDeploy(opts: DeployOptions): Promise<DeployRunResult> {
       )
     }
 
-    // #233 point 4: stop and remove every stack config.json no longer
-    // lists BEFORE any rsync --delete runs below — once rsync deletes a
-    // stale stack's folder, `docker compose down` there can no longer
-    // find the compose file to stop its containers. Uses allStackNames
-    // (the FULL config.stacks list), not the filtered `stacks`, so a
-    // single-stack deploy doesn't stop or remove any OTHER stack.
-    // VOLUMES_PATH/<stack> is never referenced by a command in this
-    // script (see stale-stacks.ts) — only named in its own printed
-    // message — so app data always survives a stack's removal.
-    const staleCleanupScript = generateStaleStackCleanupScript(
-      allStackNames,
-      PATH_APPS,
-      VOLUMES_PATH,
+    // Every remote path this deploy will ever write or delete under
+    // needs PATH_APPS/stacks to exist first — a fresh server has
+    // neither PATH_APPS nor its stacks/ subdirectory yet, and rsync
+    // itself refuses to create a deeply nonexistent destination without
+    // `--mkpath` (confirmed directly: `rsync ... into fresh/srv/apps/`
+    // on a fresh tree fails "mkdir ... No such file or directory").
+    // `mkdir -p` covers both PATH_APPS and PATH_APPS/stacks in one call,
+    // and is a no-op on an existing tree.
+    const mkdirResult = await runRemoteShell(
+      SSH_ADDRESS,
+      `mkdir -p -- ${shQuote(`${PATH_APPS}/stacks`)}`,
     )
-    const staleCleanupResult = await runRemoteShell(SSH_ADDRESS, staleCleanupScript)
-    if (!staleCleanupResult.success) {
-      console.error(
-        `Warning: failed to clean up stale stacks: ${staleCleanupResult.error.trim()}`,
+    if (!mkdirResult.success) {
+      throw new UserError(
+        `could not create ${PATH_APPS}/stacks on ${SSH_ADDRESS}: ${mkdirResult.error.trim()}`,
       )
-    } else if (staleCleanupResult.output.trim()) {
-      console.log(staleCleanupResult.output.trim())
+    }
+
+    // #233 point 4, and point 3 decision A: stop and remove every stack
+    // config.json no longer lists, BEFORE any rsync --delete runs below
+    // — once rsync deletes a stale stack's folder, there's nothing left
+    // to find its containers by folder. Runs ONLY on a full deploy
+    // (opts.stack undefined): a single-stack deploy (`rostok deploy
+    // <server> <stack>`) must touch only that one stack's own
+    // stacks/<name>/ — stopping or removing any OTHER stack is exactly
+    // the cross-stack reach #233's single-stack scoping promises never
+    // happens. Uses allStackNames (the FULL config.stacks list) when it
+    // does run, never the filtered `stacks`. Skipped entirely (with a
+    // notice already printed above) when config.json itself is missing
+    // — never "no config.json" == "delete everything" (#233 review).
+    // VOLUMES_PATH/<stack> is never referenced by a command in the
+    // generated script (see stale-stacks.ts) — only named in its own
+    // printed message — so app data always survives a stack's removal.
+    // A failure here is a hard UserError, not a warning: the script
+    // itself now correctly reports which stop/removal failed, and
+    // silently continuing past a stack that's still running, unmanaged,
+    // would hide that from the operator.
+    if (opts.stack === undefined && configFileFound) {
+      const staleCleanupScript = generateStaleStackCleanupScript(
+        allStackNames,
+        PATH_APPS,
+        VOLUMES_PATH,
+      )
+      const staleCleanupResult = await runRemoteShell(SSH_ADDRESS, staleCleanupScript)
+      if (staleCleanupResult.output.trim()) console.log(staleCleanupResult.output.trim())
+      if (!staleCleanupResult.success) {
+        throw new UserError(
+          `failed to clean up stale stacks on ${SSH_ADDRESS}: ` +
+            `${staleCleanupResult.error.trim() || staleCleanupResult.output.trim()}`,
+        )
+      }
     }
 
     console.log(`Syncing files to ${SSH_ADDRESS}:${PATH_APPS}...`)
@@ -360,21 +414,31 @@ export async function runDeploy(opts: DeployOptions): Promise<DeployRunResult> {
     // independent layer, not the only one.
     //
     // #233 points 2/3: two separate rsync calls, never one. The root
-    // sync below carries everything staged EXCEPT stacks/ (`--exclude`)
-    // — .env, .env.root, configs/, compose-override/ — and only deletes
-    // stale files on a FULL deploy (opts.stack undefined); a
-    // single-stack deploy must never delete another stack's server-level
-    // config files it isn't touching. Every deployed stack then gets its
-    // OWN rsync, scoped structurally to `PATH_APPS/stacks/<name>/` for
-    // both source and destination, always with --delete: that scoping —
-    // not a filter rule that could be misconfigured — is what makes it
+    // sync below carries everything staged EXCEPT stacks/ (`--exclude=
+    // /stacks`, anchored to the root — an unanchored `--exclude=stacks`
+    // would also match a nested dir/file merely NAMED "stacks" anywhere
+    // else in the tree, e.g. a hypothetical configs/foo/stacks/) — .env,
+    // .env.root, configs/, compose-override/ — and only deletes stale
+    // files on a FULL deploy with config.json present (never "no
+    // config.json" == "delete everything", #233 review); a single-stack
+    // deploy must never delete another stack's server-level config files
+    // it isn't touching either. Every deployed stack then gets its OWN
+    // sync, via `runRemoteSyncEntry` (exec.ts) — no trailing slash on the
+    // LOCAL source, so rsync transfers it as one named entry into
+    // `PATH_APPS/stacks/`, always with --delete: that scoping — not a
+    // filter rule that could be misconfigured — is what makes it
     // impossible for a single-stack deploy to delete anything outside
-    // that one stack's own folder (proven in run-deploy.test.ts).
-    // `-u` is dropped from both: the project's copy must always win, even
-    // over a file that's newer on the server (deploy is the source of
-    // truth, #233).
-    const rootSyncArgs = ["-avhz", "--exclude=stacks"]
-    if (opts.stack === undefined) {
+    // that one stack's own folder, AND (review round) what makes rsync
+    // REPLACE a symlinked `stacks/<name>` with a real directory instead
+    // of following it into whatever it points at — `runRemoteSync`'s own
+    // trailing-slash-on-both shape does the opposite (confirmed directly
+    // against a real rsync: it deletes/overwrites INSIDE the symlink's
+    // target). Both proven in exec.test.ts/run-deploy.test.ts. `-u` is
+    // dropped from both: the project's copy must always win, even over a
+    // file that's newer on the server (deploy is the source of truth,
+    // #233).
+    const rootSyncArgs = ["-avhz", "--exclude=/stacks"]
+    if (opts.stack === undefined && configFileFound) {
       rootSyncArgs.push("--delete")
     }
     const rsyncResult = await runRemoteSync(SSH_ADDRESS, stagingDir, PATH_APPS, rootSyncArgs)
@@ -393,16 +457,15 @@ export async function runDeploy(opts: DeployOptions): Promise<DeployRunResult> {
         // stacks/<name>/ folder in the first place.
         continue
       }
-      const stackRemoteDir = `${PATH_APPS}/stacks/${stackConfig.name}`
-      const stackSyncResult = await runRemoteSync(
+      const stackSyncResult = await runRemoteSyncEntry(
         SSH_ADDRESS,
         stackStagingDir,
-        stackRemoteDir,
+        `${PATH_APPS}/stacks`,
         ["-avhz", "--delete"],
       )
       if (!stackSyncResult.success) {
         throw new UserError(
-          `rsync of stack '${stackConfig.name}' to ${SSH_ADDRESS}:${stackRemoteDir} failed: ` +
+          `rsync of stack '${stackConfig.name}' to ${SSH_ADDRESS}:${PATH_APPS}/stacks failed: ` +
             `${stackSyncResult.error.trim()}`,
         )
       }
@@ -419,8 +482,19 @@ export async function runDeploy(opts: DeployOptions): Promise<DeployRunResult> {
       )
       const before = checksumsBefore.get(deployAs)
       if (before) {
-        for (const [filePath, hashAfter] of after) {
-          if (before.get(filePath) !== hashAfter) restartStacks.add(deployAs)
+        // The UNION of both snapshots' paths (review round) — iterating
+        // only `after`'s own keys, as this used to, never visits a
+        // watched file that was REMOVED entirely: getRemoteChecksums
+        // skips a missing file's checksum rather than recording an
+        // empty one, so a deleted file simply has no key in `after` at
+        // all, and its removal never triggered a restart. `before.get`/
+        // `after.get` both correctly return `undefined` for their own
+        // missing side, so a plain `!==` still tells "added",
+        // "removed" and "changed" apart from "unchanged" (`undefined
+        // !== undefined` is `false`).
+        const allWatchedPaths = new Set([...before.keys(), ...after.keys()])
+        for (const filePath of allWatchedPaths) {
+          if (before.get(filePath) !== after.get(filePath)) restartStacks.add(deployAs)
         }
       }
     }
