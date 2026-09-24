@@ -44,7 +44,7 @@ Deno.test("serializeEnv: round-trips with parseEnv", () => {
 // through parseEnv + serializeEnv — this module's own quoting convention
 // (see the header comment). This is the round trip for the CLI's own
 // read/write path; the encrypt/decrypt round trip that #226 originally
-// reported the bug in lives in cli/age.ts, outside this file.
+// reported the bug in is now @spy4x/server/env-age64's, outside this file.
 
 Deno.test("parseEnv: a double-quoted value keeps its quotes (not stripped)", () => {
   assertEquals(parseEnv('KEY="has a space"\n'), [{ key: "KEY", value: '"has a space"' }])

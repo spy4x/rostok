@@ -1,73 +1,12 @@
 // Tests for cli/stack-remove.ts — #225.
 
 import { assertEquals, assertExists, assertRejects, assertStringIncludes } from "@std/assert"
-import { decodeBase64 } from "@std/encoding"
 import { join } from "@std/path"
+import { decryptValue, generateAgeKey, parseEnvFile, readAgeKey } from "@spy4x/server/env-age64"
 import { UserError } from "./errors.ts"
 import { readEnvFile } from "./env-files.ts"
 import { readServerConfig, stackAdd } from "./stack-add.ts"
 import { stackRemove } from "./stack-remove.ts"
-import { generateAgeKey } from "./encrypt.ts"
-import { parseEnvFile } from "./age.ts"
-
-/**
- * `cli/age.ts` resolves `.age/key.txt` via `git rev-parse
- * --git-common-dir` from the process cwd, honouring `GIT_DIR` (and
- * friends) if a caller's environment sets them — this repo's own
- * pre-commit hook runs `deno task check` from inside a worktree, where
- * git sets `GIT_DIR` itself, so a test that doesn't clear these could
- * silently read the OWNER'S real `.age/key.txt` instead of a temp one.
- * `withIsolatedGitEnv` saves and deletes them for `fn`'s duration
- * (restored after, even on failure), then `git init`s `dir` so
- * resolution has its own, deterministic repo to find — pointing at
- * `dir`'s own key, never anything outside it.
- */
-async function withIsolatedGitEnv<T>(dir: string, fn: () => Promise<T>): Promise<T> {
-  const GIT_ENV_KEYS = ["GIT_DIR", "GIT_COMMON_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE"]
-  const saved = new Map(GIT_ENV_KEYS.map((k) => [k, Deno.env.get(k)]))
-  for (const k of GIT_ENV_KEYS) Deno.env.delete(k)
-  try {
-    const init = await new Deno.Command("git", {
-      args: ["init", "-q"],
-      cwd: dir,
-      stdout: "null",
-      stderr: "piped",
-    }).output()
-    if (!init.success) {
-      throw new Error(`git init failed: ${new TextDecoder().decode(init.stderr)}`)
-    }
-    return await fn()
-  } finally {
-    for (const [k, v] of saved) {
-      if (v === undefined) Deno.env.delete(k)
-      else Deno.env.set(k, v)
-    }
-  }
-}
-
-/** Decrypt an `age64:<base64>` value with an explicit key file — bypasses cli/age.ts's own (globally cached) key resolution entirely, so this proves exactly which key produced a ciphertext. */
-async function decryptWithKeyFile(age64Value: string, keyFile: string): Promise<string> {
-  const AGE64_PREFIX = "age64:"
-  if (!age64Value.startsWith(AGE64_PREFIX)) {
-    throw new Error(`not an age64 value: ${age64Value.slice(0, 20)}`)
-  }
-  const ciphertext = decodeBase64(age64Value.slice(AGE64_PREFIX.length))
-  const cmd = new Deno.Command("age", {
-    args: ["-d", "-i", keyFile, "-o", "-"],
-    stdin: "piped",
-    stdout: "piped",
-    stderr: "piped",
-  })
-  const proc = cmd.spawn()
-  const writer = proc.stdin.getWriter()
-  await writer.write(ciphertext)
-  await writer.close()
-  const output = await proc.output()
-  if (!output.success) {
-    throw new Error(`age decrypt failed: ${new TextDecoder().decode(output.stderr)}`)
-  }
-  return new TextDecoder().decode(output.stdout).trim()
-}
 
 async function withTmpDir<T>(fn: (dir: string) => Promise<T>): Promise<T> {
   const dir = await Deno.makeTempDir({ prefix: "rostok-stack-remove-" })
@@ -269,6 +208,66 @@ Deno.test("stack remove -n (non-interactive, no --drop-env): removes from config
 
     const entries = await readEnvFile(join(dir, "servers", "home", ".env"))
     assertEquals(entries.some((e) => e.key === "LIBRESPEED_PASSWORD"), true)
+  })
+})
+
+// Review fix — `reencryptAfterWrite` warns instead of throwing when the
+// re-encrypt itself fails (a key is present, but a value can't be
+// encrypted). Without this test, replacing that warn with a swallowed
+// no-op left every other test in this file green.
+Deno.test("stack remove --drop-env: a bad line elsewhere in .env warns '.env.age NOT updated', doesn't throw", async () => {
+  await withTmpDir(async (dir) => {
+    const catalogDir = join(dir, "catalog")
+    await writeLibrespeedCatalog(catalogDir)
+    await seedServer(dir, "home", { DOMAIN: "example.com" })
+    await generateAgeKey(dir)
+    await addLibrespeed(dir, catalogDir)
+
+    // A line with no `=` is valid dotenv-adjacent text rostok never
+    // rejected before, but `@spy4x/server/env-age64`'s parser refuses it
+    // outright (see the module's README) — exactly the kind of value
+    // this helper must not let take down the whole command.
+    const envPath = join(dir, "servers", "home", ".env")
+    await Deno.writeTextFile(envPath, (await Deno.readTextFile(envPath)) + "stray note\n")
+
+    const warnings: string[] = []
+    const originalWarn = console.warn
+    console.warn = (...args: unknown[]) => warnings.push(args.join(" "))
+    try {
+      await stackRemove("librespeed", "home", { cwd: dir, catalogDir, dropEnv: true })
+    } finally {
+      console.warn = originalWarn
+    }
+
+    const matching = warnings.filter((l) => l.includes(".env.age NOT updated"))
+    assertEquals(matching.length, 1, warnings.join("\n"))
+  })
+})
+
+// Review fix: the key check itself (`ageStatus`) refuses a symlinked
+// `.env*`. It must warn like any other re-encrypt failure, not throw
+// after `.env` was already written.
+Deno.test("stack add: a symlinked .env file warns '.env.age NOT updated', doesn't throw", async () => {
+  await withTmpDir(async (dir) => {
+    const catalogDir = join(dir, "catalog")
+    await writeLibrespeedCatalog(catalogDir)
+    await seedServer(dir, "home", { DOMAIN: "example.com" })
+    await generateAgeKey(dir)
+    const target = join(dir, "elsewhere.env")
+    await Deno.writeTextFile(target, "A=1\n")
+    await Deno.symlink(target, join(dir, "servers", "home", ".env.local"))
+
+    const warnings: string[] = []
+    const originalWarn = console.warn
+    console.warn = (...args: unknown[]) => warnings.push(args.join(" "))
+    try {
+      await addLibrespeed(dir, catalogDir)
+    } finally {
+      console.warn = originalWarn
+    }
+
+    const matching = warnings.filter((l) => l.includes(".env.age NOT updated"))
+    assertEquals(matching.length, 1, warnings.join("\n"))
   })
 })
 
@@ -484,50 +483,47 @@ Deno.test("stack remove --drop-env: the dropped key's line is gone from .env.age
   await withTmpDir(async (dir) => {
     Deno.chdir(dir)
     try {
-      await withIsolatedGitEnv(dir, async () => {
-        const catalogDir = join(dir, "catalog")
-        await writeLibrespeedCatalog(catalogDir)
-        await seedServer(dir, "home", { DOMAIN: "example.com" })
-        const keyResult = await generateAgeKey(dir)
-        assertEquals(keyResult.ok, true, keyResult.error)
+      const catalogDir = join(dir, "catalog")
+      await writeLibrespeedCatalog(catalogDir)
+      await seedServer(dir, "home", { DOMAIN: "example.com" })
+      await generateAgeKey(dir)
 
-        // A decoy key elsewhere, standing in for the real key a leaked
-        // GIT_DIR could have pointed at — proof this test's ciphertext
-        // was produced with `dir`'s own key, not this one.
-        const decoyDir = await Deno.makeTempDir({ prefix: "rostok-stack-remove-decoy-" })
-        try {
-          const decoyKey = await generateAgeKey(decoyDir)
-          assertEquals(decoyKey.ok, true, decoyKey.error)
+      // A decoy key elsewhere, standing in for a wrong key — proof this
+      // test's ciphertext was produced with `dir`'s own key, not this one.
+      const decoyDir = await Deno.makeTempDir({ prefix: "rostok-stack-remove-decoy-" })
+      try {
+        await generateAgeKey(decoyDir)
 
-          await addLibrespeed(dir, catalogDir)
-          const agePath = join(dir, "servers", "home", ".env.age")
-          const beforeAge = parseEnvFile(await Deno.readTextFile(agePath))
-          assertEquals(
-            beforeAge.some((e) => e.key === "LIBRESPEED_PASSWORD"),
-            true,
-            "sanity: .env.age must hold the key before removal",
-          )
+        await addLibrespeed(dir, catalogDir)
+        const agePath = join(dir, "servers", "home", ".env.age")
+        const beforeAge = parseEnvFile(await Deno.readTextFile(agePath))
+        assertEquals(
+          beforeAge.some((e) => e.assignment?.key === "LIBRESPEED_PASSWORD"),
+          true,
+          "sanity: .env.age must hold the key before removal",
+        )
 
-          await stackRemove("librespeed", "home", { cwd: dir, catalogDir, dropEnv: true })
+        await stackRemove("librespeed", "home", { cwd: dir, catalogDir, dropEnv: true })
 
-          const afterAge = parseEnvFile(await Deno.readTextFile(agePath))
-          assertEquals(afterAge.some((e) => e.key === "LIBRESPEED_PASSWORD"), false)
+        const afterAge = parseEnvFile(await Deno.readTextFile(agePath))
+        assertEquals(afterAge.some((e) => e.assignment?.key === "LIBRESPEED_PASSWORD"), false)
 
-          // Prove the ciphertext was produced with THE TEMP key: a
-          // surviving value (DOMAIN — a server key, untouched by the
-          // removal) decrypts correctly with it, and fails outright
-          // with the decoy — if the fix regressed and the decoy
-          // (standing in for a leaked real key) had been used instead,
-          // this decrypt-with-temp-key assertion is what catches it.
-          const surviving = afterAge.find((e) => e.key === "DOMAIN")
-          assertExists(surviving?.encrypted, "DOMAIN must still be encrypted")
-          const plaintext = await decryptWithKeyFile(surviving!.encrypted!, keyResult.path)
-          assertEquals(plaintext, "example.com")
-          await assertRejects(() => decryptWithKeyFile(surviving!.encrypted!, decoyKey.path))
-        } finally {
-          await Deno.remove(decoyDir, { recursive: true }).catch(() => {})
-        }
-      })
+        // Prove the ciphertext was produced with THE TEMP key: a
+        // surviving value (DOMAIN — a server key, untouched by the
+        // removal) decrypts correctly with it, and fails outright with
+        // the decoy — if the fix regressed and the decoy (standing in
+        // for a wrong key) had been used instead, this
+        // decrypt-with-temp-key assertion is what catches it.
+        const surviving = afterAge.find((e) => e.assignment?.key === "DOMAIN")
+        assertExists(surviving?.assignment, "DOMAIN must still be encrypted")
+        const realKey = await readAgeKey(dir)
+        const decoyKey = await readAgeKey(decoyDir)
+        const plaintext = await decryptValue(surviving!.assignment!.value, realKey.identity)
+        assertEquals(plaintext, "example.com")
+        await assertRejects(() => decryptValue(surviving!.assignment!.value, decoyKey.identity))
+      } finally {
+        await Deno.remove(decoyDir, { recursive: true }).catch(() => {})
+      }
     } finally {
       Deno.chdir(originalCwd)
     }

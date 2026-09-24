@@ -239,9 +239,10 @@ function sanitizeForLog(s: string): string {
  * drop a trailing ` # comment` from an unquoted value. For those forms a
  * hook can see a different value than its container, so a key a hook
  * reads should not rely on escapes or trailing comments. The common case,
- * a quoted value with spaces, matches. `cli/age.ts`'s `parseEnvFile`
- * keeps a value's quotes for the file round trip (#226), so the stripping
- * happens here, once, on the way into the hook's environment.
+ * a quoted value with spaces, matches. `@spy4x/server/env-age64`'s
+ * `parseEnvFile` keeps a value's quotes for the file round trip (#226),
+ * so the stripping happens here, once, on the way into the hook's
+ * environment.
  */
 function stripOneQuoteLayer(value: string): string {
   if (value.length >= 2) {

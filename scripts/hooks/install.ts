@@ -12,15 +12,17 @@ const HOOKS_DIR = join(COMMON_DIR, "hooks")
 
 // git exports GIT_DIR/GIT_COMMON_DIR/GIT_WORK_TREE/GIT_INDEX_FILE to a
 // hook's own environment so a git command the hook runs targets the
-// commit/checkout/merge in progress. `deno task check`/`env:encrypt`/
-// `env:decrypt` — this hook's own commands — end up spawning `git`
-// themselves too (cli/age.ts's resolveKeyFile, run by anything that
-// touches .env.age), and would inherit those same variables: a test
-// suite that also spawns `git` in a throwaway repo (cli/age.test.ts's
-// own coverage of this exact class of bug) would then operate on the
-// REAL repo/index/branch being committed instead of its own throwaway
-// one — a real security review of this repo caught exactly that. Unset
-// before running anything, in every hook that can reach a git spawn.
+// commit/checkout/merge in progress. `deno task check` — this hook's own
+// command — ends up spawning `git` itself too (a test suite that spawns
+// `git` in a throwaway repo, or `cli/init.ts`'s own gitignore checks),
+// and would inherit those same variables: such a spawn would then
+// operate on the REAL repo/index/branch being committed instead of its
+// own throwaway one — a real security review of this repo caught
+// exactly that. `env:encrypt`/`env:decrypt` no longer spawn `git` at all
+// (@spy4x/server/env-age64 resolves `.age/key.txt` by reading `.git`
+// pointer files directly), but everything else `deno task check` runs
+// still can. Unset before running anything, in every hook that can
+// reach a git spawn.
 const UNSET_GIT_ENV = "unset GIT_DIR GIT_COMMON_DIR GIT_WORK_TREE GIT_INDEX_FILE"
 
 const hooks: Record<string, string> = {

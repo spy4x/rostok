@@ -3,17 +3,17 @@
 import { assertEquals, assertExists } from "@std/assert"
 import { join } from "@std/path"
 import { ensureAgeIgnored, initProject } from "./init.ts"
-import { generateAgeKey } from "./encrypt.ts"
+import { generateAgeKey } from "@spy4x/server/env-age64"
 
 // #236 item 1 — a parent git process (this repo's own pre-commit hook, or a
 // shell with GIT_DIR exported by hand) can point every git invocation in
 // this file at a completely different repo, regardless of `cwd`. Before
 // this fix, this file's own `git init`/`git add` fixture setup inherited
 // that GIT_DIR and staged `.age/key.txt` into the OTHER repo's index and
-// flipped its `core.bare`. cli/age.test.ts hit the same failure mode
-// first — this mirrors its fix: every git spawn here (this file's own
-// fixture setup, and the git-touching init.ts functions under test)
-// clears these four vars for its duration.
+// flipped its `core.bare`. Another test file's fixture setup hit the
+// same failure mode first — this mirrors its fix: every git spawn here
+// (this file's own fixture setup, and the git-touching init.ts functions
+// under test) clears these four vars for its duration.
 const GIT_ENV_POISON = ["GIT_DIR", "GIT_COMMON_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE"]
 
 function strippedGitEnv(): Record<string, string> {
@@ -158,8 +158,7 @@ Deno.test("initProject + key generation leaves .age/key.txt gitignored", async (
   try {
     await gitFixture(tmp, "init")
     await withoutGitEnv(() => initProject(tmp))
-    const key = await generateAgeKey(tmp)
-    assertEquals(key.ok, true)
+    await generateAgeKey(tmp)
     assertEquals(await gitCheckIgnoresAgeKey(tmp), true)
   } finally {
     await Deno.remove(tmp, { recursive: true })

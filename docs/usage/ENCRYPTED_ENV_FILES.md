@@ -9,36 +9,27 @@ show in git diff — no more 200-line re-encryption noise from SOPS.
 KEY=age64:YWdlLWVuY3J5cHRpb24ub3JnL3Yx...
 ```
 
-Each `age64:base64...` is an age ciphertext for a single value. Non-secret values
-stay as plaintext `KEY=VALUE` — readable in PRs.
+Each `age64:base64...` is an age ciphertext for a single value. A comment or blank
+line in `.env.age` passes through verbatim, but every `KEY=` assignment must be
+`age64:...` — a plaintext `KEY=VALUE` line inside `.env.age` is rejected on decrypt
+(a sign the file was hand-edited or corrupted), not silently passed through. Keep
+non-secret values in `.env`/`.env.example`, not in the encrypted file.
 
 ## Prerequisites
 
-Install age:
-
-```bash
-# macOS
-brew install age
-
-# Debian/Ubuntu
-sudo apt install age
-
-# Fedora/RHEL
-sudo dnf install age
-
-# Verify
-age --version
-```
+None — encryption runs in-process
+([`@spy4x/server/env-age64`](https://jsr.io/@spy4x/server/doc/env-age64)),
+so there's no `age` binary to install.
 
 ## Quick Start
 
 ### 1. Set up the age key
 
 ```bash
-mkdir -p .age && age-keygen -o .age/key.txt
+rostok env setup
 ```
 
-The public key prints in the comment: `# public key: age1xxxx...`
+Generates `.age/key.txt` and prints the public key (safe to share).
 
 ### 2. Create / edit .env
 
@@ -109,8 +100,7 @@ Key lives at `<repo-root>/.age/key.txt`. This is shared across git worktrees
 
 To allow multiple people to decrypt, share the `.age/key.txt` file securely
 (password manager, encrypted storage). Age supports multiple recipients, but
-the current scripts use a single key. For multi-key setups, extend
-`scripts/encryption/age-lib.ts` to accept multiple recipients.
+`@spy4x/server/env-age64` encrypts for a single one derived from that key.
 
 ### Security
 

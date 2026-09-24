@@ -16,7 +16,7 @@
 import { exists } from "@std/fs"
 import { join } from "@std/path"
 import { Confirm } from "@cliffy/prompt"
-import { checkAgeInstalled, checkAgeKeyPresent, generateAgeKey } from "./encrypt.ts"
+import { ageStatus, generateAgeKey } from "@spy4x/server/env-age64"
 import { isCommandOnPath } from "./shell.ts"
 import { assertInteractiveStdin } from "./prompts.ts"
 
@@ -35,6 +35,11 @@ const GITIGNORE_TEMPLATE = `# Plaintext secrets — never commit. The encrypted 
 # age encryption private key — decrypts every encrypted env file in
 # this project. NEVER commit this.
 .age/
+
+# @spy4x/server/env-age64's atomic-write leftover, if a crash ever left
+# one behind (same directory as the plaintext or encrypted file it was
+# writing).
+.age64-tmp-*
 
 # deno runtime
 deno.lock
@@ -63,8 +68,8 @@ export interface InitResult {
  *
  * Phase 5 user feedback:
  * - No `.age/` directory or keypair placeholder. Encryption is
- *   optional; the user runs `age-keygen -o .age/key.txt` themselves
- *   if they want to encrypt.
+ *   optional; the user runs `rostok env setup` themselves if they want
+ *   to encrypt (or accepts the prompt this init step offers).
  * - `.env.age` and `.env.root.age` are NOT gitignored — they're
  *   encrypted blobs, safe to commit.
  * - `.env.root` is created empty; user populates with cross-server
@@ -72,9 +77,9 @@ export interface InitResult {
  *   manually or in a later edit.
  *
  *   Note: `.env.root.age` is NOT created by init. When the user adds
- *   age64 encryption (via `age-keygen -o .age/key.txt` + manual edits),
+ *   age64 encryption (via `rostok env setup` + manual edits),
  *   `deno task env:encrypt` produces both `.env.age` and
- *   `.env.root.age` (per scripts/encryption/encrypt.ts logic).
+ *   `.env.root.age` (`@spy4x/server/env-age64`).
  */
 export async function initProject(cwd: string = Deno.cwd()): Promise<InitResult> {
   const created: string[] = []
@@ -119,20 +124,23 @@ export async function initProject(cwd: string = Deno.cwd()): Promise<InitResult>
  * OFFER to generate it for them. Non-interactive calls skip the prompt
  * entirely (the user explicitly opted out of prompts by passing -n).
  *
+ * Encryption runs in-process (`@spy4x/server/env-age64`), so there is no
+ * `age` binary to check for any more — only whether a key already
+ * exists.
+ *
  * #212: called by the wizard only when `InitResult.shouldOfferKeyGeneration`
  * is true, and only after it has already printed the "Initialized: …"
  * file list — so the prompt has context instead of appearing first.
  */
 export async function maybeOfferKeyGeneration(cwd: string): Promise<void> {
-  const ageInstalled = await checkAgeInstalled()
-  if (!ageInstalled) {
-    console.info(
-      "rostok: install `age` (e.g. `apt install age`) to encrypt .env.age for git. " +
-        "`rostok` will detect it on the next run and offer to set up encryption.",
-    )
+  let status
+  try {
+    status = await ageStatus(cwd)
+  } catch (error) {
+    console.warn(`rostok: ${error instanceof Error ? error.message : String(error)}`)
     return
   }
-  if (await checkAgeKeyPresent(cwd)) return // already set up — silent
+  if (status.keyPresent) return // already set up — silent
   // #235: fail loudly (one shared guard, prompts.ts) instead of
   // Confirm.prompt's own behavior of redrawing forever against a non-TTY
   // stdin. This offer only runs when the caller already decided the run
@@ -149,15 +157,17 @@ export async function maybeOfferKeyGeneration(cwd: string): Promise<void> {
     )
     return
   }
-  const result = await generateAgeKey(cwd)
-  if (result.ok) {
+  try {
+    const result = await generateAgeKey(cwd)
     console.info(
-      `rostok: generated ${result.path}. public key: ${result.publicKey}\n` +
+      `rostok: generated ${result.path}. public key: ${result.recipient}\n` +
         "  (the public key is safe to share; the secret key in .age/key.txt is NOT — " +
         "rostok keeps .age/ gitignored, see above.)",
     )
-  } else {
-    console.warn(`rostok: failed to generate key: ${result.error}`)
+  } catch (error) {
+    console.warn(
+      `rostok: failed to generate key: ${error instanceof Error ? error.message : String(error)}`,
+    )
   }
 }
 

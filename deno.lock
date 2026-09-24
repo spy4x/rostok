@@ -1,6 +1,7 @@
 {
   "version": "5",
   "specifiers": {
+    "jsr:@age/age-encryption@0.3.1": "0.3.1",
     "jsr:@cliffy/ansi@1.2.1": "1.2.1",
     "jsr:@cliffy/command@*": "1.2.1",
     "jsr:@cliffy/command@1.2.1": "1.2.1",
@@ -13,11 +14,13 @@
     "jsr:@cliffy/table@1.2.1": "1.2.1",
     "jsr:@hongminhee/deno-task-hooks@*": "0.1.2",
     "jsr:@hono/hono@4": "4.12.21",
+    "jsr:@spy4x/server@1.2.0": "1.2.0",
     "jsr:@std/assert@^1.0.17": "1.0.19",
     "jsr:@std/assert@^1.0.19": "1.0.19",
     "jsr:@std/assert@~0.222.1": "0.222.1",
     "jsr:@std/cli@~0.222.1": "0.222.1",
     "jsr:@std/dotenv@*": "0.225.8",
+    "jsr:@std/encoding@1.0.11": "1.0.11",
     "jsr:@std/encoding@^1.0.10": "1.0.11",
     "jsr:@std/encoding@^1.0.9": "1.0.11",
     "jsr:@std/fmt@^1.0.10": "1.0.10",
@@ -29,10 +32,16 @@
     "jsr:@std/io@~0.225.3": "0.225.3",
     "jsr:@std/json@~0.222.1": "0.222.1",
     "jsr:@std/jsonc@~0.222.1": "0.222.1",
+    "jsr:@std/path@1.1.6": "1.1.6",
     "jsr:@std/path@^1.1.4": "1.1.6",
     "jsr:@std/path@^1.1.5": "1.1.6",
     "jsr:@std/path@~0.222.1": "0.222.1",
     "jsr:@std/text@^1.0.19": "1.0.19",
+    "npm:@noble/ciphers@^2.1.1": "2.4.0",
+    "npm:@noble/curves@^2.0.1": "2.0.1",
+    "npm:@noble/hashes@^2.0.1": "2.4.0",
+    "npm:@noble/post-quantum@~0.5.3": "0.5.4",
+    "npm:@scure/base@2": "2.4.0",
     "npm:arktype@*": "2.2.3",
     "npm:arktype@^2.2.3": "2.2.3",
     "npm:bcryptjs@3.0.3": "3.0.3",
@@ -42,6 +51,16 @@
     "npm:yaml@^2.8.2": "2.9.0"
   },
   "jsr": {
+    "@age/age-encryption@0.3.1": {
+      "integrity": "c7464e925d2e4c58677b3191caa59af46294db5966c0e59087039e15263944d5",
+      "dependencies": [
+        "npm:@noble/ciphers",
+        "npm:@noble/curves",
+        "npm:@noble/hashes",
+        "npm:@noble/post-quantum",
+        "npm:@scure/base"
+      ]
+    },
     "@cliffy/ansi@1.2.1": {
       "integrity": "b8702def9c0110b6eeb2b3b71e0b26cbe0a427facbb4f9c0189da0ba19feb549",
       "dependencies": [
@@ -105,6 +124,14 @@
     },
     "@hono/hono@4.12.21": {
       "integrity": "27d39e6c93e123f206012b8ab3af70da887fe1da923ca945ec87d4b5f9ef5c94"
+    },
+    "@spy4x/server@1.2.0": {
+      "integrity": "4f4c7b7f40efbf48e3f65c844a8700a9f7807c7c5ebbe35d5cf3b698f169a74a",
+      "dependencies": [
+        "jsr:@age/age-encryption",
+        "jsr:@std/encoding@1.0.11",
+        "jsr:@std/path@1.1.6"
+      ]
     },
     "@std/assert@0.222.1": {
       "integrity": "691637161ee584a9919d1f9950ddd1272feb8e0a19e83aa5b7563cedaf73d74c"
@@ -200,8 +227,33 @@
     "@ark/util@0.56.2": {
       "integrity": "sha512-9kU2sUE38FZEGG7l3hamYMBieLYEJh2L1mrYD2eXpT+78EnQSV1bhjxJhnxGBMSTbtwpBSDNSK+K60WvaI/DTQ=="
     },
+    "@noble/ciphers@2.4.0": {
+      "integrity": "sha512-AnjFn0Jv92laAkvMrghlFZq4qQCIN/4DxFV/eooqtC2YTjB7kBeLMS2T9KJX4Dn+ZVXLOwK0lSgqDtx9gvxtiw=="
+    },
+    "@noble/curves@2.0.1": {
+      "integrity": "sha512-vs1Az2OOTBiP4q0pwjW5aF0xp9n4MxVrmkFBxc6EKZc6ddYx5gaZiAsZoq0uRRXWbi3AT/sBqn05eRPtn1JCPw==",
+      "dependencies": [
+        "@noble/hashes@2.0.1"
+      ]
+    },
+    "@noble/hashes@2.0.1": {
+      "integrity": "sha512-XlOlEbQcE9fmuXxrVTXCTlG2nlRXa9Rj3rr5Ue/+tX+nmkgbX720YHh0VR3hBF9xDvwnb8D2shVGOwNx+ulArw=="
+    },
+    "@noble/hashes@2.4.0": {
+      "integrity": "sha512-X5XaVWZIBCT7HHZGm5I7ZQXDwLG+bGXuSrMQAW+7Zvl87h1kmc1ZB1VSRJcpUfoUrGQp4Fkoxm5kZ+Ms+aW+eA=="
+    },
+    "@noble/post-quantum@0.5.4": {
+      "integrity": "sha512-leww0zzIirrvwaYMPI9fj6aRIlA/c6Y0/lifQQ1YOOyHEr0MNH3yYpjXeiVG+tWdPps4XxGclFWX2INPO3Yo5w==",
+      "dependencies": [
+        "@noble/curves",
+        "@noble/hashes@2.0.1"
+      ]
+    },
     "@pinojs/redact@0.4.0": {
       "integrity": "sha512-k2ENnmBugE/rzQfEcdWHcCY+/FM3VLzH9cYEsbdsoqrvzAKRhUZeRNhAZvB8OitQJ1TBed3yqWtdjzS6wJKBwg=="
+    },
+    "@scure/base@2.4.0": {
+      "integrity": "sha512-thZ1TuJwFwBblOhgsjDKvvGirBxNp+wSvY/DR6tJBJOTDhdAAcHJ8Vbr2eFnqaxeca4+t0i9KBf+uHYGWwZORg=="
     },
     "@selderee/plugin-htmlparser2@0.11.0": {
       "integrity": "sha512-P33hHGdldxGabLFjPPpaTxVolMrzrcegejx+0GxjrIb9Zv48D8yAIA/QTDR2dFl7Uz7urX8aX6+5bCZslr+gWQ==",
@@ -505,6 +557,7 @@
     "dependencies": [
       "jsr:@cliffy/command@^1.2.1",
       "jsr:@cliffy/prompt@^1.2.1",
+      "jsr:@spy4x/server@1.2.0",
       "jsr:@std/assert@^1.0.17",
       "jsr:@std/dotenv@*",
       "jsr:@std/encoding@^1.0.9",

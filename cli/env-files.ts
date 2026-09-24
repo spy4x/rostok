@@ -32,10 +32,13 @@
 //
 // This module's own round trip already preserves quotes byte-identical
 // (see env-files.test.ts) — it never had the bug #226 reported. The
-// actual quote-stripping bug was in `cli/age.ts`'s `parseEnvFile` (used
-// by the real `rostok env encrypt`/`decrypt` path, not this file), which
-// stripped one layer of matching quotes on read and never restored it on
-// write — fixed there, with its own test.
+// actual quote-stripping bug was in rostok's OLD age64 tool's
+// `parseEnvFile` (used by the real `rostok env encrypt`/`decrypt` path,
+// not this file), which stripped one layer of matching quotes on read
+// and never restored it on write. That code is gone now — the path is
+// `@spy4x/server/env-age64`'s `parseEnvFile`, which never had the bug
+// either (it keeps a value's surrounding quotes verbatim, see its own
+// README).
 
 import { dirname, join } from "@std/path"
 

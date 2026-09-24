@@ -5,8 +5,9 @@ the catalog of self-hosted services and the CLI tool that scaffolds
 users' projects.
 
 What lives here is a **catalog** (`stacks/`) and the **CLI source**
-(`scripts/encryption/`, `scripts/hooks/`, plus the new `cli/` package
-in development).
+(`scripts/hooks/`, plus the new `cli/` package in development). Env-file
+encryption (age64) comes from the published `@spy4x/server/env-age64`
+module, not from a local copy.
 
 ---
 
@@ -22,7 +23,6 @@ rostok/                          [tracked]
 │       └── README.md            # what the stack does, how to configure
 ├── cli/                         # the rostok CLI source (added in v1 phase 2)
 ├── scripts/
-│   ├── encryption/              # age64 — encrypt/decrypt .env ↔ .env.age
 │   ├── backup/                  # Restic backup system (per-stack backup.ts)
 │   └── hooks/                   # git hooks (post-checkout, post-merge, pre-commit)
 ├── docs/                        # CLI docs, catalog, design notes
@@ -166,6 +166,15 @@ Workflow:
 
 Per-value encryption: only changed lines re-encrypt. No churn on
 unrelated keys.
+
+`deno task env:encrypt`/`env:decrypt` (`jsr:@spy4x/server/env-age64/cli`)
+now exit 1 when `.age/key.txt` is missing. The old tool printed that
+the key was missing and exited 0. A missing key is now a real error,
+not an optional prerequisite. That means `hooks:pre-commit` (`deno task check && deno
+task env:encrypt`) fails on a project that hasn't run `rostok env
+setup` yet. This is a deliberate choice, not an oversight: run `rostok
+env setup` once per project before the first commit that touches
+`.env`.
 
 ---
 

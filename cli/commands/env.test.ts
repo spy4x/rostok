@@ -4,6 +4,7 @@
 
 import { assertEquals, assertStringIncludes } from "@std/assert"
 import { join } from "@std/path"
+import { generateAgeKey } from "@spy4x/server/env-age64"
 import { runEnvSetup } from "./env.ts"
 
 async function withTmpDir<T>(fn: (dir: string) => Promise<T>): Promise<T> {
@@ -35,8 +36,8 @@ Deno.test("runEnvSetup: generates a key and gitignores it on a fresh project", a
 // project (key present, rule missing) is most likely to run again.
 Deno.test("runEnvSetup: backfills the gitignore rule even when a key already exists", async () => {
   await withTmpDir(async (dir) => {
-    await Deno.mkdir(join(dir, ".age"), { recursive: true })
-    await Deno.writeTextFile(join(dir, ".age", "key.txt"), "AGE-SECRET-KEY-placeholder\n")
+    await generateAgeKey(dir)
+    const keyBefore = await Deno.readTextFile(join(dir, ".age", "key.txt"))
     await Deno.writeTextFile(join(dir, ".gitignore"), ".env\n.env.root\ndeno.lock\n")
 
     const result = await runEnvSetup(dir)
@@ -47,8 +48,8 @@ Deno.test("runEnvSetup: backfills the gitignore rule even when a key already exi
     assertEquals(gitignore.includes(".age/"), true, "the rule must be backfilled")
 
     // The pre-existing key content is untouched.
-    const key = await Deno.readTextFile(join(dir, ".age", "key.txt"))
-    assertEquals(key, "AGE-SECRET-KEY-placeholder\n")
+    const keyAfter = await Deno.readTextFile(join(dir, ".age", "key.txt"))
+    assertEquals(keyAfter, keyBefore)
 
     // Review fix — .gitignore DID change this run, so "no changes made"
     // would be false. The message must say the key specifically (not
@@ -67,8 +68,7 @@ Deno.test("runEnvSetup: backfills the gitignore rule even when a key already exi
 // accurate and should still be used.
 Deno.test("runEnvSetup: says 'no changes made' when the gitignore rule was already there", async () => {
   await withTmpDir(async (dir) => {
-    await Deno.mkdir(join(dir, ".age"), { recursive: true })
-    await Deno.writeTextFile(join(dir, ".age", "key.txt"), "AGE-SECRET-KEY-placeholder\n")
+    await generateAgeKey(dir)
     await Deno.writeTextFile(join(dir, ".gitignore"), ".env\n.age/\n")
 
     const result = await runEnvSetup(dir)
@@ -79,17 +79,18 @@ Deno.test("runEnvSetup: says 'no changes made' when the gitignore rule was alrea
   })
 })
 
-// #236 — in a linked worktree with no key of its own, `resolveKeyFile`
-// (cli/age.ts) falls back to the MAIN checkout's key. The old message
-// hardcoded `<cwd>/.age/key.txt` regardless — naming a path that had no
-// file on it at all, while the key actually found lived elsewhere. This
-// builds a real main checkout + linked worktree (never the real repo —
-// a throwaway pair in its own temp dir) and asserts the message names
-// the MAIN checkout's path.
+// #236 — in a linked worktree with no key of its own,
+// `@spy4x/server/env-age64`'s key resolution falls back to the MAIN
+// checkout's key. The old message hardcoded `<cwd>/.age/key.txt`
+// regardless — naming a path that had no file on it at all, while the
+// key actually found lived elsewhere. This builds a real main checkout +
+// linked worktree (never the real repo — a throwaway pair in its own
+// temp dir) and asserts the message names the MAIN checkout's path.
 // A parent git process (this repo's own pre-commit hook, or a shell with
-// GIT_DIR exported by hand) could otherwise redirect these fixture git
-// spawns at a completely different repo — see cli/age.test.ts's own
-// version of this helper for the incident that made this necessary.
+// GIT_DIR exported by hand) could otherwise redirect this file's own
+// `git init`/`git worktree add` fixture spawns at a completely different
+// repo — cleared for the duration of every git spawn below, same as
+// every other fixture in this repo that shells out to git.
 function strippedGitEnv(): Record<string, string> {
   const env = Deno.env.toObject()
   for (const key of ["GIT_DIR", "GIT_COMMON_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE"]) {
@@ -113,11 +114,13 @@ async function gitQuiet(cwd: string, ...args: string[]): Promise<void> {
 }
 
 /**
- * `runEnvSetup` → `checkAgeKeyPresent` → `resolveKeyFile` (cli/age.ts)
- * spawns `git rev-parse --git-common-dir` with NO env override of its
- * own — it inherits whatever GIT_DIR/etc THIS process currently has. A
- * poisoned GIT_DIR here would make it resolve `worktree`'s key against
- * the wrong repo entirely, not `main`. Clearing these four vars for the
+ * `runEnvSetup` → `ageStatus`/`readAgeKey` resolve `.age/key.txt` by
+ * reading the worktree's `.git` pointer file and the main checkout's
+ * `commondir` directly — no `git` subprocess, and no `GIT_*` env var is
+ * ever read for that resolution any more. This wrapper is kept anyway
+ * for the fixture's OWN `git init`/`git worktree add` calls below, so a
+ * poisoned ambient `GIT_DIR` can't redirect THOSE at the wrong repo.
+ * Clearing these four vars for the
  * duration of the call guarantees the test proves what it claims,
  * regardless of the ambient environment.
  */
@@ -155,8 +158,7 @@ Deno.test("runEnvSetup: in a worktree without its own key, names the MAIN checko
       "-m",
       "init",
     )
-    await Deno.mkdir(join(main, ".age"), { recursive: true })
-    await Deno.writeTextFile(join(main, ".age", "key.txt"), "AGE-SECRET-KEY-placeholder\n")
+    await generateAgeKey(main)
     await gitQuiet(main, "worktree", "add", "-q", "--detach", worktree, "HEAD")
 
     // Note: no .age/key.txt in `worktree` — resolveKeyFile must fall

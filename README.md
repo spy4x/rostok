@@ -25,11 +25,11 @@ deno install -g -A -n rostok jsr:@rostok/cli
 Requires [Deno](https://deno.land) ≥ 2.0 — `-g`/`--global` is required
 on Deno 2 for a named executable install (`deno install -A -n rostok
 ...` alone errors with "the following required arguments were not
-provided: --global"). `age` is optional but
-endorsed — the wizard runs to completion without it, and your `.env`
-files stay plaintext (gitignored). Install `age` to enable encrypted
-`.env.age` files you can safely commit (the wizard offers to set this
-up for you).
+provided: --global"). Encryption is optional but endorsed — the wizard
+runs to completion without a key, and your `.env` files stay plaintext
+(gitignored). No extra binary to install: encryption runs in-process
+(`@spy4x/server/env-age64`). The wizard offers to generate a key for you
+so `.env.age` files are safe to commit.
 
 ## Quick start
 
@@ -42,8 +42,8 @@ rostok deploy home           # deploy what you configured
 
 The wizard writes `deno.jsonc`, initialises git, and creates
 `servers/<name>/` with your chosen stack. Every `.env` mutation is
-auto-encrypted to `.env.age` (when `age` is installed), so secrets are
-safe to commit.
+auto-encrypted to `.env.age` (once a key exists — `rostok env setup`),
+so secrets are safe to commit.
 
 ## Commands
 
@@ -57,7 +57,7 @@ safe to commit.
 | `rostok env encrypt`                         | Encrypt `.env` → `.env.age` (per-stack + root)                                   |
 | `rostok env decrypt`                         | Decrypt `.env.age` → `.env`                                                      |
 | `rostok env status`                          | Encryption posture + next steps                                                  |
-| `rostok env setup`                           | Generate `.age/key.txt` — `rostok` hides `age-keygen` from you                   |
+| `rostok env setup`                           | Generate `.age/key.txt` — `rostok` hides the key generation for you              |
 | `rostok --help`, `rostok --version`          | Self-explanatory                                                                 |
 
 Flags:
