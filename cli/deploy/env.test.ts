@@ -86,7 +86,10 @@ Deno.test("resolveDeployEnv: throws UserError naming every missing key and both 
 Deno.test("resolveDeployEnv: succeeds and fills SSH_USER/PATH_APPS/PUID/PGID when all keys resolve", () => {
   const { env, notices } = resolveDeployEnv(
     {
-      SSH_ADDRESS: "root@example.com",
+      // A bare ssh_config alias (no user@ part) has nothing to compare
+      // against SSH_USER, so it can differ freely — see the
+      // SSH_USER/SSH_ADDRESS agreement tests below for the mismatch case.
+      SSH_ADDRESS: "home-alias",
       SSH_USER: "deploy",
       VOLUMES_PATH: "/srv/volumes",
       DOCKER_GROUP_ID: "988",
@@ -109,8 +112,9 @@ Deno.test("resolveDeployEnv: a key present only in .env.root satisfies the requi
   const merged = {
     // from .env.root
     VOLUMES_PATH: "/srv/volumes",
-    // from servers/<server>/.env
-    SSH_ADDRESS: "root@example.com",
+    // from servers/<server>/.env — a bare alias, no user@ part to
+    // disagree with SSH_USER.
+    SSH_ADDRESS: "home-alias",
     SSH_USER: "deploy",
     DOCKER_GROUP_ID: "988",
   }
@@ -130,7 +134,9 @@ Deno.test("resolveDeployEnv: the server .env value wins over .env.root on confli
 
 const VALID_BASE = {
   SSH_ADDRESS: "root@example.com",
-  SSH_USER: "deploy",
+  // Must agree with SSH_ADDRESS's own user part ("root") — see the
+  // SSH_USER/SSH_ADDRESS agreement tests below for the mismatch case.
+  SSH_USER: "root",
   PATH_APPS: "/srv/apps",
   VOLUMES_PATH: "/srv/volumes",
   PUID: "1000",
@@ -257,4 +263,41 @@ Deno.test("resolveDeployEnv: an expanded VOLUMES_PATH that still isn't absolute 
     UserError,
   )
   assertStringIncludes(err.message, "invalid PATH_APPS")
+})
+
+Deno.test("resolveDeployEnv: rejects a SSH_ADDRESS user that disagrees with SSH_USER", () => {
+  // A hook logs in as SSH_USER (cli/deploy/hooks.ts's contract key);
+  // deploy's own ssh/rsync calls log in as SSH_ADDRESS's own user. If
+  // they differ, a hook would silently reach a different account than
+  // the rest of deploy.
+  const err = assertThrows(
+    () =>
+      resolveDeployEnv(
+        { ...VALID_BASE, SSH_ADDRESS: "root@example.com", SSH_USER: "deploy" },
+        "servers/home/.env",
+        ROOT_ENV_PATH,
+      ),
+    UserError,
+  )
+  assertStringIncludes(err.message, "root")
+  assertStringIncludes(err.message, "deploy")
+  assertStringIncludes(err.message, "servers/home/.env")
+})
+
+Deno.test("resolveDeployEnv: accepts a matching SSH_ADDRESS user and SSH_USER", () => {
+  // Should not throw.
+  resolveDeployEnv(
+    { ...VALID_BASE, SSH_ADDRESS: "deploy@example.com", SSH_USER: "deploy" },
+    "servers/home/.env",
+    ROOT_ENV_PATH,
+  )
+})
+
+Deno.test("resolveDeployEnv: a bare ssh_config alias (no user@) never conflicts with SSH_USER", () => {
+  // Should not throw — nothing in SSH_ADDRESS to compare against.
+  resolveDeployEnv(
+    { ...VALID_BASE, SSH_ADDRESS: "home-alias", SSH_USER: "whoever" },
+    "servers/home/.env",
+    ROOT_ENV_PATH,
+  )
 })

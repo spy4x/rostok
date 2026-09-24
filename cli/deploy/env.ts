@@ -30,10 +30,24 @@
 // undefined reference is a UserError naming it — silently leaving
 // `${TYPO}` in the path would otherwise reach ssh/rsync as a literal,
 // nonexistent directory name.
+//
+// SSH_USER/SSH_ADDRESS agreement: a hook must log in as the same user
+// deploy's own ssh/rsync calls do. Deploy's login user is the user part
+// of SSH_ADDRESS when it has one (or ssh_config's own User for a bare
+// alias — rostok never sees that). SSH_USER is the separate remote
+// username `server create` writes (normally the same user, extracted
+// from `user@host` at server-create time, but a `--var` flag can set
+// it independently). When SSH_ADDRESS DOES carry a user and it disagrees
+// with SSH_USER, a hook (which gets SSH_USER, not the address's own
+// user) would silently log in as someone else than deploy's own ssh
+// calls do — refused as a UserError naming both values. A bare-alias
+// SSH_ADDRESS (no user part) has nothing to compare against, so it's
+// never flagged here.
 
 import {
   DEFAULT_PATH_APPS,
   DEPLOY_REQUIRED_KEYS,
+  parseSshAddress,
   validateRemotePath,
   validateSshAddress,
 } from "../server-keys.ts"
@@ -160,6 +174,19 @@ export function resolveDeployEnv(
   validateSshAddress(resolved.SSH_ADDRESS)
   validateRemotePath("PATH_APPS", resolved.PATH_APPS)
   validateRemotePath("VOLUMES_PATH", resolved.VOLUMES_PATH)
+
+  // A hook logs in with SSH_USER (cli/deploy/hooks.ts's contract key);
+  // deploy's own ssh/rsync calls log in with SSH_ADDRESS's own user part
+  // when it has one. The two must agree, or a hook silently logs in as
+  // someone else than the rest of deploy does — see the module comment.
+  const addressUser = parseSshAddress(resolved.SSH_ADDRESS).user
+  if (addressUser !== undefined && addressUser !== resolved.SSH_USER) {
+    throw new UserError(
+      `SSH_ADDRESS's user "${addressUser}" disagrees with SSH_USER "${resolved.SSH_USER}" ` +
+        `(${envPath}) — a hook logs in as SSH_USER, deploy's own ssh/rsync calls log in as ` +
+        `SSH_ADDRESS's user; they must be the same account.`,
+    )
+  }
 
   return { env: resolved, notices }
 }
