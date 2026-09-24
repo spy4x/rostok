@@ -36,6 +36,11 @@ const GITIGNORE_TEMPLATE = `# Plaintext secrets — never commit. The encrypted 
 # this project. NEVER commit this.
 .age/
 
+# @spy4x/server/env-age64's atomic-write leftover, if a crash ever left
+# one behind (same directory as the plaintext or encrypted file it was
+# writing).
+.age64-tmp-*
+
 # deno runtime
 deno.lock
 `
@@ -128,7 +133,13 @@ export async function initProject(cwd: string = Deno.cwd()): Promise<InitResult>
  * file list — so the prompt has context instead of appearing first.
  */
 export async function maybeOfferKeyGeneration(cwd: string): Promise<void> {
-  const status = await ageStatus(cwd)
+  let status
+  try {
+    status = await ageStatus(cwd)
+  } catch (error) {
+    console.warn(`rostok: ${error instanceof Error ? error.message : String(error)}`)
+    return
+  }
   if (status.keyPresent) return // already set up — silent
   // #235: fail loudly (one shared guard, prompts.ts) instead of
   // Confirm.prompt's own behavior of redrawing forever against a non-TTY

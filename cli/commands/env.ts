@@ -16,6 +16,7 @@
 import { Command } from "@cliffy/command"
 import { relative } from "@std/path"
 import {
+  type AgeStatus,
   ageStatus,
   decryptEnvFiles,
   encryptEnvFiles,
@@ -24,12 +25,28 @@ import {
 } from "@spy4x/server/env-age64"
 import { ensureAgeIgnored } from "../init.ts"
 
+/**
+ * `ageStatus` walks the project for `.env`/`.env.age` files and can throw
+ * (a symlinked env file, for instance — the module refuses to read
+ * through one). Every command below needs a one-line error, not a raw
+ * stack trace, so this wraps the call once instead of repeating the
+ * try/catch at each call site.
+ */
+async function safeAgeStatus(cwd: string): Promise<AgeStatus> {
+  try {
+    return await ageStatus(cwd)
+  } catch (error) {
+    console.error(error instanceof Error ? error.message : String(error))
+    return Deno.exit(1)
+  }
+}
+
 /** `rostok env encrypt` — run the encrypt task directly. */
 export const envEncryptCommand = new Command()
   .description("Encrypt .env → .env.age (same as the auto-hook after wizard writes).")
   .action(async () => {
     const cwd = Deno.cwd()
-    const status = await ageStatus(cwd)
+    const status = await safeAgeStatus(cwd)
     if (!status.keyPresent) {
       console.error(
         "rostok env encrypt: .age/key.txt missing. run `rostok env setup` to generate one.",
@@ -49,7 +66,7 @@ export const envDecryptCommand = new Command()
   .description("Decrypt .env.age → .env (run after a fresh git clone).")
   .action(async () => {
     const cwd = Deno.cwd()
-    const status = await ageStatus(cwd)
+    const status = await safeAgeStatus(cwd)
     if (!status.keyPresent) {
       console.error(
         "rostok env decrypt: .age/key.txt missing. can't decrypt without a key.",
@@ -65,9 +82,10 @@ export const envDecryptCommand = new Command()
   })
 
 /**
- * `rostok env status` — print the encryption posture. Always exits 0 —
- * status queries never fail. Shows the user what they need to do to
- * enable encryption.
+ * `rostok env status` — print the encryption posture. Exits 1 only when
+ * the scan itself fails (a symlinked env file, say — see
+ * {@link safeAgeStatus}); otherwise it always succeeds, whatever the
+ * posture is, and shows the user what to do next.
  */
 export const envStatusCommand = new Command()
   .description(
@@ -75,7 +93,7 @@ export const envStatusCommand = new Command()
   )
   .action(async () => {
     const cwd = Deno.cwd()
-    const status = await ageStatus(cwd)
+    const status = await safeAgeStatus(cwd)
     const rel = (p: string) => relative(cwd, p) || p
 
     console.log(`.age/key.txt:       ${status.keyPresent ? "present" : "missing"}`)
