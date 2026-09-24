@@ -4,25 +4,45 @@
 // this repo, with no `stacks/` directory of its own — every stack file
 // has to come from the CLI package's bundled catalog (cli/deploy/
 // shipped-stacks.ts + stack-files.ts), never from `./stacks/` or
-// `./scripts/`. Fake `ssh` and `rsync` binaries go first on PATH: they
-// record what they're asked to do and `rsync` copies into a temp
-// "remote" directory, so the test can assert on the exact files that
-// reached it — including that `./scripts` and `./deno.jsonc` do NOT.
+// `./scripts/`.
+//
+// #233 review: no test in this file spawns (or fakes) `rsync`, ever —
+// an earlier fake `rsync` elsewhere in this PR recursed into itself
+// through a PATH lookup and spawned ~4,900 processes (73 GB RAM, load
+// 1,100) on the dev box. A test that needs files to actually reach a
+// "remote" calls `runDeploy()` in-process (`cli/deploy/run-deploy.ts`)
+// with an injected `RunDeployIO` (`makeFakeIO` below) — a plain
+// in-process object that copies files directly through Deno's fs APIs,
+// never a subprocess. A test that only needs the REAL CLI entry point
+// (`cli/+main.ts`, as a real subprocess, for #211/#227's error-
+// formatting wrapper) either fails before the deploy would ever reach a
+// sync step, or is interrupted (SIGINT/SIGTERM/SIGHUP) before reaching
+// one — `FAKE_SSH` alone (a POSIX-adjacent deno script, kept from
+// before this review round, never `ssh`/`rsync`/`deno` internally
+// dangerous since it never re-execs a name on PATH) is enough for
+// those; no `rsync` binary needs to exist on `PATH` at all for any test
+// in this file.
 //
 // If cli/deploy/shipped-stacks.ts under-lists a catalog stack's files
 // (or run-deploy.ts fails to stage one), the corresponding assertion
 // below fails.
 
-import { assertEquals, assertExists, assertStringIncludes } from "@std/assert"
-import { join } from "@std/path"
+import { assert, assertEquals, assertExists, assertStringIncludes } from "@std/assert"
+import { dirname, join } from "@std/path"
+import { runDeploy, type RunDeployIO } from "../deploy/run-deploy.ts"
+import type { CommandResult } from "../deploy/exec.ts"
 
 const FAKE_SSH = `#!/usr/bin/env -S deno run --allow-read --allow-write --allow-env
 // Records every invocation to FAKE_SSH_LOG, then fakes just enough of a
 // remote host for a deploy to complete: the docker-group + remote-UID
-// preflights and the per-stack DEPLOY_START/DEPLOY_SUCCESS markers the
-// real deploy script would print after a successful \`docker compose up\`.
-// Anything else (proxy network, stale-stack cleanup, volume mkdir/chown)
-// is accepted silently, matching a healthy remote.
+// preflights, the readlink -f symlink guard, and the per-stack
+// DEPLOY_START/DEPLOY_SUCCESS markers the real deploy script would
+// print after a successful \`docker compose up\`. Anything else (proxy
+// network, stale-stack cleanup, volume mkdir/chown) is accepted
+// silently, matching a healthy remote. Never calls \`ssh\`, \`rsync\` or
+// \`deno\` itself — it only ever prints to its own stdout/stderr — so it
+// can't recurse the way an earlier fake \`rsync\` elsewhere in this PR
+// did.
 //
 // Every real call is \`ssh -o ConnectTimeout=10 [-o BatchMode=yes] [-p <port>]
 // -- <target> <command...>\` (cli/deploy/exec.ts's sshArgs, see
@@ -108,64 +128,6 @@ if (script.includes("getent group docker")) {
 Deno.exit(0)
 `
 
-// A POSIX sh script, never a deno script (review round — a deno-script
-// fake is a full process per spawn; an earlier version of this rsync
-// fake in cli/deploy/run-deploy.test.ts recursed into itself via a
-// PATH lookup and spawned ~4,900 processes). "cp", never "rsync", so
-// no test here can ever reach a real or fake rsync binary at all.
-//
-// Copies the local staging dir (second-to-last arg, "src") into
-// FAKE_REMOTE_DIR + the remote path from the last arg ("user@host:/path/"),
-// standing in for the real server the deploy would rsync to.
-//
-// #233: run-deploy.ts's per-stack sync (runRemoteSyncEntry, exec.ts)
-// gives SRC no trailing slash — real rsync then treats it as one named
-// entry to place INSIDE the destination, not merge its own contents
-// into it (real rsync's own symlink-replacement behavior that depends
-// on this distinction is proven separately, by argv-shape assertions —
-// see run-deploy.test.ts and the PR body's manual VM step). This fake
-// only replicates the entry-vs-merge distinction with a plain
-// recursive copy, never rsync's own --delete/symlink semantics.
-const FAKE_RSYNC = `#!/bin/sh
-set -eu
-exclude_stacks=0
-prev=""
-last=""
-for a in "$@"; do
-  case "$a" in
-    --exclude=/stacks) exclude_stacks=1 ;;
-  esac
-  prev="$last"
-  last="$a"
-done
-src="$prev"
-dest="$last"
-remote_path="\${dest#*:}"
-dest_parent="$FAKE_REMOTE_DIR$remote_path"
-mkdir -p "$dest_parent"
-case "$src" in
-  */)
-    # Contents-merge (the root sync): copy every top-level entry,
-    # dotfiles included — "\${src}"* alone would skip .env/.env.root,
-    # POSIX glob doesn't match a leading dot. Honors --exclude=/stacks
-    # (a real deploy's root sync always carries it) so this fake never
-    # double-copies stacks/ once the per-stack entry sync below also
-    # runs for it.
-    find "$src" -mindepth 1 -maxdepth 1 | while IFS= read -r entry; do
-      name=$(basename "$entry")
-      if [ "$exclude_stacks" = 1 ] && [ "$name" = "stacks" ]; then continue; fi
-      cp -a "$entry" "$dest_parent/"
-    done
-    ;;
-  *)
-    # Entry sync (a stack's own per-stack rsync, runRemoteSyncEntry):
-    # replace the destination entry entirely, matching --delete.
-    base=$(basename "$src")
-    rm -rf "$dest_parent/$base"
-    cp -a "$src" "$dest_parent/$base" ;;
-esac
-`
-
 interface Fixture {
   projectDir: string
   binDir: string
@@ -179,8 +141,10 @@ async function setupFixture(): Promise<Fixture> {
   const remoteDir = await Deno.makeTempDir({ prefix: "rostok-e2e-remote-" })
   const logPath = join(binDir, "ssh.log")
 
+  // Only `ssh` — never `rsync` (#233 review). Every test that needs
+  // files to actually reach a "remote" drives runDeploy in-process with
+  // an injected RunDeployIO (makeFakeIO below) instead.
   await Deno.writeTextFile(join(binDir, "ssh"), FAKE_SSH, { mode: 0o755 })
-  await Deno.writeTextFile(join(binDir, "rsync"), FAKE_RSYNC, { mode: 0o755 })
 
   return { projectDir, binDir, remoteDir, logPath }
 }
@@ -253,6 +217,171 @@ async function runDeployCli(
   }
 }
 
+// ── In-process IO fake (#233 review) ────────────────────────────────
+//
+// Every test that needs files to actually land on a "remote" drives
+// runDeploy() directly with one of these instead of the real CLI
+// subprocess — see the module comment.
+
+function ok(output = ""): CommandResult {
+  return { success: true, code: 0, output, error: "" }
+}
+
+interface FakeRemote {
+  root: string
+  calls: string[]
+  shellScripts: string[]
+  failDeployStack?: string
+}
+
+async function copyEntry(
+  src: string,
+  destParent: string,
+  entry: boolean,
+  excludeStacks: boolean,
+): Promise<CommandResult> {
+  const parentExists = await Deno.stat(destParent).then((s) => s.isDirectory).catch(() => false)
+  if (!parentExists) {
+    return {
+      success: false,
+      code: 11,
+      output: "",
+      error: `mkdir "${destParent}" failed: No such file or directory`,
+    }
+  }
+  if (entry) {
+    const base = src.split("/").filter((p) => p.length > 0).pop()!
+    const dest = join(destParent, base)
+    await Deno.remove(dest, { recursive: true }).catch(() => {})
+    await copyRecursive(src, dest)
+  } else {
+    for await (const e of Deno.readDir(src)) {
+      if (excludeStacks && e.name === "stacks") continue
+      await copyRecursive(join(src, e.name), join(destParent, e.name))
+    }
+  }
+  return ok()
+}
+
+async function copyRecursive(src: string, dest: string): Promise<void> {
+  const info = await Deno.stat(src)
+  if (info.isDirectory) {
+    await Deno.mkdir(dest, { recursive: true })
+    for await (const e of Deno.readDir(src)) {
+      await copyRecursive(join(src, e.name), join(dest, e.name))
+    }
+  } else {
+    await Deno.mkdir(dirname(dest), { recursive: true })
+    await Deno.copyFile(src, dest)
+  }
+}
+
+function makeFakeIO(remote: FakeRemote): RunDeployIO {
+  return {
+    checkDockerGroup: async () => {
+      remote.calls.push("docker-group")
+    },
+    needsRemoteSudo: async () => {
+      remote.calls.push("sudo")
+      return false
+    },
+    checkRemotePathsNotNested: async () => {
+      remote.calls.push("readlink")
+    },
+    runRemoteShell: async (_address: string, script: string) => {
+      remote.shellScripts.push(script)
+      const mkdirMatch = script.match(/^mkdir -p -- '(.*)'$/)
+      if (mkdirMatch) {
+        remote.calls.push("mkdir")
+        await Deno.mkdir(remote.root + mkdirMatch[1], { recursive: true })
+        return ok()
+      }
+      if (script.includes("stop_and_remove")) {
+        remote.calls.push("stale-cleanup")
+        return ok()
+      }
+      const shaMatch = script.match(/^sha256sum '([^']*)'/)
+      if (shaMatch) {
+        const exists = await Deno.stat(remote.root + shaMatch[1]).then(() => true).catch(() =>
+          false
+        )
+        return ok(exists ? `${"a".repeat(64)}  ${shaMatch[1]}` : "")
+      }
+      if (script.includes("docker network inspect proxy")) {
+        remote.calls.push("network")
+        return ok()
+      }
+      if (script.includes("DEPLOY_START:")) {
+        remote.calls.push("deploy-script")
+        const lines: string[] = []
+        for (const m of script.matchAll(/DEPLOY_START:(\S+):(\S+)/g)) {
+          lines.push(`DEPLOY_START:${m[1]}:${m[2]}`)
+          if (m[1] === remote.failDeployStack) {
+            lines.push("simulated docker compose failure")
+            lines.push(`DEPLOY_FAILED:${m[1]}:${m[2]}`)
+          } else {
+            lines.push(`DEPLOY_SUCCESS:${m[1]}:${m[2]}`)
+          }
+        }
+        return ok(lines.join("\n"))
+      }
+      // Volume mkdir/chown script, or anything else this fixture
+      // doesn't need to distinguish — a healthy remote just succeeds.
+      return ok()
+    },
+    runRemoteSync: async (
+      _address: string,
+      localDir: string,
+      remotePath: string,
+      extraArgs = [],
+    ) => {
+      remote.calls.push("rsync:root")
+      const destParent = remote.root + remotePath
+      return await copyEntry(localDir, destParent, false, extraArgs.includes("--exclude=/stacks"))
+    },
+    runRemoteSyncEntry: async (
+      _address: string,
+      localEntryDir: string,
+      remoteParentPath: string,
+      _extraArgs = [],
+    ) => {
+      const name = localEntryDir.split("/").filter((p) => p.length > 0).pop()!
+      remote.calls.push(`rsync:entry:${name}`)
+      const destParent = remote.root + remoteParentPath
+      return await copyEntry(localEntryDir, destParent, true, false)
+    },
+    getRemoteChecksums: async (_address: string, pathApps: string, files: string[]) => {
+      const map = new Map<string, string>()
+      for (const f of files) {
+        const exists = await Deno.stat(join(remote.root + pathApps, f)).then(() => true).catch(
+          () => false,
+        )
+        if (exists) map.set(f, "a".repeat(64))
+      }
+      return map
+    },
+  }
+}
+
+/**
+ * Deploy `server` in-process (no CLI subprocess, no PATH binary at
+ * all), against a fresh `FakeRemote` rooted at `f.remoteDir` — the
+ * in-process replacement for `runDeployCli` whenever a test needs
+ * files to actually reach a "remote".
+ */
+async function runDeployInProcess(
+  f: Fixture,
+  opts: { stack?: string; failDeployStack?: string } = {},
+): Promise<{ remote: FakeRemote; result: Awaited<ReturnType<typeof runDeploy>> }> {
+  const remote: FakeRemote = { root: f.remoteDir, calls: [], shellScripts: [] }
+  remote.failDeployStack = opts.failDeployStack
+  const result = await runDeploy(
+    { cwd: f.projectDir, server: "test", stack: opts.stack },
+    makeFakeIO(remote),
+  )
+  return { remote, result }
+}
+
 Deno.test("e2e: deploy ships bundled catalog stacks with no local stacks/ folder", async () => {
   const f = await setupFixture()
   try {
@@ -267,9 +396,8 @@ Deno.test("e2e: deploy ships bundled catalog stacks with no local stacks/ folder
     await Deno.writeTextFile(join(f.projectDir, "scripts", "marker.ts"), "// dev-only\n")
     await Deno.writeTextFile(join(f.projectDir, "deno.jsonc"), "{}\n")
 
-    const result = await runDeployCli(f, ["deploy", "test"])
-    if (!result.success) console.error(result.stderr)
-    assertEquals(result.success, true)
+    const { remote, result } = await runDeployInProcess(f)
+    assertEquals(result.deployedStacks.sort(), ["jellyfin", "librespeed"])
 
     const remoteApps = join(f.remoteDir, "srv", "apps")
 
@@ -294,8 +422,10 @@ Deno.test("e2e: deploy ships bundled catalog stacks with no local stacks/ folder
     assertEquals(rootEnv, "")
 
     // The docker-group preflight ran before anything else (#207).
-    const log = await Deno.readTextFile(f.logPath)
-    assertStringIncludes(log, "getent group docker")
+    assert(
+      remote.calls.includes("docker-group"),
+      `expected a docker-group check, got: ${remote.calls}`,
+    )
   } finally {
     await teardownFixture(f)
   }
@@ -471,10 +601,11 @@ await Deno.writeTextFile(logPath, "stack\\n", { append: true })
     // only resolves to the right place once this hook runs from its
     // staging copy — from its original project location, "../../" would
     // land on `servers/`, not the staging root. It writes a file there;
-    // that file must then reach the "remote" through rsync, the same as
-    // any other file under stacks/custom-stack/. It also self-checks
-    // that the stack's own hook already ran, and records its own cwd +
-    // the contract env keys for the test to assert on.
+    // that file must then reach the "remote" through the per-stack
+    // sync, the same as any other file under stacks/custom-stack/. It
+    // also self-checks that the stack's own hook already ran, and
+    // records its own cwd + the contract env keys for the test to
+    // assert on.
     const serverHookDir = join(f.projectDir, "servers", "test", "configs", "custom-stack")
     await Deno.mkdir(serverHookDir, { recursive: true })
     await Deno.writeTextFile(
@@ -509,9 +640,14 @@ await Deno.writeTextFile(logPath, "server:" + JSON.stringify(record) + "\\n", { 
     await writeServer(f.projectDir, ["CUSTOM_STACK_SECRET=own-prefixed-value"], ["custom-stack"])
 
     const hookLog = join(f.remoteDir, "server-hook.json")
-    const result = await runDeployCli(f, ["deploy", "test"], { SERVER_HOOK_LOG: hookLog })
-    if (!result.success) console.error(result.stderr)
-    assertEquals(result.success, true)
+    Deno.env.set("SERVER_HOOK_LOG", hookLog)
+    let result: Awaited<ReturnType<typeof runDeployInProcess>>["result"]
+    try {
+      ;({ result } = await runDeployInProcess(f))
+    } finally {
+      Deno.env.delete("SERVER_HOOK_LOG")
+    }
+    assertEquals(result.deployedStacks, ["custom-stack"])
 
     const lines = (await Deno.readTextFile(hookLog)).trim().split("\n")
     assertEquals(lines[0], "stack")
@@ -549,14 +685,14 @@ Deno.test("e2e: a hook receives $-heavy env values byte-for-byte (no --env-file 
   try {
     // A local stack whose before-hook writes HASH_STACK_SECRET_HASH
     // straight to a file under its own stack dir — that file then
-    // reaches the "remote" via rsync, so the test can check the exact
-    // bytes that survived the whole env-passing pipeline (parseEnv →
-    // hooks.ts's allowlist → Deno.Command's `env` option → Deno.env.get
-    // inside the hook). Deno's own `--env-file` flag mangles `$` in
-    // values like bcrypt hashes; rostok never uses it for this reason
-    // (see hooks.ts). The key is prefixed with the stack's own name
-    // (#217's allowlist, second pass) — an unprefixed SECRET_HASH would
-    // now be dropped before it ever reached the hook.
+    // reaches the "remote" via the per-stack sync, so the test can
+    // check the exact bytes that survived the whole env-passing
+    // pipeline (parseEnv → hooks.ts's allowlist → Deno.Command's `env`
+    // option → Deno.env.get inside the hook). Deno's own `--env-file`
+    // flag mangles `$` in values like bcrypt hashes; rostok never uses
+    // it for this reason (see hooks.ts). The key is prefixed with the
+    // stack's own name (#217's allowlist, second pass) — an unprefixed
+    // SECRET_HASH would now be dropped before it ever reached the hook.
     const stackDir = join(f.projectDir, "stacks", "hash-stack")
     await Deno.mkdir(stackDir, { recursive: true })
     await Deno.writeTextFile(
@@ -573,9 +709,8 @@ await Deno.writeTextFile("stacks/hash-stack/hash-output.txt", value)
     const bcryptStyleValue = `$2y$05$abc$HOME$def`
     await writeServer(f.projectDir, [`HASH_STACK_SECRET_HASH=${bcryptStyleValue}`], ["hash-stack"])
 
-    const result = await runDeployCli(f, ["deploy", "test"])
-    if (!result.success) console.error(result.stderr)
-    assertEquals(result.success, true)
+    const { result } = await runDeployInProcess(f)
+    assertEquals(result.deployedStacks, ["hash-stack"])
 
     const shipped = await Deno.readTextFile(
       join(f.remoteDir, "srv", "apps", "stacks", "hash-stack", "hash-output.txt"),
@@ -605,9 +740,8 @@ Deno.test("e2e: config.json envs resolves a \${VAR} defined only in .env.root", 
       }),
     )
 
-    const result = await runDeployCli(f, ["deploy", "test"])
-    if (!result.success) console.error(result.stderr)
-    assertEquals(result.success, true)
+    const { result } = await runDeployInProcess(f)
+    assertEquals(result.deployedStacks, ["librespeed"])
 
     const shippedEnv = await Deno.readTextFile(join(f.remoteDir, "srv", "apps", ".env"))
     assertStringIncludes(shippedEnv, "INJECTED_KEY=root-only-value")
@@ -641,15 +775,21 @@ Deno.test("e2e: VOLUMES_PATH declared only in .env.root still resolves real volu
     await writeServer(f.projectDir, [], ["vol-stack"], { omitKeys: ["VOLUMES_PATH"] })
     await writeRootEnv(f.projectDir, ["VOLUMES_PATH=/srv/volumes"])
 
-    const result = await runDeployCli(f, ["deploy", "test"])
-    if (!result.success) console.error(result.stderr)
-    assertEquals(result.success, true)
+    const { remote, result } = await runDeployInProcess(f)
+    assertEquals(result.deployedStacks, ["vol-stack"])
 
-    const log = await Deno.readTextFile(f.logPath)
-    // The real, merged value reached the remote mkdir/chown command...
-    assertStringIncludes(log, "mkdir -p '/srv/volumes/vol-stack/data'")
+    // The real, merged value reached the remote mkdir/chown command —
+    // not the OTHER "mkdir -p" script this deploy also runs
+    // (`mkdir -p -- 'PATH_APPS/stacks'`, #233 point 2), hence the
+    // volumes-specific match.
+    const volumeScript = remote.shellScripts.find((s) => s.includes("mkdir -p '/srv/volumes"))
+    assert(
+      volumeScript,
+      `expected a volume mkdir script, got:\n${remote.shellScripts.join("\n---\n")}`,
+    )
+    assertStringIncludes(volumeScript!, "mkdir -p '/srv/volumes/vol-stack/data'")
     // ...never the literal, unexpanded placeholder.
-    assertEquals(log.includes("${VOLUMES_PATH}"), false)
+    assertEquals(volumeScript!.includes("${VOLUMES_PATH}"), false)
   } finally {
     await teardownFixture(f)
   }
@@ -674,21 +814,18 @@ Deno.test("e2e: a DOCKER_GROUP_ID mismatch names .env.root when that's where the
 })
 
 Deno.test("e2e: staged .env and .env.root are chmod 0600", async () => {
-  // Both carry secrets, and rsync -a preserves the local staging mode on
-  // the remote — a 0644 copy in PATH_APPS is readable by every user on a
-  // shared box. The staging dir is private to runDeploy and gets removed
-  // before the CLI subprocess exits, so this checks the mode from
-  // inside, at the point Deno.removeSync is about to delete it.
-  const { runDeploy } = await import("../deploy/run-deploy.ts")
-
+  // Both carry secrets, and a real rsync -a would preserve the local
+  // staging mode on the remote — a 0644 copy in PATH_APPS is readable
+  // by every user on a shared box. The staging dir is private to
+  // runDeploy and gets removed before it returns, so this checks the
+  // mode from inside, at the point Deno.removeSync is about to delete
+  // it — this test never needs the sync to actually run (it fails
+  // before reaching that point once VOLUMES_PATH/friends are the only
+  // required keys and there are no stacks), so the plain default fake
+  // IO below is enough.
   const f = await setupFixture()
   try {
     await writeServer(f.projectDir, [], [])
-
-    const previousPath = Deno.env.get("PATH") ?? ""
-    Deno.env.set("PATH", `${f.binDir}:${previousPath}`)
-    Deno.env.set("FAKE_REMOTE_DIR", f.remoteDir)
-    Deno.env.set("FAKE_SSH_LOG", f.logPath)
 
     const originalRemoveSync = Deno.removeSync
     let envMode: number | null | undefined
@@ -709,12 +846,9 @@ Deno.test("e2e: staged .env and .env.root are chmod 0600", async () => {
     }
 
     try {
-      await runDeploy({ cwd: f.projectDir, server: "test" })
+      await runDeployInProcess(f)
     } finally {
       Deno.removeSync = originalRemoveSync
-      Deno.env.set("PATH", previousPath)
-      Deno.env.delete("FAKE_REMOTE_DIR")
-      Deno.env.delete("FAKE_SSH_LOG")
     }
 
     assertExists(envMode, "the mock never saw the staging dir's .env")
@@ -728,19 +862,11 @@ Deno.test("e2e: staged .env and .env.root are chmod 0600", async () => {
 
 Deno.test("e2e: a failed staging cleanup logs a warning instead of swallowing it", async () => {
   // runDeploy's own `finally` block removes the staging directory. To
-  // observe a failure there without reaching into its private temp dir,
-  // call runDeploy in-process (not the CLI subprocess) and make
-  // Deno.remove throw for the duration of this one test.
-  const { runDeploy } = await import("../deploy/run-deploy.ts")
-
+  // observe a failure there, make Deno.remove throw for the duration of
+  // this one test.
   const f = await setupFixture()
   try {
     await writeServer(f.projectDir, [], [])
-
-    const previousPath = Deno.env.get("PATH") ?? ""
-    Deno.env.set("PATH", `${f.binDir}:${previousPath}`)
-    Deno.env.set("FAKE_REMOTE_DIR", f.remoteDir)
-    Deno.env.set("FAKE_SSH_LOG", f.logPath)
 
     const originalRemoveSync = Deno.removeSync
     const originalConsoleError = console.error
@@ -759,13 +885,10 @@ Deno.test("e2e: a failed staging cleanup logs a warning instead of swallowing it
     }
 
     try {
-      await runDeploy({ cwd: f.projectDir, server: "test" })
+      await runDeployInProcess(f)
     } finally {
       Deno.removeSync = originalRemoveSync
       console.error = originalConsoleError
-      Deno.env.set("PATH", previousPath)
-      Deno.env.delete("FAKE_REMOTE_DIR")
-      Deno.env.delete("FAKE_SSH_LOG")
       if (stagingDirToClean !== undefined) {
         await Deno.remove(stagingDirToClean, { recursive: true })
       }
@@ -795,16 +918,18 @@ Deno.test("e2e: a failed docker compose up throws a UserError naming the stack a
   try {
     await writeServer(f.projectDir, [], ["librespeed", "jellyfin"])
 
-    const result = await runDeployCli(f, ["deploy", "test"], {
-      FAKE_DEPLOY_FAIL_STACK: "librespeed",
-    })
-    assertEquals(result.success, false)
-    assertEquals(result.code, 1)
+    let thrown: unknown
+    try {
+      await runDeployInProcess(f, { failDeployStack: "librespeed" })
+    } catch (err) {
+      thrown = err
+    }
+    assertExists(thrown, "expected runDeploy to throw")
+    const message = thrown instanceof Error ? thrown.message : String(thrown)
     // Names the stack...
-    assertStringIncludes(result.stderr, "librespeed")
+    assertStringIncludes(message, "librespeed")
     // ...and the step (docker compose up / deploy), not a bare stack trace.
-    assertStringIncludes(result.stderr, "failed to deploy")
-    assertCleanFailure(result.stderr)
+    assertStringIncludes(message, "failed to deploy")
   } finally {
     await teardownFixture(f)
   }
@@ -925,9 +1050,14 @@ async function waitForFileToInclude(path: string, text: string): Promise<void> {
 /**
  * Spawn `rostok deploy test` with FAKE_SSH_HANG_ON set (holds the fake
  * ssh call busy — see FAKE_SSH above — after the staging dir is
- * created and populated by rsync but before deploy finishes). Waits
- * for the fake ssh's own log to actually show the blocking command
- * (`docker network inspect proxy`) — not just for the staging dir to
+ * created and populated, but BEFORE any sync would run — #233 review:
+ * this file has no `rsync` binary on PATH at all anymore, so the hang
+ * point has to be a remote SHELL call, not the old "docker network
+ * inspect proxy" (which ran AFTER both syncs). `mkdir -p PATH_APPS/
+ * stacks` (run-deploy.ts, #233 point 2) is the first remote call after
+ * staging finishes and the first one this fixture's FAKE_SSH answers,
+ * so it's the natural hang point.) Waits for the fake ssh's own log to
+ * actually show the blocking command — not just for the staging dir to
  * exist, which can appear well before that ssh call starts — before
  * sending `signal`. Returns the exit code, whether the staging dir
  * survived, and whether the fake ssh's own pid (written to a file
@@ -955,9 +1085,9 @@ async function runInterruptedDeploy(
         PATH: `${f.binDir}:${Deno.env.get("PATH") ?? ""}`,
         FAKE_REMOTE_DIR: f.remoteDir,
         FAKE_SSH_LOG: f.logPath,
-        // Hold the deploy open after rsync (staging dir already
-        // created and populated) but before it finishes.
-        FAKE_SSH_HANG_ON: "docker network inspect proxy",
+        // Hold the deploy open after staging is fully populated but
+        // before the first sync (see this function's own comment).
+        FAKE_SSH_HANG_ON: "mkdir -p",
         FAKE_SSH_PID_FILE: pidFile,
         TMPDIR: tmpRoot,
       },
@@ -966,7 +1096,7 @@ async function runInterruptedDeploy(
     })
     const child = command.spawn()
 
-    await waitForFileToInclude(f.logPath, "docker network inspect proxy")
+    await waitForFileToInclude(f.logPath, "mkdir -p")
     // The blocking ssh call writes its pid before it starts hanging —
     // by the time its own invocation shows up in the log, the pid file
     // exists too, but poll briefly in case of a write-then-flush gap.
@@ -1041,7 +1171,9 @@ Deno.test("e2e: SIGINT during a ~1,500-file stage leaves no staging directory be
   // walking and deleting it — observed to survive the signal 3 times
   // out of 5 with a ~1,500-file stack. The fix makes the handler fully
   // synchronous (no `await` anywhere in it), closing the interleaving
-  // window entirely.
+  // window entirely. This test never reaches any remote call at all
+  // (killed mid-staging, purely local file writes), so it needs no
+  // `rsync` binary any more than it ever needed a real `ssh` one.
   const f = await setupFixture()
   const tmpRoot = await Deno.makeTempDir({ prefix: "rostok-e2e-tmproot-" })
   try {
@@ -1107,16 +1239,10 @@ Deno.test("e2e: runDeploy removes its signal listeners after finishing normally 
   // successful in-process run-deploy call. A listener registered but
   // never removed would leave this process still reacting to SIGINT
   // after the function returned.
-  const { runDeploy } = await import("../deploy/run-deploy.ts")
-
   const f = await setupFixture()
   try {
     await writeServer(f.projectDir, [], [])
 
-    const previousPath = Deno.env.get("PATH") ?? ""
-    Deno.env.set("PATH", `${f.binDir}:${previousPath}`)
-    Deno.env.set("FAKE_REMOTE_DIR", f.remoteDir)
-    Deno.env.set("FAKE_SSH_LOG", f.logPath)
     // A private TMPDIR, so the spy below can see this deploy's staging dir.
     const previousTmp = Deno.env.get("TMPDIR")
     const tmpRoot = await Deno.makeTempDir({ prefix: "rostok-e2e-tmproot-" })
@@ -1142,13 +1268,10 @@ Deno.test("e2e: runDeploy removes its signal listeners after finishing normally 
     }
 
     try {
-      await runDeploy({ cwd: f.projectDir, server: "test" })
+      await runDeployInProcess(f)
     } finally {
       Deno.addSignalListener = originalAdd
       Deno.removeSignalListener = originalRemove
-      Deno.env.set("PATH", previousPath)
-      Deno.env.delete("FAKE_REMOTE_DIR")
-      Deno.env.delete("FAKE_SSH_LOG")
       if (previousTmp === undefined) Deno.env.delete("TMPDIR")
       else Deno.env.set("TMPDIR", previousTmp)
       await Deno.remove(tmpRoot, { recursive: true }).catch(() => {})
