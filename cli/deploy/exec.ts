@@ -111,6 +111,45 @@ export async function runRemoteSync(
 }
 
 /**
+ * Run `rsync` the way `runRemoteSync` does, EXCEPT the source keeps
+ * `localEntryDir`'s own name instead of being merged into the
+ * destination's contents: no trailing slash on the source, so rsync
+ * transfers it as ONE named entry into `remoteParentPath` (which DOES
+ * get a trailing slash, "sync this entry into that directory").
+ *
+ * This is the only rsync shape that's safe when the destination entry
+ * might be a SYMLINK (#233 review): a real directory source with a
+ * trailing slash, synced onto a same-named destination that's also
+ * given a trailing slash (`runRemoteSync`'s own shape), makes rsync
+ * follow the symlink and sync INTO whatever it points at — verified
+ * directly against a real local rsync, deleting a file inside the
+ * symlink's target that the source didn't even ship. Source-as-an-entry
+ * into its PARENT instead makes rsync replace a symlinked destination
+ * entry with a real directory, leaving whatever the symlink pointed at
+ * completely untouched (same verification) — used for run-deploy.ts's
+ * per-stack sync into `PATH_APPS/stacks/`, since a stack's own
+ * directory name is exactly the kind of thing an attacker (or a stale
+ * VOLUMES_PATH-into-PATH_APPS mistake) could turn into a symlink.
+ */
+export async function runRemoteSyncEntry(
+  sshAddress: string,
+  localEntryDir: string,
+  remoteParentPath: string,
+  extraArgs: string[] = [],
+): Promise<CommandResult> {
+  const target = parseSshAddress(sshAddress)
+  return await runCommand([
+    "rsync",
+    ...extraArgs,
+    "-e",
+    rsyncSshOption(target, defaultSshCallOptions()),
+    "--",
+    localEntryDir,
+    `${rsyncDestination(target, remoteParentPath)}/`,
+  ])
+}
+
+/**
  * Single-quote `value` for embedding in a remote shell command string.
  * Every remote command rostok builds is one shell string (docker
  * compose, mkdir/chown loops, case patterns), so any value that comes
