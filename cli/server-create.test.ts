@@ -288,6 +288,56 @@ Deno.test("re-running server create with an alias target keeps existing values (
     }))
 })
 
+// #236 — server create used to round-trip .env through
+// parseEnv/serializeEnv, dropping every comment/blank line on every
+// re-run. A hand-annotated .env must keep its comments after a re-run
+// that only changes one field.
+Deno.test("server create preserves hand-written comments and blank lines in .env", async () => {
+  await withTmpDir(async (dir) => {
+    await seedServerEnv(
+      dir,
+      "home",
+      [
+        "# managed by rostok, edited by hand below",
+        "PROJECT=hl",
+        "SSH_ADDRESS=root@203.0.113.9",
+        "SSH_USER=root",
+        "DOMAIN=example.com",
+        "CONTACT_EMAIL=a@example.com",
+        "DOCKER_GROUP_ID=990",
+        "TIMEZONE=UTC",
+        "PUID=1000",
+        "PGID=1000",
+        "VOLUMES_PATH=/srv/volumes",
+        "",
+        "# PATH_APPS overridden for this box",
+        "PATH_APPS=/srv/apps",
+      ].join("\n") + "\n",
+    )
+
+    await serverCreate({
+      cwd: dir,
+      failFast: true,
+      // DOCKER_GROUP_ID/PUID/PGID pre-supplied so this skips the SSH
+      // probe entirely — this test is about .env formatting, not the
+      // probe (see "server create skips the probe entirely..." above).
+      providedVars: {
+        SERVER_NAME: "home",
+        DOMAIN: "changed.example.com",
+        DOCKER_GROUP_ID: "990",
+        PUID: "1000",
+        PGID: "1000",
+      },
+    })
+
+    const after = await Deno.readTextFile(join(dir, "servers", "home", ".env"))
+    assertStringIncludes(after, "# managed by rostok, edited by hand below")
+    assertStringIncludes(after, "# PATH_APPS overridden for this box")
+    assertStringIncludes(after, "\n\n") // the blank line before the last comment survived
+    assertStringIncludes(after, "DOMAIN=changed.example.com") // the actual change still landed
+  })
+})
+
 Deno.test("a successful probe's docker GID wins over a stale existing value", async () => {
   await withFakeSsh(OK_SSH, () =>
     withTmpDir(async (dir) => {

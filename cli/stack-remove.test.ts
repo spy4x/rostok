@@ -140,9 +140,17 @@ Deno.test("stack remove: missing server fails with a UserError", async () => {
   await withTmpDir(async (dir) => {
     const catalogDir = join(dir, "catalog")
     await writeLibrespeedCatalog(catalogDir)
-    await assertRejects(
+    const err = await assertRejects(
       () => stackRemove("librespeed", "ghost", { cwd: dir, catalogDir }),
       UserError,
+    )
+    // #236: exact text, not just "not found" — this is the same wording
+    // `rostok deploy`/`cli/deploy/run-deploy.ts` use for the identical
+    // case; the two used to read differently.
+    const envPath = join(dir, "servers", "ghost", ".env")
+    assertEquals(
+      err.message,
+      `server 'ghost' not found at ${envPath}. Run \`rostok server create ghost\` first.`,
     )
   })
 })
@@ -606,5 +614,32 @@ Deno.test("stack remove --drop-env: an undeclared key sharing the stack's prefix
 
     const entries = await readEnvFile(envPath)
     assertEquals(entries.some((e) => e.key === "LIBRESPEED_EXTRA"), true)
+  })
+})
+
+// #236 — stack remove --drop-env used to rewrite .env through
+// parseEnv/serializeEnv, dropping every comment/blank line even for keys
+// that were never touched. A hand-annotated file must keep its
+// unrelated comments; only the removed stack's own lines disappear.
+Deno.test("stack remove --drop-env preserves hand-written comments and blank lines for untouched keys", async () => {
+  await withTmpDir(async (dir) => {
+    const catalogDir = join(dir, "catalog")
+    await writeLibrespeedCatalog(catalogDir)
+    await seedServer(dir, "home", { DOMAIN: "example.com" })
+    await addLibrespeed(dir, catalogDir)
+    const envPath = join(dir, "servers", "home", ".env")
+    const before = await Deno.readTextFile(envPath)
+    await Deno.writeTextFile(
+      envPath,
+      `# server-level settings\n${before}\n# nothing after this\n`,
+    )
+
+    await stackRemove("librespeed", "home", { cwd: dir, catalogDir, dropEnv: true })
+
+    const after = await Deno.readTextFile(envPath)
+    assertStringIncludes(after, "# server-level settings")
+    assertStringIncludes(after, "# nothing after this")
+    assertEquals(after.includes("LIBRESPEED_PASSWORD"), false)
+    assertEquals(after.includes("LIBRESPEED_DOMAIN"), false)
   })
 })
