@@ -211,14 +211,18 @@ function sanitizeForLog(s: string): string {
 }
 
 /**
- * Strip one matching layer of surrounding `'...'`/`"..."` quotes — the
- * same thing docker compose's `env_file` and Deno's `--env-file` do
- * when they actually load a `.env` (verified directly against both; see
- * cli/env-files.ts's header comment). `cli/age.ts`'s own `parseEnvFile`
- * deliberately keeps a value's quotes for the FILE round trip (#226),
- * so a hook — which runs the same way a container reads the file, not
- * the way this repo re-encrypts it — needs this done on its way into
- * the subprocess env, once, here.
+ * Strips one matching quote layer, no escape or comment processing —
+ * `'...'`/`"..."` around the WHOLE value only. No backslash-escape
+ * handling inside the quotes, no `#` comment stripping mid-value, no
+ * unmatched or nested-quote awareness beyond the single outer pair:
+ * this is the same, deliberately minimal thing docker compose's
+ * `env_file` and Deno's `--env-file` do when they actually load a
+ * `.env` (verified directly against both; see cli/env-files.ts's
+ * header comment). `cli/age.ts`'s own `parseEnvFile` deliberately keeps
+ * a value's quotes for the FILE round trip (#226), so a hook — which
+ * runs the same way a container reads the file, not the way this repo
+ * re-encrypts it — needs this done on its way into the subprocess env,
+ * once, here.
  */
 function stripOneQuoteLayer(value: string): string {
   if (value.length >= 2) {
