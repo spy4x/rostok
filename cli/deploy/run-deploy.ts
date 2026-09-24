@@ -81,7 +81,8 @@ import {
   printDeploySummary,
   type StackConfig,
 } from "./deploy-script.ts"
-import { runCommand, runRemoteShell, shQuote } from "./exec.ts"
+import { runRemoteShell, runRemoteSync, shQuote } from "./exec.ts"
+import { killActiveChildren } from "./process-registry.ts"
 
 export interface DeployOptions {
   /** Project root (the directory that holds `servers/` and `.env.root`). */
@@ -175,7 +176,26 @@ export async function runDeploy(opts: DeployOptions): Promise<DeployRunResult> {
     stacks = filtered
   }
 
+  // #219 (and a later review round): the staging dir holds a plaintext
+  // copy of `.env`/`.env.root` (secrets) — a Ctrl-C or `kill` mid-deploy
+  // skips the `finally` below entirely, leaving those on disk until the
+  // next reboot clears /tmp.
+  //
+  // The handler below is FULLY SYNCHRONOUS end to end — no `await`
+  // anywhere in it or in anything it calls (killActiveChildren,
+  // Deno.removeSync). An async handler yields the event loop between
+  // its own steps, which lets the main flow below keep running
+  // concurrently — observed for real: staging a ~1,500-file stack, a
+  // signal survived 3 times out of 5 with an async
+  // `killActiveChildren(); await Deno.remove(...)` handler, because the
+  // main loop's own `await fetchToFile(...)` calls kept creating new
+  // files in the same directory while the async removal was walking it.
+  // A synchronous function runs to completion without yielding, so
+  // nothing else can interleave with it — closing that window. SIGHUP
+  // (a closed terminal or dropped ssh session) and SIGQUIT (Ctrl-\\)
+  // would otherwise take their default action and leave the same files.
   const stagingDir = await Deno.makeTempDir({ prefix: "rostok-deploy-" })
+  const removeSignalCleanup = installStagingSignalCleanup(stagingDir)
   try {
     // Whitelisted files only — no ./scripts, no ./deno.jsonc (#203 point 3).
     // Both carry secrets, so chmod to 0600 regardless of the source
@@ -221,6 +241,8 @@ export async function runDeploy(opts: DeployOptions): Promise<DeployRunResult> {
       const ctx: HookContext = {
         rootEnv,
         serverEnv: env,
+        envPath,
+        rootEnvPath,
         sshAddress: SSH_ADDRESS,
         sshUser: SSH_USER,
         pathApps: PATH_APPS,
@@ -245,12 +267,18 @@ export async function runDeploy(opts: DeployOptions): Promise<DeployRunResult> {
       // staging's flat `configs/<x>/` + `stacks/<name>/` layout.
       const stagedServerHookPath = join(stagingDir, "configs", deployAs, "before.deploy.ts")
       if (await pathExists(stagedServerHookPath)) {
+        // The real stack name goes in as `stackName` (buildHookEnv uses
+        // it to compute the allowlist prefix — TRAEFIK_*, GATUS_*, ...);
+        // the descriptive label is separate, so the override doesn't
+        // lose access to its own stack's keys just because it's labeled
+        // differently in logs.
         await runHook(
           "before",
-          `${stackConfig.name} (server override)`,
+          stackConfig.name,
           toFileUrl(stagedServerHookPath).href,
           stagingDir,
           ctx,
+          `${stackConfig.name} (server override)`,
         )
       }
     }
@@ -282,22 +310,15 @@ export async function runDeploy(opts: DeployOptions): Promise<DeployRunResult> {
     // `-l` (now past the `--`) as the hostname and fails with "hostname
     // contains invalid characters" — confirmed against a real server.
     // `validateSshAddress` (env.ts, called before this point) is the
-    // real guard here: it rejects a leading `-` outright. The leading
-    // `--` below still stops rsync's own argument parser from reading a
-    // `-`-led destination as an rsync flag (rsync also rejects that on
-    // its own, e.g. "option does not take an argument" — this is a
-    // second, independent layer, not the only one).
-    const rsyncResult = await runCommand([
-      "rsync",
-      "-avhzru",
-      "-e",
-      "ssh",
-      "--",
-      `${stagingDir}/`,
-      `${SSH_ADDRESS}:${PATH_APPS}/`,
-    ])
+    // real guard here: it rejects a leading `-` outright. `runRemoteSync`
+    // (exec.ts) still puts `--` before its own positional args, guarding
+    // rsync's own argument parser from a `-`-led destination — a second,
+    // independent layer, not the only one.
+    const rsyncResult = await runRemoteSync(SSH_ADDRESS, stagingDir, PATH_APPS, ["-avhzru"])
     if (!rsyncResult.success) {
-      throw new UserError(`rsync to ${SSH_ADDRESS} failed: ${rsyncResult.error.trim()}`)
+      throw new UserError(
+        `rsync of ${server} to ${SSH_ADDRESS} failed: ${rsyncResult.error.trim()}`,
+      )
     }
 
     // Clean up stale stack directories on the remote (removed from
@@ -409,6 +430,8 @@ export async function runDeploy(opts: DeployOptions): Promise<DeployRunResult> {
       const ctx: HookContext = {
         rootEnv,
         serverEnv: env,
+        envPath,
+        rootEnvPath,
         sshAddress: SSH_ADDRESS,
         sshUser: SSH_USER,
         pathApps: PATH_APPS,
@@ -438,13 +461,15 @@ export async function runDeploy(opts: DeployOptions): Promise<DeployRunResult> {
     console.log("Deployment script finished")
     return { deployedStacks: stacks.map((s) => s.name), results }
   } finally {
-    // Staging holds a copy of .env (secrets) — a failed cleanup leaves
-    // that on disk, so warn instead of swallowing the error silently.
-    try {
-      await Deno.remove(stagingDir, { recursive: true })
-    } catch (err) {
-      console.error(`Warning: failed to remove staging directory ${stagingDir}: ${err}`)
-    }
+    // Remove staging first, synchronously, and only then drop the signal
+    // listeners: with the listeners gone, a signal would take its default
+    // action, so an async removal in that order left a window where a
+    // Ctrl-C or closed terminal killed the process mid-delete with `.env`
+    // still on disk. A signal that arrives during this synchronous
+    // removal is handled right after it, by a handler whose own removal
+    // finds nothing left. removeStagingDirSync warns if it can't remove.
+    removeStagingDirSync(stagingDir)
+    removeSignalCleanup()
   }
 }
 
@@ -475,6 +500,30 @@ async function applyStackEnvs(
     const current = await Deno.readTextFile(stagingEnvPath)
     if (!current.includes(`${key}=`)) {
       await Deno.writeTextFile(stagingEnvPath, `${current}\n${key}=${filled}\n`)
+    }
+  }
+}
+
+/**
+ * Remove `dir` synchronously, retrying up to 3 times on failure — one
+ * write the main deploy flow started before the signal can still land
+ * inside `dir`, so a first `ENOTEMPTY`-style failure right after a
+ * signal isn't necessarily permanent. Never throws; logs a warning if it still
+ * can't remove the directory after every retry.
+ */
+function removeStagingDirSync(dir: string): void {
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      Deno.removeSync(dir, { recursive: true })
+      return
+    } catch (err) {
+      if (err instanceof Deno.errors.NotFound) return // already gone
+      if (attempt === 3) {
+        console.error(`Warning: failed to remove staging directory ${dir}: ${err}`)
+        return
+      }
+      const until = Date.now() + 50
+      while (Date.now() < until) { /* brief synchronous pause before retrying */ }
     }
   }
 }
@@ -530,4 +579,46 @@ function entriesToRecord(entries: { key: string; value: string }[]): Record<stri
   const out: Record<string, string> = {}
   for (const { key, value } of entries) out[key] = value
   return out
+}
+
+/** Signals that end a deploy early, with the shell's exit code for each (128 + signal number). */
+export const STAGING_CLEANUP_SIGNALS = [
+  { signal: "SIGHUP", code: 129 },
+  { signal: "SIGINT", code: 130 },
+  { signal: "SIGQUIT", code: 131 },
+  { signal: "SIGTERM", code: 143 },
+] as const
+
+/**
+ * The work a deploy does when a signal ends it early: kill every child
+ * process deploy started, remove the staging dir, and exit with the
+ * signal's code. Fully synchronous — it must never yield to the event
+ * loop, or the deploy's own pending file writes run between its steps
+ * and recreate the staging dir (see the comment in `runDeploy`).
+ * `exit` is injectable so a test can call this directly.
+ */
+export function handleStagingSignal(
+  stagingDir: string,
+  code: number,
+  exit: (code: number) => void = Deno.exit,
+): void {
+  killActiveChildren()
+  removeStagingDirSync(stagingDir)
+  exit(code)
+}
+
+/**
+ * Register `handleStagingSignal` for every signal in
+ * `STAGING_CLEANUP_SIGNALS`. Returns a function that removes the
+ * listeners again, called once the deploy finishes normally.
+ */
+export function installStagingSignalCleanup(stagingDir: string): () => void {
+  const listeners = STAGING_CLEANUP_SIGNALS.map(({ signal, code }) => {
+    const listener = () => handleStagingSignal(stagingDir, code)
+    Deno.addSignalListener(signal, listener)
+    return { signal, listener }
+  })
+  return () => {
+    for (const { signal, listener } of listeners) Deno.removeSignalListener(signal, listener)
+  }
 }

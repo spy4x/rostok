@@ -134,6 +134,54 @@ catalog. The catalog only ships per-stack configs under
 
 ---
 
+## `before.deploy.ts` / `after.deploy.ts` (optional)
+
+Standalone Deno scripts `rostok deploy` runs with `deno run -A` — before
+and after `docker compose up`, respectively. Optional; a stack without
+either is a no-op for that hook. Self-contained: no import out of the
+stack's own directory (a JSR install runs a hook from an `https://` URL,
+where a relative parent import can't resolve — see `stacks/traefik/`
+and `stacks/gatus/` for the pattern of inlining a small shared helper
+instead of importing it).
+
+**Environment.** A hook receives a filtered view of `.env`/`.env.root`:
+only server-level keys (`DOMAIN`, `PROJECT`, ...) and keys carrying the
+stack's own prefix (`stackKeyPrefix()` — `TRAEFIK_*` for the traefik
+stack) reach it; everything else is dropped. Plus the contract keys
+`SSH_ADDRESS`, `SSH_USER`, `PATH_APPS` and `DEPLOY_AS`. `-A` means a
+hook is fully trusted code — read/write/net/run/env, no sandbox — the
+same trust a `+meta.ts` or `backup.ts` already gets; it is not
+sandboxed against the `.env`/`.env.root` content it's handed.
+
+**Termination.** `rostok deploy` signals a hook (SIGTERM, then SIGKILL
+if it doesn't exit) on Ctrl-C, `kill`, Ctrl-\\ or a closed terminal. When the Deno build and OS
+support it, the hook runs as its own process group and the WHOLE group
+gets signalled — a child process the hook itself spawned (a
+long-running build, a database migration) is reached automatically.
+When that isn't available, only the hook's own process is signalled —
+**a hook that spawns a child process of its own must forward SIGTERM
+to it** (and exit once that child does), or that child is orphaned on
+an interrupted deploy. A hook that only runs short-lived commands and
+waits for them to finish (the common case — `docker`, `curl`, a
+one-shot script) needs no special handling; this only matters for a
+hook that starts something long-running and returns before it's done.
+
+**What an interrupted deploy leaves.** Deploy stages a plaintext copy
+of `.env` and `.env.root` in a private `rostok-deploy-*` folder under
+`$TMPDIR` and removes it on success, failure, Ctrl-C, `kill`, Ctrl-\\
+and a closed terminal. Nothing can run on `kill -9`, an out-of-memory
+kill or a power loss: the folder (mode 0700) stays until the system
+clears `$TMPDIR`, usually at the next reboot.
+
+**No terminal.** A hook in its own process group has no controlling
+terminal, so it can't prompt. An `ssh` call in a hook that would ask for
+a host key or a passphrase fails instead of asking: pass
+`-o BatchMode=yes` so it fails fast with a clear error. The deploy has
+already connected to the server once before any hook runs, so the host
+key is normally known by then.
+
+---
+
 ## `README.md`
 
 A short doc with:

@@ -1,16 +1,24 @@
-import { assert, assertEquals, assertFalse, assertThrows } from "@std/assert"
+import { assert, assertEquals, assertFalse, assertStringIncludes, assertThrows } from "@std/assert"
 import { join, resolve } from "@std/path"
 import { UserError } from "./errors.ts"
 import {
   DEPLOY_REQUIRED_KEYS,
+  hasReservedStackKeyPrefix,
   isServerKey,
+  parseSshAddress,
+  rsyncDestination,
+  rsyncSshOption,
   SERVER_KEYS,
   serverDirFor,
+  sshArgs,
   stackKeyPrefix,
   validateRemotePath,
   validateServerName,
   validateSshAddress,
 } from "./server-keys.ts"
+import { SSH_ADDRESS_TEST_CASES } from "./deploy/ssh-address-test-cases.ts"
+import { parseSshAddress as parseSshAddressTraefik } from "../stacks/traefik/after.deploy.ts"
+import { parseSshAddress as parseSshAddressGatus } from "../stacks/gatus/after.deploy.ts"
 
 Deno.test("accepts ordinary server names", () => {
   for (const name of ["home", "cloud-1", "a", "0", "x".repeat(63)]) {
@@ -65,6 +73,30 @@ Deno.test("stackKeyPrefix uppercases and replaces dashes", () => {
   assertEquals(stackKeyPrefix("deepseek-harness"), "DEEPSEEK_HARNESS_")
 })
 
+Deno.test("hasReservedStackKeyPrefix flags a stack whose own prefix collides with a reserved name", () => {
+  for (
+    const name of [
+      "git",
+      "docker",
+      "ssh",
+      "bash-tools",
+      "sudo-helper",
+      "npm-mirror",
+      "jsr",
+      "rust-tools",
+    ]
+  ) {
+    assert(hasReservedStackKeyPrefix(name), name)
+  }
+  assertFalse(hasReservedStackKeyPrefix("gitea")) // "GITEA_" doesn't start with "GIT_"
+  assertFalse(hasReservedStackKeyPrefix("librespeed"))
+})
+
+Deno.test("hasReservedStackKeyPrefix exempts the two pre-existing docker-* catalog stacks", () => {
+  assertFalse(hasReservedStackKeyPrefix("docker-registry"))
+  assertFalse(hasReservedStackKeyPrefix("docker-sock-proxy"))
+})
+
 Deno.test("accepts ordinary SSH targets", () => {
   for (
     const v of [
@@ -95,6 +127,166 @@ Deno.test("rejects SSH targets that ssh would read as options", () => {
   ) {
     assertThrows(() => validateSshAddress(v), UserError, "invalid SSH_ADDRESS")
   }
+})
+
+Deno.test("parseSshAddress parses user, host and port", () => {
+  assertEquals(parseSshAddress("homelab"), { user: undefined, host: "homelab", port: undefined })
+  assertEquals(parseSshAddress("192.0.2.1"), {
+    user: undefined,
+    host: "192.0.2.1",
+    port: undefined,
+  })
+  assertEquals(parseSshAddress("root@192.0.2.1"), {
+    user: "root",
+    host: "192.0.2.1",
+    port: undefined,
+  })
+  assertEquals(parseSshAddress("192.0.2.1:2222"), {
+    user: undefined,
+    host: "192.0.2.1",
+    port: 2222,
+  })
+  assertEquals(parseSshAddress("root@192.0.2.1:2222"), {
+    user: "root",
+    host: "192.0.2.1",
+    port: 2222,
+  })
+})
+
+Deno.test("parseSshAddress accepts a bare IPv6 address with no port", () => {
+  assertEquals(parseSshAddress("2001:db8::1"), {
+    user: undefined,
+    host: "2001:db8::1",
+    port: undefined,
+  })
+  assertEquals(parseSshAddress("root@2001:db8::1"), {
+    user: "root",
+    host: "2001:db8::1",
+    port: undefined,
+  })
+})
+
+Deno.test("parseSshAddress accepts [IPv6]:port, bracketed with or without a user", () => {
+  assertEquals(parseSshAddress("[2001:db8::1]:2222"), {
+    user: undefined,
+    host: "2001:db8::1",
+    port: 2222,
+  })
+  assertEquals(parseSshAddress("root@[2001:db8::1]:2222"), {
+    user: "root",
+    host: "2001:db8::1",
+    port: 2222,
+  })
+  // Brackets with no port are also fine.
+  assertEquals(parseSshAddress("[2001:db8::1]"), {
+    user: undefined,
+    host: "2001:db8::1",
+    port: undefined,
+  })
+})
+
+Deno.test("rejects an unbracketed IPv6 address followed by what looks like a port", () => {
+  assertThrows(
+    () => parseSshAddress("2001:db8::1:2222"),
+    UserError,
+    "bracket an IPv6 address that carries a port",
+  )
+})
+
+Deno.test("rejects a port outside 1-65535", () => {
+  for (
+    const v of ["host:0", "host:65536", "host:999999", "[2001:db8::1]:0", "[2001:db8::1]:70000"]
+  ) {
+    assertThrows(() => parseSshAddress(v), UserError, "outside 1-65535")
+  }
+})
+
+Deno.test("rejects a non-numeric or empty port", () => {
+  for (const v of ["host:abc", "host:", "[2001:db8::1]:"]) {
+    assertThrows(() => parseSshAddress(v), UserError, "invalid SSH_ADDRESS")
+  }
+})
+
+Deno.test("strips control characters from a rejected SSH_ADDRESS before it reaches the error message (#7)", () => {
+  const err = assertThrows(
+    () => parseSshAddress("host\x07\x1bwith\x00control"),
+    UserError,
+  )
+  assertEquals(err.message.includes("\x07"), false)
+  assertEquals(err.message.includes("\x1b"), false)
+  assertEquals(err.message.includes("\x00"), false)
+  assertStringIncludes(err.message, "hostwithcontrol")
+})
+
+Deno.test("rejects empty parts", () => {
+  for (const v of ["@host", "user@", ":2222"]) {
+    assertThrows(() => parseSshAddress(v), UserError, "invalid SSH_ADDRESS")
+  }
+})
+
+Deno.test("rejects an unsafe or malformed user", () => {
+  for (
+    const v of ["ro ot@host", "$(id)@host", "`id`@host", "us'er@host", "root:x@host"]
+  ) {
+    assertThrows(() => parseSshAddress(v), UserError, "invalid SSH_ADDRESS")
+  }
+})
+
+Deno.test("rejects a host starting with -, with or without a user", () => {
+  for (const v of ["root@-A", "user@-oProxyCommand"]) {
+    assertThrows(() => parseSshAddress(v), UserError, "invalid SSH_ADDRESS")
+  }
+})
+
+Deno.test("parseSshAddress and both hooks' inlined copies agree on every shared test case", () => {
+  for (const { input, expected } of SSH_ADDRESS_TEST_CASES) {
+    const parsers: [string, (v: string) => unknown][] = [
+      ["cli", parseSshAddress],
+      ["traefik hook", parseSshAddressTraefik],
+      ["gatus hook", parseSshAddressGatus],
+    ]
+    for (const [label, parse] of parsers) {
+      if (expected === undefined) {
+        assertThrows(() => parse(input), Error, undefined, `${label} should reject "${input}"`)
+      } else {
+        assertEquals(
+          parse(input),
+          { user: undefined, port: undefined, ...expected },
+          `${label} disagrees on "${input}"`,
+        )
+      }
+    }
+  }
+})
+
+Deno.test("sshArgs builds -p, the standard options, -- and the target", () => {
+  assertEquals(
+    sshArgs({ host: "192.0.2.1" }, ["id", "-u"]),
+    ["-o", "ConnectTimeout=10", "--", "192.0.2.1", "id", "-u"],
+  )
+  assertEquals(
+    sshArgs({ user: "root", host: "192.0.2.1", port: 2222 }, ["id", "-u"]),
+    ["-o", "ConnectTimeout=10", "-p", "2222", "--", "root@192.0.2.1", "id", "-u"],
+  )
+  assertEquals(
+    sshArgs({ host: "2001:db8::1", port: 2222 }, [], { batchMode: true }),
+    ["-o", "ConnectTimeout=10", "-o", "BatchMode=yes", "-p", "2222", "--", "2001:db8::1"],
+  )
+})
+
+Deno.test("rsyncSshOption and rsyncDestination carry the port and bracket a bare IPv6", () => {
+  assertEquals(
+    rsyncSshOption({ host: "192.0.2.1", port: 2222 }),
+    "ssh -o ConnectTimeout=10 -p 2222",
+  )
+  assertEquals(
+    rsyncDestination({ host: "192.0.2.1", port: 2222 }, "/srv/apps"),
+    "192.0.2.1:/srv/apps",
+  )
+  assertEquals(
+    rsyncDestination({ user: "root", host: "2001:db8::1" }, "/srv/apps"),
+    "root@[2001:db8::1]:/srv/apps",
+  )
 })
 
 Deno.test("accepts plain absolute remote paths", () => {

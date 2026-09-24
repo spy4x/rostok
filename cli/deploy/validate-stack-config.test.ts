@@ -64,6 +64,20 @@ Deno.test("validateStackConfigs: rejects a bad deployAs even when name is fine",
   assertStringIncludes(err.message, "evil\ninjected")
 })
 
+Deno.test("validateStackConfigs: rejects a stack whose own prefix is reserved (#5)", () => {
+  const err = assertThrows(
+    () => validateStackConfigs([{ name: "git-mirror" }], CONFIG_PATH),
+    UserError,
+  )
+  assertStringIncludes(err.message, "git-mirror")
+  assertStringIncludes(err.message, "reserved")
+})
+
+Deno.test("validateStackConfigs: accepts the two pre-existing docker-* catalog stacks despite DOCKER_ being reserved", () => {
+  // Should not throw — see hasReservedStackKeyPrefix's exemption.
+  validateStackConfigs([{ name: "docker-registry" }, { name: "docker-sock-proxy" }], CONFIG_PATH)
+})
+
 Deno.test("validateStackConfigs: names the bad value in the error", () => {
   const err = assertThrows(
     () => validateStackConfigs([{ name: "evil name" }], CONFIG_PATH),

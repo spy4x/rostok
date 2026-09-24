@@ -4,14 +4,38 @@
 // inside the published CLI package (see shipped-stacks.ts and
 // deno.jsonc's `publish` block), and JSR never publishes `scripts/`, so
 // nothing under cli/deploy/ may import from it.
+//
+// #219: every ssh call deploy makes gets `-o ConnectTimeout=10`, so a
+// dead server or an unanswered host-key prompt fails in ~10s instead of
+// hanging the deploy indefinitely. `-o BatchMode=yes` is added on top
+// when stdin isn't a TTY (`Deno.stdin.isTerminal()`) — an interactive
+// deploy can still answer a host-key prompt, but a CI run or a piped
+// invocation fails fast instead of hanging on one.
+
+import { parseSshAddress, rsyncDestination, rsyncSshOption, sshArgs } from "../server-keys.ts"
+import { trackChild } from "./process-registry.ts"
+
+/** `{ batchMode: true }` unless stdin is a TTY — shared by every ssh/rsync spawn below. */
+function defaultSshCallOptions(): { batchMode: boolean } {
+  let isTerminal = false
+  try {
+    isTerminal = Deno.stdin.isTerminal()
+  } catch {
+    // Deno.stdin.isTerminal() throws if stdin is already closed — treat
+    // that the same as "not a TTY".
+  }
+  return { batchMode: !isTerminal }
+}
 
 export interface CommandResult {
   success: boolean
+  /** The raw exit code — ssh's own connection-level failures (unreachable host, timeout, refused, DNS) always exit 255, distinct from a remote command's own nonzero exit. */
+  code: number
   output: string
   error: string
 }
 
-/** Run a local command (argv form) and capture its output. */
+/** Run a local command (argv form) and capture its output. Tracked so a SIGINT/SIGTERM handler can kill it (process-registry.ts). */
 export async function runCommand(
   cmd: string[],
   opts?: { cwd?: string },
@@ -23,9 +47,12 @@ export async function runCommand(
     stdout: "piped",
     stderr: "piped",
   })
-  const out = await proc.output()
+  const child = proc.spawn()
+  trackChild(child)
+  const out = await child.output()
   return {
     success: out.code === 0,
+    code: out.code,
     output: new TextDecoder().decode(out.stdout),
     error: new TextDecoder().decode(out.stderr),
   }
@@ -33,25 +60,54 @@ export async function runCommand(
 
 /**
  * Run `argv` on the remote host over ssh (each element its own argv
- * slot). `--` before `sshAddress` is required, not decorative: even
- * after `validateSshAddress` (cli/server-keys.ts) rejects a leading `-`
- * at the source, `--` is what stops ssh's own option parser from ever
- * reading the destination as an option in the first place — defense in
- * depth for this specific argv position.
+ * slot). `sshAddress` is parsed with `parseSshAddress` (throws a
+ * UserError for anything unsafe before ssh is ever spawned) and turned
+ * into argv with `sshArgs`, which puts `-p <port>` when the address
+ * carries one, the standard `-o` options (see the module comment
+ * above), and `--` ahead of the target — a second, independent guard
+ * against the target being read as an ssh option, even though
+ * `parseSshAddress` already rejects a leading `-`.
  */
 export async function runRemoteCommand(
   sshAddress: string,
   argv: string[],
 ): Promise<CommandResult> {
-  return await runCommand(["ssh", "--", sshAddress, ...argv])
+  const target = parseSshAddress(sshAddress)
+  return await runCommand(["ssh", ...sshArgs(target, argv, defaultSshCallOptions())])
 }
 
-/** Run a shell script on the remote host over ssh, as a single command string. Same `--` reasoning as runRemoteCommand. */
+/** Run a shell script on the remote host over ssh, as a single command string. Same guards as runRemoteCommand. */
 export async function runRemoteShell(
   sshAddress: string,
   script: string,
 ): Promise<CommandResult> {
-  return await runCommand(["ssh", "--", sshAddress, script])
+  const target = parseSshAddress(sshAddress)
+  return await runCommand(["ssh", ...sshArgs(target, [script], defaultSshCallOptions())])
+}
+
+/**
+ * Run `rsync` from `localDir` to `sshAddress:remotePath`, with the same
+ * ssh options as runRemoteCommand/runRemoteShell (`-e "ssh ..."`, port
+ * included) — the one ssh spawn deploy makes that rsync itself owns
+ * (see run-deploy.ts for why `--` in front of it can't reuse the same
+ * `ssh --` trick the direct spawns above use).
+ */
+export async function runRemoteSync(
+  sshAddress: string,
+  localDir: string,
+  remotePath: string,
+  extraArgs: string[] = [],
+): Promise<CommandResult> {
+  const target = parseSshAddress(sshAddress)
+  return await runCommand([
+    "rsync",
+    ...extraArgs,
+    "-e",
+    rsyncSshOption(target, defaultSshCallOptions()),
+    "--",
+    `${localDir}/`,
+    `${rsyncDestination(target, remotePath)}/`,
+  ])
 }
 
 /**
