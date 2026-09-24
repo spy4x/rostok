@@ -205,6 +205,21 @@ Deno.test("buildNextSteps: an alias SSH_ADDRESS falls back to a placeholder with
   )
 })
 
+// Security review — a hand-edited SSH_ADDRESS carrying a control
+// character must not reach this hint text unescaped: the value read
+// from .env is echoed straight into the "(SSH_ADDRESS ... isn't a
+// plain IP" hint whenever parseSshAddress rejects it.
+Deno.test("buildNextSteps: strips control characters from an SSH_ADDRESS parseSshAddress rejects", async () => {
+  await withServerDir(
+    { env: { DOMAIN: "example.com", SSH_ADDRESS: "myhomelab\x07evil" }, stacks: ["traefik"] },
+    async (serverDir) => {
+      const lines = await buildNextSteps({ serverName: "home", serverDir, written: [] })
+      assertEquals(lines.some((l) => l.includes("\x07")), false, lines.join("\n"))
+      assertEquals(lines.some((l) => l.includes("myhomelabevil")), true, lines.join("\n"))
+    },
+  )
+})
+
 // #212 review fix — SSH_ADDRESS entirely unset (not just non-IP) used to
 // interpolate the JS value `undefined` into the hint text verbatim
 // ("SSH_ADDRESS \"undefined\" isn't a plain IP").

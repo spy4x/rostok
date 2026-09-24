@@ -12,6 +12,19 @@ import { readEnvFile } from "./env-files.ts"
 import { readServerConfig } from "./stack-add.ts"
 import { parseSshAddress as parseSshTarget } from "./server-keys.ts"
 
+/**
+ * Strip ASCII control characters before echoing an untrusted
+ * SSH_ADDRESS value into this hint text — same guard as server-keys.ts's
+ * private `sanitizeForLog`, duplicated here since that one isn't
+ * exported. `.env`'s SSH_ADDRESS is normally already validated by
+ * `validateSshAddress` at write time, but this function reads whatever
+ * is on disk, which a hand-edit could carry anything in.
+ */
+function sanitizeForLog(s: string): string {
+  // deno-lint-ignore no-control-regex
+  return s.replace(/[\x00-\x1f\x7f]/g, "")
+}
+
 export interface NextStepsInput {
   serverName: string
   /** `servers/<name>` — absolute or relative to cwd, whichever the caller already has. */
@@ -142,8 +155,10 @@ export async function buildNextSteps(input: NextStepsInput): Promise<string[]> {
         lines.push(`  A ${domain} → <server IP>`)
         lines.push(`  A *.${domain} → <server IP>`)
         lines.push(
-          `  (SSH_ADDRESS "${sshAddress}" isn't a plain IP — look up the server's public IP ` +
-            "and use it for both records above.)",
+          `  (SSH_ADDRESS "${
+            sanitizeForLog(sshAddress)
+          }" isn't a plain IP — look up the server's public IP and use it for both records ` +
+            "above.)",
         )
       }
     }

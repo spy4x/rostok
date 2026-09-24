@@ -483,6 +483,19 @@ Deno.test("probeServer: an SSH failure falls back to defaults with a reason", as
   })
 })
 
+// Security review — probeServer is exported and best-effort: it never
+// re-validates its own `target` beyond what validateSshAddress already
+// did upstream in the normal flow, so a direct caller passing a control
+// character must not get it echoed unescaped into the `reason` message.
+// This target fails parseSshAddress's own host-character check (a
+// control character isn't in SSH_HOST_CHARS_PATTERN), landing in
+// probeServer's outer catch, where `target` used to be interpolated raw.
+Deno.test("probeServer: strips control characters from the target before it reaches the reason message", async () => {
+  const result = await probeServer("root@192.0.2.1\x07evil")
+  assertEquals(result.reason?.includes("\x07"), false, result.reason)
+  assertStringIncludes(result.reason ?? "", "192.0.2.1evil")
+})
+
 Deno.test("server create uses the SSH probe's docker GID as the default", async () => {
   await withFakeSsh(OK_SSH, () =>
     withTmpDir(async (dir) => {

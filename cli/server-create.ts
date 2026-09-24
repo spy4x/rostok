@@ -465,6 +465,21 @@ export interface ServerProbeResult {
 const PROBE_DEFAULT_DEADLINE_MS = 10_000
 
 /**
+ * Strip ASCII control characters (including DEL) before echoing an
+ * untrusted SSH target into a log line or error message — same guard
+ * as server-keys.ts's private `sanitizeForLog`, duplicated here since
+ * that one isn't exported (server-keys.ts is outside this file's
+ * ownership this wave). `target` reaches these messages verbatim
+ * (probeServer is best-effort and never validates it beyond what
+ * `validateSshAddress` already did upstream), so a value carrying a
+ * newline or an escape sequence must not reach a terminal unescaped.
+ */
+function sanitizeTargetForLog(s: string): string {
+  // deno-lint-ignore no-control-regex
+  return s.replace(/[\x00-\x1f\x7f]/g, "")
+}
+
+/**
  * Probe `target` once over SSH for the docker group GID (`getent group
  * docker`), the SSH user's `id -u` / `id -g` / `id -un`. Best-effort: any
  * SSH failure, timeout, or parsing failure returns a `reason` instead of
@@ -509,7 +524,7 @@ export async function probeServer(
     }).spawn()
   } catch (err) {
     return {
-      reason: `couldn't probe ${target} over SSH: ${
+      reason: `couldn't probe ${sanitizeTargetForLog(target)} over SSH: ${
         err instanceof Error ? err.message : String(err)
       }`,
     }
@@ -539,13 +554,17 @@ export async function probeServer(
 
   if (timedOut) {
     return {
-      reason: `couldn't probe ${target} over SSH: timed out after ${deadlineMs}ms`,
+      reason: `couldn't probe ${
+        sanitizeTargetForLog(target)
+      } over SSH: timed out after ${deadlineMs}ms`,
     }
   }
   if (!success) {
     const firstLine = stderr.trim().split("\n")[0] ?? ""
     return {
-      reason: `couldn't probe ${target} over SSH: ${describeSshFailure(firstLine)}`,
+      reason: `couldn't probe ${sanitizeTargetForLog(target)} over SSH: ${
+        describeSshFailure(firstLine)
+      }`,
     }
   }
 
@@ -568,7 +587,7 @@ export async function probeServer(
       puid,
       pgid,
       sshUser,
-      reason: `docker group not found on ${target} (is docker installed?)`,
+      reason: `docker group not found on ${sanitizeTargetForLog(target)} (is docker installed?)`,
     }
   }
   return { dockerGroupId: values.DOCKER_GID, puid, pgid, sshUser }
