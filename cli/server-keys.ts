@@ -200,6 +200,9 @@ function sshAddressError(value: string): UserError {
 /** Letters, digits, `.`, `_`, `-` and `:` (bare IPv6 needs the colons) — nothing a shell reads specially. */
 const SSH_HOST_CHARS_PATTERN = /^[A-Za-z0-9_.:-]+$/
 
+/** Hex digits and colons only — the alphabet an IPv6 literal's groups use, nothing else. */
+const HEX_COLON_PATTERN = /^[0-9a-fA-F:]+$/
+
 /**
  * Letters, digits, `.`, `_` and `-`, starting with a letter/digit/`_` —
  * an ssh/system username. Excludes `:` (so `root:x@host` can't smuggle
@@ -298,10 +301,34 @@ export function parseSshAddress(value: string): SshTarget {
       const lastColon = rest.lastIndexOf(":")
       const maybeHost = rest.slice(0, lastColon)
       const maybePort = rest.slice(lastColon + 1)
-      if (maybeHost.includes("::") && /^\d+$/.test(maybePort)) {
+      // `maybeHost.includes("::")` is the pre-existing ambiguous-IPv6-
+      // with-port case (bracket it instead): a "::" run is exactly what
+      // makes ssh unable to tell where the host ends and a port begins.
+      // Without a "::", a trailing all-digit segment after 2+ colons is
+      // still ambiguous — it could be a port, or (for a rare, fully
+      // written-out IPv6 literal) just another hex group that happens to
+      // be all decimal digits. Only that second case is accepted as a
+      // host with no port (see the module comment) — told apart by
+      // whether everything before the last colon is hex-digits-and-
+      // colons, the only alphabet an IPv6 literal uses. `root@host:22:33`
+      // (#236) has letters outside a-f in "host:22", so it falls to the
+      // plain rejection below instead of being silently accepted as a
+      // literal hostname containing colons.
+      if (
+        /^\d+$/.test(maybePort) && (maybeHost.includes("::") || !HEX_COLON_PATTERN.test(maybeHost))
+      ) {
+        if (maybeHost.includes("::")) {
+          throw new UserError(
+            `invalid SSH_ADDRESS "${sanitizeForLog(value)}": bracket an IPv6 address that ` +
+              `carries a port — use "[${sanitizeForLog(maybeHost)}]:${sanitizeForLog(maybePort)}".`,
+          )
+        }
         throw new UserError(
-          `invalid SSH_ADDRESS "${sanitizeForLog(value)}": bracket an IPv6 address that carries ` +
-            `a port — use "[${sanitizeForLog(maybeHost)}]:${sanitizeForLog(maybePort)}".`,
+          `invalid SSH_ADDRESS "${sanitizeForLog(value)}": "${
+            sanitizeForLog(rest)
+          }" has more than one colon and isn't a recognizable IPv6 address — ssh can't tell a ` +
+            `host from a port here. Use a single "host:port", or configure the port on an ` +
+            `ssh_config alias instead.`,
         )
       }
       host = rest
@@ -402,4 +429,27 @@ export function validateRemotePath(key: string, value: string): void {
         `and "/", e.g. /srv/apps.`,
     )
   }
+}
+
+/** `path`, split into its non-empty, non-"." components — the same shape whether it has a trailing slash, a doubled slash, or a `./` segment. `validateRemotePath` already refuses a `..` segment before this runs. */
+function pathComponents(path: string): string[] {
+  return path.split("/").filter((c) => c !== "" && c !== ".")
+}
+
+/**
+ * True when `a` and `b` are the same directory, or one sits inside the
+ * other — compared path-component-wise after normalising away trailing
+ * slashes, doubled slashes and `.` segments, NEVER as a raw string
+ * prefix. A raw-prefix check would wrongly flag `/srv/apps2` as inside
+ * `/srv/apps` (#233): component-wise, `["srv","apps2"]` doesn't share a
+ * full first-two-components match with `["srv","apps"]`. Equal paths
+ * count as nested — `deploy` treats `VOLUMES_PATH == PATH_APPS` the same
+ * as one containing the other, since either way a `PATH_APPS` sync with
+ * `--delete` would delete the volumes.
+ */
+export function pathsNestedOrEqual(a: string, b: string): boolean {
+  const ca = pathComponents(a)
+  const cb = pathComponents(b)
+  const [shorter, longer] = ca.length <= cb.length ? [ca, cb] : [cb, ca]
+  return shorter.every((component, i) => component === longer[i])
 }

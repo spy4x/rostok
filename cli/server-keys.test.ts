@@ -6,6 +6,7 @@ import {
   hasReservedStackKeyPrefix,
   isServerKey,
   parseSshAddress,
+  pathsNestedOrEqual,
   rsyncDestination,
   rsyncSshOption,
   SERVER_KEYS,
@@ -192,6 +193,32 @@ Deno.test("rejects an unbracketed IPv6 address followed by what looks like a por
   )
 })
 
+Deno.test('rejects root@host:22:33 instead of reading it as a host literally named "host:22:33" (#236)', () => {
+  // Before this fix, a multi-colon address with no "::" fell straight
+  // through to `host = rest` whenever it wasn't flagged as an ambiguous
+  // IPv6-with-port — accepting "host:22:33" as one literal SSH_HOST
+  // (colons are in SSH_HOST_CHARS_PATTERN's own alphabet). ssh then
+  // failed with its own "could not resolve hostname" instead of
+  // rostok's own message.
+  const err = assertThrows(
+    () => parseSshAddress("root@host:22:33"),
+    UserError,
+    "invalid SSH_ADDRESS",
+  )
+  assertStringIncludes(err.message, "more than one colon")
+})
+
+Deno.test("still accepts a genuine unbracketed IPv6 literal with no port", () => {
+  // "host:22:33" is rejected above because "host:22" has letters outside
+  // a-f; a real (rare) fully-written IPv6 literal, whose groups are all
+  // hex digits and colons, must keep parsing as a bare host.
+  assertEquals(parseSshAddress("2001:0db8:0000:0000:0000:0000:0000:0001"), {
+    user: undefined,
+    host: "2001:0db8:0000:0000:0000:0000:0000:0001",
+    port: undefined,
+  })
+})
+
 Deno.test("rejects a port outside 1-65535", () => {
   for (
     const v of ["host:0", "host:65536", "host:999999", "[2001:db8::1]:0", "[2001:db8::1]:70000"]
@@ -318,4 +345,30 @@ Deno.test("rejects an SSH_USER with shell metacharacters, spaces or a colon", ()
   ) {
     assertThrows(() => validateSshUser(v), UserError, "invalid SSH_USER")
   }
+})
+
+Deno.test("pathsNestedOrEqual: a sibling directory is not nested (#233)", () => {
+  assertFalse(pathsNestedOrEqual("/srv/apps", "/srv/volumes"))
+  // A raw string-prefix check would wrongly flag this pair — "/srv/apps2"
+  // starts with the literal text "/srv/apps" but is a sibling directory.
+  assertFalse(pathsNestedOrEqual("/srv/apps", "/srv/apps2"))
+})
+
+Deno.test("pathsNestedOrEqual: VOLUMES_PATH inside PATH_APPS is nested, either argument order", () => {
+  assert(pathsNestedOrEqual("/srv/apps", "/srv/apps/.volumes"))
+  assert(pathsNestedOrEqual("/srv/apps/.volumes", "/srv/apps"))
+})
+
+Deno.test("pathsNestedOrEqual: PATH_APPS inside VOLUMES_PATH is nested too", () => {
+  assert(pathsNestedOrEqual("/srv/volumes/apps", "/srv/volumes"))
+})
+
+Deno.test("pathsNestedOrEqual: equal paths count as nested", () => {
+  assert(pathsNestedOrEqual("/srv/apps", "/srv/apps"))
+})
+
+Deno.test("pathsNestedOrEqual: normalises trailing slashes, doubled slashes and . segments before comparing", () => {
+  assert(pathsNestedOrEqual("/srv/apps/", "/srv//apps"))
+  assert(pathsNestedOrEqual("/srv/./apps", "/srv/apps"))
+  assert(pathsNestedOrEqual("/srv/apps/", "/srv/apps/.volumes"))
 })
