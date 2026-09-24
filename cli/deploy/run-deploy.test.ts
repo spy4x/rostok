@@ -1,4 +1,10 @@
-import { assert, assertEquals, assertStringIncludes, assertThrows } from "@std/assert"
+import {
+  assert,
+  assertEquals,
+  assertRejects,
+  assertStringIncludes,
+  assertThrows,
+} from "@std/assert"
 import { dirname, join } from "@std/path"
 import {
   handleStagingSignal,
@@ -8,6 +14,7 @@ import {
   STAGING_CLEANUP_SIGNALS,
 } from "./run-deploy.ts"
 import type { CommandResult } from "./exec.ts"
+import { UserError } from "../errors.ts"
 
 // #233 review: an earlier version of this file faked `ssh`/`rsync` as
 // PATH binaries — a fake `rsync` recursed into itself through a PATH
@@ -356,6 +363,38 @@ Deno.test("runDeploy: a single-stack deploy leaves another stack's remote files 
   }
 })
 
+Deno.test("runDeploy: calls io.checkRemotePathsNotNested before any sync (review round)", async () => {
+  // Nothing else in this file asserted this call ever happens at all —
+  // deleting it from run-deploy.ts stayed green under every other test
+  // here, silently dropping the ONLY check that can catch a symlink an
+  // attacker (or a stale mistake) put in place directly on the server
+  // itself (docker-preflight.ts's own doc comment: env.ts's
+  // pathsNestedOrEqual only ever sees the .env strings, never the real
+  // resolved paths).
+  const f = await setupRunDeployFixture()
+  try {
+    await writeLocalStack(f.projectDir, "alpha")
+    await writeRunDeployServer(f.projectDir, ["alpha"])
+
+    await runDeploy({ cwd: f.projectDir, server: "test" }, f.io)
+
+    assert(
+      f.remote.calls.includes("readlink"),
+      `expected checkRemotePathsNotNested to run, got: ${JSON.stringify(f.remote.calls)}`,
+    )
+    const readlinkIdx = f.remote.calls.indexOf("readlink")
+    const firstRsyncIdx = f.remote.calls.findIndex((c) => c.startsWith("rsync:"))
+    assert(
+      firstRsyncIdx === -1 || readlinkIdx < firstRsyncIdx,
+      `checkRemotePathsNotNested must run before any sync, got order: ${
+        JSON.stringify(f.remote.calls)
+      }`,
+    )
+  } finally {
+    await teardownRunDeployFixture(f)
+  }
+})
+
 Deno.test("runDeploy: the stale-stack cleanup runs before any rsync (#233 point 4)", async () => {
   // docker compose down needs the stack's folder to still exist to find
   // its compose.yml — once a rsync --delete removes it, there's nothing
@@ -380,6 +419,35 @@ Deno.test("runDeploy: the stale-stack cleanup runs before any rsync (#233 point 
     assert(
       cleanupIdx < firstRsyncIdx,
       `stale-cleanup must run before the first rsync, got order: ${JSON.stringify(f.remote.calls)}`,
+    )
+  } finally {
+    await teardownRunDeployFixture(f)
+  }
+})
+
+Deno.test("runDeploy: a failed stale-stack cleanup throws a UserError, never just logs and continues (review round)", async () => {
+  // A stack that couldn't be stopped is still running, unmanaged — the
+  // whole point of run-deploy.ts's own doc comment on this call.
+  // Downgrading this to a console.error (swallowing it) would let a
+  // deploy report success while a stale container never actually
+  // stopped, and would still sync files right past it.
+  const f = await setupRunDeployFixture()
+  try {
+    await writeLocalStack(f.projectDir, "alpha")
+    await writeRunDeployServer(f.projectDir, ["alpha"])
+    f.remote.failStaleCleanup = true
+
+    const err = await assertRejects(
+      () => runDeploy({ cwd: f.projectDir, server: "test" }, f.io),
+      UserError,
+    )
+    assertStringIncludes(err.message, "failed to clean up stale stacks")
+    assertStringIncludes(err.message, "simulated stale-cleanup failure")
+    // The failure must stop the deploy right there — no sync after it.
+    assertEquals(
+      f.remote.calls.some((c) => c.startsWith("rsync:")),
+      false,
+      `a failed stale-cleanup must never let a sync run, got: ${JSON.stringify(f.remote.calls)}`,
     )
   } finally {
     await teardownRunDeployFixture(f)

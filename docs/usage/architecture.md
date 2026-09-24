@@ -192,11 +192,18 @@ If an existing server has `VOLUMES_PATH` inside `PATH_APPS` (e.g.
 `VOLUMES_PATH=${PATH_APPS}/.volumes`), move the data before the next
 deploy:
 
-1. Stop each stack on the server: from `PATH_APPS`, run
-   `docker compose -p <name> --env-file .env.root --env-file .env -f stacks/<name>/compose.yml down`
-   for each `stacks/<name>` directory — not a plain `docker compose
-   down` run from inside the folder (see above for why that can miss
-   the real containers).
+1. Stop each stack on the server: for each `stacks/<name>` directory,
+   find its running containers by their own
+   `com.docker.compose.project.working_dir` label —
+   `docker ps -a --filter "label=com.docker.compose.project.working_dir=<PATH_APPS>/stacks/<name>" --format '{{.Label "com.docker.compose.project"}}'`
+   — and stop that project: `docker compose -p <project> down
+   --remove-orphans`, which needs no compose file at all. Use the
+   PROJECT name the label reports, not the folder's `<name>`: an
+   aliased stack (`deployAs` set in `config.json`) deploys under
+   `-p <deployAs>`, not `-p <name>`, and a plain
+   `docker compose -p <name> ... down` would miss it — the same reason
+   deploy's own stale-stack cleanup (`cli/deploy/stale-stacks.ts`) never
+   runs a plain `docker compose down` either (see above).
 2. Move the data folder on the server to a sibling of `PATH_APPS`:
    `mv <old VOLUMES_PATH> <new VOLUMES_PATH>` (the real, expanded
    paths — not the `${...}` form).
