@@ -147,11 +147,44 @@ instead of importing it).
 **Environment.** A hook receives a filtered view of `.env`/`.env.root`:
 only server-level keys (`DOMAIN`, `PROJECT`, ...) and keys carrying the
 stack's own prefix (`stackKeyPrefix()` — `TRAEFIK_*` for the traefik
-stack) reach it; everything else is dropped. Plus the contract keys
-`SSH_ADDRESS`, `SSH_USER`, `PATH_APPS` and `DEPLOY_AS`. `-A` means a
-hook is fully trusted code — read/write/net/run/env, no sandbox — the
-same trust a `+meta.ts` or `backup.ts` already gets; it is not
-sandboxed against the `.env`/`.env.root` content it's handed.
+stack) reach it; everything else is dropped. A value's own quotes are
+stripped once on the way in (`KEY="has a space"` in `.env` arrives as
+`has a space`, no quotes) — the same thing docker compose's `env_file`
+and Deno's `--env-file` do when they load a `.env`, so a hook sees
+exactly what its container sees.
+
+Plus the contract keys `SSH_ADDRESS`, `SSH_HOST`, `SSH_PORT`, `SSH_USER`,
+`PATH_APPS` and `DEPLOY_AS` — `SSH_HOST`/`SSH_PORT` are parsed once
+from `SSH_ADDRESS` by deploy itself (`cli/deploy/hooks.ts`), so a hook
+that needs to `ssh` into the target builds its own argv from
+these instead of parsing `SSH_ADDRESS` (a hook must never read
+`SSH_ADDRESS` at all — a catalog test enforces this):
+
+```
+-p <SSH_PORT>   # only when SSH_PORT is set — omit -p entirely otherwise
+-o ConnectTimeout=10
+-o BatchMode=yes
+--
+[<SSH_USER>@]<SSH_HOST>
+<remote command...>
+```
+
+`SSH_PORT` is set only when `SSH_ADDRESS` carried an explicit port —
+never a default. Passing `-p` unconditionally (e.g. defaulting to
+`"22"`) would override a bare `ssh_config` alias's own non-default
+`Port` directive, so a hook must add `-p` only when `SSH_PORT` is
+non-empty, and should validate it as digits 1-65535 before use (see
+any catalog hook's `after.deploy.ts` for the pattern — `stalwart`,
+`caldiy`, `open-webui`, `syncthing`, `traefik` and `gatus` all build
+their ssh argv this way). For an alias target, a hook logs in as
+`SSH_USER@<alias>`: `server create` writes `SSH_USER` from the alias
+login's own `id -un` when the address has no `user@` part, so the two
+already agree — deploy also refuses to proceed if a `user@host` form
+`SSH_ADDRESS` ever disagrees with `SSH_USER`.
+
+`-A` means a hook is fully trusted code — read/write/net/run/env, no
+sandbox — the same trust a `+meta.ts` or `backup.ts` already gets; it
+is not sandboxed against the `.env`/`.env.root` content it's handed.
 
 **Termination.** `rostok deploy` signals a hook (SIGTERM, then SIGKILL
 if it doesn't exit) on Ctrl-C, `kill`, Ctrl-\\ or a closed terminal. When the Deno build and OS
