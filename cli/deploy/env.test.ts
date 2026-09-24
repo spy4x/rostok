@@ -220,22 +220,36 @@ Deno.test("expandEnvRefs: throws a UserError naming an undefined reference", () 
   assertStringIncludes(err.message, "TYPO_PATH")
 })
 
-Deno.test("resolveDeployEnv: VOLUMES_PATH=${PATH_APPS}/.volumes expands and passes validation (#223)", () => {
+Deno.test("resolveDeployEnv: VOLUMES_PATH=${BASE_PATH}/volumes expands and passes validation (#223)", () => {
+  // Was VOLUMES_PATH=${PATH_APPS}/.volumes before #233 — that's now the
+  // exact shape #233 refuses (see the dedicated nesting tests below), so
+  // this proves the SAME expansion mechanism against a sibling path
+  // instead, one that doesn't nest under PATH_APPS.
   const resolved = resolveDeployEnv(
-    { ...VALID_BASE, PATH_APPS: "/srv/apps", VOLUMES_PATH: "${PATH_APPS}/.volumes" },
+    {
+      ...VALID_BASE,
+      PATH_APPS: "/srv/apps",
+      VOLUMES_PATH: "${BASE_PATH}/volumes",
+      BASE_PATH: "/srv",
+    },
     "servers/home/.env",
     ROOT_ENV_PATH,
   )
-  assertEquals(resolved.env.VOLUMES_PATH, "/srv/apps/.volumes")
+  assertEquals(resolved.env.VOLUMES_PATH, "/srv/volumes")
 })
 
-Deno.test("resolveDeployEnv: VOLUMES_PATH=$PATH_APPS/.volumes (no braces) also expands (#223)", () => {
+Deno.test("resolveDeployEnv: VOLUMES_PATH=$BASE_PATH/volumes (no braces) also expands (#223)", () => {
   const resolved = resolveDeployEnv(
-    { ...VALID_BASE, PATH_APPS: "/srv/apps", VOLUMES_PATH: "$PATH_APPS/.volumes" },
+    {
+      ...VALID_BASE,
+      PATH_APPS: "/srv/apps",
+      VOLUMES_PATH: "$BASE_PATH/volumes",
+      BASE_PATH: "/srv",
+    },
     "servers/home/.env",
     ROOT_ENV_PATH,
   )
-  assertEquals(resolved.env.VOLUMES_PATH, "/srv/apps/.volumes")
+  assertEquals(resolved.env.VOLUMES_PATH, "/srv/volumes")
 })
 
 Deno.test("resolveDeployEnv: a VOLUMES_PATH referencing an undefined var still fails loudly", () => {
@@ -411,4 +425,72 @@ Deno.test("resolveDeployEnv: PATH_APPS=${BASE_PATH}/rostok expands and passes va
     ROOT_ENV_PATH,
   )
   assertEquals(resolved.env.PATH_APPS, "/home/user/apps/rostok")
+})
+
+Deno.test("expandEnvRefs: a key merely containing PATH_ or ending in PATH-like text, not shaped as PATH_*/*_PATH, is refused (#236)", () => {
+  // isExpandablePathKey's patterns are anchored (^...$) — a key that only
+  // CONTAINS "PATH_" or ends in letters-before-"PATH" without the
+  // required underscore must still be refused. Removing either anchor
+  // would let a name like "XPATH_FOO" (contains "PATH_" mid-string) or
+  // "FOO_PATHX" (ends in "PATH" text, not the "_PATH" suffix) through.
+  for (const key of ["XPATH_FOO", "FOO_PATHX"]) {
+    const err = assertThrows(
+      () => expandEnvRefs("VOLUMES_PATH", `/x/\${${key}}`, { [key]: "/should/not/expand" }),
+      UserError,
+    )
+    assertStringIncludes(err.message, key)
+  }
+})
+
+Deno.test("resolveDeployEnv: refuses VOLUMES_PATH inside PATH_APPS, with migration steps (#233)", () => {
+  const err = assertThrows(
+    () =>
+      resolveDeployEnv(
+        { ...VALID_BASE, PATH_APPS: "/srv/apps", VOLUMES_PATH: "${PATH_APPS}/.volumes" },
+        "servers/home/.env",
+        ROOT_ENV_PATH,
+      ),
+    UserError,
+  )
+  assertStringIncludes(err.message, "/srv/apps/.volumes")
+  assertStringIncludes(err.message, "/srv/apps")
+  assertStringIncludes(err.message, "docker compose down")
+  assertStringIncludes(err.message, "mv ")
+  assertStringIncludes(err.message, "env:encrypt")
+})
+
+Deno.test("resolveDeployEnv: refuses PATH_APPS inside VOLUMES_PATH, the other nesting (#233)", () => {
+  const err = assertThrows(
+    () =>
+      resolveDeployEnv(
+        { ...VALID_BASE, PATH_APPS: "/srv/volumes/apps", VOLUMES_PATH: "/srv/volumes" },
+        "servers/home/.env",
+        ROOT_ENV_PATH,
+      ),
+    UserError,
+  )
+  assertStringIncludes(err.message, "must live outside PATH_APPS")
+})
+
+Deno.test("resolveDeployEnv: refuses an equal PATH_APPS and VOLUMES_PATH", () => {
+  const err = assertThrows(
+    () =>
+      resolveDeployEnv(
+        { ...VALID_BASE, PATH_APPS: "/srv/apps", VOLUMES_PATH: "/srv/apps" },
+        "servers/home/.env",
+        ROOT_ENV_PATH,
+      ),
+    UserError,
+  )
+  assertStringIncludes(err.message, "must live outside PATH_APPS")
+})
+
+Deno.test("resolveDeployEnv: a sibling VOLUMES_PATH is accepted, even one sharing a string prefix", () => {
+  // Not "/srv/apps2 IS inside /srv/apps" — a raw string-prefix bug would
+  // wrongly refuse this pair.
+  resolveDeployEnv(
+    { ...VALID_BASE, PATH_APPS: "/srv/apps", VOLUMES_PATH: "/srv/apps2" },
+    "servers/home/.env",
+    ROOT_ENV_PATH,
+  )
 })

@@ -31,6 +31,17 @@
 // `${TYPO}` in the path would otherwise reach ssh/rsync as a literal,
 // nonexistent directory name.
 //
+// (#233) VOLUMES_PATH must never sit inside PATH_APPS, nor the reverse,
+// nor equal it — checked with server-keys.ts's pathsNestedOrEqual
+// (path-component-wise, after the expansion above, never a raw string
+// prefix) once both are resolved. A full deploy now syncs PATH_APPS with
+// `rsync --delete`, so app data living inside it would be wiped the
+// moment a stack it belongs to stops shipping a file deploy expects
+// there. The error names the real, expanded paths and the steps to move
+// the data — `server create` already defaults to sibling paths
+// (/srv/apps, /srv/volumes); this only fires for a `.env` written or
+// edited by hand, or by an older rostok version.
+//
 // SSH_USER/SSH_ADDRESS agreement: a hook must log in as the same user
 // deploy's own ssh/rsync calls do. Deploy's login user is the user part
 // of SSH_ADDRESS when it has one (or ssh_config's own User for a bare
@@ -48,6 +59,7 @@ import {
   DEFAULT_PATH_APPS,
   DEPLOY_REQUIRED_KEYS,
   parseSshAddress,
+  pathsNestedOrEqual,
   validateRemotePath,
   validateSshAddress,
   validateSshUser,
@@ -223,6 +235,27 @@ export function resolveDeployEnv(
   validateRemotePath("PATH_APPS", resolved.PATH_APPS)
   validateRemotePath("VOLUMES_PATH", resolved.VOLUMES_PATH)
   validateSshUser(resolved.SSH_USER)
+
+  // #233: a full deploy now syncs PATH_APPS with `rsync --delete`, so app
+  // data must never live inside it — VOLUMES_PATH has to be a sibling
+  // directory (e.g. /srv/apps and /srv/volumes), never nested either way
+  // and never the same directory. Checked after expansion/normalisation
+  // above, component-wise (pathsNestedOrEqual), so this also catches the
+  // owner's own cloud server shape, VOLUMES_PATH=${PATH_APPS}/.volumes,
+  // once it's expanded to a real nested path.
+  if (pathsNestedOrEqual(resolved.PATH_APPS, resolved.VOLUMES_PATH)) {
+    throw new UserError(
+      `VOLUMES_PATH "${resolved.VOLUMES_PATH}" must live outside PATH_APPS ` +
+        `"${resolved.PATH_APPS}" — a full deploy now syncs PATH_APPS with rsync --delete, ` +
+        `which would wipe app data stored inside it. To move the data: ` +
+        `1) stop the stacks on the server (\`docker compose down\` in each ` +
+        `${resolved.PATH_APPS}/stacks/<name> directory), ` +
+        `2) move the data folder on the server (\`mv ${resolved.VOLUMES_PATH} <new path>\`, ` +
+        `a sibling of PATH_APPS, e.g. /srv/volumes next to /srv/apps), ` +
+        `3) set VOLUMES_PATH to the new path in ${envPath} and re-encrypt ` +
+        `(\`deno task env:encrypt\`), 4) redeploy.`,
+    )
+  }
 
   // A hook logs in with SSH_USER (cli/deploy/hooks.ts's contract key);
   // deploy's own ssh/rsync calls log in with SSH_ADDRESS's own user part
