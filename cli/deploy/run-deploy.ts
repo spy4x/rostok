@@ -97,6 +97,34 @@ import { runRemoteShell, runRemoteSync, runRemoteSyncEntry, shQuote } from "./ex
 import { killActiveChildren } from "./process-registry.ts"
 import { generateStaleStackCleanupScript } from "./stale-stacks.ts"
 
+/**
+ * Every remote/subprocess-spawning call `runDeploy` makes, bundled so a
+ * test can inject fakes recording call order and returning canned
+ * results — IN-PROCESS, never a process spawned via a name on PATH
+ * (review round: an earlier fake `rsync` recursed into itself through
+ * exactly that kind of lookup and spawned ~4,900 processes). Defaults
+ * to the real implementations; production code never overrides this.
+ */
+export interface RunDeployIO {
+  checkDockerGroup: typeof checkDockerGroup
+  needsRemoteSudo: typeof needsRemoteSudo
+  checkRemotePathsNotNested: typeof checkRemotePathsNotNested
+  runRemoteShell: typeof runRemoteShell
+  runRemoteSync: typeof runRemoteSync
+  runRemoteSyncEntry: typeof runRemoteSyncEntry
+  getRemoteChecksums: typeof getRemoteChecksums
+}
+
+const defaultRunDeployIO: RunDeployIO = {
+  checkDockerGroup,
+  needsRemoteSudo,
+  checkRemotePathsNotNested,
+  runRemoteShell,
+  runRemoteSync,
+  runRemoteSyncEntry,
+  getRemoteChecksums,
+}
+
 export interface DeployOptions {
   /** Project root (the directory that holds `servers/` and `.env.root`). */
   cwd: string
@@ -110,7 +138,10 @@ export interface DeployRunResult {
   results: DeployResult[]
 }
 
-export async function runDeploy(opts: DeployOptions): Promise<DeployRunResult> {
+export async function runDeploy(
+  opts: DeployOptions,
+  io: RunDeployIO = defaultRunDeployIO,
+): Promise<DeployRunResult> {
   const { cwd, server } = opts
 
   // #208: validate the server name before reading anything.
@@ -159,14 +190,14 @@ export async function runDeploy(opts: DeployOptions): Promise<DeployRunResult> {
   // one of the two, but not necessarily the server .env (env wins the
   // merge only when it HAS the key).
   const dockerGroupIdSource = env.DOCKER_GROUP_ID ? envPath : rootEnvPath
-  await checkDockerGroup(SSH_ADDRESS, DOCKER_GROUP_ID, dockerGroupIdSource)
-  const needsSudo = await needsRemoteSudo(SSH_ADDRESS)
+  await io.checkDockerGroup(SSH_ADDRESS, DOCKER_GROUP_ID, dockerGroupIdSource)
+  const needsSudo = await io.needsRemoteSudo(SSH_ADDRESS)
   // #233 review: a symlink ON THE SERVER ITSELF (VOLUMES_PATH pointing
   // inside PATH_APPS, or the reverse) can defeat env.ts's own
   // pathsNestedOrEqual check, which only ever sees the `.env` strings —
   // asking the real server with `readlink -f` is the only way to catch
   // that. Refuses (nothing deleted) before any deletion below.
-  await checkRemotePathsNotNested(SSH_ADDRESS, PATH_APPS, VOLUMES_PATH)
+  await io.checkRemotePathsNotNested(SSH_ADDRESS, PATH_APPS, VOLUMES_PATH)
 
   // config.json → which stacks to deploy. Missing entirely (never run
   // `rostok server create`/no stacks added yet — distinct from an
@@ -335,7 +366,7 @@ export async function runDeploy(opts: DeployOptions): Promise<DeployRunResult> {
       const deployAs = stackConfig.deployAs || stackConfig.name
       checksumsBefore.set(
         deployAs,
-        await getRemoteChecksums(
+        await io.getRemoteChecksums(
           SSH_ADDRESS,
           PATH_APPS,
           stackConfig.watchFilesAndRestartIfChanged!,
@@ -351,7 +382,7 @@ export async function runDeploy(opts: DeployOptions): Promise<DeployRunResult> {
     // on a fresh tree fails "mkdir ... No such file or directory").
     // `mkdir -p` covers both PATH_APPS and PATH_APPS/stacks in one call,
     // and is a no-op on an existing tree.
-    const mkdirResult = await runRemoteShell(
+    const mkdirResult = await io.runRemoteShell(
       SSH_ADDRESS,
       `mkdir -p -- ${shQuote(`${PATH_APPS}/stacks`)}`,
     )
@@ -386,7 +417,7 @@ export async function runDeploy(opts: DeployOptions): Promise<DeployRunResult> {
         PATH_APPS,
         VOLUMES_PATH,
       )
-      const staleCleanupResult = await runRemoteShell(SSH_ADDRESS, staleCleanupScript)
+      const staleCleanupResult = await io.runRemoteShell(SSH_ADDRESS, staleCleanupScript)
       if (staleCleanupResult.output.trim()) console.log(staleCleanupResult.output.trim())
       if (!staleCleanupResult.success) {
         throw new UserError(
@@ -439,7 +470,7 @@ export async function runDeploy(opts: DeployOptions): Promise<DeployRunResult> {
     if (opts.stack === undefined && configFileFound) {
       rootSyncArgs.push("--delete")
     }
-    const rsyncResult = await runRemoteSync(SSH_ADDRESS, stagingDir, PATH_APPS, rootSyncArgs)
+    const rsyncResult = await io.runRemoteSync(SSH_ADDRESS, stagingDir, PATH_APPS, rootSyncArgs)
     if (!rsyncResult.success) {
       throw new UserError(
         `rsync of ${server} to ${SSH_ADDRESS} failed: ${rsyncResult.error.trim()}`,
@@ -455,7 +486,7 @@ export async function runDeploy(opts: DeployOptions): Promise<DeployRunResult> {
         // stacks/<name>/ folder in the first place.
         continue
       }
-      const stackSyncResult = await runRemoteSyncEntry(
+      const stackSyncResult = await io.runRemoteSyncEntry(
         SSH_ADDRESS,
         stackStagingDir,
         `${PATH_APPS}/stacks`,
@@ -473,7 +504,7 @@ export async function runDeploy(opts: DeployOptions): Promise<DeployRunResult> {
     const restartStacks = new Set<string>()
     for (const stackConfig of stacksWithConfigFiles) {
       const deployAs = stackConfig.deployAs || stackConfig.name
-      const after = await getRemoteChecksums(
+      const after = await io.getRemoteChecksums(
         SSH_ADDRESS,
         PATH_APPS,
         stackConfig.watchFilesAndRestartIfChanged!,
@@ -498,7 +529,7 @@ export async function runDeploy(opts: DeployOptions): Promise<DeployRunResult> {
     }
 
     console.log("Ensuring proxy network exists on remote server...")
-    const networkResult = await runRemoteShell(
+    const networkResult = await io.runRemoteShell(
       SSH_ADDRESS,
       `docker network inspect proxy >/dev/null 2>&1 || docker network create proxy`,
     )
@@ -528,7 +559,7 @@ export async function runDeploy(opts: DeployOptions): Promise<DeployRunResult> {
       if (volumePaths.length > 0 && VOLUMES_PATH) {
         console.log(`Creating ${volumePaths.length} volume directories with correct ownership...`)
         const script = generateVolumeCreationScript(volumePaths, PUID, PGID, needsSudo)
-        const volumesResult = await runRemoteShell(SSH_ADDRESS, script)
+        const volumesResult = await io.runRemoteShell(SSH_ADDRESS, script)
         if (!volumesResult.success) {
           const sudoHint = needsSudo
             ? ` The remote user on ${SSH_ADDRESS} isn't root — mkdir/chown need passwordless ` +
@@ -543,7 +574,7 @@ export async function runDeploy(opts: DeployOptions): Promise<DeployRunResult> {
       }
 
       const deployScript = generateDeployScript(stacks, PATH_APPS, restartStacks)
-      const deployResult = await runRemoteShell(SSH_ADDRESS, deployScript)
+      const deployResult = await io.runRemoteShell(SSH_ADDRESS, deployScript)
       results = parseDeployResults(deployResult.output, stacks)
       printDeploySummary(results)
 
