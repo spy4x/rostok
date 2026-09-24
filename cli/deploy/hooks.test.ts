@@ -646,6 +646,30 @@ Deno.test("buildHookEnv: contract keys beat both a .env value and the parent env
   assertEquals(env.DEPLOY_AS, BASE_CTX.deployAs)
 })
 
+Deno.test("buildHookEnv: strips one matching layer of quotes from an allowed value (review round)", () => {
+  // docker compose's env_file and Deno's --env-file both strip exactly
+  // one layer of quotes when they load a .env (verified directly) — a
+  // hook must see the same thing its container does, even though the
+  // tracked .env/.env.age keeps the quotes on disk (#226).
+  const ctx: HookContext = {
+    ...BASE_CTX,
+    serverEnv: { DOMAIN: '"example.com"', TEST_STACK_TOKEN: "'single-quoted'" },
+  }
+  const { env } = buildHookEnv(ctx, STACK_NAME, {})
+  assertEquals(env.DOMAIN, "example.com")
+  assertEquals(env.TEST_STACK_TOKEN, "single-quoted")
+})
+
+Deno.test("buildHookEnv: only one layer of quotes is stripped, and mismatched quotes are left alone", () => {
+  const ctx: HookContext = {
+    ...BASE_CTX,
+    serverEnv: { DOMAIN: '""nested""', TEST_STACK_TOKEN: "\"mismatched'" },
+  }
+  const { env } = buildHookEnv(ctx, STACK_NAME, {})
+  assertEquals(env.DOMAIN, '"nested"')
+  assertEquals(env.TEST_STACK_TOKEN, "\"mismatched'")
+})
+
 Deno.test("buildHookEnv: JSR_URL from .env never reaches a hook, even for a stack named jsr", () => {
   const ctx: HookContext = { ...BASE_CTX, serverEnv: { JSR_URL: "http://127.0.0.1:9/" } }
   const { env, warnings } = buildHookEnv(ctx, "jsr", {})

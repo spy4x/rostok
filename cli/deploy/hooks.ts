@@ -211,6 +211,27 @@ function sanitizeForLog(s: string): string {
 }
 
 /**
+ * Strip one matching layer of surrounding `'...'`/`"..."` quotes — the
+ * same thing docker compose's `env_file` and Deno's `--env-file` do
+ * when they actually load a `.env` (verified directly against both; see
+ * cli/env-files.ts's header comment). `cli/age.ts`'s own `parseEnvFile`
+ * deliberately keeps a value's quotes for the FILE round trip (#226),
+ * so a hook — which runs the same way a container reads the file, not
+ * the way this repo re-encrypts it — needs this done on its way into
+ * the subprocess env, once, here.
+ */
+function stripOneQuoteLayer(value: string): string {
+  if (value.length >= 2) {
+    const first = value[0]
+    const last = value[value.length - 1]
+    if ((first === '"' && last === '"') || (first === "'" && last === "'")) {
+      return value.slice(1, -1)
+    }
+  }
+  return value
+}
+
+/**
  * Build the environment a hook subprocess runs with.
  *
  * Starts from the deploying process's own real environment (a hook's
@@ -228,7 +249,13 @@ function sanitizeForLog(s: string): string {
  *   `.env`/`.env.root` VALUE WINS, even over a same-named parent
  *   variable — a shell that happens to export `DOMAIN` or `PROJECT`
  *   must not silently steer what stack-owned keys a hook sees; the
- *   deploy-time value is authoritative there.
+ *   deploy-time value is authoritative there. Its quotes are stripped
+ *   once (`stripOneQuoteLayer`) before it reaches the hook's env — a
+ *   `.env` value keeps its quotes on disk (#226), but docker compose's
+ *   `env_file` and Deno's `--env-file` both strip them when they
+ *   actually load the file, so a hook (which reads the same values a
+ *   container does) needs the same treatment to see what its container
+ *   sees.
  *
  * The contract keys (SSH_ADDRESS/SSH_USER/PATH_APPS/DEPLOY_AS) are set
  * last, unconditionally, from rostok's own validated values.
@@ -266,8 +293,10 @@ export function buildHookEnv(
       }
       continue
     }
-    // Allowed: the .env/.env.root value wins outright.
-    resolved[key] = value
+    // Allowed: the .env/.env.root value wins outright — quotes stripped
+    // once here, so the hook sees exactly what its own container would
+    // (docker compose's env_file/Deno's --env-file both strip them too).
+    resolved[key] = stripOneQuoteLayer(value)
   }
 
   const warnings: string[] = [...deniedWarnings]
