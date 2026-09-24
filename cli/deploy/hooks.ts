@@ -8,7 +8,8 @@
 //   cwd = the local staging directory. The hook receives every KEY IT'S
 //   ENTITLED TO from `.env.root` and the server `.env` (parsed by
 //   rostok, no `$` expansion) — see the allowlist below — plus
-//   SSH_ADDRESS, SSH_USER, PATH_APPS and DEPLOY_AS.
+//   SSH_ADDRESS, SSH_HOST, SSH_PORT, SSH_USER, PATH_APPS and DEPLOY_AS
+//   (SSH_HOST/SSH_PORT: #229, see the module comment further down).
 //
 // `-A` means a hook is FULLY TRUSTED CODE: read/write/net/run/env, no
 // sandbox. rostok runs it exactly the way it would run any other script
@@ -63,9 +64,49 @@
 // when this Deno build and OS support process-group signalling, so
 // SIGINT/SIGTERM reaches the hook's own children too — see
 // process-registry.ts and docs/contributing/adding-services.md.
+//
+// (#229) SSH_HOST and SSH_PORT contract keys. Several hooks (syncthing,
+// stalwart, caldiy, open-webui, plus traefik/gatus before this round)
+// spawn `ssh` themselves to reach the deploy target — for a health
+// check, a restart, a one-off remote command. Every one of them used to
+// hand the raw SSH_ADDRESS string straight to `ssh`/`rsync`, which reads
+// "host:port" as a literal (unresolvable) hostname the moment
+// SSH_ADDRESS carries a port — a deploy that otherwise succeeds then
+// fails inside that one hook. `buildHookEnv` now parses SSH_ADDRESS once
+// with `parseSshAddress` (the same parser `cli/deploy/exec.ts` uses for
+// rostok's own ssh/rsync calls) and sets:
+//
+//   - SSH_HOST — the bare host/ssh_config-alias, never the port.
+//   - SSH_PORT — always set, defaulting to "22" when SSH_ADDRESS doesn't
+//     carry one. A hook builds its own ssh argv as `-p <SSH_PORT> -o
+//     ConnectTimeout=10 -o BatchMode=yes -- [user@]<SSH_HOST> ...` — see
+//     docs/contributing/adding-services.md's hook-contract section for
+//     the exact shape every fixed hook now shares.
+//
+// SSH_USER is unchanged: it was already a contract key sourced from
+// resolveDeployEnv's own required SSH_USER (server create always writes
+// one, whether typed separately or extracted from a `user@host`
+// SSH_ADDRESS at server-create time) — not re-derived from SSH_ADDRESS
+// here, so it's unaffected by whether THIS SSH_ADDRESS happens to embed
+// a user.
+//
+// Decision: SSH_PORT defaults to "22" and every fixed hook passes `-p
+// <SSH_PORT>` unconditionally, even for a bare ssh_config alias with no
+// port in SSH_ADDRESS. For the common case (no custom ~/.ssh/config
+// Port, or one that already matches) this is a no-op. It's a real,
+// narrow regression only for an alias whose ~/.ssh/config sets a
+// non-default Port AND whose SSH_ADDRESS never mentions a port —
+// `-p 22` would then override that config file's Port. `cli/deploy/
+// exec.ts`'s own ssh/rsync calls (rostok's core sync, not a hook) avoid
+// this by omitting `-p` entirely when SSH_ADDRESS has no explicit port;
+// hooks can't cheaply tell "port omitted" from "port is 22" once it's
+// flattened through a single always-set SSH_PORT string, and the task's
+// own hook-contract shape spells out `-p <port>` unconditionally. The
+// alias STRING itself keeps resolving correctly either way (SSH_HOST is
+// the alias, unchanged) — what "must keep working" means here.
 
 import { UserError } from "../errors.ts"
-import { isServerKey, stackKeyPrefix } from "../server-keys.ts"
+import { isServerKey, parseSshAddress, stackKeyPrefix } from "../server-keys.ts"
 import { setsidAvailable, supportsProcessGroupKill, trackChild } from "./process-registry.ts"
 
 export interface HookContext {
@@ -236,7 +277,10 @@ export function buildHookEnv(
     )
   }
 
+  const target = parseSshAddress(ctx.sshAddress)
   resolved.SSH_ADDRESS = ctx.sshAddress
+  resolved.SSH_HOST = target.host
+  resolved.SSH_PORT = String(target.port ?? 22)
   resolved.SSH_USER = ctx.sshUser
   resolved.PATH_APPS = ctx.pathApps
   resolved.DEPLOY_AS = ctx.deployAs
