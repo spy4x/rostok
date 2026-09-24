@@ -15,6 +15,7 @@ import {
   validateRemotePath,
   validateServerName,
   validateSshAddress,
+  validateSshUser,
 } from "./server-keys.ts"
 import { SSH_ADDRESS_TEST_CASES } from "./deploy/ssh-address-test-cases.ts"
 
@@ -298,5 +299,23 @@ Deno.test("rejects remote paths with shell metacharacters or ..", () => {
     const v of ["srv/apps", "/srv/$(touch x)", "/srv/a;b", "/srv/a b", "/srv/../etc", "~/apps"]
   ) {
     assertThrows(() => validateRemotePath("PATH_APPS", v), UserError, "invalid PATH_APPS")
+  }
+})
+
+Deno.test("accepts plain ssh/system usernames", () => {
+  for (const v of ["root", "deploy", "deploy-1", "deploy.user", "_svc", "a"]) {
+    validateSshUser(v)
+  }
+})
+
+Deno.test("rejects an SSH_USER with shell metacharacters, spaces or a colon", () => {
+  // These reach an unquoted remote shell command a hook builds by hand
+  // (e.g. syncthing's `chown ${user}:${user} <path>`) — a bare
+  // ssh_config alias SSH_ADDRESS has no user@ part for parseSshAddress
+  // to validate on its own, so this is the only check SSH_USER gets.
+  for (
+    const v of ["x $HOME", "root; rm -rf /", "root:x", "$(id)", "`id`", "us'er", "", "-oProxy"]
+  ) {
+    assertThrows(() => validateSshUser(v), UserError, "invalid SSH_USER")
   }
 })

@@ -50,30 +50,71 @@ import {
   parseSshAddress,
   validateRemotePath,
   validateSshAddress,
+  validateSshUser,
 } from "../server-keys.ts"
 import { UserError } from "../errors.ts"
 
 /**
+ * True for a key safe to substitute into VOLUMES_PATH/PATH_APPS:
+ * PATH_APPS/VOLUMES_PATH themselves, or any other `PATH_*` server key
+ * (isServerKey()'s own pattern — e.g. PATH_MEDIA). Deliberately NOT
+ * every server key (DOMAIN, SSH_ADDRESS, ...), and never a stack's own
+ * secret (STALWART_ADMIN_PASSWORD and friends can live in the same
+ * server `.env`) — see expandEnvRefs's own comment for why the
+ * allow-list is this narrow.
+ */
+function isExpandablePathKey(key: string): boolean {
+  return key === "PATH_APPS" || key === "VOLUMES_PATH" || /^PATH_[A-Z0-9_]+$/.test(key)
+}
+
+/**
  * Expand `${VAR}` and bare `$VAR` references in `value` against `env`,
- * the way docker compose resolves the same `.env` file. Only a plain
- * variable reference is supported — no `:-default`, `:?msg`, nesting,
- * or `$$` escape (VOLUMES_PATH/PATH_APPS never need those; compose's own
- * fuller grammar is out of scope here). Throws a UserError naming `key`
- * and the undefined reference — a silently-unexpanded `${TYPO}` would
- * otherwise reach ssh/rsync as a literal, nonexistent path segment.
+ * the way docker compose resolves the same `.env` file — but ONLY for
+ * `VOLUMES_PATH`/`PATH_APPS`/other `PATH_*` server keys
+ * (`isExpandablePathKey`), never any other name. `validateRemotePath`
+ * echoes its OWN argument back verbatim in its error message once this
+ * returns, so a reference to an arbitrary key (`VOLUMES_PATH=/x/${
+ * STALWART_ADMIN_PASSWORD}`, say — a stack secret can live in the same
+ * server `.env`) would print that secret's value straight into a
+ * UserError, which reaches logs/terminals. Refusing the reference
+ * outright, naming only the KEY it names (never a value, from either
+ * side), closes that: the error below is always safe to print.
+ *
+ * `$$` is compose's own escape for a literal `$` (never a reference) —
+ * handled the same way here so `VOLUMES_PATH=/x/$$literal` behaves
+ * identically to how compose itself would read it.
+ *
+ * Only a plain variable reference is supported — no `:-default`,
+ * `:?msg`, or nesting (VOLUMES_PATH/PATH_APPS never need those;
+ * compose's own fuller grammar is out of scope here). Throws a
+ * UserError naming `key` and the undefined/disallowed reference — a
+ * silently-unexpanded `${TYPO}` would otherwise reach ssh/rsync as a
+ * literal, nonexistent path segment.
  */
 export function expandEnvRefs(key: string, value: string, env: Record<string, string>): string {
-  return value.replace(
+  // Placeholder outside the printable-path alphabet, swapped back to a
+  // literal "$" at the end — keeps the $$-escape and the ${VAR}/$VAR
+  // substitution below from interfering with each other.
+  const DOLLAR_PLACEHOLDER = "\u0000"
+  const withEscapesHidden = value.replaceAll("$$", DOLLAR_PLACEHOLDER)
+  const expanded = withEscapesHidden.replace(
     /\$\{([A-Za-z_][A-Za-z0-9_]*)\}|\$([A-Za-z_][A-Za-z0-9_]*)/g,
     (_match, braced: string | undefined, bare: string | undefined) => {
       const ref = braced ?? bare!
-      const resolved = env[ref]
-      if (resolved === undefined) {
+      if (!isExpandablePathKey(ref)) {
+        throw new UserError(
+          `invalid ${key} "${value}": references "${ref}", which isn't PATH_APPS, ` +
+            `VOLUMES_PATH or another PATH_* server key — refusing to expand it.`,
+        )
+      }
+      const resolvedRef = env[ref]
+      if (resolvedRef === undefined) {
         throw new UserError(`invalid ${key} "${value}": references undefined variable "${ref}".`)
       }
-      return resolved
+      return resolvedRef
     },
   )
+  return expanded.replaceAll(DOLLAR_PLACEHOLDER, "$")
 }
 
 export interface ResolvedValue {
@@ -169,11 +210,17 @@ export function resolveDeployEnv(
   resolved.VOLUMES_PATH = expandEnvRefs("VOLUMES_PATH", resolved.VOLUMES_PATH, resolved)
 
   // Before any of these reaches ssh/rsync or a remote shell command:
-  // reject an SSH_ADDRESS that could be read as an option, and a
-  // PATH_APPS/VOLUMES_PATH that isn't a plain absolute path.
+  // reject an SSH_ADDRESS that could be read as an option, a
+  // PATH_APPS/VOLUMES_PATH that isn't a plain absolute path, and an
+  // SSH_USER that isn't a safe username — checked regardless of what
+  // form SSH_ADDRESS takes (a bare ssh_config alias has no user@ part
+  // for parseSshAddress to validate on its own, so this is the only
+  // check SSH_USER gets; a hook can build an unquoted remote shell
+  // command from it, e.g. syncthing's `chown ${user}:${user} <path>`).
   validateSshAddress(resolved.SSH_ADDRESS)
   validateRemotePath("PATH_APPS", resolved.PATH_APPS)
   validateRemotePath("VOLUMES_PATH", resolved.VOLUMES_PATH)
+  validateSshUser(resolved.SSH_USER)
 
   // A hook logs in with SSH_USER (cli/deploy/hooks.ts's contract key);
   // deploy's own ssh/rsync calls log in with SSH_ADDRESS's own user part

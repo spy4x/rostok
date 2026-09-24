@@ -301,3 +301,95 @@ Deno.test("resolveDeployEnv: a bare ssh_config alias (no user@) never conflicts 
     ROOT_ENV_PATH,
   )
 })
+
+Deno.test("resolveDeployEnv: rejects an unsafe SSH_USER even behind a bare ssh_config alias (review round)", () => {
+  // A bare alias has no user@ part for parseSshAddress to validate on its
+  // own, so nothing else would ever catch a shell-metacharacter SSH_USER
+  // reaching a hook's unquoted remote command (e.g. syncthing's own
+  // `chown ${user}:${user} <path>`) — "x $HOME" would expand $HOME on
+  // the remote host.
+  const err = assertThrows(
+    () =>
+      resolveDeployEnv(
+        { ...VALID_BASE, SSH_ADDRESS: "home-alias", SSH_USER: "x $HOME" },
+        "servers/home/.env",
+        ROOT_ENV_PATH,
+      ),
+    UserError,
+  )
+  assertStringIncludes(err.message, "invalid SSH_USER")
+})
+
+Deno.test("resolveDeployEnv: rejects an unsafe SSH_USER even when SSH_ADDRESS has a matching user@ part", () => {
+  // parseSshAddress's own SSH_USER_PATTERN check runs on the ADDRESS's
+  // user substring — this proves resolveDeployEnv validates the
+  // separate SSH_USER key too, not just whatever SSH_ADDRESS embeds.
+  const err = assertThrows(
+    () =>
+      resolveDeployEnv(
+        { ...VALID_BASE, SSH_ADDRESS: "root@example.com", SSH_USER: "root; rm -rf /" },
+        "servers/home/.env",
+        ROOT_ENV_PATH,
+      ),
+    UserError,
+  )
+  assertStringIncludes(err.message, "invalid SSH_USER")
+})
+
+Deno.test("expandEnvRefs: refuses a reference to a non-path key, naming only the key (review round)", () => {
+  // validateRemotePath echoes its argument back in its own error, so a
+  // secret referenced here (a stack's own key can live in the same
+  // server .env, e.g. STALWART_ADMIN_PASSWORD) would otherwise leak
+  // into a UserError. The secret's VALUE must never appear anywhere in
+  // the thrown message — only the key name.
+  const err = assertThrows(
+    () =>
+      expandEnvRefs("VOLUMES_PATH", "/x/${STALWART_ADMIN_PASSWORD}", {
+        STALWART_ADMIN_PASSWORD: "super-secret-value",
+      }),
+    UserError,
+  )
+  assertStringIncludes(err.message, "STALWART_ADMIN_PASSWORD")
+  assertEquals(err.message.includes("super-secret-value"), false)
+})
+
+Deno.test("expandEnvRefs: PATH_MEDIA (another PATH_* server key) is expandable", () => {
+  assertEquals(
+    expandEnvRefs("VOLUMES_PATH", "${PATH_MEDIA}/x", { PATH_MEDIA: "/srv/media" }),
+    "/srv/media/x",
+  )
+})
+
+Deno.test("expandEnvRefs: DOMAIN (a server key, but not a path key) is refused", () => {
+  const err = assertThrows(
+    () => expandEnvRefs("VOLUMES_PATH", "/x/${DOMAIN}", { DOMAIN: "example.com" }),
+    UserError,
+  )
+  assertStringIncludes(err.message, "DOMAIN")
+  assertEquals(err.message.includes("example.com"), false)
+})
+
+Deno.test("expandEnvRefs: $$ is compose's escape for a literal $, never a reference", () => {
+  assertEquals(
+    expandEnvRefs("VOLUMES_PATH", "/x/$$literal", { PATH_APPS: "/srv/apps" }),
+    "/x/$literal",
+  )
+})
+
+Deno.test("resolveDeployEnv: a VOLUMES_PATH referencing a stack secret in the same .env never leaks it (review round)", () => {
+  const err = assertThrows(
+    () =>
+      resolveDeployEnv(
+        {
+          ...VALID_BASE,
+          VOLUMES_PATH: "/srv/volumes/${STALWART_ADMIN_PASSWORD}",
+          STALWART_ADMIN_PASSWORD: "super-secret-value",
+        },
+        "servers/home/.env",
+        ROOT_ENV_PATH,
+      ),
+    UserError,
+  )
+  assertStringIncludes(err.message, "STALWART_ADMIN_PASSWORD")
+  assertEquals(err.message.includes("super-secret-value"), false)
+})

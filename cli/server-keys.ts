@@ -204,9 +204,32 @@ const SSH_HOST_CHARS_PATTERN = /^[A-Za-z0-9_.:-]+$/
  * Letters, digits, `.`, `_` and `-`, starting with a letter/digit/`_` —
  * an ssh/system username. Excludes `:` (so `root:x@host` can't smuggle
  * a second field into the user position), `$`/backtick/quotes (shell
- * metacharacters) and whitespace/newlines.
+ * metacharacters) and whitespace/newlines. Exported so `SSH_USER` (a
+ * separate `.env` key, not always embedded in `SSH_ADDRESS` — a bare
+ * ssh_config alias never carries a user at all) gets the same check
+ * `parseSshAddress` already applies to an address's own `user@` part.
  */
-const SSH_USER_PATTERN = /^[A-Za-z0-9_][A-Za-z0-9._-]*$/
+export const SSH_USER_PATTERN = /^[A-Za-z0-9_][A-Za-z0-9._-]*$/
+
+/**
+ * Throw a UserError unless `value` is a safe ssh/system username — see
+ * SSH_USER_PATTERN. `SSH_USER` reaches a hook's environment and, from
+ * there, an unquoted remote shell command a hook builds by hand (e.g.
+ * syncthing's `chown ${user}:${user} <path>` — reviewed and confirmed
+ * unquoted): a value like `"x $HOME"` or `"x; rm -rf /"` would run as
+ * part of that command on the remote host. Checked regardless of what
+ * form `SSH_ADDRESS` takes — a bare ssh_config alias has no `user@`
+ * part for `parseSshAddress` to validate at all, so this is the only
+ * check `SSH_USER` gets.
+ */
+export function validateSshUser(value: string): void {
+  if (!SSH_USER_PATTERN.test(value)) {
+    throw new UserError(
+      `invalid SSH_USER "${value}": use letters, digits, ".", "_" and "-", starting with a ` +
+        `letter, digit or "_" — an ssh/system username, no spaces or shell metacharacters.`,
+    )
+  }
+}
 
 /**
  * Parse `SSH_ADDRESS` into `{ user?, host, port? }`. Throws a UserError for
