@@ -78,12 +78,21 @@ export interface StackRemoveResult {
   envCleanupSkipped?: boolean
 }
 
-/** Try to resolve `stackName` in `catalog`; `undefined` instead of throwing when it's not there. */
+/**
+ * Try to resolve `stackName` in `catalog`; `undefined` instead of
+ * throwing only when it's genuinely not there. `findStack` also throws
+ * for an AMBIGUOUS name (matches more than one entry) — that's a real
+ * bug in the catalog, not "gone from the catalog", so it must propagate
+ * rather than being swallowed into a silent "treat it as delisted".
+ */
 function tryFindStack(catalog: CatalogEntry[], stackName: string): CatalogEntry | undefined {
   try {
     return findStack(catalog, stackName)
-  } catch {
-    return undefined
+  } catch (err) {
+    if (err instanceof UserError && err.message.includes("not found in catalog")) {
+      return undefined
+    }
+    throw err
   }
 }
 
@@ -155,9 +164,10 @@ export async function stackRemove(
   if (!entry) {
     // No `+meta.ts` left to say which env keys are this stack's own —
     // guessing by prefix could delete another stack's key, so env
-    // cleanup is skipped outright rather than attempted unsafely.
+    // cleanup is skipped outright rather than attempted unsafely. .env
+    // itself never changes in this branch, so there's nothing for
+    // encryptEnvFiles to do — config.json isn't something it touches.
     await writeConfig(serverDir, cfg, remainingStacks)
-    await encryptEnvFiles(cwd)
     result.envCleanupSkipped = true
     console.log(
       `rostok: '${resolvedName}' isn't in the catalog anymore — removed it from ` +
