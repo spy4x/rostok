@@ -555,6 +555,33 @@ echo "SSH_USER=deploy"
   }
 })
 
+// #218 — SSH_ADDRESS=root@192.0.2.1:2222 must reach ssh as `-p 2222
+// root@192.0.2.1`, built via server-keys.ts's `sshArgs` — not as one
+// unresolvable "192.0.2.1:2222" hostname.
+Deno.test("probeServer: a port in SSH_ADDRESS reaches ssh as -p <port>, split from the host", async () => {
+  const argsFile = await Deno.makeTempFile({ prefix: "rostok-ssh-args-" })
+  try {
+    const script = `#!/bin/sh
+echo "$@" > "${argsFile}"
+echo "DOCKER_GID=988"
+echo "SSH_UID=1000"
+echo "SSH_GID=1000"
+echo "SSH_USER=deploy"
+`
+    await withFakeSsh(script, async () => {
+      await probeServer("root@192.0.2.1:2222")
+    })
+    const argv = (await Deno.readTextFile(argsFile)).trim()
+    assertStringIncludes(argv, "-p 2222")
+    assertStringIncludes(argv, "-- root@192.0.2.1")
+    // The port must never survive as part of the target string itself —
+    // that's the #218 bug (ssh reading "192.0.2.1:2222" as one hostname).
+    assertEquals(argv.includes("192.0.2.1:2222"), false, argv)
+  } finally {
+    await Deno.remove(argsFile).catch(() => {})
+  }
+})
+
 Deno.test("probeServer: enforces the deadline and kills a hanging ssh", async () => {
   // `exec` replaces the shell with `sleep` (same PID) instead of forking
   // it — otherwise SIGKILL only reaps the shell, and the orphaned sleep

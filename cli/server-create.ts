@@ -42,7 +42,9 @@ import {
 } from "./timezone.ts"
 import {
   DEFAULT_PATH_APPS,
+  parseSshAddress,
   serverDirFor,
+  sshArgs,
   validateRemotePath,
   validateServerName,
   validateSshAddress,
@@ -199,16 +201,17 @@ export async function serverCreate(opts: ServerCreateOptions = {}): Promise<Serv
 }
 
 /**
- * Split `user@host[:port]` into (user, address). If no `@`, returns
- * `{}` for the user — caller prompts separately.
+ * Split `user@host[:port]` into (user, address), reusing
+ * `parseSshAddress` (server-keys.ts) for the actual user/host/port
+ * parsing instead of duplicating it. `address` stays the raw text after
+ * `user@` (brackets and all) — every caller here only reads `.user`;
+ * `.address` is kept verbatim for {@link ServerCreateResult}'s public
+ * shape. No `@` → `{}` for the user, caller prompts separately.
  */
 function parseSshTarget(target: string): { user?: string; address: string } {
-  const at = target.lastIndexOf("@")
-  if (at <= 0) return { address: target }
-  return {
-    user: target.slice(0, at),
-    address: target.slice(at + 1),
-  }
+  const { user } = parseSshAddress(target)
+  if (user === undefined) return { address: target }
+  return { user, address: target.slice(target.indexOf("@") + 1) }
 }
 
 /** Look up a pre-supplied value: typed `serverInputs` wins, then `providedVars` (env-style, then camelCase alias). */
@@ -280,9 +283,10 @@ async function collectInput(
   const existing = await readEnvFile(envPath)
   const existingByKey = new Map(existing.map((e) => [e.key, e.value]))
 
-  // SSH target — an ssh_config alias or user@host, validated against
-  // SSH_ADDRESS_PATTERN (security review): it's handed to `ssh`/`rsync`
-  // verbatim, so a leading `-` or a space must be rejected outright.
+  // SSH target — an ssh_config alias or user@host[:port], validated by
+  // `validateSshAddress`/`parseSshAddress` (security review): it's
+  // handed to `ssh`/`rsync` verbatim, so a leading `-` or a space must
+  // be rejected outright.
   const sshTarget = await ask(
     FIELDS.sshTarget,
     "SSH target: an ssh_config alias or user@host[:port]",
@@ -349,7 +353,7 @@ async function collectInput(
   )
   const contactEmail = await ask(
     FIELDS.contactEmail,
-    "Contact email, used for Let's Encrypt ACME registration",
+    "Email for Let's Encrypt certificate notices",
     existingByKey.get("CONTACT_EMAIL"),
     (v) => (/^[^@]+@[^@]+\.[^@]+$/.test(v) ? true : "expected a valid email"),
   )
@@ -381,7 +385,7 @@ async function collectInput(
   })
   const timezone = await ask(
     FIELDS.timezone,
-    "Timezone (IANA, e.g. Europe/Berlin)",
+    "Time zone for your apps, e.g. Europe/Berlin",
     tzDefault,
     () => true,
   )
@@ -414,7 +418,7 @@ async function collectInput(
   )
   const pathApps = await ask(
     FIELDS.pathApps,
-    "Host directory where stacks are deployed",
+    "Folder on the server where rostok puts your apps",
     existingByKey.get("PATH_APPS") ?? DEFAULT_PATH_APPS,
     toValidator((v) => validateRemotePath("PATH_APPS", v)),
   )
@@ -486,18 +490,20 @@ export async function probeServer(
 
   let child: Deno.ChildProcess
   try {
+    // #218: build argv with `sshArgs` so a `SSH_ADDRESS` carrying a port
+    // (`root@192.0.2.1:2222`) reaches ssh as `-p 2222 root@192.0.2.1`
+    // instead of a single unresolvable "192.0.2.1:2222" hostname.
+    // `StrictHostKeyChecking=accept-new` isn't part of `sshArgs`'s own
+    // option set (it's specific to this first-contact probe), so it's
+    // prepended here.
+    const sshTarget = parseSshAddress(target)
+    const args = [
+      "-o",
+      "StrictHostKeyChecking=accept-new",
+      ...sshArgs(sshTarget, [remoteCmd], { batchMode: true }),
+    ]
     child = new Deno.Command("ssh", {
-      args: [
-        "-o",
-        "BatchMode=yes",
-        "-o",
-        "ConnectTimeout=5",
-        "-o",
-        "StrictHostKeyChecking=accept-new",
-        "--",
-        target,
-        remoteCmd,
-      ],
+      args,
       stdout: "piped",
       stderr: "piped",
     }).spawn()
