@@ -1,12 +1,32 @@
 // .env file read/write helpers.
 //
 // Format: `KEY=value` per line. Lines starting with `#` are comments.
-// Empty lines ignored. No quoting/escaping rules beyond plain text values
-// (matches what scripts/encryption/encrypt.ts produces and consumes).
+// Empty lines ignored.
 //
-// The CLI never quotes values; it writes them verbatim as supplied by
-// stack defaults, --var flags, or interactive prompts. Stacks that need
-// multi-line values compose them in shell, not in .env.
+// Quoting convention (#226): a value's surrounding quotes (`'...'` or
+// `"..."`, one layer) are part of the value, verbatim — parseEnv/
+// serializeEnv never strip or add them. `KEY="has a space"` parses to
+// `value: '"has a space"'`, quotes included, and serializes back
+// byte-identical. This matches how a stack's own compose.yml reads the
+// same file: docker compose's `env_file` and Deno's `--env-file` both
+// read a `.env` line-by-line with no shell-style quote stripping either
+// — `KEY="x"` becomes the literal string `"x"` in both, not `x`. Any
+// quote-stripping a stack wants (e.g. a shell script sourcing `.env`
+// with `set -a; . .env`, where the shell's own parser strips them) is
+// that stack's own responsibility, not this file's.
+//
+// The CLI never adds quotes; it writes a value verbatim as supplied by
+// stack defaults, --var flags, or interactive prompts — a value that
+// needs quoting to survive some other consumer's parser must be typed
+// with the quotes already included. Stacks that need multi-line values
+// compose them in shell, not in .env.
+//
+// This module's own round trip already preserves quotes byte-identical
+// (see env-files.test.ts) — it never had the bug #226 reported. The
+// actual quote-stripping happened in `cli/age.ts`'s `parseEnvFile` (used
+// by the real `rostok env encrypt`/`decrypt` path, not this file), which
+// stripped one layer of matching quotes on read and never restored it on
+// write. That file is outside this task's file scope — see the PR body.
 
 import { dirname, join } from "@std/path"
 

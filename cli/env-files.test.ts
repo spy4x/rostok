@@ -38,6 +38,27 @@ Deno.test("serializeEnv: round-trips with parseEnv", () => {
   assertEquals(parseEnv(text), entries)
 })
 
+// #226: a value written with surrounding quotes keeps them, byte-identical,
+// through parseEnv + serializeEnv — this module's own quoting convention
+// (see the header comment). This is the round trip for the CLI's own
+// read/write path; the encrypt/decrypt round trip that #226 originally
+// reported the bug in lives in cli/age.ts, outside this file.
+
+Deno.test("parseEnv: a double-quoted value keeps its quotes (not stripped)", () => {
+  assertEquals(parseEnv('KEY="has a space"\n'), [{ key: "KEY", value: '"has a space"' }])
+})
+
+Deno.test("parseEnv: a single-quoted value keeps its quotes (not stripped)", () => {
+  assertEquals(parseEnv("KEY='has a space'\n"), [{ key: "KEY", value: "'has a space'" }])
+})
+
+Deno.test("serializeEnv + parseEnv: a quoted value round-trips byte-identical (#226)", () => {
+  const entries = [{ key: "KEY", value: '"has a space"' }]
+  const text = serializeEnv(entries)
+  assertEquals(text, 'KEY="has a space"\n')
+  assertEquals(parseEnv(text), entries)
+})
+
 Deno.test("mergeEnv: incoming wins on collision, preserves existing extras", () => {
   const existing = [{ key: "A", value: "old-a" }, { key: "B", value: "b-only" }]
   const incoming = [{ key: "A", value: "new-a" }, { key: "C", value: "c-new" }]
