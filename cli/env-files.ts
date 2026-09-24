@@ -180,10 +180,16 @@ function serializeEnvLines(lines: EnvLine[]): string {
 /**
  * Apply `incoming` (update-or-append, like `mergeEnv`) and `removeKeys`
  * (drop the line entirely) to `existingText`, keeping every comment,
- * blank line, and untouched key/value line exactly where it was. A key
- * in both `incoming` and `removeKeys` is removed — `removeKeys` wins,
- * since a caller asking to drop a key is stronger intent than a default
- * value that happened to be passed alongside it.
+ * blank line, and untouched key/value line in its original position.
+ * Comment and blank lines are kept byte-for-byte. A key/value line's
+ * VALUE is untouched, but its KEY goes through the same normalization
+ * `parseEnv`/`serializeEnv` always applied (matches main): a leading
+ * indent before the key is dropped (`  FOO=bar` → `FOO=bar`), and a
+ * space before `=` is dropped while a space right after it stays part
+ * of the value (`A = b` → `A= b`). A key in both `incoming` and
+ * `removeKeys` is removed — `removeKeys` wins, since a caller asking to
+ * drop a key is stronger intent than a default value that happened to
+ * be passed alongside it.
  */
 export function mergeEnvPreservingFormat(
   existingText: string,
