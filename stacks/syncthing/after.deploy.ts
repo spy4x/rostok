@@ -316,7 +316,7 @@ async function dockerExec(
  * Required for body-bearing curl calls because tempfiles written to the
  * host's /tmp aren't visible inside the container.
  */
-async function dockerExecStdin(
+export async function dockerExecStdin(
   cmd: readonly string[],
   stdinPayload: Uint8Array,
 ): Promise<{ code: number; stdout: string; stderr: string }> {

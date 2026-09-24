@@ -142,3 +142,78 @@ Deno.test("after.deploy.ts subprocess: no SSH_PORT — omits -p entirely (fake s
     ])
   })
 })
+
+/**
+ * Install a fake `ssh` on PATH that appends its own argv (one call's
+ * worth of lines, then a blank separator) to `logPath`, drains any
+ * stdin, and exits 0 — so the hook's full flow runs to completion and
+ * every one of its ssh calls (docker cp, exec, restart) actually fires,
+ * not just the first one before a failure short-circuits the rest.
+ */
+async function withSucceedingFakeSsh<T>(fn: (logPath: string) => Promise<T>): Promise<T> {
+  const binDir = await Deno.makeTempDir({ prefix: "rostok-fake-ssh-ok-open-webui-" })
+  const logPath = `${binDir}/argv.log`
+  try {
+    const script = `#!/bin/sh\n` +
+      `for a in "$@"; do printf '%s\\n' "$a" >> "${logPath}"; done\n` +
+      `printf '\\n' >> "${logPath}"\n` +
+      `cat > /dev/null\n` + // drain stdin so a piped writer never sees EPIPE
+      `exit 0\n`
+    await Deno.writeTextFile(`${binDir}/ssh`, script, { mode: 0o755 })
+    const previousPath = Deno.env.get("PATH") ?? ""
+    Deno.env.set("PATH", `${binDir}:${previousPath}`)
+    try {
+      return await fn(logPath)
+    } finally {
+      Deno.env.set("PATH", previousPath)
+    }
+  } finally {
+    await Deno.remove(binDir, { recursive: true })
+  }
+}
+
+Deno.test("after.deploy.ts subprocess: every ssh call (cp, exec, restart) puts -- before the target (review round)", async () => {
+  await withSucceedingFakeSsh(async (logPath) => {
+    const command = new Deno.Command(Deno.execPath(), {
+      args: ["run", "-A", import.meta.resolve("./after.deploy.ts")],
+      env: {
+        ...Deno.env.toObject(),
+        SSH_HOST: "192.0.2.1",
+        SSH_PORT: "2222",
+        SSH_USER: "root",
+        PATH_APPS: "/srv/apps",
+        OPEN_WEBUI_OPENAI_API_KEYS: "sk-test",
+        OPEN_WEBUI_OPENAI_API_BASE_URLS: "https://example.com/v1",
+      },
+      stdout: "piped",
+      stderr: "piped",
+    })
+    const output = await command.output()
+    if (!output.success) {
+      throw new Error(
+        `hook exited non-zero: ${new TextDecoder().decode(output.stderr)}`,
+      )
+    }
+
+    const logged = await Deno.readTextFile(logPath)
+    // Each ssh invocation logged its own argv followed by a blank line.
+    const calls = logged.split("\n\n").map((block) => block.split("\n").filter((l) => l.length > 0))
+      .filter((block) => block.length > 0)
+    // docker cp, docker exec, docker restart — three separate ssh calls.
+    assertEquals(calls.length, 3, `expected 3 ssh calls, got ${calls.length}: ${logged}`)
+    for (const argv of calls) {
+      const dashDashIdx = argv.indexOf("--")
+      assertEquals(dashDashIdx >= 0, true, `no -- found in call: ${JSON.stringify(argv)}`)
+      assertEquals(argv.slice(0, dashDashIdx + 2), [
+        "-p",
+        "2222",
+        "-o",
+        "ConnectTimeout=10",
+        "-o",
+        "BatchMode=yes",
+        "--",
+        "root@192.0.2.1",
+      ])
+    }
+  })
+})

@@ -10,6 +10,7 @@ import {
   deepEqual,
   desiredDevice,
   desiredFolder,
+  dockerExecStdin,
   isDeviceArray,
   isFolderArray,
   isSystemStatus,
@@ -423,5 +424,57 @@ Deno.test("buildRunRemoteScriptArgs: -T is ssh's own option, placed before '--',
       "-s",
       "arg1",
     ])
+  })
+})
+
+/**
+ * Install a fake `ssh` on PATH that prints its own argv (one per line)
+ * then drains and discards stdin before exiting — dockerExecStdin pipes
+ * a payload in, and a fake that doesn't read it risks the writer seeing
+ * EPIPE before the argv is even captured.
+ */
+async function withFakeSshDrainingStdin<T>(fn: () => Promise<T>): Promise<T> {
+  const binDir = await Deno.makeTempDir({ prefix: "rostok-fake-ssh-syncthing-stdin-" })
+  try {
+    const script = `#!/bin/sh\nfor a in "$@"; do printf '%s\\n' "$a"; done\ncat > /dev/null\n`
+    await Deno.writeTextFile(`${binDir}/ssh`, script, { mode: 0o755 })
+    const previousPath = Deno.env.get("PATH") ?? ""
+    Deno.env.set("PATH", `${binDir}:${previousPath}`)
+    try {
+      return await fn()
+    } finally {
+      Deno.env.set("PATH", previousPath)
+    }
+  } finally {
+    await Deno.remove(binDir, { recursive: true })
+  }
+}
+
+Deno.test("dockerExecStdin: -- reaches ssh before the target (review round — this call site was untested)", async () => {
+  await withFakeSshDrainingStdin(async () => {
+    await withEnv({ SSH_HOST: "192.0.2.1", SSH_PORT: "2222", SSH_USER: "root" }, async () => {
+      const result = await dockerExecStdin(
+        ["curl", "-s", "http://localhost:8384/"],
+        new Uint8Array(),
+      )
+      const argv = result.stdout.split("\n").filter((l) => l.length > 0)
+      assertEquals(argv, [
+        "-p",
+        "2222",
+        "-o",
+        "ConnectTimeout=10",
+        "-o",
+        "BatchMode=yes",
+        "--",
+        "root@192.0.2.1",
+        "docker",
+        "exec",
+        "-i",
+        "hl-syncthing",
+        "curl",
+        "-s",
+        "http://localhost:8384/",
+      ])
+    })
   })
 })
