@@ -24,11 +24,20 @@ import {
   findEnvFiles,
   getEnvAgePath,
   parseEnvFile,
+  resolveKeyFile,
 } from "./age.ts"
 
-/** Detect whether the `age` CLI is on PATH. Thin wrapper for clarity. */
+/**
+ * True when a key file exists for `cwd`. Checks `resolveKeyFile(cwd)` —
+ * the exact same resolution `ageEncrypt`/`ageDecrypt` use — not a fixed
+ * `<cwd>/.age/key.txt`, which used to disagree with it: a linked
+ * worktree with no key of its own reported "no key" here even though
+ * `resolveKeyFile` would have found the main checkout's key and
+ * actually encrypted with it, a production mismatch between "can we
+ * encrypt" and "what we encrypt with".
+ */
 export async function checkAgeKeyPresent(cwd: string): Promise<boolean> {
-  return await exists(join(cwd, ".age", "key.txt"))
+  return await exists(resolveKeyFile(cwd))
 }
 
 /**
@@ -175,8 +184,8 @@ export async function encryptEnvFiles(cwd: string): Promise<EncryptResult> {
     try {
       const newContent = Deno.readTextFileSync(envPath)
       const oldContent = await exists(agePath) ? Deno.readTextFileSync(agePath) : ""
-      const oldOccurrences = await indexOldAge(oldContent, ageDecrypt)
-      const output = await renderAgeContent(newContent, oldOccurrences, ageEncrypt)
+      const oldOccurrences = await indexOldAge(oldContent, (v) => ageDecrypt(v, cwd))
+      const output = await renderAgeContent(newContent, oldOccurrences, (v) => ageEncrypt(v, cwd))
       Deno.writeTextFileSync(agePath, output)
       okCount++
     } catch (err) {
@@ -233,7 +242,7 @@ export async function decryptEnvFiles(cwd: string): Promise<EncryptResult> {
           out.push(e.raw)
           continue
         }
-        const value = e.encrypted ? await ageDecrypt(e.encrypted) : (e.value ?? "")
+        const value = e.encrypted ? await ageDecrypt(e.encrypted, cwd) : (e.value ?? "")
         out.push(`${e.key}=${value}`)
       }
       // Normalize trailing newline to exactly one.

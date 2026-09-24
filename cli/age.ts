@@ -22,14 +22,51 @@ import { decodeBase64, encodeBase64 } from "@std/encoding"
 const AGE64_PREFIX = "age64:"
 
 /**
- * Resolve the .age/key.txt location. Looks for it in `cwd`'s git repo
- * (handles worktrees via --git-common-dir). Falls back to cwd if git
- * isn't available or the user isn't in a repo.
+ * Env vars a PARENT process (a pre-commit hook running its own git
+ * commands, for instance) may have exported to steer ITS git invocation
+ * at a specific repo. `git` honours these regardless of `cwd`, so
+ * inheriting them here would silently resolve the key file against
+ * whatever repo the parent process meant, not `cwd` — stripped from
+ * every git subprocess this module spawns.
  */
-function resolveKeyFile(cwd: string): string {
+const GIT_ENV_POISON = ["GIT_DIR", "GIT_COMMON_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE"]
+
+/** A copy of this process's own env with the git-poisoning keys removed. */
+function gitSubprocessEnv(): Record<string, string> {
+  const env = Deno.env.toObject()
+  for (const key of GIT_ENV_POISON) delete env[key]
+  return env
+}
+
+/**
+ * Resolve `.age/key.txt` for `cwd` — never `Deno.cwd()`, so a caller
+ * always controls exactly which project's key this resolves to.
+ *
+ * 1. `<cwd>/.age/key.txt` wins outright when it exists — the common
+ *    case, and the only one that needs no git subprocess at all. A
+ *    linked worktree that has run `env-key-copy.ts` (AGENTS.md's
+ *    worktree setup step) has its own copy here.
+ * 2. Otherwise, ask git for the checkout's shared `.git`
+ *    (`--git-common-dir`), which for a linked worktree lives in the
+ *    MAIN checkout — so a worktree that hasn't copied its own key yet
+ *    still finds the main checkout's. Runs with `cwd` passed as the
+ *    subprocess's own working directory (not inherited from
+ *    `Deno.cwd()`) and the git-poisoning env vars above stripped.
+ * 3. Falls back to `<cwd>/.age/key.txt` (same path as step 1) when git
+ *    isn't on PATH or `cwd` isn't inside a repository at all.
+ */
+export function resolveKeyFile(cwd: string): string {
+  const local = join(cwd, ".age", "key.txt")
+  try {
+    if (Deno.statSync(local).isFile) return local
+  } catch { /* no local key — fall through to git */ }
+
   try {
     const cmd = new Deno.Command("git", {
-      args: ["rev-parse", "--git-common-dir"],
+      args: ["rev-parse", "--path-format=absolute", "--git-common-dir"],
+      cwd,
+      env: gitSubprocessEnv(),
+      clearEnv: true,
       stdout: "piped",
       stderr: "piped",
     })
@@ -39,13 +76,20 @@ function resolveKeyFile(cwd: string): string {
       if (gitDir) return join(dirname(gitDir), ".age", "key.txt")
     }
   } catch { /* git missing — fall through */ }
-  return join(cwd, ".age", "key.txt")
+  return local
 }
 
-let _cachedKeyFile: string | undefined
-function getAgeKeyFile(): string {
-  if (_cachedKeyFile === undefined) _cachedKeyFile = resolveKeyFile(Deno.cwd())
-  return _cachedKeyFile
+// Cached per cwd (not process-global): a CLI invocation may legitimately
+// touch more than one project root (tests do), and each must resolve
+// its own key independently. Cleared implicitly at process exit.
+const _keyFileByCwd = new Map<string, string>()
+function getAgeKeyFile(cwd: string): string {
+  let cached = _keyFileByCwd.get(cwd)
+  if (cached === undefined) {
+    cached = resolveKeyFile(cwd)
+    _keyFileByCwd.set(cwd, cached)
+  }
+  return cached
 }
 
 export interface EnvEntry {
@@ -60,11 +104,12 @@ export interface EnvEntry {
 }
 
 /**
- * Read the recipient (public key) from the project's `.age/key.txt`.
- * Throws if the file is missing or the comment isn't present.
+ * Read the recipient (public key) from `cwd`'s `.age/key.txt` (see
+ * `resolveKeyFile` for how `cwd` resolves to a file). Throws if the
+ * file is missing or the comment isn't present.
  */
-export function getAgePublicKey(): string {
-  const keyFile = getAgeKeyFile()
+export function getAgePublicKey(cwd: string): string {
+  const keyFile = getAgeKeyFile(cwd)
   const content = Deno.readTextFileSync(keyFile)
   const match = content.match(/# public key: (.+)/)
   if (!match) throw new Error(`age public key not found in ${keyFile}`)
@@ -83,9 +128,13 @@ export async function checkAgeInstalled(): Promise<boolean> {
   }
 }
 
-/** Encrypt a plaintext value with age; return `age64:<base64>` form. */
-export async function ageEncrypt(value: string, recipient?: string): Promise<string> {
-  if (!recipient) recipient = getAgePublicKey()
+/**
+ * Encrypt a plaintext value with age; return `age64:<base64>` form.
+ * `cwd` picks which project's key to encrypt for (see `resolveKeyFile`)
+ * — ignored when `recipient` is given explicitly.
+ */
+export async function ageEncrypt(value: string, cwd: string, recipient?: string): Promise<string> {
+  if (!recipient) recipient = getAgePublicKey(cwd)
   const cmd = new Deno.Command("age", {
     args: ["-r", recipient, "-o", "-"],
     stdin: "piped",
@@ -103,14 +152,20 @@ export async function ageEncrypt(value: string, recipient?: string): Promise<str
   return AGE64_PREFIX + encodeBase64(new Uint8Array(output.stdout))
 }
 
-/** Decrypt an `age64:<base64>` value back to plaintext. */
-export async function ageDecrypt(age64Value: string): Promise<string> {
+/**
+ * Decrypt an `age64:<base64>` value back to plaintext. `cwd` picks
+ * which project's key to decrypt with (see `resolveKeyFile`) — defaults
+ * to `Deno.cwd()` for callers outside the CLI itself (e.g.
+ * scripts/backup, which always runs from the repo root) that haven't
+ * threaded an explicit cwd through yet.
+ */
+export async function ageDecrypt(age64Value: string, cwd: string = Deno.cwd()): Promise<string> {
   if (!age64Value.startsWith(AGE64_PREFIX)) {
     throw new Error("Not an age64 value: " + age64Value.slice(0, 20))
   }
   const ciphertext = decodeBase64(age64Value.slice(AGE64_PREFIX.length))
   const cmd = new Deno.Command("age", {
-    args: ["-d", "-i", getAgeKeyFile(), "-o", "-"],
+    args: ["-d", "-i", getAgeKeyFile(cwd), "-o", "-"],
     stdin: "piped",
     stdout: "piped",
     stderr: "piped",
@@ -140,9 +195,14 @@ export function isAge64(value: string): boolean {
  * quotes (#226: this used to strip one matched layer of `'...'`/`"..."`
  * and never restore it on write, so `KEY="has a space"` came back as
  * `KEY=has a space` after an encrypt+decrypt round trip). Matches
- * cli/env-files.ts's own convention: a value's quotes are part of the
- * value, the same way docker compose's `env_file` and Deno's
- * `--env-file` read the same file with no shell-style quote stripping.
+ * cli/env-files.ts's own convention: this is about the FILE round trip
+ * — a `.env`/`.env.age` byte for byte — not what a container or a hook
+ * ends up seeing. docker compose's `env_file` and Deno's `--env-file`
+ * both strip exactly one matching layer of quotes when they actually
+ * load the file (verified directly), and `cli/deploy/hooks.ts`'s
+ * `buildHookEnv` does the same for a hook's own environment — see its
+ * comment. This function's `value` deliberately keeps the quotes so the
+ * file itself never loses them.
  */
 export function parseEnvFile(content: string): EnvEntry[] {
   const entries: EnvEntry[] = []

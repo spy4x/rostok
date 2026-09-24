@@ -133,7 +133,6 @@ Deno.test("generateAgeKey: writes .age/key.txt and returns public key", async ()
 // neither renderAgeContent nor decryptEnvFiles ever restored it on write.
 Deno.test("env encrypt + env decrypt: a quoted .env value keeps its quotes (#226)", async () => {
   const tmp = await Deno.makeTempDir({ prefix: "rostok-quote-roundtrip-" })
-  const previousCwd = Deno.cwd()
   try {
     const keyResult = await generateAgeKey(tmp)
     assertEquals(keyResult.ok, true)
@@ -144,15 +143,9 @@ Deno.test("env encrypt + env decrypt: a quoted .env value keeps its quotes (#226
       "DOUBLE=\"has a space\"\nSINGLE='has a space too'\nPLAIN=nospaces\n",
     )
 
-    // cli/age.ts's getAgeKeyFile() resolves the key relative to the real
-    // process cwd (via `git rev-parse --git-common-dir`, falling back to
-    // cwd when that fails), not the `cwd` argument encryptEnvFiles takes
-    // — matching how the real CLI always runs with Deno.cwd() at the
-    // user's project root. chdir into `tmp` (outside any git repo) so
-    // that resolution lands on tmp/.age/key.txt, the same place
-    // generateAgeKey(tmp) just wrote it.
-    Deno.chdir(tmp)
-
+    // encryptEnvFiles/decryptEnvFiles resolve the key from the `cwd`
+    // argument itself (cli/age.ts's resolveKeyFile) — no chdir needed to
+    // line this test's key up with the one generateAgeKey(tmp) just wrote.
     const encryptResult = await encryptEnvFiles(tmp)
     assertEquals(encryptResult.ok, true, encryptResult.output)
 
@@ -171,7 +164,6 @@ Deno.test("env encrypt + env decrypt: a quoted .env value keeps its quotes (#226
     const roundTripped = await Deno.readTextFile(envPath)
     assertEquals(roundTripped, "DOUBLE=\"has a space\"\nSINGLE='has a space too'\nPLAIN=nospaces\n")
   } finally {
-    Deno.chdir(previousCwd)
     await Deno.remove(tmp, { recursive: true })
   }
 })
