@@ -33,7 +33,7 @@
 
 import { join } from "@std/path"
 import { encryptEnvFiles } from "./encrypt.ts"
-import { type EnvEntry, mergeEnv, readEnvFile, writeEnvFile } from "./env-files.ts"
+import { type EnvEntry, readEnvFile, writeEnvFilePreservingFormat } from "./env-files.ts"
 import { type PromptFn, promptValue, withKeyLabel } from "./prompts.ts"
 import { tryCaptureStdout } from "./shell.ts"
 import {
@@ -147,7 +147,10 @@ export const SERVER_VAR_ALIASES: readonly string[] = Object.values(FIELDS).map((
  */
 export async function serverCreate(opts: ServerCreateOptions = {}): Promise<ServerCreateResult> {
   const cwd = opts.cwd ?? Deno.cwd()
-  const { input, existing } = await collectInput(
+  // #236: `writeEnvFilePreservingFormat` re-reads the current .env text
+  // itself, so `collectInput`'s `existing` (used internally for
+  // existingByKey defaults) isn't needed here any more.
+  const { input } = await collectInput(
     cwd,
     opts.serverInputs,
     opts.providedVars,
@@ -183,11 +186,11 @@ export async function serverCreate(opts: ServerCreateOptions = {}): Promise<Serv
     { key: "VOLUMES_PATH", value: input.volumesPath },
     { key: "PATH_APPS", value: input.pathApps },
   ]
-  // #9: mergeEnv keeps each existing key in its original position when
+  // #9/#236: keeps each existing key in its original position when
   // updating its value — a re-run with unchanged values leaves the file
-  // untouched, and a changed value doesn't jump to the bottom.
-  const merged = mergeEnv(existing, incoming)
-  await writeEnvFile(envPath, merged)
+  // untouched, a changed value doesn't jump to the bottom, and any
+  // comments/blank lines the user added by hand survive too.
+  await writeEnvFilePreservingFormat(envPath, incoming)
 
   // Re-encrypt (non-fatal — see cli/encrypt.ts).
   await encryptEnvFiles(cwd)

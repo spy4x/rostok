@@ -4,11 +4,13 @@ import { assertEquals, assertRejects } from "@std/assert"
 import { join } from "@std/path"
 import {
   mergeEnv,
+  mergeEnvPreservingFormat,
   parseEnv,
   readEnvFile,
   serializeEnv,
   serverContextFromRoot,
   writeEnvFile,
+  writeEnvFilePreservingFormat,
 } from "./env-files.ts"
 
 Deno.test("parseEnv: parses key=value lines", () => {
@@ -139,6 +141,88 @@ Deno.test("writeEnvFile: atomic via .tmp rename", async () => {
   // No .tmp leftover
   await assertRejects(async () => await Deno.stat(`${path}.tmp`))
   await Deno.remove(tmp, { recursive: true })
+})
+
+// #236 — stack add/remove and server create used to lose every comment
+// and blank line on a rewrite (parseEnv/serializeEnv drop them
+// outright). mergeEnvPreservingFormat/writeEnvFilePreservingFormat
+// operate on the raw text instead, so hand-written annotations survive.
+
+Deno.test("mergeEnvPreservingFormat: keeps comments and blank lines, updates a known key in place, appends a new one", () => {
+  const existingText = [
+    "# server-level settings",
+    "DOMAIN=example.com",
+    "",
+    "# stack: librespeed",
+    "LIBRESPEED_DOMAIN=speedtest.example.com",
+    "LIBRESPEED_CPU_LIMIT=0.5",
+  ].join("\n") + "\n"
+  const out = mergeEnvPreservingFormat(existingText, [
+    { key: "LIBRESPEED_CPU_LIMIT", value: "1.0" }, // changed
+    { key: "LIBRESPEED_MEM_LIMIT", value: "256M" }, // new — appended, no blank separator added
+  ])
+  assertEquals(
+    out,
+    [
+      "# server-level settings",
+      "DOMAIN=example.com",
+      "",
+      "# stack: librespeed",
+      "LIBRESPEED_DOMAIN=speedtest.example.com",
+      "LIBRESPEED_CPU_LIMIT=1.0",
+      "LIBRESPEED_MEM_LIMIT=256M",
+    ].join("\n") + "\n",
+  )
+})
+
+Deno.test("mergeEnvPreservingFormat: removeKeys drops only that key's line, comments around it survive", () => {
+  const existingText = [
+    "# kept",
+    "DOMAIN=example.com",
+    "# librespeed's own values",
+    "LIBRESPEED_DOMAIN=speedtest.example.com",
+    "LIBRESPEED_CPU_LIMIT=0.5",
+  ].join("\n") + "\n"
+  const out = mergeEnvPreservingFormat(existingText, [], new Set(["LIBRESPEED_DOMAIN"]))
+  assertEquals(
+    out,
+    [
+      "# kept",
+      "DOMAIN=example.com",
+      "# librespeed's own values",
+      "LIBRESPEED_CPU_LIMIT=0.5",
+      "",
+    ].join("\n"),
+  )
+})
+
+Deno.test("mergeEnvPreservingFormat: no changes round-trips byte-identical", () => {
+  const existingText = "# a note\nFOO=bar\n\nBAZ=qux\n"
+  assertEquals(mergeEnvPreservingFormat(existingText, []), existingText)
+})
+
+Deno.test("writeEnvFilePreservingFormat: rewrites .env on disk, keeping its comments", async () => {
+  const tmp = await Deno.makeTempDir()
+  const path = join(tmp, ".env")
+  try {
+    await Deno.writeTextFile(path, "# annotate this\nFOO=bar\n\nBAZ=qux\n")
+    await writeEnvFilePreservingFormat(path, [{ key: "FOO", value: "changed" }])
+    const text = await Deno.readTextFile(path)
+    assertEquals(text, "# annotate this\nFOO=changed\n\nBAZ=qux\n")
+  } finally {
+    await Deno.remove(tmp, { recursive: true })
+  }
+})
+
+Deno.test("writeEnvFilePreservingFormat: missing file — writes only the incoming entries", async () => {
+  const tmp = await Deno.makeTempDir()
+  const path = join(tmp, ".env")
+  try {
+    await writeEnvFilePreservingFormat(path, [{ key: "FOO", value: "bar" }])
+    assertEquals(await Deno.readTextFile(path), "FOO=bar\n")
+  } finally {
+    await Deno.remove(tmp, { recursive: true })
+  }
 })
 
 Deno.test("serverContextFromRoot: produces a usable ServerContext shape", () => {

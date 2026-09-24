@@ -22,10 +22,9 @@ import { join } from "@std/path"
 import { encryptEnvFiles } from "./encrypt.ts"
 import {
   type EnvEntry,
-  mergeEnv,
   readEnvFile,
   serverContextFromRoot,
-  writeEnvFile,
+  writeEnvFilePreservingFormat,
 } from "./env-files.ts"
 import { type CatalogEntry, findStack } from "./catalog.ts"
 import { resolveCatalog } from "./catalog-paths.ts"
@@ -41,7 +40,7 @@ import {
   withKeyLabel,
 } from "./prompts.ts"
 import { hasReservedStackKeyPrefix, serverDirFor, stackKeyPrefix } from "./server-keys.ts"
-import { UserError } from "./errors.ts"
+import { serverNotFoundMessage, UserError } from "./errors.ts"
 
 /** Result of a stack-add invocation. */
 export interface StackAddResult {
@@ -108,7 +107,7 @@ export async function stackAdd(
   // never creates a server implicitly.
   const serverExists = await Deno.stat(envPath).then((s) => s.isFile).catch(() => false)
   if (!serverExists) {
-    throw new UserError(`server "${serverName}" not found: run rostok server create ${serverName}`)
+    throw new UserError(serverNotFoundMessage(serverName, envPath))
   }
 
   const catalog = await resolveCatalog(opts.catalogDir)
@@ -267,11 +266,12 @@ export async function stackAdd(
     newCount++
   }
 
-  // Write servers/<server>/.env. `existing` is the base so hand-edits to
-  // non-declared keys survive; `writtenEntries` (existing values kept as-
-  // is, plus anything new) is the incoming layer.
-  const merged = mergeEnv(existing, writtenEntries)
-  await writeEnvFile(envPath, merged)
+  // Write servers/<server>/.env. `existing` (read from disk again inside
+  // writeEnvFilePreservingFormat) is the base so hand-edits to
+  // non-declared keys AND any comments/blank lines survive (#236);
+  // `writtenEntries` (existing values kept as-is, plus anything new) is
+  // the incoming layer.
+  await writeEnvFilePreservingFormat(envPath, writtenEntries)
 
   // Update servers/<server>/config.json with the stack list.
   await updateServerConfig(serverDir, entry)

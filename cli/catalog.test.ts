@@ -31,11 +31,28 @@
 // against a stale copy of `stacks/` (see the PR's Evidence section,
 // "prove it fails on main") without touching this file.
 
-import { assertEquals } from "@std/assert"
+import { assertEquals, assertInstanceOf, assertThrows } from "@std/assert"
 import { fromFileUrl, join, relative } from "@std/path"
-import { loadCatalog } from "./catalog.ts"
+import { findStack, loadCatalog, StackNotFoundError } from "./catalog.ts"
 import { hasReservedStackKeyPrefix, isServerKey, stackKeyPrefix } from "./server-keys.ts"
+import { UserError } from "./errors.ts"
 import type { StackMeta } from "./stack-meta.ts"
+
+// #236 item 3 — `StackNotFoundError` lets stack-remove.ts's `tryFindStack`
+// tell "not found" apart from "ambiguous" by class, not by matching the
+// thrown message's text (a reworded message used to silently break that
+// check). `findStack` throws it ONLY for the not-found case.
+Deno.test("findStack: not found throws StackNotFoundError", () => {
+  const err = assertThrows(() => findStack([], "nope"), UserError)
+  assertInstanceOf(err, StackNotFoundError)
+})
+
+Deno.test("findStack: an ambiguous match throws a plain UserError, not StackNotFoundError", () => {
+  const dup: StackMeta = { name: "dup", description: "fixture", variables: [] }
+  const catalog = [{ name: "foo", meta: dup }, { name: "bar", meta: dup }]
+  const err = assertThrows(() => findStack(catalog, "dup"), UserError)
+  assertEquals(err instanceof StackNotFoundError, false)
+})
 
 export type Violation = string
 

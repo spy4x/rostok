@@ -21,6 +21,18 @@ export interface CatalogEntry {
   name: string
 }
 
+/**
+ * Thrown by `findStack` when `name` matches nothing in the catalog —
+ * never for an ambiguous match (`UserError` directly, see below). #236:
+ * `stack-remove.ts`'s `tryFindStack` used to tell "not found" and
+ * "ambiguous" apart by matching the thrown UserError's message text
+ * (`.includes("not found in catalog")`), so rewording that message would
+ * have silently changed which case is treated as "gone from the
+ * catalog" vs. re-thrown as a real error. A dedicated class makes that
+ * distinction independent of wording.
+ */
+export class StackNotFoundError extends UserError {}
+
 // Static imports — bundled into the CLI binary via JSR's resolver.
 import traefik from "../stacks/traefik/+meta.ts"
 import gatus from "../stacks/gatus/+meta.ts"
@@ -69,7 +81,9 @@ export function findStack(
   const matches = catalog.filter((e) => e.name === name || e.meta.name === name)
   if (matches.length === 0) {
     const available = catalog.map((e) => e.name).join(", ")
-    throw new UserError(`stack '${name}' not found in catalog. available: ${available || "(none)"}`)
+    throw new StackNotFoundError(
+      `stack '${name}' not found in catalog. available: ${available || "(none)"}`,
+    )
   }
   if (matches.length > 1) {
     throw new UserError(`ambiguous stack name '${name}': ${matches.length} entries`)

@@ -2,7 +2,7 @@
 // `rostok env setup`, kept separate from the Command so tests can call
 // it without triggering the action's Deno.exit().
 
-import { assertEquals } from "@std/assert"
+import { assertEquals, assertStringIncludes } from "@std/assert"
 import { join } from "@std/path"
 import { runEnvSetup } from "./env.ts"
 
@@ -77,6 +77,98 @@ Deno.test("runEnvSetup: says 'no changes made' when the gitignore rule was alrea
     assertEquals(result.lines.some((l) => l.includes("no changes made")), true)
     assertEquals(result.lines.some((l) => l.includes("key left unchanged")), false)
   })
+})
+
+// #236 — in a linked worktree with no key of its own, `resolveKeyFile`
+// (cli/age.ts) falls back to the MAIN checkout's key. The old message
+// hardcoded `<cwd>/.age/key.txt` regardless — naming a path that had no
+// file on it at all, while the key actually found lived elsewhere. This
+// builds a real main checkout + linked worktree (never the real repo —
+// a throwaway pair in its own temp dir) and asserts the message names
+// the MAIN checkout's path.
+// A parent git process (this repo's own pre-commit hook, or a shell with
+// GIT_DIR exported by hand) could otherwise redirect these fixture git
+// spawns at a completely different repo — see cli/age.test.ts's own
+// version of this helper for the incident that made this necessary.
+function strippedGitEnv(): Record<string, string> {
+  const env = Deno.env.toObject()
+  for (const key of ["GIT_DIR", "GIT_COMMON_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE"]) {
+    delete env[key]
+  }
+  return env
+}
+
+async function gitQuiet(cwd: string, ...args: string[]): Promise<void> {
+  const out = await new Deno.Command("git", {
+    args,
+    cwd,
+    env: strippedGitEnv(),
+    clearEnv: true,
+    stdout: "null",
+    stderr: "piped",
+  }).output()
+  if (!out.success) {
+    throw new Error(`git ${args.join(" ")} failed: ${new TextDecoder().decode(out.stderr)}`)
+  }
+}
+
+/**
+ * `runEnvSetup` → `checkAgeKeyPresent` → `resolveKeyFile` (cli/age.ts)
+ * spawns `git rev-parse --git-common-dir` with NO env override of its
+ * own — it inherits whatever GIT_DIR/etc THIS process currently has. A
+ * poisoned GIT_DIR here would make it resolve `worktree`'s key against
+ * the wrong repo entirely, not `main`. Clearing these four vars for the
+ * duration of the call guarantees the test proves what it claims,
+ * regardless of the ambient environment.
+ */
+async function withoutGitEnv<T>(fn: () => Promise<T>): Promise<T> {
+  const keys = ["GIT_DIR", "GIT_COMMON_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE"]
+  const saved = new Map(keys.map((k) => [k, Deno.env.get(k)]))
+  for (const k of keys) Deno.env.delete(k)
+  try {
+    return await fn()
+  } finally {
+    for (const [k, v] of saved) {
+      if (v === undefined) Deno.env.delete(k)
+      else Deno.env.set(k, v)
+    }
+  }
+}
+
+Deno.test("runEnvSetup: in a worktree without its own key, names the MAIN checkout's key path, not the worktree's", async () => {
+  const root = await Deno.makeTempDir({ prefix: "rostok-env-setup-worktree-" })
+  try {
+    const main = join(root, "main")
+    const worktree = join(root, "worktree")
+    await Deno.mkdir(main, { recursive: true })
+    await gitQuiet(main, "init", "-q")
+    await Deno.writeTextFile(join(main, "README.md"), "x\n")
+    await gitQuiet(main, "add", "README.md")
+    await gitQuiet(
+      main,
+      "-c",
+      "user.email=test@example.com",
+      "-c",
+      "user.name=test",
+      "commit",
+      "-q",
+      "-m",
+      "init",
+    )
+    await Deno.mkdir(join(main, ".age"), { recursive: true })
+    await Deno.writeTextFile(join(main, ".age", "key.txt"), "AGE-SECRET-KEY-placeholder\n")
+    await gitQuiet(main, "worktree", "add", "-q", "--detach", worktree, "HEAD")
+
+    // Note: no .age/key.txt in `worktree` — resolveKeyFile must fall
+    // back to `main`'s.
+    const result = await withoutGitEnv(() => runEnvSetup(worktree))
+    assertEquals(result.ok, true)
+    assertEquals(result.alreadyExisted, true)
+    const messageLine = result.lines.find((l) => l.includes("already exists at"))
+    assertStringIncludes(messageLine ?? "", join(main, ".age", "key.txt"))
+  } finally {
+    await Deno.remove(root, { recursive: true }).catch(() => {})
+  }
 })
 
 // #212 — `rostok env encrypt` with no key points at `rostok env setup`,

@@ -290,10 +290,16 @@ Deno.test("stack add on a missing server fails and writes nothing", async () => 
   await withTmpDir(async (dir) => {
     const catalogDir = join(dir, "catalog")
     await writeCatalog(catalogDir, { demo: IMAGE_STACK_META("demo", "1.0") })
-    await assertRejects(
+    const err = await assertRejects(
       () => stackAdd("demo", "ghost", { cwd: dir, catalogDir }),
       UserError,
-      'server "ghost" not found: run rostok server create ghost',
+    )
+    // #236: exact text — matches deploy's and stack-remove's own
+    // "server not found" wording, which used to differ from this one.
+    const envPath = join(dir, "servers", "ghost", ".env")
+    assertEquals(
+      err.message,
+      `server 'ghost' not found at ${envPath}. Run \`rostok server create ghost\` first.`,
     )
     const serversDir = join(dir, "servers")
     const exists = await Deno.stat(serversDir).then(() => true).catch(() => false)
@@ -319,6 +325,27 @@ Deno.test("adding a second stack never changes the first stack's IMAGE_TAG", asy
 
     const env = await readEnvFile(join(dir, "servers", "test", ".env"))
     assertEquals(env.find((e) => e.key === "IMAGE_TAG")?.value, "latest")
+  })
+})
+
+// #236 — stack add used to round-trip .env through parseEnv/serializeEnv,
+// which silently drop every comment and blank line. A hand-annotated
+// .env must survive a stack add untouched except for the added keys.
+Deno.test("stack add preserves hand-written comments and blank lines in .env", async () => {
+  await withTmpDir(async (dir) => {
+    const catalogDir = join(dir, "catalog")
+    await writeCatalog(catalogDir, { jellyfin: IMAGE_STACK_META("jellyfin", "latest") })
+    await Deno.mkdir(join(dir, "servers", "test"), { recursive: true })
+    const before = "# server-level settings\nPROJECT=hl\nDOMAIN=example.com\n\n# stacks below\n"
+    await Deno.writeTextFile(join(dir, "servers", "test", ".env"), before)
+
+    await stackAdd("jellyfin", "test", { cwd: dir, catalogDir, nonInteractive: true })
+
+    const after = await Deno.readTextFile(join(dir, "servers", "test", ".env"))
+    assertStringIncludes(after, "# server-level settings")
+    assertStringIncludes(after, "# stacks below")
+    assertStringIncludes(after, "\n\n") // the blank line between the two comment blocks survived
+    assertStringIncludes(after, "IMAGE_TAG=latest") // the new key was still written
   })
 })
 

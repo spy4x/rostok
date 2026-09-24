@@ -39,14 +39,14 @@
 
 import { join } from "@std/path"
 import { encryptEnvFiles } from "./encrypt.ts"
-import { type EnvEntry, readEnvFile, writeEnvFile } from "./env-files.ts"
-import { type CatalogEntry, findStack } from "./catalog.ts"
+import { readEnvFile, writeEnvFilePreservingFormat } from "./env-files.ts"
+import { type CatalogEntry, findStack, StackNotFoundError } from "./catalog.ts"
 import { resolveCatalog } from "./catalog-paths.ts"
 import { normalizeVariableSpec } from "./stack-meta.ts"
 import { type ConfirmFn, defaultConfirmFn } from "./prompts.ts"
 import { isServerKey, serverDirFor } from "./server-keys.ts"
 import { readServerConfig } from "./stack-add.ts"
-import { UserError } from "./errors.ts"
+import { serverNotFoundMessage, UserError } from "./errors.ts"
 
 export interface StackRemoveOptions {
   /** Project root. */
@@ -84,12 +84,18 @@ export interface StackRemoveResult {
  * for an AMBIGUOUS name (matches more than one entry) — that's a real
  * bug in the catalog, not "gone from the catalog", so it must propagate
  * rather than being swallowed into a silent "treat it as delisted".
+ *
+ * #236: distinguishes the two cases by catching `StackNotFoundError`
+ * specifically, not by matching the thrown message's text — a reworded
+ * "not found in catalog" message used to silently stop being recognized
+ * here (and an ambiguous-name message that happened to contain that
+ * substring would have been wrongly swallowed too).
  */
 function tryFindStack(catalog: CatalogEntry[], stackName: string): CatalogEntry | undefined {
   try {
     return findStack(catalog, stackName)
   } catch (err) {
-    if (err instanceof UserError && err.message.includes("not found in catalog")) {
+    if (err instanceof StackNotFoundError) {
       return undefined
     }
     throw err
@@ -113,7 +119,7 @@ export async function stackRemove(
 
   const serverExists = await Deno.stat(envPath).then((s) => s.isFile).catch(() => false)
   if (!serverExists) {
-    throw new UserError(`server "${serverName}" not found: run rostok server create ${serverName}`)
+    throw new UserError(serverNotFoundMessage(serverName, envPath))
   }
 
   const catalog = await resolveCatalog(opts.catalogDir)
@@ -235,8 +241,9 @@ export async function stackRemove(
   // Now write: config.json unconditionally, .env only if confirmed.
   await writeConfig(serverDir, cfg, remainingStacks)
   if (shouldDrop) {
-    const updated = existing.filter((e: EnvEntry) => !candidateKeys.includes(e.key))
-    await writeEnvFile(envPath, updated)
+    // #236: preserves comments/blank lines/order for every OTHER line —
+    // only candidateKeys' own lines are removed.
+    await writeEnvFilePreservingFormat(envPath, [], new Set(candidateKeys))
     result.droppedKeys = candidateKeys
     result.keptOwnKeys = []
   }

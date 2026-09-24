@@ -223,11 +223,15 @@ export function isAge64(value: string): boolean {
  * cli/env-files.ts's own convention: this is about the FILE round trip
  * — a `.env`/`.env.age` byte for byte — not what a container or a hook
  * ends up seeing. docker compose's `env_file` and Deno's `--env-file`
- * both strip exactly one matching layer of quotes when they actually
- * load the file (verified directly), and `cli/deploy/hooks.ts`'s
- * `buildHookEnv` does the same for a hook's own environment — see its
- * comment. This function's `value` deliberately keeps the quotes so the
- * file itself never loses them.
+ * strip exactly one matching layer of quotes when they actually load
+ * the file — but they also do more than that: both turn `\n` inside
+ * double quotes into a real newline and drop a trailing ` # comment`
+ * from an unquoted value (verified directly). `cli/deploy/hooks.ts`'s
+ * `buildHookEnv` only does the one-quote-layer strip (`stripOneQuoteLayer`
+ * — see its own comment), not the escape/comment handling, so a hook can
+ * see a different value than its container for those two forms. This
+ * function's `value` deliberately keeps the quotes so the file itself
+ * never loses them.
  */
 export function parseEnvFile(content: string): EnvEntry[] {
   const entries: EnvEntry[] = []

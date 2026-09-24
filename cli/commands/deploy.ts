@@ -14,7 +14,7 @@
 import { Command } from "@cliffy/command"
 import { join } from "@std/path"
 import { serverDirFor } from "../server-keys.ts"
-import { UserError } from "../errors.ts"
+import { serverNotFoundMessage, UserError } from "../errors.ts"
 import { runDeploy } from "../deploy/run-deploy.ts"
 
 export interface DeployValidateResult {
@@ -48,11 +48,7 @@ export async function validateDeployArgs(
   try {
     await Deno.stat(envPath)
   } catch {
-    return {
-      ok: false,
-      error: `server '${server}' not found at ${envPath}.\n` +
-        `  run \`rostok server create ${server}\` first.`,
-    }
+    return { ok: false, error: serverNotFoundMessage(server, envPath) }
   }
 
   // 2. config.json must exist (no stacks configured → nothing to deploy).
