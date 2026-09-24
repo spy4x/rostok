@@ -146,6 +146,42 @@ files; `.env` files stay on disk.
    └─▶ On another machine, .env.age auto-decrypts to .env
 ```
 
+## Deploy is the source of truth
+
+What `servers/<name>/` lists is what runs on the server — nothing else.
+`rostok deploy` makes the server match the project exactly:
+
+- A full deploy (`rostok deploy <server>`) syncs `PATH_APPS` with
+  `rsync --delete`, so a file removed from a stack or from
+  `servers/<name>/configs/` disappears from the server on the next
+  deploy, and a file that's newer on the server is still overwritten by
+  the project's copy. A single-stack deploy
+  (`rostok deploy <server> <stack>`) only ever deletes inside that one
+  stack's own `PATH_APPS/stacks/<stack>/` directory.
+- A stack removed from `config.json` gets its containers stopped
+  (`docker compose down --remove-orphans`) and its folder removed, but
+  its data is never touched — the stack can be added back later with
+  the same data.
+
+**App data must never live inside `PATH_APPS`.** `VOLUMES_PATH` has to
+be a sibling directory of `PATH_APPS` (`server create`'s own default:
+`/srv/apps` and `/srv/volumes`), never nested inside it or the reverse,
+and never equal to it — otherwise the `rsync --delete` above would wipe
+it. Deploy refuses a nested `VOLUMES_PATH` outright.
+
+If an existing server has `VOLUMES_PATH` inside `PATH_APPS` (e.g.
+`VOLUMES_PATH=${PATH_APPS}/.volumes`), move the data before the next
+deploy:
+
+1. Stop the stacks on the server: `docker compose down` in each
+   `<PATH_APPS>/stacks/<name>` directory.
+2. Move the data folder on the server to a sibling of `PATH_APPS`:
+   `mv <old VOLUMES_PATH> <new VOLUMES_PATH>` (the real, expanded
+   paths — not the `${...}` form).
+3. Set `VOLUMES_PATH` to the new path in `servers/<name>/.env` and
+   re-encrypt: `deno task env:encrypt`.
+4. Redeploy.
+
 ## Deploy topology
 
 Each user picks their own topology. A common pattern:
