@@ -26,16 +26,27 @@ const AGE64_PREFIX = "age64:"
  * commands, for instance) may have exported to steer ITS git invocation
  * at a specific repo. `git` honours these regardless of `cwd`, so
  * inheriting them here would silently resolve the key file against
- * whatever repo the parent process meant, not `cwd` — stripped from
- * every git subprocess this module spawns.
+ * whatever repo the parent process meant, not `cwd`.
  */
 const GIT_ENV_POISON = ["GIT_DIR", "GIT_COMMON_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE"]
 
-/** A copy of this process's own env with the git-poisoning keys removed. */
-function gitSubprocessEnv(): Record<string, string> {
-  const env = Deno.env.toObject()
-  for (const key of GIT_ENV_POISON) delete env[key]
-  return env
+/**
+ * True when any git-poisoning env var is set. Checked by NAME
+ * (`Deno.env.get` per key), never `Deno.env.toObject()` — the latter
+ * needs the broad, unscoped `--allow-env` grant (read every variable in
+ * the process's environment), where this only needs a SCOPED
+ * `--allow-env=GIT_DIR,GIT_COMMON_DIR,GIT_WORK_TREE,GIT_INDEX_FILE`
+ * (four names, nothing else). `deno task env:encrypt`/`env:decrypt`
+ * grant neither today (see deno.jsonc) — calling this without either
+ * throws `Deno.errors.NotCapable`, which `resolveKeyFile` below lets
+ * surface rather than swallowing (a real permission problem must fail
+ * loudly, not silently fall back to "no key found").
+ */
+function anyGitEnvPoisoned(): boolean {
+  for (const key of GIT_ENV_POISON) {
+    if (Deno.env.get(key) !== undefined) return true
+  }
+  return false
 }
 
 /**
@@ -43,17 +54,26 @@ function gitSubprocessEnv(): Record<string, string> {
  * always controls exactly which project's key this resolves to.
  *
  * 1. `<cwd>/.age/key.txt` wins outright when it exists — the common
- *    case, and the only one that needs no git subprocess at all. A
- *    linked worktree that has run `env-key-copy.ts` (AGENTS.md's
- *    worktree setup step) has its own copy here.
+ *    case, and the only one that needs no git subprocess (or any env
+ *    permission) at all. A linked worktree that has run
+ *    `env-key-copy.ts` (AGENTS.md's worktree setup step) has its own
+ *    copy here.
  * 2. Otherwise, ask git for the checkout's shared `.git`
  *    (`--git-common-dir`), which for a linked worktree lives in the
  *    MAIN checkout — so a worktree that hasn't copied its own key yet
  *    still finds the main checkout's. Runs with `cwd` passed as the
  *    subprocess's own working directory (not inherited from
- *    `Deno.cwd()`) and the git-poisoning env vars above stripped.
+ *    `Deno.cwd()`). Skipped entirely — falling straight through to
+ *    step 3 — when any of the git-poisoning env vars above is set:
+ *    there is no way to ask git to ignore its own `GIT_DIR` etc.
+ *    without clearing (and therefore fully reconstructing) the child's
+ *    whole environment, which would need the broad `--allow-env` this
+ *    function is deliberately avoiding — refusing to trust git's
+ *    answer here is the safe choice, not silently trusting a possibly
+ *    redirected one.
  * 3. Falls back to `<cwd>/.age/key.txt` (same path as step 1) when git
- *    isn't on PATH or `cwd` isn't inside a repository at all.
+ *    isn't on PATH, `cwd` isn't inside a repository, or step 2 was
+ *    skipped for poisoning.
  */
 export function resolveKeyFile(cwd: string): string {
   const local = join(cwd, ".age", "key.txt")
@@ -61,21 +81,26 @@ export function resolveKeyFile(cwd: string): string {
     if (Deno.statSync(local).isFile) return local
   } catch { /* no local key — fall through to git */ }
 
-  try {
-    const cmd = new Deno.Command("git", {
-      args: ["rev-parse", "--path-format=absolute", "--git-common-dir"],
-      cwd,
-      env: gitSubprocessEnv(),
-      clearEnv: true,
-      stdout: "piped",
-      stderr: "piped",
-    })
-    const out = cmd.outputSync()
-    if (out.code === 0) {
-      const gitDir = new TextDecoder().decode(out.stdout).trim()
-      if (gitDir) return join(dirname(gitDir), ".age", "key.txt")
+  if (!anyGitEnvPoisoned()) {
+    try {
+      const cmd = new Deno.Command("git", {
+        args: ["rev-parse", "--path-format=absolute", "--git-common-dir"],
+        cwd,
+        stdout: "piped",
+        stderr: "piped",
+      })
+      const out = cmd.outputSync()
+      if (out.code === 0) {
+        const gitDir = new TextDecoder().decode(out.stdout).trim()
+        if (gitDir) return join(dirname(gitDir), ".age", "key.txt")
+      }
+    } catch (err) {
+      // Only a missing `git` binary falls through silently — anything
+      // else (a permission error, for instance) is a real problem the
+      // caller must see, not a reason to quietly report "no key".
+      if (!(err instanceof Deno.errors.NotFound)) throw err
     }
-  } catch { /* git missing — fall through */ }
+  }
   return local
 }
 
