@@ -7,12 +7,8 @@ steps:
     image: denoland/deno:2.9.0
     commands:
       # Install age for the encryption tests (cli/encrypt.test.ts assumes
-      # age + age-keygen are on PATH), git for the .gitignore checks
-      # (cli/init.test.ts runs `git check-ignore`), and rsync for
-      # cli/deploy/exec.test.ts's and cli/deploy/run-deploy.test.ts's
-      # real-rsync symlink/--delete tests (#233 review — a hand-rolled
-      # copy loop can't prove real rsync's own symlink-replacement
-      # behaviour). The slim image ships with none of the three; all
-      # three match the dev box environment.
-      - apt-get update && apt-get install -y age git rsync
+      # age + age-keygen are on PATH) and git for the .gitignore checks
+      # (cli/init.test.ts runs `git check-ignore`). The slim image ships
+      # with neither; both match the dev box environment.
+      - apt-get update && apt-get install -y age git
       - deno task check
