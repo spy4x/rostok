@@ -2,7 +2,7 @@
 // the "Releasing" section of AGENTS.md. Bump both files together per
 // release.
 
-export const VERSION = "1.1.0"
+export const VERSION = "1.2.0"
 
 export const NAME = "rostok"
 // Russian name (dropped from comments to avoid mixed-script lint friction).
