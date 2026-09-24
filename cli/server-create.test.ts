@@ -8,6 +8,7 @@
 
 import { assertEquals, assertRejects, assertStringIncludes } from "@std/assert"
 import { join } from "@std/path"
+import { generateAgeKey } from "@spy4x/server/env-age64"
 import { UserError } from "./errors.ts"
 import { DEPLOY_REQUIRED_KEYS } from "./server-keys.ts"
 import { readEnvFile } from "./env-files.ts"
@@ -851,4 +852,39 @@ Deno.test("server create re-validates an SSH_ADDRESS already sitting in .env", a
       "invalid SSH_ADDRESS",
     )
   })
+})
+
+// Review fix — server-create's `reencryptAfterWrite(cwd)` call had no
+// test proving it actually runs: every other test here only reads
+// `.env`, so removing the re-encrypt line entirely used to leave every
+// test in this file green.
+Deno.test("server create writes .env.age when a key is present", async () => {
+  await withFakeSsh(OK_SSH, () =>
+    withTmpDir(async (dir) => {
+      await generateAgeKey(dir)
+      const result = await serverCreate({
+        cwd: dir,
+        failFast: true,
+        providedVars: {
+          SERVER_NAME: "home",
+          SSH_ADDRESS: "root@192.0.2.1",
+          DOMAIN: "example.com",
+          CONTACT_EMAIL: "a@example.com",
+        },
+      })
+      const agePath = `${result.envPath}.age`
+      const ageEntries = await readEnvFile(agePath)
+      const envEntries = await readEnvFile(result.envPath)
+      assertEquals(
+        ageEntries.map((e) => e.key).sort(),
+        envEntries.map((e) => e.key).sort(),
+        ".env.age must hold every key .env does",
+      )
+      // Every value in .env.age must actually be ciphertext, not the
+      // plaintext .env wrote — proves this ran the real encrypt, not a
+      // copy.
+      for (const entry of ageEntries) {
+        assertStringIncludes(entry.value, "age64:")
+      }
+    }))
 })

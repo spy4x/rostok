@@ -32,7 +32,7 @@
 //   `rostok env encrypt` manually afterward.
 
 import { join } from "@std/path"
-import { encryptEnvFiles } from "@spy4x/server/env-age64"
+import { reencryptAfterWrite } from "./reencrypt.ts"
 import { type EnvEntry, readEnvFile, writeEnvFilePreservingFormat } from "./env-files.ts"
 import { type PromptFn, promptValue, withKeyLabel } from "./prompts.ts"
 import { tryCaptureStdout } from "./shell.ts"
@@ -193,7 +193,7 @@ export async function serverCreate(opts: ServerCreateOptions = {}): Promise<Serv
   await writeEnvFilePreservingFormat(envPath, incoming)
 
   // Re-encrypt (non-fatal — e.g. no `.age/key.txt` yet).
-  await encryptEnvFiles(cwd).catch(() => {})
+  await reencryptAfterWrite(cwd)
 
   return {
     serverName: input.serverName,

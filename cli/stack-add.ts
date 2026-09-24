@@ -19,7 +19,7 @@
 // (`() => generatePassword()` only runs when the key is absent).
 
 import { join } from "@std/path"
-import { encryptEnvFiles } from "@spy4x/server/env-age64"
+import { reencryptAfterWrite } from "./reencrypt.ts"
 import {
   type EnvEntry,
   readEnvFile,
@@ -277,7 +277,7 @@ export async function stackAdd(
   await updateServerConfig(serverDir, entry)
 
   // Re-encrypt servers/<server>/.env → .env.age (non-fatal).
-  await encryptEnvFiles(cwd).catch(() => {})
+  await reencryptAfterWrite(cwd)
 
   const valueWord = newCount === 1 ? "value" : "values"
   console.log(

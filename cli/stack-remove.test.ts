@@ -211,6 +211,39 @@ Deno.test("stack remove -n (non-interactive, no --drop-env): removes from config
   })
 })
 
+// Review fix — `reencryptAfterWrite` warns instead of throwing when the
+// re-encrypt itself fails (a key is present, but a value can't be
+// encrypted). Without this test, replacing that warn with a swallowed
+// no-op left every other test in this file green.
+Deno.test("stack remove --drop-env: a bad line elsewhere in .env warns '.env.age NOT updated', doesn't throw", async () => {
+  await withTmpDir(async (dir) => {
+    const catalogDir = join(dir, "catalog")
+    await writeLibrespeedCatalog(catalogDir)
+    await seedServer(dir, "home", { DOMAIN: "example.com" })
+    await generateAgeKey(dir)
+    await addLibrespeed(dir, catalogDir)
+
+    // A line with no `=` is valid dotenv-adjacent text rostok never
+    // rejected before, but `@spy4x/server/env-age64`'s parser refuses it
+    // outright (see the module's README) — exactly the kind of value
+    // this helper must not let take down the whole command.
+    const envPath = join(dir, "servers", "home", ".env")
+    await Deno.writeTextFile(envPath, (await Deno.readTextFile(envPath)) + "stray note\n")
+
+    const warnings: string[] = []
+    const originalWarn = console.warn
+    console.warn = (...args: unknown[]) => warnings.push(args.join(" "))
+    try {
+      await stackRemove("librespeed", "home", { cwd: dir, catalogDir, dropEnv: true })
+    } finally {
+      console.warn = originalWarn
+    }
+
+    const matching = warnings.filter((l) => l.includes(".env.age NOT updated"))
+    assertEquals(matching.length, 1, warnings.join("\n"))
+  })
+})
+
 Deno.test("stack remove interactive: confirming drops env keys, declining leaves them", async () => {
   await withTmpDir(async (dir) => {
     const catalogDir = join(dir, "catalog")
