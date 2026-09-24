@@ -322,13 +322,23 @@ Deno.test("formatCliError: debug=false never appends a trace even if one exists"
 
 const MAIN_TS = join(import.meta.dirname!, "+main.ts")
 
-/** Run `deno run -A cli/+main.ts <args>` as a real subprocess against an existing cwd. */
+/**
+ * Run `deno run -A cli/+main.ts <args>` as a real subprocess against an
+ * existing cwd. When `timeoutMs` is given, the child gets
+ * `signal: AbortSignal.timeout(timeoutMs)` — Deno kills it (SIGTERM) if
+ * it hasn't exited by then, so `cmd.output()` always resolves within
+ * that bound instead of hanging the test run forever. `result.signal`
+ * is non-null exactly when that kill fired — a caller asserting on it
+ * turns "the test hung" into "the test failed with a clear message" for
+ * a regression that brings back a redraw-forever prompt.
+ */
 async function runMainIn(
   cwd: string,
   args: string[],
   env: Record<string, string> = {},
   stdin: "inherit" | "piped" | "null" = "inherit",
-): Promise<{ code: number; stdout: string; stderr: string }> {
+  timeoutMs?: number,
+): Promise<{ code: number; stdout: string; stderr: string; signal: Deno.Signal | null }> {
   const cmd = new Deno.Command(Deno.execPath(), {
     args: ["run", "-A", MAIN_TS, ...args],
     cwd,
@@ -336,12 +346,14 @@ async function runMainIn(
     stdin,
     stdout: "piped",
     stderr: "piped",
+    ...(timeoutMs !== undefined ? { signal: AbortSignal.timeout(timeoutMs) } : {}),
   })
   const out = await cmd.output()
   return {
     code: out.code,
     stdout: new TextDecoder().decode(out.stdout),
     stderr: new TextDecoder().decode(out.stderr),
+    signal: out.signal,
   }
 }
 
@@ -454,17 +466,38 @@ Deno.test({
 
 const NON_TTY_TIME_BOUND_MS = 5_000
 
-/** Fresh, non-tty subprocess run: stdin is `null`, same as a script's `</dev/null`. */
+/**
+ * Fresh, non-tty subprocess run: stdin is `null`, same as a script's
+ * `</dev/null`. Bounded by `NON_TTY_TIME_BOUND_MS` — see `runMainIn`'s
+ * `timeoutMs` doc. Measured real runs land at 0.5–0.9s; 5s is a
+ * generous CI margin, not a tight bound.
+ */
 function runNonTty(
   cwd: string,
   args: string[],
-): Promise<{ code: number; stdout: string; stderr: string }> {
-  return runMainIn(cwd, args, {}, "null")
+): ReturnType<typeof runMainIn> {
+  return runMainIn(cwd, args, {}, "null", NON_TTY_TIME_BOUND_MS)
 }
 
-function assertOneRostokLine(stderr: string): void {
-  const lines = stderr.trim().split("\n")
-  assertEquals(lines.length, 1, `expected exactly one stderr line, got:\n${stderr}`)
+/**
+ * Asserts the process exited on its own (never killed by the
+ * `NON_TTY_TIME_BOUND_MS` abort) and printed exactly one `rostok:`
+ * line naming the non-interactive-stdin guard. Checking `signal` first
+ * gives a clear "killed after Nms — this looks like a hang" failure
+ * instead of the stderr assertion failing on empty/partial output from
+ * a SIGTERM'd process.
+ */
+function assertOneRostokLine(
+  result: { stderr: string; signal: Deno.Signal | null },
+): void {
+  assertEquals(
+    result.signal,
+    null,
+    `process was killed after the ${NON_TTY_TIME_BOUND_MS}ms bound (signal: ${result.signal}) — ` +
+      "looks like a hang, not a normal exit (the #235 redraw-forever regression)",
+  )
+  const lines = result.stderr.trim().split("\n")
+  assertEquals(lines.length, 1, `expected exactly one stderr line, got:\n${result.stderr}`)
   assertStringIncludes(lines[0], "rostok: stdin is not a terminal")
 }
 
@@ -499,15 +532,10 @@ Deno.test({
   async fn() {
     const tmp = await Deno.makeTempDir({ prefix: "rostok-nontty-" })
     try {
-      const start = performance.now()
       const result = await runNonTty(tmp, [])
-      const elapsedMs = performance.now() - start
       assertEquals(result.code, 1)
-      assertOneRostokLine(result.stderr)
+      assertOneRostokLine(result)
       assertNoStackFrame(result.stderr)
-      if (elapsedMs >= NON_TTY_TIME_BOUND_MS) {
-        throw new Error(`expected < ${NON_TTY_TIME_BOUND_MS}ms, took ${elapsedMs}ms`)
-      }
     } finally {
       await Deno.remove(tmp, { recursive: true }).catch(() => {})
     }
@@ -519,15 +547,10 @@ Deno.test({
   async fn() {
     const tmp = await Deno.makeTempDir({ prefix: "rostok-nontty-" })
     try {
-      const start = performance.now()
       const result = await runNonTty(tmp, ["server", "create", "other"])
-      const elapsedMs = performance.now() - start
       assertEquals(result.code, 1)
-      assertOneRostokLine(result.stderr)
+      assertOneRostokLine(result)
       assertNoStackFrame(result.stderr)
-      if (elapsedMs >= NON_TTY_TIME_BOUND_MS) {
-        throw new Error(`expected < ${NON_TTY_TIME_BOUND_MS}ms, took ${elapsedMs}ms`)
-      }
     } finally {
       await Deno.remove(tmp, { recursive: true }).catch(() => {})
     }
@@ -540,17 +563,12 @@ Deno.test({
     const tmp = await Deno.makeTempDir({ prefix: "rostok-nontty-" })
     try {
       await createFixtureServer(tmp)
-      const start = performance.now()
       // librespeed isn't installed yet — stack add must still hit an
       // interactive prompt for its own variables (e.g. LIBRESPEED_DOMAIN).
       const result = await runNonTty(tmp, ["stack", "add", "librespeed", "-s", "home"])
-      const elapsedMs = performance.now() - start
       assertEquals(result.code, 1)
-      assertOneRostokLine(result.stderr)
+      assertOneRostokLine(result)
       assertNoStackFrame(result.stderr)
-      if (elapsedMs >= NON_TTY_TIME_BOUND_MS) {
-        throw new Error(`expected < ${NON_TTY_TIME_BOUND_MS}ms, took ${elapsedMs}ms`)
-      }
     } finally {
       await Deno.remove(tmp, { recursive: true }).catch(() => {})
     }
@@ -566,17 +584,74 @@ Deno.test({
       const add = await runMainIn(tmp, ["stack", "add", "librespeed", "-s", "home", "-n"])
       assertEquals(add.code, 0, add.stderr)
 
-      const start = performance.now()
       // librespeed has its own values in .env now (LIBRESPEED_DOMAIN,
       // etc.) — stack remove reaches the "drop these too?" confirm.
       const result = await runNonTty(tmp, ["stack", "remove", "librespeed", "-s", "home"])
-      const elapsedMs = performance.now() - start
       assertEquals(result.code, 1)
-      assertOneRostokLine(result.stderr)
+      assertOneRostokLine(result)
       assertNoStackFrame(result.stderr)
-      if (elapsedMs >= NON_TTY_TIME_BOUND_MS) {
-        throw new Error(`expected < ${NON_TTY_TIME_BOUND_MS}ms, took ${elapsedMs}ms`)
-      }
+    } finally {
+      await Deno.remove(tmp, { recursive: true }).catch(() => {})
+    }
+  },
+})
+
+/**
+ * Every server field the bare wizard's step 2 (server create) would
+ * otherwise prompt for — passing all of them as `--var` makes step 2
+ * resolve without touching stdin at all (`promptValue` returns the
+ * `provided` value before ever reaching the interactive branch), so a
+ * run using this list only has ONE interactive prompt left: step 3's
+ * stack picker.
+ */
+const ALL_SERVER_VARS = [
+  "--var",
+  "SERVER_NAME=home",
+  "--var",
+  "SSH_ADDRESS=root@203.0.113.9",
+  "--var",
+  "DOMAIN=example.com",
+  "--var",
+  "CONTACT_EMAIL=a@example.com",
+  "--var",
+  "PROJECT=hl",
+  "--var",
+  "DOCKER_GROUP_ID=990",
+  "--var",
+  "TIMEZONE=UTC",
+  "--var",
+  "PUID=1000",
+  "--var",
+  "PGID=1000",
+  "--var",
+  "VOLUMES_PATH=/srv/volumes",
+  "--var",
+  "PATH_APPS=/srv/apps",
+]
+
+Deno.test({
+  name:
+    "subprocess: wizard's stack picker, non-tty stdin, no -n — fails fast with one rostok: line",
+  async fn() {
+    const tmp = await Deno.makeTempDir({ prefix: "rostok-nontty-" })
+    try {
+      // First run: -n, so init's own key-generation offer (already
+      // covered by the bare-wizard test above) never fires, and the
+      // project + server end up fully initialized. That makes the
+      // SECOND run's `shouldOfferKeyGeneration` false (nothing new to
+      // init) and every server field already provided via --var, so
+      // the picker at wizard.ts:221 (pickStacksInteractive's real
+      // Checkbox.prompt, reached because no --stack/-n is passed) is
+      // the ONLY interactive prompt left standing between this run and
+      // its result — isolating that specific guard from the others
+      // this file already covers.
+      const setup = await runMainIn(tmp, ["-n", ...ALL_SERVER_VARS])
+      assertEquals(setup.code, 0, setup.stderr)
+
+      const result = await runNonTty(tmp, ALL_SERVER_VARS)
+      assertEquals(result.code, 1)
+      assertOneRostokLine(result)
+      assertNoStackFrame(result.stderr)
     } finally {
       await Deno.remove(tmp, { recursive: true }).catch(() => {})
     }
