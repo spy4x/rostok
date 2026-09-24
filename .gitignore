@@ -14,6 +14,11 @@ node_modules
 !*.env.example
 !.env.root.example
 
+# @spy4x/server/env-age64's atomic-write leftover, if a crash ever left
+# one behind (same directory as the plaintext or encrypted file it was
+# writing).
+.age64-tmp-*
+
 # Personal homelab deploy tree (per-server .env + configs) — kept
 # locally on the owner's machine, gitignored. Move out before sharing.
 servers/
