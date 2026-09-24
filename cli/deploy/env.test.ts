@@ -1,6 +1,7 @@
 import { assertEquals, assertStringIncludes, assertThrows } from "@std/assert"
 import { UserError } from "../errors.ts"
 import {
+  expandEnvRefs,
   resolveDeployEnv,
   resolvePathApps,
   resolvePgid,
@@ -181,4 +182,79 @@ Deno.test("resolveDeployEnv: rejects a VOLUMES_PATH with a .. segment", () => {
     UserError,
   )
   assertStringIncludes(err.message, "invalid VOLUMES_PATH")
+})
+
+Deno.test("expandEnvRefs: ${VAR} expands against the given env", () => {
+  assertEquals(
+    expandEnvRefs("VOLUMES_PATH", "${PATH_APPS}/.volumes", { PATH_APPS: "/srv/apps" }),
+    "/srv/apps/.volumes",
+  )
+})
+
+Deno.test("expandEnvRefs: bare $VAR (no braces) also expands", () => {
+  assertEquals(
+    expandEnvRefs("VOLUMES_PATH", "$PATH_APPS/.volumes", { PATH_APPS: "/srv/apps" }),
+    "/srv/apps/.volumes",
+  )
+})
+
+Deno.test("expandEnvRefs: a value with no reference passes through unchanged", () => {
+  assertEquals(
+    expandEnvRefs("VOLUMES_PATH", "/srv/volumes", { PATH_APPS: "/srv/apps" }),
+    "/srv/volumes",
+  )
+})
+
+Deno.test("expandEnvRefs: throws a UserError naming an undefined reference", () => {
+  const err = assertThrows(
+    () => expandEnvRefs("VOLUMES_PATH", "${TYPO_PATH}/.volumes", { PATH_APPS: "/srv/apps" }),
+    UserError,
+  )
+  assertStringIncludes(err.message, "invalid VOLUMES_PATH")
+  assertStringIncludes(err.message, "TYPO_PATH")
+})
+
+Deno.test("resolveDeployEnv: VOLUMES_PATH=${PATH_APPS}/.volumes expands and passes validation (#223)", () => {
+  const resolved = resolveDeployEnv(
+    { ...VALID_BASE, PATH_APPS: "/srv/apps", VOLUMES_PATH: "${PATH_APPS}/.volumes" },
+    "servers/home/.env",
+    ROOT_ENV_PATH,
+  )
+  assertEquals(resolved.env.VOLUMES_PATH, "/srv/apps/.volumes")
+})
+
+Deno.test("resolveDeployEnv: VOLUMES_PATH=$PATH_APPS/.volumes (no braces) also expands (#223)", () => {
+  const resolved = resolveDeployEnv(
+    { ...VALID_BASE, PATH_APPS: "/srv/apps", VOLUMES_PATH: "$PATH_APPS/.volumes" },
+    "servers/home/.env",
+    ROOT_ENV_PATH,
+  )
+  assertEquals(resolved.env.VOLUMES_PATH, "/srv/apps/.volumes")
+})
+
+Deno.test("resolveDeployEnv: a VOLUMES_PATH referencing an undefined var still fails loudly", () => {
+  const err = assertThrows(
+    () =>
+      resolveDeployEnv(
+        { ...VALID_BASE, VOLUMES_PATH: "${TYPO_PATH}/.volumes" },
+        "servers/home/.env",
+        ROOT_ENV_PATH,
+      ),
+    UserError,
+  )
+  assertStringIncludes(err.message, "invalid VOLUMES_PATH")
+  assertStringIncludes(err.message, "TYPO_PATH")
+})
+
+Deno.test("resolveDeployEnv: an expanded VOLUMES_PATH that still isn't absolute is rejected", () => {
+  const err = assertThrows(
+    () =>
+      resolveDeployEnv(
+        { ...VALID_BASE, PATH_APPS: "relative/apps", VOLUMES_PATH: "${PATH_APPS}/.volumes" },
+        "servers/home/.env",
+        ROOT_ENV_PATH,
+      ),
+    UserError,
+  )
+  assertStringIncludes(err.message, "invalid PATH_APPS")
 })

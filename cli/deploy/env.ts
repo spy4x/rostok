@@ -18,6 +18,18 @@
 // on the machine running rostok the moment ssh (or rsync, which
 // re-spawns ssh with the same target) parses it as an option instead of
 // a destination.
+//
+// (#223) VOLUMES_PATH written as `${PATH_APPS}/.volumes` (or
+// `$PATH_APPS/...`) is expanded against the already-loaded env — the
+// same reference docker compose itself resolves when it reads the same
+// `.env` — before the plain-absolute-path check runs. `server
+// create`'s own prompt already rejects a `${...}` value outright
+// (`validateRemotePath` disallows `$`/`{`/`}`), so this only matters for
+// a `.env` written or edited by hand, or by an older rostok version, and
+// never for one `server create` (as of #223) still produces. An
+// undefined reference is a UserError naming it — silently leaving
+// `${TYPO}` in the path would otherwise reach ssh/rsync as a literal,
+// nonexistent directory name.
 
 import {
   DEFAULT_PATH_APPS,
@@ -26,6 +38,29 @@ import {
   validateSshAddress,
 } from "../server-keys.ts"
 import { UserError } from "../errors.ts"
+
+/**
+ * Expand `${VAR}` and bare `$VAR` references in `value` against `env`,
+ * the way docker compose resolves the same `.env` file. Only a plain
+ * variable reference is supported — no `:-default`, `:?msg`, nesting,
+ * or `$$` escape (VOLUMES_PATH/PATH_APPS never need those; compose's own
+ * fuller grammar is out of scope here). Throws a UserError naming `key`
+ * and the undefined reference — a silently-unexpanded `${TYPO}` would
+ * otherwise reach ssh/rsync as a literal, nonexistent path segment.
+ */
+export function expandEnvRefs(key: string, value: string, env: Record<string, string>): string {
+  return value.replace(
+    /\$\{([A-Za-z_][A-Za-z0-9_]*)\}|\$([A-Za-z_][A-Za-z0-9_]*)/g,
+    (_match, braced: string | undefined, bare: string | undefined) => {
+      const ref = braced ?? bare!
+      const resolved = env[ref]
+      if (resolved === undefined) {
+        throw new UserError(`invalid ${key} "${value}": references undefined variable "${ref}".`)
+      }
+      return resolved
+    },
+  )
+}
 
 export interface ResolvedValue {
   value: string
@@ -111,6 +146,13 @@ export function resolveDeployEnv(
       `missing required key(s) in ${envPath} (also checked ${rootEnvPath}): ${missing.join(", ")}`,
     )
   }
+
+  // Expand ${VAR}/$VAR references (e.g. VOLUMES_PATH=${PATH_APPS}/.volumes)
+  // before the plain-absolute-path check — see the module comment (#223).
+  // PATH_APPS expands first so a VOLUMES_PATH that references it sees the
+  // final value, not an unexpanded one.
+  resolved.PATH_APPS = expandEnvRefs("PATH_APPS", resolved.PATH_APPS, resolved)
+  resolved.VOLUMES_PATH = expandEnvRefs("VOLUMES_PATH", resolved.VOLUMES_PATH, resolved)
 
   // Before any of these reaches ssh/rsync or a remote shell command:
   // reject an SSH_ADDRESS that could be read as an option, and a
