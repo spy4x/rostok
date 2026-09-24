@@ -5,7 +5,10 @@ import {
   DEPLOY_REQUIRED_KEYS,
   hasReservedStackKeyPrefix,
   isServerKey,
+  normalizeRemotePath,
   parseSshAddress,
+  pathComponents,
+  pathsNestedOrEqual,
   rsyncDestination,
   rsyncSshOption,
   SERVER_KEYS,
@@ -192,6 +195,43 @@ Deno.test("rejects an unbracketed IPv6 address followed by what looks like a por
   )
 })
 
+Deno.test('rejects root@host:22:33 instead of reading it as a host literally named "host:22:33" (#236)', () => {
+  // Before this fix, a multi-colon address with no "::" fell straight
+  // through to `host = rest` whenever it wasn't flagged as an ambiguous
+  // IPv6-with-port — accepting "host:22:33" as one literal SSH_HOST
+  // (colons are in SSH_HOST_CHARS_PATTERN's own alphabet). ssh then
+  // failed with its own "could not resolve hostname" instead of
+  // rostok's own message.
+  const err = assertThrows(
+    () => parseSshAddress("root@host:22:33"),
+    UserError,
+    "invalid SSH_ADDRESS",
+  )
+  assertStringIncludes(err.message, "more than one colon")
+})
+
+Deno.test("still accepts a genuine unbracketed IPv6 literal with no port", () => {
+  // "host:22:33" is rejected above because "host:22" has letters outside
+  // a-f; a real (rare) fully-written IPv6 literal, whose groups are all
+  // hex digits and colons, must keep parsing as a bare host.
+  assertEquals(parseSshAddress("2001:0db8:0000:0000:0000:0000:0000:0001"), {
+    user: undefined,
+    host: "2001:0db8:0000:0000:0000:0000:0000:0001",
+    port: undefined,
+  })
+})
+
+Deno.test('rejects "cafe:22:33" and "root@deadbeef:22:33" — every char is hex, but 3 groups isn\'t real IPv6 (review round)', () => {
+  // A "looks hex" check alone (HEX_COLON_PATTERN on the pre-port slice)
+  // wrongly accepted these: "cafe"/"deadbeef" ARE valid hex, so the old
+  // heuristic mistook them for the rare-full-IPv6-literal case instead
+  // of requiring the real shape (exactly 8 groups, or "::").
+  for (const input of ["cafe:22:33", "root@deadbeef:22:33"]) {
+    const err = assertThrows(() => parseSshAddress(input), UserError, "invalid SSH_ADDRESS")
+    assertStringIncludes(err.message, "more than one colon")
+  }
+})
+
 Deno.test("rejects a port outside 1-65535", () => {
   for (
     const v of ["host:0", "host:65536", "host:999999", "[2001:db8::1]:0", "[2001:db8::1]:70000"]
@@ -288,8 +328,8 @@ Deno.test("rsyncSshOption and rsyncDestination carry the port and bracket a bare
   )
 })
 
-Deno.test("accepts plain absolute remote paths", () => {
-  for (const v of ["/srv/apps", "/", "/home/deploy/apps_1", "/srv/v-1.2"]) {
+Deno.test("accepts plain absolute remote paths, two components or deeper", () => {
+  for (const v of ["/srv/apps", "/home/deploy/apps_1", "/srv/v-1.2"]) {
     validateRemotePath("PATH_APPS", v)
   }
 })
@@ -300,6 +340,48 @@ Deno.test("rejects remote paths with shell metacharacters or ..", () => {
   ) {
     assertThrows(() => validateRemotePath("PATH_APPS", v), UserError, "invalid PATH_APPS")
   }
+})
+
+Deno.test("rejects / and any one-component path — rostok must own the whole directory (#233)", () => {
+  // /srv or /home as PATH_APPS would make a full deploy's rsync --delete
+  // (run-deploy.ts) delete everything ELSE already on the server under
+  // that path, not just what rostok put there.
+  for (const v of ["/", "/srv", "/home", "/apps"]) {
+    assertThrows(() => validateRemotePath("PATH_APPS", v), UserError, "must be a directory")
+  }
+})
+
+Deno.test("accepts a ONE-component VOLUMES_PATH like /data (review round: minComponents 1)", () => {
+  // The two-component floor is a "rostok owns this directory entirely"
+  // guard for PATH_APPS, where a deploy's rsync --delete actually
+  // deletes stale files under it. VOLUMES_PATH is never synced or
+  // deleted-under as a whole tree — only individual
+  // VOLUMES_PATH/<stack> entries are ever named — so a shallow,
+  // perfectly common layout like /data must be accepted, not rejected
+  // by the same floor PATH_APPS needs.
+  validateRemotePath("VOLUMES_PATH", "/data", 1)
+})
+
+Deno.test("still rejects a bare / for VOLUMES_PATH even with minComponents 1", () => {
+  assertThrows(
+    () => validateRemotePath("VOLUMES_PATH", "/", 1),
+    UserError,
+    "must be a directory",
+  )
+})
+
+Deno.test('pathComponents: splits a path into its non-empty, non-"." components', () => {
+  assertEquals(pathComponents("/srv/apps"), ["srv", "apps"])
+  assertEquals(pathComponents("/srv//apps/"), ["srv", "apps"])
+  assertEquals(pathComponents("/srv/./apps"), ["srv", "apps"])
+  assertEquals(pathComponents("/"), [])
+})
+
+Deno.test("normalizeRemotePath: collapses doubled slashes, a trailing slash and . segments", () => {
+  assertEquals(normalizeRemotePath("/srv/apps"), "/srv/apps")
+  assertEquals(normalizeRemotePath("/srv/apps/"), "/srv/apps")
+  assertEquals(normalizeRemotePath("/srv//apps"), "/srv/apps")
+  assertEquals(normalizeRemotePath("/srv/./apps"), "/srv/apps")
 })
 
 Deno.test("accepts plain ssh/system usernames", () => {
@@ -318,4 +400,30 @@ Deno.test("rejects an SSH_USER with shell metacharacters, spaces or a colon", ()
   ) {
     assertThrows(() => validateSshUser(v), UserError, "invalid SSH_USER")
   }
+})
+
+Deno.test("pathsNestedOrEqual: a sibling directory is not nested (#233)", () => {
+  assertFalse(pathsNestedOrEqual("/srv/apps", "/srv/volumes"))
+  // A raw string-prefix check would wrongly flag this pair — "/srv/apps2"
+  // starts with the literal text "/srv/apps" but is a sibling directory.
+  assertFalse(pathsNestedOrEqual("/srv/apps", "/srv/apps2"))
+})
+
+Deno.test("pathsNestedOrEqual: VOLUMES_PATH inside PATH_APPS is nested, either argument order", () => {
+  assert(pathsNestedOrEqual("/srv/apps", "/srv/apps/.volumes"))
+  assert(pathsNestedOrEqual("/srv/apps/.volumes", "/srv/apps"))
+})
+
+Deno.test("pathsNestedOrEqual: PATH_APPS inside VOLUMES_PATH is nested too", () => {
+  assert(pathsNestedOrEqual("/srv/volumes/apps", "/srv/volumes"))
+})
+
+Deno.test("pathsNestedOrEqual: equal paths count as nested", () => {
+  assert(pathsNestedOrEqual("/srv/apps", "/srv/apps"))
+})
+
+Deno.test("pathsNestedOrEqual: normalises trailing slashes, doubled slashes and . segments before comparing", () => {
+  assert(pathsNestedOrEqual("/srv/apps/", "/srv//apps"))
+  assert(pathsNestedOrEqual("/srv/./apps", "/srv/apps"))
+  assert(pathsNestedOrEqual("/srv/apps/", "/srv/apps/.volumes"))
 })

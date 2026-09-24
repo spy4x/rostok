@@ -756,6 +756,29 @@ Deno.test("server create rejects a VOLUMES_PATH with a command substitution", as
     }))
 })
 
+Deno.test("server create accepts a ONE-component VOLUMES_PATH like /data (review round)", async () => {
+  // The two-component floor only applies to PATH_APPS (server-keys.ts's
+  // validateRemotePath) — VOLUMES_PATH is never synced or deleted-under
+  // as a whole tree by rostok, so a shallow, common layout like /data
+  // must be accepted here too, not just in the deploy-time check.
+  await withFakeSsh(OK_SSH, () =>
+    withTmpDir(async (dir) => {
+      await serverCreate({
+        cwd: dir,
+        failFast: true,
+        providedVars: {
+          SERVER_NAME: "home",
+          SSH_ADDRESS: "root@192.0.2.1",
+          DOMAIN: "example.com",
+          CONTACT_EMAIL: "a@example.com",
+          VOLUMES_PATH: "/data",
+        },
+      })
+      const after = await Deno.readTextFile(join(dir, "servers", "home", ".env"))
+      assertStringIncludes(after, "VOLUMES_PATH=/data")
+    }))
+})
+
 // ─────────────────────────────────────────────────────────────────────
 // Review fix #4 (round 4, cosmetic) — a failed probe on an existing
 // server must say the saved values are kept, not "using default" (they

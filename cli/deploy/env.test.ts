@@ -220,22 +220,51 @@ Deno.test("expandEnvRefs: throws a UserError naming an undefined reference", () 
   assertStringIncludes(err.message, "TYPO_PATH")
 })
 
-Deno.test("resolveDeployEnv: VOLUMES_PATH=${PATH_APPS}/.volumes expands and passes validation (#223)", () => {
+Deno.test("resolveDeployEnv: VOLUMES_PATH=${BASE_PATH}/volumes expands and passes validation (#223)", () => {
+  // Was VOLUMES_PATH=${PATH_APPS}/.volumes before #233 — that's now the
+  // exact shape #233 refuses (see the dedicated nesting tests below), so
+  // this proves the SAME expansion mechanism against a sibling path
+  // instead, one that doesn't nest under PATH_APPS.
   const resolved = resolveDeployEnv(
-    { ...VALID_BASE, PATH_APPS: "/srv/apps", VOLUMES_PATH: "${PATH_APPS}/.volumes" },
+    {
+      ...VALID_BASE,
+      PATH_APPS: "/srv/apps",
+      VOLUMES_PATH: "${BASE_PATH}/volumes",
+      BASE_PATH: "/srv",
+    },
     "servers/home/.env",
     ROOT_ENV_PATH,
   )
-  assertEquals(resolved.env.VOLUMES_PATH, "/srv/apps/.volumes")
+  assertEquals(resolved.env.VOLUMES_PATH, "/srv/volumes")
 })
 
-Deno.test("resolveDeployEnv: VOLUMES_PATH=$PATH_APPS/.volumes (no braces) also expands (#223)", () => {
+Deno.test("resolveDeployEnv: VOLUMES_PATH=$BASE_PATH/volumes (no braces) also expands (#223)", () => {
   const resolved = resolveDeployEnv(
-    { ...VALID_BASE, PATH_APPS: "/srv/apps", VOLUMES_PATH: "$PATH_APPS/.volumes" },
+    {
+      ...VALID_BASE,
+      PATH_APPS: "/srv/apps",
+      VOLUMES_PATH: "$BASE_PATH/volumes",
+      BASE_PATH: "/srv",
+    },
     "servers/home/.env",
     ROOT_ENV_PATH,
   )
-  assertEquals(resolved.env.VOLUMES_PATH, "/srv/apps/.volumes")
+  assertEquals(resolved.env.VOLUMES_PATH, "/srv/volumes")
+})
+
+Deno.test("resolveDeployEnv: accepts a ONE-component VOLUMES_PATH like /data (review round)", () => {
+  // The two-component floor (validateRemotePath's minComponents) is a
+  // "rostok owns this whole directory" guard that only makes sense for
+  // PATH_APPS, which a deploy's rsync --delete actually syncs and
+  // deletes stale files under. VOLUMES_PATH is never synced as a whole
+  // tree, so a shallow, common layout like /data must resolve cleanly,
+  // not be rejected by the same floor PATH_APPS needs.
+  const resolved = resolveDeployEnv(
+    { ...VALID_BASE, VOLUMES_PATH: "/data" },
+    "servers/home/.env",
+    ROOT_ENV_PATH,
+  )
+  assertEquals(resolved.env.VOLUMES_PATH, "/data")
 })
 
 Deno.test("resolveDeployEnv: a VOLUMES_PATH referencing an undefined var still fails loudly", () => {
@@ -411,4 +440,118 @@ Deno.test("resolveDeployEnv: PATH_APPS=${BASE_PATH}/rostok expands and passes va
     ROOT_ENV_PATH,
   )
   assertEquals(resolved.env.PATH_APPS, "/home/user/apps/rostok")
+})
+
+Deno.test("resolveDeployEnv: normalises PATH_APPS itself, not just VOLUMES_PATH (review round)", () => {
+  // env.ts normalises PATH_APPS and VOLUMES_PATH right after validation
+  // so every later consumer (run-deploy.ts's rsync/cleanup scripts, the
+  // remote readlink -f guard) works from the exact same string. Nothing
+  // in this file proved the PATH_APPS half of that — only VOLUMES_PATH
+  // had its own doubled-slash/trailing-slash coverage elsewhere.
+  const resolved = resolveDeployEnv(
+    { ...VALID_BASE, PATH_APPS: "/srv//apps/" },
+    "servers/home/.env",
+    ROOT_ENV_PATH,
+  )
+  assertEquals(resolved.env.PATH_APPS, "/srv/apps")
+})
+
+Deno.test("expandEnvRefs: a key merely containing PATH_ or ending in PATH-like text, not shaped as PATH_*/*_PATH, is refused (#236)", () => {
+  // isExpandablePathKey's patterns are anchored (^...$) — each of the
+  // four cases below is chosen so ONLY ONE of the pattern's two anchors
+  // being removed would let it through, catching that specific mutation
+  // (proven — see the PR body's mutation list):
+  //   - "XPATH_FOO"    → PATH_*'s   front anchor (^) removed
+  //   - "PATH_FOOevil" → PATH_*'s   end   anchor ($) removed
+  //   - "FOO_PATHX"    → *_PATH's   end   anchor ($) removed
+  //   - "zEVIL_PATH"   → *_PATH's   front anchor (^) removed
+  for (const key of ["XPATH_FOO", "PATH_FOOevil", "FOO_PATHX", "zEVIL_PATH"]) {
+    const err = assertThrows(
+      () => expandEnvRefs("VOLUMES_PATH", `/x/\${${key}}`, { [key]: "/should/not/expand" }),
+      UserError,
+    )
+    assertStringIncludes(err.message, key)
+  }
+})
+
+Deno.test("resolveDeployEnv: refuses a one-folder PATH_APPS such as /srv", () => {
+  const err = assertThrows(
+    () =>
+      resolveDeployEnv(
+        { ...VALID_BASE, PATH_APPS: "/srv", VOLUMES_PATH: "/data" },
+        "servers/home/.env",
+        ROOT_ENV_PATH,
+      ),
+    UserError,
+  )
+  assertStringIncludes(err.message, "PATH_APPS")
+})
+
+Deno.test("resolveDeployEnv: accepts a one-folder VOLUMES_PATH such as /data", () => {
+  const env = resolveDeployEnv(
+    { ...VALID_BASE, VOLUMES_PATH: "/data" },
+    "servers/home/.env",
+    ROOT_ENV_PATH,
+  )
+  assertEquals(env.env.VOLUMES_PATH, "/data")
+})
+
+Deno.test("resolveDeployEnv: refuses VOLUMES_PATH inside PATH_APPS, with migration steps (#233)", () => {
+  const err = assertThrows(
+    () =>
+      resolveDeployEnv(
+        { ...VALID_BASE, PATH_APPS: "/srv/apps", VOLUMES_PATH: "${PATH_APPS}/.volumes" },
+        "servers/home/.env",
+        ROOT_ENV_PATH,
+      ),
+    UserError,
+  )
+  assertStringIncludes(err.message, "/srv/apps/.volumes")
+  assertStringIncludes(err.message, "/srv/apps")
+  assertStringIncludes(err.message, "docker compose -p <project> down --remove-orphans")
+  assertStringIncludes(err.message, "com.docker.compose.project.working_dir")
+  assertEquals(err.message.includes("-p <name>"), false, "an aliased stack runs under deployAs")
+  assertStringIncludes(err.message, "mv ")
+  assertStringIncludes(err.message, "rostok env encrypt")
+})
+
+Deno.test("resolveDeployEnv: refuses PATH_APPS inside VOLUMES_PATH, the other nesting (#233)", () => {
+  // The reverse nesting: VOLUMES_PATH is the ANCESTOR here (it contains
+  // PATH_APPS), so the message must never tell the operator to `mv` it —
+  // that would move PATH_APPS along with it.
+  const err = assertThrows(
+    () =>
+      resolveDeployEnv(
+        { ...VALID_BASE, PATH_APPS: "/srv/volumes/apps", VOLUMES_PATH: "/srv/volumes" },
+        "servers/home/.env",
+        ROOT_ENV_PATH,
+      ),
+    UserError,
+  )
+  assertStringIncludes(err.message, "must live outside VOLUMES_PATH")
+  assertStringIncludes(err.message, "never move VOLUMES_PATH here")
+  assertEquals(err.message.includes("mv /srv/volumes "), false)
+})
+
+Deno.test("resolveDeployEnv: refuses an equal PATH_APPS and VOLUMES_PATH", () => {
+  const err = assertThrows(
+    () =>
+      resolveDeployEnv(
+        { ...VALID_BASE, PATH_APPS: "/srv/apps", VOLUMES_PATH: "/srv/apps" },
+        "servers/home/.env",
+        ROOT_ENV_PATH,
+      ),
+    UserError,
+  )
+  assertStringIncludes(err.message, "must not be the same directory")
+})
+
+Deno.test("resolveDeployEnv: a sibling VOLUMES_PATH is accepted, even one sharing a string prefix", () => {
+  // Not "/srv/apps2 IS inside /srv/apps" — a raw string-prefix bug would
+  // wrongly refuse this pair.
+  resolveDeployEnv(
+    { ...VALID_BASE, PATH_APPS: "/srv/apps", VOLUMES_PATH: "/srv/apps2" },
+    "servers/home/.env",
+    ROOT_ENV_PATH,
+  )
 })

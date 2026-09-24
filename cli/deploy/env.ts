@@ -31,6 +31,17 @@
 // `${TYPO}` in the path would otherwise reach ssh/rsync as a literal,
 // nonexistent directory name.
 //
+// (#233) VOLUMES_PATH must never sit inside PATH_APPS, nor the reverse,
+// nor equal it — checked with server-keys.ts's pathsNestedOrEqual
+// (path-component-wise, after the expansion above, never a raw string
+// prefix) once both are resolved. A full deploy now syncs PATH_APPS with
+// `rsync --delete`, so app data living inside it would be wiped the
+// moment a stack it belongs to stops shipping a file deploy expects
+// there. The error names the real, expanded paths and the steps to move
+// the data — `server create` already defaults to sibling paths
+// (/srv/apps, /srv/volumes); this only fires for a `.env` written or
+// edited by hand, or by an older rostok version.
+//
 // SSH_USER/SSH_ADDRESS agreement: a hook must log in as the same user
 // deploy's own ssh/rsync calls do. Deploy's login user is the user part
 // of SSH_ADDRESS when it has one (or ssh_config's own User for a bare
@@ -47,12 +58,57 @@
 import {
   DEFAULT_PATH_APPS,
   DEPLOY_REQUIRED_KEYS,
+  normalizeRemotePath,
   parseSshAddress,
+  pathComponents,
+  pathsNestedOrEqual,
   validateRemotePath,
   validateSshAddress,
   validateSshUser,
 } from "../server-keys.ts"
 import { UserError } from "../errors.ts"
+
+/**
+ * Build the UserError message for a nested/equal PATH_APPS/VOLUMES_PATH
+ * pair (#233), picking the right migration steps for WHICH direction the
+ * nesting runs — `mv`-ing `VOLUMES_PATH` out only makes sense when it's
+ * the one sitting inside `PATH_APPS`; telling the operator to move it
+ * when `PATH_APPS` is the one nested inside `VOLUMES_PATH` would tell
+ * them to `mv` the very folder that also holds `PATH_APPS`.
+ */
+function buildNestedPathsError(pathApps: string, volumesPath: string, envPath: string): string {
+  const reencrypt = "re-encrypt (`rostok env encrypt`)"
+  const stopStacks = "stop each stack on the server: for each stacks/<name>, find its project " +
+    "with `docker ps -a --filter label=com.docker.compose.project.working_dir=<PATH_APPS>/" +
+    "stacks/<name> --format '{{.Label \"com.docker.compose.project\"}}'` and run " +
+    "`docker compose -p <project> down --remove-orphans` (use the project the label reports, " +
+    "not the folder name: an aliased stack runs under its deployAs name)"
+
+  if (pathApps === volumesPath) {
+    return `VOLUMES_PATH and PATH_APPS must not be the same directory ("${pathApps}") — a ` +
+      `full deploy syncs PATH_APPS with rsync --delete, which would wipe VOLUMES_PATH's data ` +
+      `too. Point them at sibling directories instead (e.g. /srv/apps and /srv/volumes), ` +
+      `update ${envPath}, ${reencrypt}, and redeploy.`
+  }
+  if (pathComponents(pathApps).length > pathComponents(volumesPath).length) {
+    // PATH_APPS is the one nested inside VOLUMES_PATH — VOLUMES_PATH is
+    // the ANCESTOR here, so it's never the one to move.
+    return `PATH_APPS "${pathApps}" must live outside VOLUMES_PATH "${volumesPath}" — a full ` +
+      `deploy syncs PATH_APPS with rsync --delete, and VOLUMES_PATH must never be an ` +
+      `ancestor of it either, or a bug in that sync could reach data outside PATH_APPS. ` +
+      `Point PATH_APPS and VOLUMES_PATH at sibling directories instead (e.g. /srv/apps and ` +
+      `/srv/volumes) — never move VOLUMES_PATH here, since it currently CONTAINS PATH_APPS. ` +
+      `${stopStacks}, move PATH_APPS's own data if it has any outside compose volumes, update ` +
+      `PATH_APPS and/or VOLUMES_PATH in ${envPath}, ${reencrypt}, and redeploy.`
+  }
+  // The common case: VOLUMES_PATH nested inside PATH_APPS.
+  return `VOLUMES_PATH "${volumesPath}" must live outside PATH_APPS "${pathApps}" — a full ` +
+    `deploy now syncs PATH_APPS with rsync --delete, which would wipe app data stored inside ` +
+    `it. To move the data: 1) ${stopStacks}, 2) move the data folder on the server ` +
+    `(\`mv ${volumesPath} <new path>\`, a sibling of PATH_APPS, e.g. /srv/volumes next to ` +
+    `/srv/apps), 3) set VOLUMES_PATH to the new path in ${envPath} and ${reencrypt}, ` +
+    `4) redeploy.`
+}
 
 /**
  * True for a key safe to substitute into VOLUMES_PATH/PATH_APPS: a
@@ -213,16 +269,40 @@ export function resolveDeployEnv(
 
   // Before any of these reaches ssh/rsync or a remote shell command:
   // reject an SSH_ADDRESS that could be read as an option, a
-  // PATH_APPS/VOLUMES_PATH that isn't a plain absolute path, and an
-  // SSH_USER that isn't a safe username — checked regardless of what
-  // form SSH_ADDRESS takes (a bare ssh_config alias has no user@ part
-  // for parseSshAddress to validate on its own, so this is the only
-  // check SSH_USER gets; a hook can build an unquoted remote shell
-  // command from it, e.g. syncthing's `chown ${user}:${user} <path>`).
+  // PATH_APPS/VOLUMES_PATH that isn't a plain absolute path rostok owns
+  // entirely, and an SSH_USER that isn't a safe username — checked
+  // regardless of what form SSH_ADDRESS takes (a bare ssh_config alias
+  // has no user@ part for parseSshAddress to validate on its own, so
+  // this is the only check SSH_USER gets; a hook can build an unquoted
+  // remote shell command from it, e.g. syncthing's
+  // `chown ${user}:${user} <path>`).
   validateSshAddress(resolved.SSH_ADDRESS)
   validateRemotePath("PATH_APPS", resolved.PATH_APPS)
-  validateRemotePath("VOLUMES_PATH", resolved.VOLUMES_PATH)
+  validateRemotePath("VOLUMES_PATH", resolved.VOLUMES_PATH, 1)
   validateSshUser(resolved.SSH_USER)
+
+  // Normalised ONCE, right after validation, so every later consumer
+  // (this function's own nesting check below, run-deploy.ts's rsync/
+  // cleanup scripts, the remote readlink -f guard) works from the exact
+  // same string — a trailing slash or doubled slash surviving through
+  // only SOME of those would make two spellings of the same path look
+  // different to a check that compares them as strings.
+  resolved.PATH_APPS = normalizeRemotePath(resolved.PATH_APPS)
+  resolved.VOLUMES_PATH = normalizeRemotePath(resolved.VOLUMES_PATH)
+
+  // #233: a full deploy now syncs PATH_APPS with `rsync --delete`, so app
+  // data must never live inside it — VOLUMES_PATH has to be a sibling
+  // directory (e.g. /srv/apps and /srv/volumes), never nested either way
+  // and never the same directory. Checked after expansion/normalisation
+  // above, component-wise (pathsNestedOrEqual), so this also catches the
+  // owner's own cloud server shape, VOLUMES_PATH=${PATH_APPS}/.volumes,
+  // once it's expanded to a real nested path. This is the CLIENT-SIDE
+  // check, against the strings in `.env`; run-deploy.ts also runs a
+  // remote `readlink -f` guard before any deletion, since a symlink on
+  // the server itself can defeat a string-only comparison.
+  if (pathsNestedOrEqual(resolved.PATH_APPS, resolved.VOLUMES_PATH)) {
+    throw new UserError(buildNestedPathsError(resolved.PATH_APPS, resolved.VOLUMES_PATH, envPath))
+  }
 
   // A hook logs in with SSH_USER (cli/deploy/hooks.ts's contract key);
   // deploy's own ssh/rsync calls log in with SSH_ADDRESS's own user part

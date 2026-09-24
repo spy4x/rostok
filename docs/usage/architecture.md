@@ -146,6 +146,78 @@ files; `.env` files stay on disk.
    └─▶ On another machine, .env.age auto-decrypts to .env
 ```
 
+## Deploy is the source of truth
+
+What `servers/<name>/` lists is what runs on the server — nothing else.
+`rostok deploy` makes the server match the project exactly:
+
+- A full deploy (`rostok deploy <server>`) syncs `PATH_APPS` with
+  `rsync --delete`, so a file removed from a stack or from
+  `servers/<name>/configs/` disappears from the server on the next
+  deploy, and a file that's newer on the server is still overwritten by
+  the project's copy. A single-stack deploy
+  (`rostok deploy <server> <stack>`) only ever deletes inside that one
+  stack's own `PATH_APPS/stacks/<stack>/` directory, and never runs the
+  stale-stack cleanup below at all — stopping or removing any OTHER
+  stack is exactly the cross-stack reach a single-stack deploy promises
+  never happens. `config.json` genuinely missing (no server set up yet)
+  skips both the cleanup and the `--delete` entirely, rather than
+  reading "no config.json" as "delete everything" — an explicit
+  `"stacks": []` is the project's real truth and does clean up.
+- A stack removed from `config.json` gets its containers stopped and
+  its folder removed, but its data is never touched — the stack can be
+  added back later with the same data. Stopping never runs
+  `docker compose down` inside the stack's own folder — a stack whose
+  `compose.yml` sets `name: ${PROJECT}` (about half the catalog) has no
+  `.env` there to resolve that from, so a plain `down` silently misses
+  the real containers. Deploy instead finds them by their own
+  `com.docker.compose.project.working_dir` label and stops them with
+  `docker compose -p <project> down --remove-orphans`, which needs no
+  compose file at all.
+
+**`PATH_APPS` must be a directory rostok owns entirely** — at least two
+path components deep (`/srv/apps`, never `/srv`, `/home` or `/`):
+`rsync --delete` inside it would otherwise reach files a full deploy
+never put there. **App data must never live inside it either.**
+`VOLUMES_PATH` has to be a sibling directory of `PATH_APPS`
+(`server create`'s own default: `/srv/apps` and `/srv/volumes`), never
+nested inside it or the reverse, and never equal to it. Deploy checks
+this twice: once against the `.env` strings (expanded and normalised),
+and once against what the two paths actually resolve to on the server
+itself (`readlink -f`) — a symlink on the server can make two
+sibling-looking `.env` values nest for real, which the first check
+alone can't see.
+
+If an existing server has `VOLUMES_PATH` inside `PATH_APPS` (e.g.
+`VOLUMES_PATH=${PATH_APPS}/.volumes`), move the data before the next
+deploy:
+
+1. Stop each stack on the server: for each `stacks/<name>` directory,
+   find its running containers by their own
+   `com.docker.compose.project.working_dir` label —
+   `docker ps -a --filter "label=com.docker.compose.project.working_dir=<PATH_APPS>/stacks/<name>" --format '{{.Label "com.docker.compose.project"}}'`
+   — and stop that project: `docker compose -p <project> down
+   --remove-orphans`, which needs no compose file at all. Use the
+   PROJECT name the label reports, not the folder's `<name>`: an
+   aliased stack (`deployAs` set in `config.json`) deploys under
+   `-p <deployAs>`, not `-p <name>`, and a plain
+   `docker compose -p <name> ... down` would miss it — the same reason
+   deploy's own stale-stack cleanup (`cli/deploy/stale-stacks.ts`) never
+   runs a plain `docker compose down` either (see above).
+2. Move the data folder on the server to a sibling of `PATH_APPS`:
+   `mv <old VOLUMES_PATH> <new VOLUMES_PATH>` (the real, expanded
+   paths — not the `${...}` form).
+3. Set `VOLUMES_PATH` to the new path in `servers/<name>/.env` and
+   re-encrypt: `rostok env encrypt`.
+4. Redeploy.
+
+If instead `PATH_APPS` is the one nested inside `VOLUMES_PATH` (the
+reverse case — rare, but a hand-edited `.env` could do it), never `mv`
+`VOLUMES_PATH`: it's the directory that CONTAINS `PATH_APPS`, so moving
+it would move `PATH_APPS` too. Point `PATH_APPS` and/or `VOLUMES_PATH`
+at genuinely separate sibling directories instead, following the same
+stop-stacks step above first.
+
 ## Deploy topology
 
 Each user picks their own topology. A common pattern:

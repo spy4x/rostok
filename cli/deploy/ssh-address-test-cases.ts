@@ -65,4 +65,15 @@ export const SSH_ADDRESS_TEST_CASES: SshAddressCase[] = [
 
   // Rejected: an unbracketed IPv6 address followed by what looks like a port.
   { input: "2001:db8::1:2222" },
+
+  // Rejected: more than one colon, but not a recognizable IPv6 literal —
+  // "host:22:33" used to be accepted as a host literally named
+  // "host:22:33" instead of being read as an ambiguous port form (#236).
+  { input: "host:22:33" },
+  { input: "root@host:22:33" },
+  // Rejected: every character IS a valid hex digit, but 3 groups isn't a
+  // real IPv6 shape (needs 8, or "::") — a "looks hex" check alone
+  // wrongly accepted these as a literal host (review round).
+  { input: "cafe:22:33" },
+  { input: "root@deadbeef:22:33" },
 ]

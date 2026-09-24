@@ -12,7 +12,14 @@
 // deploy can still answer a host-key prompt, but a CI run or a piped
 // invocation fails fast instead of hanging on one.
 
-import { parseSshAddress, rsyncDestination, rsyncSshOption, sshArgs } from "../server-keys.ts"
+import {
+  parseSshAddress,
+  rsyncDestination,
+  rsyncSshOption,
+  sshArgs,
+  type SshCallOptions,
+  type SshTarget,
+} from "../server-keys.ts"
 import { trackChild } from "./process-registry.ts"
 
 /** `{ batchMode: true }` unless stdin is a TTY — shared by every ssh/rsync spawn below. */
@@ -86,6 +93,31 @@ export async function runRemoteShell(
 }
 
 /**
+ * The argv `runRemoteSync` passes to `rsync` (everything after the
+ * binary name itself), built as a PURE function so its shape — the
+ * trailing slash on both `localDir` and the destination, `-e`'s exact
+ * value, where `--` lands — is testable without ever spawning `rsync`
+ * (real or fake): a test asserts on this return value directly. Only
+ * `runRemoteSync` itself calls this in production.
+ */
+export function rsyncSyncArgs(
+  target: SshTarget,
+  localDir: string,
+  remotePath: string,
+  extraArgs: string[],
+  opts: SshCallOptions,
+): string[] {
+  return [
+    ...extraArgs,
+    "-e",
+    rsyncSshOption(target, opts),
+    "--",
+    `${localDir}/`,
+    `${rsyncDestination(target, remotePath)}/`,
+  ]
+}
+
+/**
  * Run `rsync` from `localDir` to `sshAddress:remotePath`, with the same
  * ssh options as runRemoteCommand/runRemoteShell (`-e "ssh ..."`, port
  * included) — the one ssh spawn deploy makes that rsync itself owns
@@ -101,12 +133,69 @@ export async function runRemoteSync(
   const target = parseSshAddress(sshAddress)
   return await runCommand([
     "rsync",
+    ...rsyncSyncArgs(target, localDir, remotePath, extraArgs, defaultSshCallOptions()),
+  ])
+}
+
+/** The argv `runRemoteSyncEntry` passes to `rsync` — see `rsyncSyncArgs`'s own comment; same pure-testability reason. */
+export function rsyncEntrySyncArgs(
+  target: SshTarget,
+  localEntryDir: string,
+  remoteParentPath: string,
+  extraArgs: string[],
+  opts: SshCallOptions,
+): string[] {
+  return [
     ...extraArgs,
     "-e",
-    rsyncSshOption(target, defaultSshCallOptions()),
+    rsyncSshOption(target, opts),
     "--",
-    `${localDir}/`,
-    `${rsyncDestination(target, remotePath)}/`,
+    localEntryDir,
+    `${rsyncDestination(target, remoteParentPath)}/`,
+  ]
+}
+
+/**
+ * Run `rsync` the way `runRemoteSync` does, EXCEPT the source keeps
+ * `localEntryDir`'s own name instead of being merged into the
+ * destination's contents: no trailing slash on the source, so rsync
+ * transfers it as ONE named entry into `remoteParentPath` (which DOES
+ * get a trailing slash, "sync this entry into that directory").
+ *
+ * This is the only rsync shape that's safe when the destination entry
+ * might be a SYMLINK (#233 review): a real directory source with a
+ * trailing slash, synced onto a same-named destination that's also
+ * given a trailing slash (`runRemoteSync`'s own shape), makes rsync
+ * follow the symlink and sync INTO whatever it points at — reproduced
+ * once, manually, against a real local rsync: it deleted a file inside
+ * the symlink's target that the source didn't even ship.
+ * Source-as-an-entry into its PARENT instead makes rsync replace a
+ * symlinked destination entry with a real directory, leaving whatever
+ * the symlink pointed at completely untouched (same manual check) —
+ * used for run-deploy.ts's per-stack sync into `PATH_APPS/stacks/`,
+ * since a stack's own directory name is exactly the kind of thing an
+ * attacker (or a stale VOLUMES_PATH-into-PATH_APPS mistake) could turn
+ * into a symlink. Automated coverage stops at the argv shape above
+ * (`rsyncEntrySyncArgs`, exec.test.ts) — no test here spawns rsync
+ * itself (real or fake), so the actual symlink-replacement behavior is
+ * a manual VM step (see the PR body).
+ */
+export async function runRemoteSyncEntry(
+  sshAddress: string,
+  localEntryDir: string,
+  remoteParentPath: string,
+  extraArgs: string[] = [],
+): Promise<CommandResult> {
+  const target = parseSshAddress(sshAddress)
+  return await runCommand([
+    "rsync",
+    ...rsyncEntrySyncArgs(
+      target,
+      localEntryDir,
+      remoteParentPath,
+      extraArgs,
+      defaultSshCallOptions(),
+    ),
   ])
 }
 

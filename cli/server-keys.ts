@@ -200,6 +200,9 @@ function sshAddressError(value: string): UserError {
 /** Letters, digits, `.`, `_`, `-` and `:` (bare IPv6 needs the colons) — nothing a shell reads specially. */
 const SSH_HOST_CHARS_PATTERN = /^[A-Za-z0-9_.:-]+$/
 
+/** Hex digits and colons only — the alphabet an IPv6 literal's groups use, nothing else. */
+const HEX_COLON_PATTERN = /^[0-9a-fA-F:]+$/
+
 /**
  * Letters, digits, `.`, `_` and `-`, starting with a letter/digit/`_` —
  * an ssh/system username. Excludes `:` (so `root:x@host` can't smuggle
@@ -295,16 +298,53 @@ export function parseSshAddress(value: string): SshTarget {
       portText = rest.slice(idx + 1)
       if (host === "") throw sshAddressError(value)
     } else {
-      const lastColon = rest.lastIndexOf(":")
-      const maybeHost = rest.slice(0, lastColon)
-      const maybePort = rest.slice(lastColon + 1)
-      if (maybeHost.includes("::") && /^\d+$/.test(maybePort)) {
-        throw new UserError(
-          `invalid SSH_ADDRESS "${sanitizeForLog(value)}": bracket an IPv6 address that carries ` +
-            `a port — use "[${sanitizeForLog(maybeHost)}]:${sanitizeForLog(maybePort)}".`,
-        )
+      // 2+ colons — either a genuine, unbracketed IPv6 literal, or
+      // something ambiguous that ssh (and getaddrinfo) can't reliably
+      // read as one or the other, refused rather than guessed at.
+      if (rest.includes("::")) {
+        // Abbreviated form. If, after splitting off whatever sits after
+        // the LAST colon, everything before it still contains "::" AND
+        // that last segment is all digits, the whole thing reads
+        // equally well as "abbreviated IPv6" or "IPv6 with a trailing
+        // port" — ssh can't tell, so it's refused; bracket it instead
+        // (e.g. "2001:db8::1:2222"). Otherwise (the "::" pair sits right
+        // at the split point, e.g. "2001:db8::1", or the last segment
+        // isn't numeric) it's accepted whole, as a bare IPv6 host.
+        const lastColon = rest.lastIndexOf(":")
+        const maybeHost = rest.slice(0, lastColon)
+        const maybePort = rest.slice(lastColon + 1)
+        if (/^\d+$/.test(maybePort) && maybeHost.includes("::")) {
+          throw new UserError(
+            `invalid SSH_ADDRESS "${sanitizeForLog(value)}": bracket an IPv6 address that ` +
+              `carries a port — use "[${sanitizeForLog(maybeHost)}]:${sanitizeForLog(maybePort)}".`,
+          )
+        }
+        if (!HEX_COLON_PATTERN.test(rest)) throw sshAddressError(value)
+        host = rest
+      } else {
+        // No "::" at all — only a REAL, full IPv6 literal (exactly 8
+        // colon-separated groups, each 1-4 hex digits) is accepted as a
+        // bare host; anything else with 2+ colons is refused outright,
+        // whether or not it merely LOOKS hex ("cafe:22:33",
+        // "deadbeef:22:33" — every character is a valid hex digit, but
+        // 3 groups isn't a real IPv6 shape) or doesn't ("host:22:33",
+        // #236). A real 8-group literal can legitimately end in an
+        // all-digit group (see the accepted-cases test table), so no
+        // separate host/port split is needed for this branch.
+        const groups = rest.split(":")
+        const isFullIpv6 = groups.length === 8 &&
+          groups.every((g) => /^[0-9a-fA-F]{1,4}$/.test(g))
+        if (!isFullIpv6) {
+          throw new UserError(
+            `invalid SSH_ADDRESS "${sanitizeForLog(value)}": "${
+              sanitizeForLog(rest)
+            }" has more than one colon and isn't a recognizable IPv6 address — ssh can't tell ` +
+              `a host from a port here. Use a single "host:port", or configure the port on an ` +
+              `ssh_config alias instead.`,
+          )
+        }
+        host = rest
       }
-      host = rest
     }
   }
 
@@ -391,15 +431,75 @@ export function rsyncDestination(target: SshTarget, remotePath: string): string 
 export const REMOTE_PATH_PATTERN = /^\/[A-Za-z0-9._/-]*$/
 
 /**
- * Throw a UserError unless `value` is a plain absolute path. Remote paths
- * such as PATH_APPS and VOLUMES_PATH reach the server's login shell through
- * rsync, so shell metacharacters and `..` segments are refused.
+ * Throw a UserError unless `value` is a plain absolute path. Remote
+ * paths such as PATH_APPS and VOLUMES_PATH reach the server's login
+ * shell through rsync, so shell metacharacters and `..` segments are
+ * refused.
+ *
+ * `minComponents` (default 2) is a "rostok owns this directory
+ * entirely" guard, and applies to PATH_APPS only (review round):
+ * `PATH_APPS=/` or `PATH_APPS=/home` would make a full deploy's
+ * `rsync --delete` (run-deploy.ts) delete everything else already on
+ * the server under that path — `/srv` is shallow enough that a typo or
+ * a copy-pasted default (`/home` instead of `/home/deploy/apps`) is a
+ * real risk, not a hypothetical one. VOLUMES_PATH is never synced or
+ * deleted-under by rostok itself (only individual `VOLUMES_PATH/<stack>`
+ * entries are ever named, never the whole tree), so `VOLUMES_PATH=/data`
+ * — one component — is a legitimate, common layout and must be accepted
+ * (review round: it was wrongly rejected by the same floor as
+ * PATH_APPS). Pass `minComponents: 1` for VOLUMES_PATH.
  */
-export function validateRemotePath(key: string, value: string): void {
+export function validateRemotePath(key: string, value: string, minComponents = 2): void {
   if (!REMOTE_PATH_PATTERN.test(value) || value.split("/").includes("..")) {
     throw new UserError(
       `invalid ${key} "${value}": use an absolute path of letters, digits, ".", "_", "-" ` +
         `and "/", e.g. /srv/apps.`,
     )
   }
+  if (pathComponents(value).length < minComponents) {
+    const detail = minComponents >= 2
+      ? `at least ${minComponents} path components deep (e.g. /srv/apps, not /srv or /) — a ` +
+        `deploy deletes stale files under it and must never reach anything else already on the ` +
+        `server`
+      : `not the filesystem root (/) itself`
+    throw new UserError(
+      `invalid ${key} "${value}": must be a directory rostok owns entirely, ${detail}.`,
+    )
+  }
+}
+
+/** `path`, split into its non-empty, non-"." components — the same shape whether it has a trailing slash, a doubled slash, or a `./` segment. `validateRemotePath` already refuses a `..` segment before this runs. */
+export function pathComponents(path: string): string[] {
+  return path.split("/").filter((c) => c !== "" && c !== ".")
+}
+
+/**
+ * Normalise `path` — collapse doubled slashes, drop a trailing slash
+ * and `.` segments — into one canonical absolute-path string, so every
+ * later comparison (`pathsNestedOrEqual`, an error message, a remote
+ * shell command) works from the same value instead of re-deriving it
+ * (and risking a different normalisation) each time. `validateRemotePath`
+ * has already refused a `..` segment and confirmed `path` is absolute
+ * before this is meant to run.
+ */
+export function normalizeRemotePath(path: string): string {
+  return `/${pathComponents(path).join("/")}`
+}
+
+/**
+ * True when `a` and `b` are the same directory, or one sits inside the
+ * other — compared path-component-wise after normalising away trailing
+ * slashes, doubled slashes and `.` segments, NEVER as a raw string
+ * prefix. A raw-prefix check would wrongly flag `/srv/apps2` as inside
+ * `/srv/apps` (#233): component-wise, `["srv","apps2"]` doesn't share a
+ * full first-two-components match with `["srv","apps"]`. Equal paths
+ * count as nested — `deploy` treats `VOLUMES_PATH == PATH_APPS` the same
+ * as one containing the other, since either way a `PATH_APPS` sync with
+ * `--delete` would delete the volumes.
+ */
+export function pathsNestedOrEqual(a: string, b: string): boolean {
+  const ca = pathComponents(a)
+  const cb = pathComponents(b)
+  const [shorter, longer] = ca.length <= cb.length ? [ca, cb] : [cb, ca]
+  return shorter.every((component, i) => component === longer[i])
 }

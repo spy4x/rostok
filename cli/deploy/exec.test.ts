@@ -1,7 +1,14 @@
 import { assertEquals, assertRejects } from "@std/assert"
 import { join } from "@std/path"
 import { UserError } from "../errors.ts"
-import { runRemoteCommand, runRemoteShell, runRemoteSync, shQuote } from "./exec.ts"
+import { parseSshAddress } from "../server-keys.ts"
+import {
+  rsyncEntrySyncArgs,
+  rsyncSyncArgs,
+  runRemoteCommand,
+  runRemoteShell,
+  shQuote,
+} from "./exec.ts"
 
 /** Install a fake `ssh` on PATH that prints its own argv, one per line, as JSON. */
 async function withFakeSsh<T>(fn: () => Promise<T>): Promise<T> {
@@ -85,39 +92,56 @@ Deno.test("runRemoteCommand: rejects a malicious SSH_ADDRESS before ssh is ever 
   })
 })
 
-/** Install a fake `rsync` on PATH that prints its own argv, one per line. */
-async function withFakeRsync<T>(fn: () => Promise<T>): Promise<T> {
-  const binDir = await Deno.makeTempDir({ prefix: "rostok-fake-rsync-argv-" })
-  try {
-    const script = `#!/bin/sh\nfor a in "$@"; do printf '%s\\n' "$a"; done\n`
-    await Deno.writeTextFile(join(binDir, "rsync"), script, { mode: 0o755 })
-    const previousPath = Deno.env.get("PATH") ?? ""
-    Deno.env.set("PATH", `${binDir}:${previousPath}`)
-    try {
-      return await fn()
-    } finally {
-      Deno.env.set("PATH", previousPath)
-    }
-  } finally {
-    await Deno.remove(binDir, { recursive: true })
-  }
-}
-
-Deno.test("runRemoteSync: -e carries -p, ConnectTimeout and BatchMode; brackets a bare IPv6 destination", async () => {
-  await withFakeRsync(async () => {
-    const result = await runRemoteSync("root@[2001:db8::1]:2222", "/local/staging", "/srv/apps", [
-      "-avhzru",
-    ])
-    const argv = result.output.split("\n").filter((l) => l.length > 0)
-    assertEquals(argv, [
-      "-avhzru",
-      "-e",
-      `ssh ${expectedOptions().join(" ")} -p 2222`,
-      "--",
-      "/local/staging/",
-      "root@[2001:db8::1]:/srv/apps/",
-    ])
+Deno.test("rsyncSyncArgs: -e carries -p, ConnectTimeout and BatchMode; trailing slash on both source and destination", () => {
+  const target = parseSshAddress("root@[2001:db8::1]:2222")
+  const argv = rsyncSyncArgs(target, "/local/staging", "/srv/apps", ["-avhzru"], {
+    batchMode: true,
   })
+  assertEquals(argv, [
+    "-avhzru",
+    "-e",
+    "ssh -o ConnectTimeout=10 -o BatchMode=yes -p 2222",
+    "--",
+    "/local/staging/",
+    "root@[2001:db8::1]:/srv/apps/",
+  ])
+})
+
+Deno.test("rsyncEntrySyncArgs: no trailing slash on the source; the remote parent path gets one", () => {
+  const target = parseSshAddress("root@example.com")
+  const argv = rsyncEntrySyncArgs(
+    target,
+    "/local/staging/stacks/traefik",
+    "/srv/apps/stacks",
+    ["-avhz", "--delete"],
+    { batchMode: true },
+  )
+  assertEquals(argv, [
+    "-avhz",
+    "--delete",
+    "-e",
+    "ssh -o ConnectTimeout=10 -o BatchMode=yes",
+    "--",
+    "/local/staging/stacks/traefik",
+    "root@example.com:/srv/apps/stacks/",
+  ])
+})
+
+Deno.test("rsyncEntrySyncArgs: never trails the source with a slash, for any stack name (mutation gap)", () => {
+  // The whole point of runRemoteSyncEntry over runRemoteSync — a
+  // trailing slash here would make rsync merge CONTENTS into the
+  // destination instead of replacing it as one named entry, the shape
+  // that lets a symlinked destination be followed into its target
+  // instead of replaced (#233 review — see this function's own comment
+  // in exec.ts; the actual rsync behavior is a manual VM step, not an
+  // automated one, since no test here may spawn rsync at all).
+  const target = parseSshAddress("root@example.com")
+  for (const name of ["alpha", "a-longer-stack-name"]) {
+    const argv = rsyncEntrySyncArgs(target, `/staging/stacks/${name}`, "/srv/apps/stacks", [], {})
+    const source = argv[argv.length - 2]
+    assertEquals(source.endsWith("/"), false, `source must not end with "/": ${source}`)
+    assertEquals(source, `/staging/stacks/${name}`)
+  }
 })
 
 Deno.test("shQuote: wraps a value in single quotes", () => {
