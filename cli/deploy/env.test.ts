@@ -428,12 +428,15 @@ Deno.test("resolveDeployEnv: PATH_APPS=${BASE_PATH}/rostok expands and passes va
 })
 
 Deno.test("expandEnvRefs: a key merely containing PATH_ or ending in PATH-like text, not shaped as PATH_*/*_PATH, is refused (#236)", () => {
-  // isExpandablePathKey's patterns are anchored (^...$) — a key that only
-  // CONTAINS "PATH_" or ends in letters-before-"PATH" without the
-  // required underscore must still be refused. Removing either anchor
-  // would let a name like "XPATH_FOO" (contains "PATH_" mid-string) or
-  // "FOO_PATHX" (ends in "PATH" text, not the "_PATH" suffix) through.
-  for (const key of ["XPATH_FOO", "FOO_PATHX"]) {
+  // isExpandablePathKey's patterns are anchored (^...$) — each of the
+  // four cases below is chosen so ONLY ONE of the pattern's two anchors
+  // being removed would let it through, catching that specific mutation
+  // (proven — see the PR body's mutation list):
+  //   - "XPATH_FOO"    → PATH_*'s   front anchor (^) removed
+  //   - "PATH_FOOevil" → PATH_*'s   end   anchor ($) removed
+  //   - "FOO_PATHX"    → *_PATH's   end   anchor ($) removed
+  //   - "zEVIL_PATH"   → *_PATH's   front anchor (^) removed
+  for (const key of ["XPATH_FOO", "PATH_FOOevil", "FOO_PATHX", "zEVIL_PATH"]) {
     const err = assertThrows(
       () => expandEnvRefs("VOLUMES_PATH", `/x/\${${key}}`, { [key]: "/should/not/expand" }),
       UserError,
@@ -454,12 +457,16 @@ Deno.test("resolveDeployEnv: refuses VOLUMES_PATH inside PATH_APPS, with migrati
   )
   assertStringIncludes(err.message, "/srv/apps/.volumes")
   assertStringIncludes(err.message, "/srv/apps")
-  assertStringIncludes(err.message, "docker compose down")
+  assertStringIncludes(err.message, "docker compose -p")
+  assertStringIncludes(err.message, "--env-file .env.root --env-file .env")
   assertStringIncludes(err.message, "mv ")
-  assertStringIncludes(err.message, "env:encrypt")
+  assertStringIncludes(err.message, "rostok env encrypt")
 })
 
 Deno.test("resolveDeployEnv: refuses PATH_APPS inside VOLUMES_PATH, the other nesting (#233)", () => {
+  // The reverse nesting: VOLUMES_PATH is the ANCESTOR here (it contains
+  // PATH_APPS), so the message must never tell the operator to `mv` it —
+  // that would move PATH_APPS along with it.
   const err = assertThrows(
     () =>
       resolveDeployEnv(
@@ -469,7 +476,9 @@ Deno.test("resolveDeployEnv: refuses PATH_APPS inside VOLUMES_PATH, the other ne
       ),
     UserError,
   )
-  assertStringIncludes(err.message, "must live outside PATH_APPS")
+  assertStringIncludes(err.message, "must live outside VOLUMES_PATH")
+  assertStringIncludes(err.message, "never move VOLUMES_PATH here")
+  assertEquals(err.message.includes("mv /srv/volumes "), false)
 })
 
 Deno.test("resolveDeployEnv: refuses an equal PATH_APPS and VOLUMES_PATH", () => {
@@ -482,7 +491,7 @@ Deno.test("resolveDeployEnv: refuses an equal PATH_APPS and VOLUMES_PATH", () =>
       ),
     UserError,
   )
-  assertStringIncludes(err.message, "must live outside PATH_APPS")
+  assertStringIncludes(err.message, "must not be the same directory")
 })
 
 Deno.test("resolveDeployEnv: a sibling VOLUMES_PATH is accepted, even one sharing a string prefix", () => {

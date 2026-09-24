@@ -6,7 +6,8 @@
 // clear deploy-time error instead.
 
 import { UserError } from "../errors.ts"
-import { type CommandResult, runRemoteCommand } from "./exec.ts"
+import { pathsNestedOrEqual } from "../server-keys.ts"
+import { type CommandResult, runRemoteCommand, runRemoteShell, shQuote } from "./exec.ts"
 
 /**
  * ssh's own connection-level failures (can't resolve/connect/reach the
@@ -90,4 +91,63 @@ export async function needsRemoteSudo(sshAddress: string): Promise<boolean> {
     )
   }
   return uid !== "0"
+}
+
+/**
+ * `ssh <target> readlink -f <PATH_APPS>; readlink -f <VOLUMES_PATH>` —
+ * refuses to proceed (nothing deleted, ever) if the two REAL, symlink-
+ * resolved paths on the server turn out nested or equal, even though
+ * the `.env` strings looked like separate siblings (#233 review). Run
+ * BEFORE any deletion (the stale-stack cleanup, or a `rsync --delete`) —
+ * `env.ts`'s own `pathsNestedOrEqual` check only ever sees the strings
+ * in `.env`, which can't catch a symlink the operator (or an attacker
+ * with prior remote access) put in place ON the server itself.
+ *
+ * `readlink -f` resolves a path that doesn't exist yet the same way it
+ * resolves one that does (canonicalising every existing leading
+ * component, then appending the rest literally) — so this still runs
+ * safely against a fresh server that has neither directory yet.
+ */
+export async function checkRemotePathsNotNested(
+  sshAddress: string,
+  pathApps: string,
+  volumesPath: string,
+): Promise<void> {
+  // A single script STRING (runRemoteShell), never several argv
+  // elements handed to runRemoteCommand — ssh joins trailing argv with
+  // plain spaces before sending it to the remote shell, which would
+  // reparse (and break) a multi-word command built that way; every
+  // other multi-step remote script in cli/deploy/ already goes through
+  // runRemoteShell for the same reason.
+  const script = `readlink -f -- ${shQuote(pathApps)} && printf '\\n---\\n' && ` +
+    `readlink -f -- ${shQuote(volumesPath)}`
+  const result = await runRemoteShell(sshAddress, script)
+  if (result.code === SSH_CONNECTION_FAILURE_CODE) {
+    throw new UserError(
+      connectionFailureMessage(sshAddress, "resolving PATH_APPS/VOLUMES_PATH symlinks", result),
+    )
+  }
+  if (!result.success) {
+    throw new UserError(
+      `could not resolve PATH_APPS/VOLUMES_PATH on ${sshAddress} (\`readlink -f\` failed: ` +
+        `${result.error.trim()}).`,
+    )
+  }
+  const [realPathApps, realVolumesPath] = result.output.split("---").map((s) => s.trim())
+  if (!realPathApps || !realVolumesPath) {
+    throw new UserError(
+      `could not resolve PATH_APPS/VOLUMES_PATH on ${sshAddress} — \`readlink -f\` returned ` +
+        `nothing for at least one of them.`,
+    )
+  }
+  if (pathsNestedOrEqual(realPathApps, realVolumesPath)) {
+    throw new UserError(
+      `on ${sshAddress}, PATH_APPS and VOLUMES_PATH resolve (readlink -f) to nested or equal ` +
+        `real paths — PATH_APPS "${pathApps}" -> "${realPathApps}", VOLUMES_PATH ` +
+        `"${volumesPath}" -> "${realVolumesPath}" — even though their .env values look like ` +
+        `separate directories. A symlink on the server itself must be the cause; deploy ` +
+        `refuses to sync or clean up anything until it's fixed, since a full deploy's ` +
+        `rsync --delete would otherwise be able to reach VOLUMES_PATH's data.`,
+    )
+  }
 }

@@ -1,7 +1,7 @@
 import { assertEquals, assertRejects, assertStringIncludes } from "@std/assert"
 import { join } from "@std/path"
 import { UserError } from "../errors.ts"
-import { checkDockerGroup, needsRemoteSudo } from "./docker-preflight.ts"
+import { checkDockerGroup, checkRemotePathsNotNested, needsRemoteSudo } from "./docker-preflight.ts"
 
 /** Install a fake `ssh` on PATH that prints `sshReply` to stdout and exits 0. */
 async function withFakeSsh<T>(sshReply: string, fn: () => Promise<T>): Promise<T> {
@@ -102,6 +102,43 @@ Deno.test("checkDockerGroup: names the step and says the server is unreachable, 
       assertStringIncludes(err.message, "checking the docker group")
       assertStringIncludes(err.message, "Connection timed out")
       assertEquals(err.message.includes("docker group not found"), false)
+    },
+  )
+})
+
+Deno.test("checkRemotePathsNotNested: passes when the real, resolved paths are siblings", async () => {
+  await withFakeSsh("/srv/apps\n---\n/srv/volumes\n", async () => {
+    await checkRemotePathsNotNested("root@example.com", "/srv/apps", "/srv/volumes")
+  })
+})
+
+Deno.test("checkRemotePathsNotNested: refuses when a SYMLINK makes the real paths nest, even though the .env strings look like siblings (#233 review)", async () => {
+  // The .env values themselves ("/srv/apps", "/srv/volumes") never
+  // nest — only `readlink -f` on the actual server reveals that
+  // VOLUMES_PATH is secretly a symlink pointing inside PATH_APPS. A
+  // string-only comparison (env.ts's own pathsNestedOrEqual check)
+  // can't catch this; only asking the real server can.
+  await withFakeSsh("/srv/apps\n---\n/srv/apps/.volumes\n", async () => {
+    const err = await assertRejects(
+      () => checkRemotePathsNotNested("root@example.com", "/srv/apps", "/srv/volumes"),
+      UserError,
+    )
+    assertStringIncludes(err.message, "/srv/apps")
+    assertStringIncludes(err.message, "/srv/apps/.volumes")
+    assertStringIncludes(err.message, "readlink -f")
+  })
+})
+
+Deno.test("checkRemotePathsNotNested: names the step and says the server is unreachable on a connection failure", async () => {
+  await withUnreachableFakeSsh(
+    "ssh: connect to host 192.0.2.1 port 22: Connection timed out",
+    async () => {
+      const err = await assertRejects(
+        () => checkRemotePathsNotNested("root@192.0.2.1", "/srv/apps", "/srv/volumes"),
+        UserError,
+      )
+      assertStringIncludes(err.message, "can't reach root@192.0.2.1 over SSH")
+      assertStringIncludes(err.message, "resolving PATH_APPS/VOLUMES_PATH symlinks")
     },
   )
 })
