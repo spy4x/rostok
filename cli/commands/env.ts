@@ -23,6 +23,7 @@ import {
   encryptEnvFiles,
   generateAgeKey,
 } from "../encrypt.ts"
+import { resolveKeyFile } from "../age.ts"
 import { ensureAgeIgnored } from "../init.ts"
 
 /** `rostok env encrypt` — run the encrypt task directly. */
@@ -160,11 +161,16 @@ export async function runEnvSetup(cwd: string): Promise<EnvSetupResult> {
   // write a fresh key, and even when one already exists.
   const gitignoreFix = await ensureAgeIgnored(cwd)
   if (await checkAgeKeyPresent(cwd)) {
+    // #236: print the path `checkAgeKeyPresent` (via `resolveKeyFile`)
+    // actually found, not a hardcoded `<cwd>/.age/key.txt` — in a linked
+    // worktree with no key of its own, resolution falls back to the MAIN
+    // checkout's key, so the old message named a path that didn't even
+    // have a file on it.
     return {
       ok: true,
       alreadyExisted: true,
       lines: [
-        `rostok env setup: .age/key.txt already exists at ${cwd}/.age/key.txt`,
+        `rostok env setup: .age/key.txt already exists at ${resolveKeyFile(cwd)}`,
         // Review fix: this run may still have changed .gitignore even
         // though the key itself is untouched — "no changes made" would
         // be false in that case.
