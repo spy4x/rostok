@@ -40,7 +40,7 @@ import {
   withKeyLabel,
 } from "./prompts.ts"
 import { hasReservedStackKeyPrefix, serverDirFor, stackKeyPrefix } from "./server-keys.ts"
-import { UserError } from "./errors.ts"
+import { serverNotFoundMessage, UserError } from "./errors.ts"
 
 /** Result of a stack-add invocation. */
 export interface StackAddResult {
@@ -105,15 +105,9 @@ export async function stackAdd(
 
   // #210: a missing server fails loudly and writes nothing — stack add
   // never creates a server implicitly.
-  //
-  // #236: exact wording matches cli/deploy/run-deploy.ts:108,
-  // cli/commands/deploy.ts and stack-remove.ts's own "server not found"
-  // message — a third, differently-worded variant lived here.
   const serverExists = await Deno.stat(envPath).then((s) => s.isFile).catch(() => false)
   if (!serverExists) {
-    throw new UserError(
-      `server '${serverName}' not found at ${envPath}. Run \`rostok server create ${serverName}\` first.`,
-    )
+    throw new UserError(serverNotFoundMessage(serverName, envPath))
   }
 
   const catalog = await resolveCatalog(opts.catalogDir)

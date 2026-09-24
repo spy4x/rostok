@@ -46,7 +46,7 @@ import { normalizeVariableSpec } from "./stack-meta.ts"
 import { type ConfirmFn, defaultConfirmFn } from "./prompts.ts"
 import { isServerKey, serverDirFor } from "./server-keys.ts"
 import { readServerConfig } from "./stack-add.ts"
-import { UserError } from "./errors.ts"
+import { serverNotFoundMessage, UserError } from "./errors.ts"
 
 export interface StackRemoveOptions {
   /** Project root. */
@@ -119,12 +119,7 @@ export async function stackRemove(
 
   const serverExists = await Deno.stat(envPath).then((s) => s.isFile).catch(() => false)
   if (!serverExists) {
-    // #236: exact wording matches cli/deploy/run-deploy.ts:108 and
-    // cli/commands/deploy.ts — the two other "server not found" messages
-    // in the CLI used to be worded differently from each other.
-    throw new UserError(
-      `server '${serverName}' not found at ${envPath}. Run \`rostok server create ${serverName}\` first.`,
-    )
+    throw new UserError(serverNotFoundMessage(serverName, envPath))
   }
 
   const catalog = await resolveCatalog(opts.catalogDir)

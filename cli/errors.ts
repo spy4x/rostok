@@ -10,3 +10,17 @@ export class UserError extends Error {
     this.name = "UserError"
   }
 }
+
+/**
+ * The "server not found" message shared by every call site that checks
+ * for `servers/<server>/.env` before doing anything else: `stack add`
+ * (stack-add.ts), `stack remove` (stack-remove.ts), and `rostok deploy`
+ * (commands/deploy.ts). `cli/deploy/run-deploy.ts:108` has its own
+ * identical copy of this exact string — that file belongs to a
+ * different owner in this codebase's file layout, so it isn't wired to
+ * call this helper, but its wording must stay byte-identical: a test in
+ * cli/+main.test.ts asserts the exact string from the CLI entry point.
+ */
+export function serverNotFoundMessage(server: string, envPath: string): string {
+  return `server '${server}' not found at ${envPath}. Run \`rostok server create ${server}\` first.`
+}

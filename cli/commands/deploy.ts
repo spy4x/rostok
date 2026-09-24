@@ -14,7 +14,7 @@
 import { Command } from "@cliffy/command"
 import { join } from "@std/path"
 import { serverDirFor } from "../server-keys.ts"
-import { UserError } from "../errors.ts"
+import { serverNotFoundMessage, UserError } from "../errors.ts"
 import { runDeploy } from "../deploy/run-deploy.ts"
 
 export interface DeployValidateResult {
@@ -45,21 +45,10 @@ export async function validateDeployArgs(
   const configPath = join(serverDir, "config.json")
 
   // 1. servers/<server>/ must exist with .env.
-  //
-  // #236: exact wording matches cli/deploy/run-deploy.ts:108 (single
-  // line, "Run" capitalized) — both this command and the real deploy hit
-  // the same missing-server case, and stack-remove.ts's own
-  // "server not found" message matches this same wording (server-keys.ts
-  // is out of this file's ownership, but the string itself is now
-  // shared across all three call sites).
   try {
     await Deno.stat(envPath)
   } catch {
-    return {
-      ok: false,
-      error:
-        `server '${server}' not found at ${envPath}. Run \`rostok server create ${server}\` first.`,
-    }
+    return { ok: false, error: serverNotFoundMessage(server, envPath) }
   }
 
   // 2. config.json must exist (no stacks configured → nothing to deploy).
