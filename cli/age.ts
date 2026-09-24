@@ -136,7 +136,13 @@ export function isAge64(value: string): boolean {
  * are preserved verbatim via `raw`; lines with `KEY=age64:...` get
  * `encrypted` set; other `KEY=val` lines get `value` set.
  *
- * Strips matched single/double quotes around the value (one layer only).
+ * `value` is the text after `=`, verbatim — including any surrounding
+ * quotes (#226: this used to strip one matched layer of `'...'`/`"..."`
+ * and never restore it on write, so `KEY="has a space"` came back as
+ * `KEY=has a space` after an encrypt+decrypt round trip). Matches
+ * cli/env-files.ts's own convention: a value's quotes are part of the
+ * value, the same way docker compose's `env_file` and Deno's
+ * `--env-file` read the same file with no shell-style quote stripping.
  */
 export function parseEnvFile(content: string): EnvEntry[] {
   const entries: EnvEntry[] = []
@@ -152,13 +158,7 @@ export function parseEnvFile(content: string): EnvEntry[] {
       continue
     }
     const key = line.slice(0, eqIdx).trim()
-    let value = line.slice(eqIdx + 1)
-    if (
-      (value.startsWith('"') && value.endsWith('"')) ||
-      (value.startsWith("'") && value.endsWith("'"))
-    ) {
-      value = value.slice(1, -1)
-    }
+    const value = line.slice(eqIdx + 1)
     const encrypted = isAge64(value) ? value : undefined
     entries.push({ raw: line, key, value, encrypted })
   }
