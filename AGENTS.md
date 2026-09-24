@@ -5,8 +5,9 @@ the catalog of self-hosted services and the CLI tool that scaffolds
 users' projects.
 
 What lives here is a **catalog** (`stacks/`) and the **CLI source**
-(`scripts/encryption/`, `scripts/hooks/`, plus the new `cli/` package
-in development).
+(`scripts/hooks/`, plus the new `cli/` package in development). Env-file
+encryption (age64) comes from the published `@spy4x/server/env-age64`
+module, not from a local copy.
 
 ---
 
@@ -22,7 +23,6 @@ rostok/                          [tracked]
 │       └── README.md            # what the stack does, how to configure
 ├── cli/                         # the rostok CLI source (added in v1 phase 2)
 ├── scripts/
-│   ├── encryption/              # age64 — encrypt/decrypt .env ↔ .env.age
 │   ├── backup/                  # Restic backup system (per-stack backup.ts)
 │   └── hooks/                   # git hooks (post-checkout, post-merge, pre-commit)
 ├── docs/                        # CLI docs, catalog, design notes

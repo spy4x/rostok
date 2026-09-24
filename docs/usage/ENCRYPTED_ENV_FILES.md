@@ -14,31 +14,19 @@ stay as plaintext `KEY=VALUE` — readable in PRs.
 
 ## Prerequisites
 
-Install age:
-
-```bash
-# macOS
-brew install age
-
-# Debian/Ubuntu
-sudo apt install age
-
-# Fedora/RHEL
-sudo dnf install age
-
-# Verify
-age --version
-```
+None — encryption runs in-process
+([`@spy4x/server/env-age64`](https://jsr.io/@spy4x/server/doc/env-age64)),
+so there's no `age` binary to install.
 
 ## Quick Start
 
 ### 1. Set up the age key
 
 ```bash
-mkdir -p .age && age-keygen -o .age/key.txt
+rostok env setup
 ```
 
-The public key prints in the comment: `# public key: age1xxxx...`
+Generates `.age/key.txt` and prints the public key (safe to share).
 
 ### 2. Create / edit .env
 
@@ -109,8 +97,7 @@ Key lives at `<repo-root>/.age/key.txt`. This is shared across git worktrees
 
 To allow multiple people to decrypt, share the `.age/key.txt` file securely
 (password manager, encrypted storage). Age supports multiple recipients, but
-the current scripts use a single key. For multi-key setups, extend
-`scripts/encryption/age-lib.ts` to accept multiple recipients.
+`@spy4x/server/env-age64` encrypts for a single one derived from that key.
 
 ### Security
 
