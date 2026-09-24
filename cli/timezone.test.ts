@@ -6,8 +6,25 @@
 // server's own zone (the `remote` source) wins over the operator's
 // local machine whenever it's knowable.
 
-import { assertEquals } from "@std/assert"
-import { detectTimezone } from "./timezone.ts"
+import { assertEquals, assertStringIncludes } from "@std/assert"
+import { join } from "@std/path"
+import { detectTimezone, remoteTimedatectlTimezone } from "./timezone.ts"
+
+/** Write a fake `ssh` on its own PATH entry, prepended for the duration of `fn`. */
+async function withFakeSsh<T>(script: string, fn: () => Promise<T>): Promise<T> {
+  const dir = await Deno.makeTempDir({ prefix: "rostok-timezone-fakessh-" })
+  const scriptPath = join(dir, "ssh")
+  await Deno.writeTextFile(scriptPath, script)
+  await Deno.chmod(scriptPath, 0o755)
+  const oldPath = Deno.env.get("PATH") ?? ""
+  Deno.env.set("PATH", `${dir}${Deno.build.os === "windows" ? ";" : ":"}${oldPath}`)
+  try {
+    return await fn()
+  } finally {
+    Deno.env.set("PATH", oldPath)
+    await Deno.remove(dir, { recursive: true })
+  }
+}
 
 Deno.test("detectTimezone: the remote (server) zone wins over a different local zone", async () => {
   const tz = await detectTimezone({
@@ -102,4 +119,32 @@ Deno.test("detectTimezone: a valid zone from /etc/timezone is accepted", async (
     etcTimezone: () => Promise.resolve("Europe/Berlin"),
   })
   assertEquals(tz, "Europe/Berlin")
+})
+
+// #218 — review fix: nothing previously exercised
+// `remoteTimedatectlTimezone`'s own ssh argv (only `detectTimezone`'s
+// fallback order was tested, with `remote` always injected as a plain
+// function) — reverting its `sshArgs` usage back to a raw target string
+// stayed green. A fake `ssh` on PATH proves a ported SSH_ADDRESS reaches
+// it as `-p <port>`, split from the host, not as one unresolvable
+// "host:port" string.
+Deno.test("remoteTimedatectlTimezone: a port in the target reaches ssh as -p <port>, split from the host", async () => {
+  const argsFile = await Deno.makeTempFile({ prefix: "rostok-timezone-ssh-args-" })
+  try {
+    const script = `#!/bin/sh
+echo "$@" > "${argsFile}"
+echo "Europe/Berlin"
+`
+    const tz = await withFakeSsh(script, async () => {
+      return await remoteTimedatectlTimezone("root@192.0.2.1:2222")
+    })
+    assertEquals(tz, "Europe/Berlin")
+    const argv = (await Deno.readTextFile(argsFile)).trim()
+    assertStringIncludes(argv, "-p 2222 -- root@192.0.2.1")
+    assertStringIncludes(argv, "StrictHostKeyChecking=accept-new")
+    assertStringIncludes(argv, "BatchMode=yes")
+    assertEquals(argv.includes("192.0.2.1:2222"), false, argv)
+  } finally {
+    await Deno.remove(argsFile).catch(() => {})
+  }
 })
