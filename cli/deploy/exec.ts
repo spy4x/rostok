@@ -212,3 +212,15 @@ export async function runRemoteSyncEntry(
 export function shQuote(value: string): string {
   return `'${value.replaceAll("'", `'\\''`)}'`
 }
+
+/**
+ * Remove ASCII control characters except newline and tab from remote
+ * output before it reaches the terminal. Several deploy-time messages
+ * embed folder names, docker labels or `readlink -f` output the server
+ * itself supplied, and anyone with access there can shape those into
+ * escape sequences.
+ */
+export function stripControlChars(s: string): string {
+  // deno-lint-ignore no-control-regex
+  return s.replace(/[\x00-\x08\x0b-\x1f\x7f]/g, "")
+}

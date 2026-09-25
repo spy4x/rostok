@@ -93,7 +93,13 @@ import {
   printDeploySummary,
   type StackConfig,
 } from "./deploy-script.ts"
-import { runRemoteShell, runRemoteSync, runRemoteSyncEntry, shQuote } from "./exec.ts"
+import {
+  runRemoteShell,
+  runRemoteSync,
+  runRemoteSyncEntry,
+  shQuote,
+  stripControlChars,
+} from "./exec.ts"
 import { killActiveChildren } from "./process-registry.ts"
 import { generateStaleStackCleanupScript } from "./stale-stacks.ts"
 
@@ -136,17 +142,6 @@ export interface DeployOptions {
 export interface DeployRunResult {
   deployedStacks: string[]
   results: DeployResult[]
-}
-
-/**
- * Remove ASCII control characters except newline and tab from remote
- * output before it reaches the terminal. The stale-stack cleanup prints
- * folder names and docker labels from the server, which anyone with
- * access there can shape into escape sequences.
- */
-export function stripControlChars(s: string): string {
-  // deno-lint-ignore no-control-regex
-  return s.replace(/[\x00-\x08\x0b-\x1f\x7f]/g, "")
 }
 
 export async function runDeploy(

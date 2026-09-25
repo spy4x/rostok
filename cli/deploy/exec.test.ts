@@ -8,6 +8,7 @@ import {
   runRemoteCommand,
   runRemoteShell,
   shQuote,
+  stripControlChars,
 } from "./exec.ts"
 
 /** Install a fake `ssh` on PATH that prints its own argv, one per line, as JSON. */
@@ -155,4 +156,13 @@ Deno.test("shQuote: escapes an embedded single quote", () => {
 Deno.test("shQuote: neutralizes $(...) and backticks (a literal, inert string once single-quoted)", () => {
   const quoted = shQuote("$(touch pwned)`touch pwned2`")
   assertEquals(quoted, "'$(touch pwned)`touch pwned2`'")
+})
+
+Deno.test("stripControlChars: removes escape and bell bytes, keeps the rest", () => {
+  const input = "x\x1b]0;PWNED\x07 real text"
+  assertEquals(stripControlChars(input), "x]0;PWNED real text")
+})
+
+Deno.test("stripControlChars: keeps newlines and tabs", () => {
+  assertEquals(stripControlChars("line1\n\tline2"), "line1\n\tline2")
 })
