@@ -8,6 +8,7 @@
 import { Command, ValidationError } from "@cliffy/command"
 import { DESCRIPTION, NAME, VERSION } from "./version.ts"
 import { UserError } from "./errors.ts"
+import { stripControlChars } from "./deploy/exec.ts"
 import { SERVER_VAR_ALIASES, SERVER_VAR_KEYS, serverCreate } from "./server-create.ts"
 import { parseStackFlags, parseVarFlags } from "./cli-flags.ts"
 import { deployCommand } from "./commands/deploy.ts"
@@ -156,9 +157,21 @@ Examples:
  * Pure — no `console`/`Deno.exit` — so tests can check the exact lines
  * for every branch (including the debug trace) without spawning a
  * subprocess or intercepting process exit.
+ *
+ * `message` is stripped of control characters once, here, rather than
+ * relying on every call site that builds a `UserError` to remember to
+ * do it (#243 review): several thrown messages embed remote text
+ * (`getent group docker` output, an SSH connection error, `readlink -f`
+ * output) without going through `stripControlChars` at the point where
+ * they're built. Stripping centrally, right before the message is
+ * formatted for the terminal, closes every one of those gaps at once —
+ * the per-call-site strips already in docker-preflight.ts stay too,
+ * since stripping twice is harmless and they also protect a message
+ * that never reaches this function (stale-cleanup's own console.log of
+ * the remote script's stdout).
  */
 export function formatCliError(err: unknown, debug: boolean): string[] {
-  const message = err instanceof Error ? err.message : String(err)
+  const message = stripControlChars(err instanceof Error ? err.message : String(err))
   if (err instanceof UserError || err instanceof ValidationError) {
     return [`rostok: ${message}`]
   }
