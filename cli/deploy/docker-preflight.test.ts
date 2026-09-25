@@ -225,6 +225,157 @@ Deno.test("checkRemotePathsNotNested: names the step and says the server is unre
   )
 })
 
+Deno.test("buildPathsCheckScript: skips sudo entirely when VOLUMES_PATH already exists (#243)", async () => {
+  // The exact regression #243 reports: a non-root deploy user without
+  // passwordless sudo, whose VOLUMES_PATH the operator already created,
+  // must still be able to deploy. `sudo -n mkdir -p` used to run
+  // unconditionally whenever needsSudo was true, which failed here even
+  // though nothing needed creating. Runs the REAL script through a REAL
+  // sh with NO `sudo` on PATH at all — the strongest possible proof that
+  // this path never even tries to invoke it.
+  const remoteRoot = await Deno.makeTempDir({ prefix: "rostok-preflight-existing-volumes-" })
+  try {
+    const pathApps = join(remoteRoot, "apps")
+    const volumesPath = join(remoteRoot, "volumes")
+    await Deno.mkdir(volumesPath, { recursive: true })
+    const script = buildPathsCheckScript(pathApps, volumesPath, true)
+    const binDir = await Deno.makeTempDir({ prefix: "rostok-fake-sudo-denied-" })
+    try {
+      // A `sudo` that always fails, shadowing the real one — if the
+      // `[ -d X ] ||` guard were ever removed, this would fail the
+      // script even though VOLUMES_PATH already exists and nothing
+      // needed creating.
+      await Deno.writeTextFile(join(binDir, "sudo"), "#!/bin/sh\nexit 1\n", { mode: 0o755 })
+      const proc = new Deno.Command("sh", {
+        args: ["-c", script],
+        env: { PATH: `${binDir}:/usr/bin:/bin` },
+        stdout: "piped",
+        stderr: "piped",
+      })
+      const out = await proc.output()
+      const stderr = new TextDecoder().decode(out.stderr)
+      assertEquals(out.success, true, `script failed with sudo denied: ${stderr}`)
+    } finally {
+      await Deno.remove(binDir, { recursive: true })
+    }
+  } finally {
+    await Deno.remove(remoteRoot, { recursive: true })
+  }
+})
+
+Deno.test("buildPathsCheckScript: a failed sudo mkdir aborts the script, never reaches readlink (#243, `;` vs `&&`)", async () => {
+  // If the join between the sudo mkdir and the rest of the script were
+  // `;` instead of `&&`, a denied `sudo -n` (no passwordless rule, and
+  // the directory is genuinely missing) would be swallowed and the
+  // script would go on to `readlink -f` a path that was never created —
+  // reporting a confusing resolve failure instead of the real
+  // permission error, or worse, succeeding against a wrong parent.
+  const remoteRoot = await Deno.makeTempDir({ prefix: "rostok-preflight-sudo-fail-" })
+  try {
+    const pathApps = join(remoteRoot, "apps")
+    const volumesPath = join(remoteRoot, "volumes") // deliberately never created
+    const script = buildPathsCheckScript(pathApps, volumesPath, true)
+    const binDir = await Deno.makeTempDir({ prefix: "rostok-fake-sudo-" })
+    try {
+      // A `sudo` that always fails, simulating "no passwordless rule".
+      await Deno.writeTextFile(join(binDir, "sudo"), "#!/bin/sh\nexit 1\n", { mode: 0o755 })
+      const proc = new Deno.Command("sh", {
+        args: ["-c", script],
+        env: { PATH: `${binDir}:/usr/bin:/bin` },
+        stdout: "piped",
+        stderr: "piped",
+      })
+      const out = await proc.output()
+      const stdout = new TextDecoder().decode(out.stdout)
+      assertEquals(out.success, false, "a denied sudo mkdir must fail the whole script")
+      // Never reached readlink -f, so no resolved paths were printed.
+      assertEquals(stdout.trim(), "")
+    } finally {
+      await Deno.remove(binDir, { recursive: true })
+    }
+  } finally {
+    await Deno.remove(remoteRoot, { recursive: true })
+  }
+})
+
+Deno.test("buildPathsCheckScript: a failed PATH_APPS mkdir still aborts the script even though VOLUMES_PATH needs sudo (#243, && vs || precedence)", async () => {
+  // PATH_APPS's own `mkdir -p` fails here (a FILE already sits where a
+  // directory is expected). Without the `( [ -d X ] || sudo ... )`
+  // grouping, `&&`/`||` share one precedence level and associate left
+  // to right: `mkdir1 && [ -d X ] || sudo ... && readlink...` parses as
+  // `((mkdir1 && [ -d X ]) || sudo ...) && readlink...` — a failed
+  // mkdir1 would still let `sudo mkdir` run and, if THAT succeeded,
+  // the whole left side would read as true and readlink would run
+  // against a PATH_APPS that was never actually created.
+  const remoteRoot = await Deno.makeTempDir({ prefix: "rostok-preflight-mkdir-fail-" })
+  try {
+    const pathApps = join(remoteRoot, "apps")
+    await Deno.writeTextFile(pathApps, "not a directory")
+    const volumesPath = join(remoteRoot, "volumes")
+    const script = buildPathsCheckScript(pathApps, volumesPath, true)
+    const binDir = await Deno.makeTempDir({ prefix: "rostok-fake-sudo-ok-" })
+    try {
+      // A `sudo` that always SUCCEEDS — the failure must come from
+      // PATH_APPS's own mkdir, not from sudo being denied.
+      await Deno.writeTextFile(
+        join(binDir, "sudo"),
+        '#!/bin/sh\nshift\nexec "$@"\n',
+        { mode: 0o755 },
+      )
+      const proc = new Deno.Command("sh", {
+        args: ["-c", script],
+        env: { PATH: `${binDir}:/usr/bin:/bin` },
+        stdout: "piped",
+        stderr: "piped",
+      })
+      const out = await proc.output()
+      const stdout = new TextDecoder().decode(out.stdout)
+      assertEquals(
+        out.success,
+        false,
+        "a failed PATH_APPS mkdir must fail the script even though the sudo branch succeeds",
+      )
+      assertEquals(stdout.trim(), "", `readlink must never have run, got: ${stdout}`)
+    } finally {
+      await Deno.remove(binDir, { recursive: true })
+    }
+  } finally {
+    await Deno.remove(remoteRoot, { recursive: true })
+  }
+})
+
+Deno.test("checkRemotePathsNotNested: refuses output where one line isn't absolute, even with exactly three lines", async () => {
+  // The line-count check ("exactly three") and the absolute-path check
+  // ("every line starts with /") are two separate conditions ORed
+  // together — this proves the absolute-path half on its own, with the
+  // line count already correct, so a mutation that dropped only the
+  // `some(!startsWith("/"))` half would still be caught.
+  await withFakeSsh("/srv/apps\nrelative/path\n/srv/apps/stacks\n", async () => {
+    const err = await assertRejects(
+      () => checkRemotePathsNotNested("root@example.com", "/srv/apps", "/srv/volumes"),
+      UserError,
+    )
+    assertStringIncludes(err.message, "exactly one absolute path")
+  })
+})
+
+Deno.test("checkRemotePathsNotNested: strips control characters from a resolved path before it reaches the refusal message (#243)", async () => {
+  // readlink -f ran on the SERVER — a symlink target name planted there
+  // can carry escape/bell bytes. The nested/equal refusal embeds the
+  // resolved paths directly; they must never reach the operator's
+  // terminal un-stripped.
+  const planted = "/srv/apps/.vol\x1b]0;PWNED\x07ume"
+  await withFakeSsh(`/srv/apps\n${planted}\n/srv/apps/stacks\n`, async () => {
+    const err = await assertRejects(
+      () => checkRemotePathsNotNested("root@example.com", "/srv/apps", "/srv/volumes"),
+      UserError,
+    )
+    assertEquals(err.message.includes("\x1b"), false, err.message)
+    assertEquals(err.message.includes("\x07"), false, err.message)
+    assertStringIncludes(err.message, "/srv/apps/.vol]0;PWNEDume")
+  })
+})
+
 Deno.test("needsRemoteSudo: names the step and says the server is unreachable, not a missing UID", async () => {
   await withUnreachableFakeSsh(
     "ssh: connect to host 192.0.2.1 port 22: Connection timed out",
