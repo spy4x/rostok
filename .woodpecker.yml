@@ -9,6 +9,10 @@ steps:
       # Install git for the .gitignore checks (cli/init.test.ts runs
       # `git check-ignore`) and worktree/hook fixtures elsewhere. `age`
       # is no longer needed: encryption runs in-process
-      # (@spy4x/server/env-age64), no binary on PATH required.
-      - apt-get update && apt-get install -y git
+      # (@spy4x/server/env-age64), no binary on PATH required. `zsh` is
+      # needed because stale-stacks.test.ts (#243) runs the generated
+      # cleanup script under zsh as well as sh — the remote deploy
+      # user's login shell is often zsh, not sh, and a script that only
+      # works under sh must fail loudly here, not be silently skipped.
+      - apt-get update && apt-get install -y git zsh
       - deno task check

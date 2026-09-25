@@ -11,6 +11,9 @@ import { generateStaleStackCleanupScript } from "./stale-stacks.ts"
  * a script literal otherwise). Returns the log's lines and the script's
  * own exit code.
  */
+/** `sh` or `zsh` — the script must behave identically under both: ssh invokes it through the remote user's own login shell, which is often zsh, not sh. */
+type FakeShell = "sh" | "zsh"
+
 async function runWithFakeDocker(
   script: string,
   opts: {
@@ -28,6 +31,10 @@ async function runWithFakeDocker(
     failComposeProjects?: string[]
     /** `docker ps` itself fails (nonzero exit, no output) for the exact-match filter — simulates the daemon being unreachable while a stack folder still exists. */
     failPsExact?: boolean
+    /** `docker ps` itself fails (nonzero exit) for phase 2's broad, unfiltered scan. */
+    failPsBroad?: boolean
+    /** Runs the script under this shell instead of `sh` — pass "zsh" to prove the same behavior under the remote's likely login shell. */
+    shell?: FakeShell
   } = {},
 ): Promise<{ log: string[]; success: boolean; stdout: string }> {
   const binDir = await Deno.makeTempDir({ prefix: "rostok-fake-docker-bin-" })
@@ -44,7 +51,14 @@ async function runWithFakeDocker(
     const failProjectCase = (opts.failComposeProjects ?? [])
       .map((p) => `    *"-p ${p} "*) exit 1 ;;`)
       .join("\n")
+    // Recursion guard (house rule): this fake never calls the real
+    // `docker` by name, but every fake gets the same depth-variable
+    // guard regardless, so a future edit that DID make it exec
+    // something by name can't turn into a fork bomb unnoticed.
     const dockerScript = `#!/bin/sh
+if [ -n "$ROSTOK_FAKE_DOCKER_DEPTH" ]; then exit 1; fi
+ROSTOK_FAKE_DOCKER_DEPTH=1
+export ROSTOK_FAKE_DOCKER_DEPTH
 echo "$* (cwd=$(pwd))" >> ${JSON.stringify(logPath)}
 if [ "$1" = "ps" ]; then
   case "$*" in
@@ -54,7 +68,13 @@ if [ "$1" = "ps" ]; then
       fi
       cat ${JSON.stringify(exactOutputPath)}
       ;;
-    *) cat ${JSON.stringify(broadOutputPath)} ;;
+    *)
+      if ${opts.failPsBroad ? "true" : "false"}; then
+        echo "fake docker: ps failed" >&2
+        exit 1
+      fi
+      cat ${JSON.stringify(broadOutputPath)}
+      ;;
   esac
 elif [ "$1" = "compose" ]; then
   if ${opts.failCompose ? "true" : "false"}; then
@@ -69,7 +89,7 @@ fi
     const previousPath = Deno.env.get("PATH") ?? ""
     Deno.env.set("PATH", `${binDir}:${previousPath}`)
     try {
-      const proc = new Deno.Command("sh", {
+      const proc = new Deno.Command(opts.shell ?? "sh", {
         args: ["-c", script],
         stdout: "piped",
         stderr: "piped",
@@ -77,7 +97,7 @@ fi
       const out = await proc.output()
       if (!out.success) {
         const stderrText = new TextDecoder().decode(out.stderr)
-        const expectedFailure = opts.failCompose || opts.failPsExact ||
+        const expectedFailure = opts.failCompose || opts.failPsExact || opts.failPsBroad ||
           (opts.failComposeProjects ?? []).length > 0
         if (stderrText.trim() && !expectedFailure) {
           throw new Error(`script errored: ${stderrText}`)
@@ -306,6 +326,27 @@ Deno.test('generateStaleStackCleanupScript: an empty stacks/ directory never ite
   }
 })
 
+Deno.test('generateStaleStackCleanupScript: an empty stacks/ directory never fails under zsh ("no matches found")', async () => {
+  // ssh runs this script through the remote user's LOGIN shell, which
+  // is often zsh, not sh. Under zsh's default options, an unmatched
+  // glob (this exact case — a fresh server's empty stacks/) doesn't
+  // leave the pattern as a literal word the way sh does; it aborts the
+  // command with "zsh: no matches found: .../stacks/*" instead, and the
+  // `for` loop never even starts. `setopt nullglob`, guarded by
+  // `$ZSH_VERSION` so it's a no-op under sh, is what fixes this — this
+  // test fails loudly (not silently skips) if `zsh` isn't installed.
+  const pathApps = await Deno.makeTempDir({ prefix: "rostok-stale-stacks-test-" })
+  try {
+    await Deno.mkdir(join(pathApps, "stacks"), { recursive: true })
+    const script = generateStaleStackCleanupScript(["traefik"], pathApps, "/srv/volumes")
+    const { log, success, stdout } = await runWithFakeDocker(script, { shell: "zsh" })
+    assert(success, `script failed under zsh, log:\n${log.join("\n")}\nstdout:\n${stdout}`)
+    assertEquals(stdout.includes("no matches found"), false, stdout)
+  } finally {
+    await Deno.remove(pathApps, { recursive: true })
+  }
+})
+
 Deno.test("generateStaleStackCleanupScript: a MISSING stacks/ directory (fresh server) never errors", async () => {
   const pathApps = await Deno.makeTempDir({ prefix: "rostok-stale-stacks-test-" })
   try {
@@ -341,6 +382,88 @@ Deno.test("generateStaleStackCleanupScript: phase 1 — a failed stop keeps the 
     await Deno.remove(pathApps, { recursive: true })
   }
 })
+
+/**
+ * #243 point 3, phase 1: with the FIRST of two stale folders failing to
+ * stop, the second must still be tried and removed, and the failure
+ * from the first is still visible at the end. Today's phase-1 `for`
+ * loop already does this (`stop_and_remove "$dir_name" || FAILED=1`,
+ * no `break`) — but nothing exercised TWO stale folders in the same
+ * run before, so a regression to `|| { FAILED=1; break; }` would have
+ * gone unnoticed.
+ */
+async function assertPhase1ContinuesPastFailure(shell: FakeShell): Promise<void> {
+  const pathApps = await makeStacksDir(["traefik", "oldstack-a", "oldstack-b"])
+  const binDir = await Deno.makeTempDir({ prefix: "rostok-fake-docker-bin-" })
+  try {
+    const dirA = join(pathApps, "stacks", "oldstack-a")
+    const dirB = join(pathApps, "stacks", "oldstack-b")
+    const logPath = join(binDir, "log.txt")
+    await Deno.writeTextFile(logPath, "")
+    const dockerScript = `#!/bin/sh
+if [ -n "$ROSTOK_FAKE_DOCKER_DEPTH" ]; then exit 1; fi
+ROSTOK_FAKE_DOCKER_DEPTH=1
+export ROSTOK_FAKE_DOCKER_DEPTH
+echo "$* (cwd=$(pwd))" >> ${JSON.stringify(logPath)}
+if [ "$1" = "ps" ]; then
+  case "$*" in
+    *"working_dir=${dirA}"*) printf 'idA|proj-a\\n' ;;
+    *"working_dir=${dirB}"*) printf 'idB|proj-b\\n' ;;
+    *"working_dir="*) printf '' ;;
+    *) printf '' ;;
+  esac
+elif [ "$1" = "compose" ]; then
+  case "$*" in
+    *"-p proj-a "*) exit 1 ;;
+  esac
+fi
+`
+    await Deno.writeTextFile(join(binDir, "docker"), dockerScript, { mode: 0o755 })
+    const script = generateStaleStackCleanupScript(["traefik"], pathApps, "/srv/volumes")
+    const previousPath = Deno.env.get("PATH") ?? ""
+    Deno.env.set("PATH", `${binDir}:${previousPath}`)
+    try {
+      const proc = new Deno.Command(shell, {
+        args: ["-c", script],
+        stdout: "piped",
+        stderr: "piped",
+      })
+      const out = await proc.output()
+      const stdout = new TextDecoder().decode(out.stdout)
+      const stderrText = new TextDecoder().decode(out.stderr)
+      assertEquals(
+        out.success,
+        false,
+        `oldstack-a's failure must make the script exit non-zero; stdout:\n${stdout}\nstderr:\n${stderrText}`,
+      )
+      assertStringIncludes(stdout, "FAILED to stop stale stack 'oldstack-a'")
+      // The whole point: oldstack-b must still be reached and removed
+      // even though it comes AFTER oldstack-a in the same `for` loop.
+      assertStringIncludes(stdout, "Removed stale stack 'oldstack-b'")
+      const remaining = [...Deno.readDirSync(join(pathApps, "stacks"))].map((e) => e.name).sort()
+      assertEquals(
+        remaining,
+        ["oldstack-a", "traefik"],
+        "oldstack-a's folder stays (failed stop); oldstack-b's is gone (succeeded)",
+      )
+    } finally {
+      Deno.env.set("PATH", previousPath)
+    }
+  } finally {
+    await Deno.remove(binDir, { recursive: true })
+    await Deno.remove(pathApps, { recursive: true })
+  }
+}
+
+Deno.test(
+  "generateStaleStackCleanupScript: phase 1 — an earlier stale folder's failure never stops a later one from being tried (#243 point 3, sh)",
+  () => assertPhase1ContinuesPastFailure("sh"),
+)
+
+Deno.test(
+  "generateStaleStackCleanupScript: phase 1 — an earlier stale folder's failure never stops a later one from being tried (#243 point 3, zsh)",
+  () => assertPhase1ContinuesPastFailure("zsh"),
+)
 
 Deno.test("generateStaleStackCleanupScript: phase 1's failed-stop message names the folder; phase 2's own doesn't have one (#243 review)", async () => {
   // "its folder was left in place" is only true for phase 1 (the folder
@@ -428,16 +551,20 @@ Deno.test("generateStaleStackCleanupScript: phase 2 — a failed stop survives t
   }
 })
 
-Deno.test("generateStaleStackCleanupScript: phase 2 — an EARLIER entry's failure is not masked by a LATER entry's success (review round)", async () => {
-  // The scenario `|| exit 1` alone actually guards against: two stale
-  // entries in the SAME phase-2 loop, the first stop fails, the second
-  // succeeds. A while loop's own exit status is just the last command
-  // it ran — without something making the first failure escape its own
-  // iteration immediately, the loop's overall (and thus the script's
-  // overall) exit status would reflect only the LAST (successful)
-  // iteration, silently losing the first failure. A single-entry test
-  // can't tell these two shapes apart, since there "last" and "only"
-  // are the same iteration.
+/**
+ * #243 point 3: one stale stack failing to stop must never stop the
+ * OTHERS from being tried — the deploy still aborts overall, but every
+ * stack gets a chance and every failure gets reported. Two entries in
+ * the SAME phase-2 loop, the first stop fails, the second succeeds:
+ * gone-a's failure must be reported AND gone-b must still be stopped,
+ * and the script's own exit status must still reflect gone-a's
+ * failure even though gone-b's LATER success runs after it — a while
+ * loop's own exit status is just the last command it ran, so without
+ * something accumulating the failure across iterations (the `rc`
+ * variable in the generated script), gone-b's later success would
+ * silently erase gone-a's earlier failure from the final exit code.
+ */
+async function assertPhase2ContinuesPastFailure(shell: FakeShell): Promise<void> {
   const pathApps = await makeStacksDir(["traefik"])
   const binDir = await Deno.makeTempDir({ prefix: "rostok-fake-docker-bin-" })
   try {
@@ -449,6 +576,9 @@ Deno.test("generateStaleStackCleanupScript: phase 2 — an EARLIER entry's failu
     // single canned blob for every dir) — gone-a has a container whose
     // stop fails, gone-b has one whose stop succeeds.
     const dockerScript = `#!/bin/sh
+if [ -n "$ROSTOK_FAKE_DOCKER_DEPTH" ]; then exit 1; fi
+ROSTOK_FAKE_DOCKER_DEPTH=1
+export ROSTOK_FAKE_DOCKER_DEPTH
 echo "$* (cwd=$(pwd))" >> ${JSON.stringify(logPath)}
 if [ "$1" = "ps" ]; then
   case "$*" in
@@ -468,27 +598,26 @@ fi
     const previousPath = Deno.env.get("PATH") ?? ""
     Deno.env.set("PATH", `${binDir}:${previousPath}`)
     try {
-      const proc = new Deno.Command("sh", {
+      const proc = new Deno.Command(shell, {
         args: ["-c", script],
         stdout: "piped",
         stderr: "piped",
       })
       const out = await proc.output()
       const stdout = new TextDecoder().decode(out.stdout)
+      const stderrText = new TextDecoder().decode(out.stderr)
       assertEquals(
         out.success,
         false,
-        `gone-a's failure must make the script exit non-zero even though gone-b succeeded ` +
-          `afterwards; stdout:\n${stdout}`,
+        `gone-a's failure must still make the script exit non-zero, even though gone-b ` +
+          `succeeds afterwards; stdout:\n${stdout}\nstderr:\n${stderrText}`,
       )
-      assertStringIncludes(stdout, "FAILED")
+      assertStringIncludes(stdout, "FAILED to stop stale stack 'gone-a'")
       assertEquals(stdout.includes("Stopped stale stack 'gone-a'"), false)
-      // Correct (fail-fast) behaviour: gone-a's failure must stop the
-      // loop right there — gone-b, which comes after it, is never
-      // reached. Without `|| exit 1` this ordering inverts: both run,
-      // gone-b's LATER success becomes the loop's own exit status, and
-      // gone-a's earlier failure is lost (proven by the mutation below).
-      assertEquals(stdout.includes("Stopped stale stack 'gone-b'"), false)
+      // #243 point 3: gone-a's failure must NOT stop gone-b from being
+      // tried. This is the flip of this test's pre-#243 assertion,
+      // which required the opposite (fail-fast) behaviour.
+      assertStringIncludes(stdout, "Stopped stale stack 'gone-b'")
     } finally {
       Deno.env.set("PATH", previousPath)
     }
@@ -496,7 +625,17 @@ fi
     await Deno.remove(binDir, { recursive: true })
     await Deno.remove(pathApps, { recursive: true })
   }
-})
+}
+
+Deno.test(
+  "generateStaleStackCleanupScript: phase 2 — an earlier entry's failure never stops a later entry from being tried (#243 point 3, sh)",
+  () => assertPhase2ContinuesPastFailure("sh"),
+)
+
+Deno.test(
+  "generateStaleStackCleanupScript: phase 2 — an earlier entry's failure never stops a later entry from being tried (#243 point 3, zsh)",
+  () => assertPhase2ContinuesPastFailure("zsh"),
+)
 
 Deno.test("generateStaleStackCleanupScript: phase-2 label '..' is rejected by the name guard, not the */* segment check (review round)", async () => {
   // "..": no "/" in it, so the phase-2 `case "$rel" in */*) continue`
@@ -582,6 +721,87 @@ Deno.test("generateStaleStackCleanupScript: a file symlink under stacks/ is skip
     assertStringIncludes(stdout, "not a directory")
     // The symlink (and its target) must survive untouched.
     assertEquals(await Deno.readTextFile(targetFile), "just a file")
+  } finally {
+    await Deno.remove(pathApps, { recursive: true })
+  }
+})
+
+Deno.test("generateStaleStackCleanupScript: a BROKEN symlink with a still-running container is stopped and removed (#243 review — regression fix)", async () => {
+  // Phase 1 never calls stop_and_remove for a broken symlink (or any
+  // non-directory entry) under stacks/ — it reports "not a directory"
+  // and moves on (the test above). Phase 2's broad scan is therefore
+  // the ONLY place that can ever stop a container still running behind
+  // one, and origin/main does exactly that. The branch's own guard
+  // must skip a phase-2 entry only when `[ -d ... ]` is true (a REAL
+  // directory phase 1 already handled) — skipping on `-e`/`-L`
+  // instead (this branch's earlier mistake) would also match a broken
+  // symlink and silently stop this from ever happening again.
+  const pathApps = await Deno.makeTempDir({ prefix: "rostok-stale-stacks-test-" })
+  try {
+    await Deno.mkdir(join(pathApps, "stacks"), { recursive: true })
+    const brokenLink = join(pathApps, "stacks", "orphan-symlink")
+    await Deno.symlink(join(pathApps, "does-not-exist"), brokenLink)
+
+    const script = generateStaleStackCleanupScript(["traefik"], pathApps, "/srv/volumes")
+    const { success, stdout, log } = await runWithFakeDocker(script, {
+      broadOutput: `${brokenLink}\n`,
+      exactOutput: `abc123|orphan-project\n`,
+    })
+    assert(success, log.join("\n"))
+    assert(
+      log.some((l) => l.startsWith("compose -p orphan-project down --remove-orphans")),
+      `expected the orphaned container behind the broken symlink to be stopped, got:\n${
+        log.join("\n")
+      }`,
+    )
+    let symlinkGone = false
+    try {
+      await Deno.lstat(brokenLink)
+    } catch {
+      symlinkGone = true
+    }
+    assert(symlinkGone, "the broken symlink itself must be removed once its container is stopped")
+    assertStringIncludes(stdout, "Removed stale stack 'orphan-symlink'")
+  } finally {
+    await Deno.remove(pathApps, { recursive: true })
+  }
+})
+
+Deno.test('generateStaleStackCleanupScript: phase 2\'s own docker ps failing is reported and fails the script, never read as "nothing to stop" (#243 review)', async () => {
+  const pathApps = await makeStacksDir(["traefik"])
+  try {
+    const script = generateStaleStackCleanupScript(["traefik"], pathApps, "/srv/volumes")
+    const { success, stdout, log } = await runWithFakeDocker(script, { failPsBroad: true })
+    assertEquals(
+      success,
+      false,
+      `script must exit non-zero when phase 2's own docker ps fails, log:\n${log.join("\n")}`,
+    )
+    assertStringIncludes(stdout, "FAILED to list containers for the orphaned-container scan.")
+  } finally {
+    await Deno.remove(pathApps, { recursive: true })
+  }
+})
+
+Deno.test('generateStaleStackCleanupScript: stop_and_remove\'s own docker ps failing omits "left in place" once its folder is already gone (#243 review)', async () => {
+  // Reached via phase 2 (the folder never existed — this is the
+  // "already gone" shape), so the message must not claim a folder was
+  // left in place; that clause is only true for phase 1's callers.
+  const pathApps = await makeStacksDir(["traefik"])
+  try {
+    const goneStackDir = join(pathApps, "stacks", "gone-stack")
+    const script = generateStaleStackCleanupScript(["traefik"], pathApps, "/srv/volumes")
+    const { success, stdout, log } = await runWithFakeDocker(script, {
+      broadOutput: `${goneStackDir}\n`,
+      failPsExact: true,
+    })
+    assertEquals(success, false, log.join("\n"))
+    assertStringIncludes(stdout, "FAILED to list containers for stale stack 'gone-stack'.")
+    assertEquals(
+      stdout.includes("FAILED to list containers for stale stack 'gone-stack': its folder"),
+      false,
+      stdout,
+    )
   } finally {
     await Deno.remove(pathApps, { recursive: true })
   }
@@ -740,12 +960,12 @@ Deno.test("generateStaleStackCleanupScript: removing the phase-2 already-handled
     const oldstackDir = join(pathApps, "stacks", "oldstack")
     const script = generateStaleStackCleanupScript(["traefik"], pathApps, "/srv/volumes")
     const mutated = script.replace(
-      '      case "$rel" in\n' +
-        "        ''|*[!A-Za-z0-9_-]*) ;;\n" +
-        "        *)\n" +
-        '          if [ -e "$STACKS_DIR/$rel" ] || [ -L "$STACKS_DIR/$rel" ]; then continue; fi\n' +
-        "          ;;\n" +
-        "      esac\n",
+      '    case "$rel" in\n' +
+        "      ''|*[!A-Za-z0-9_-]*) ;;\n" +
+        "      *)\n" +
+        '        if [ -d "$STACKS_DIR/$rel" ]; then continue; fi\n' +
+        "        ;;\n" +
+        "    esac\n",
       "",
     )
     assert(mutated !== script, "mutation string not found in generated script")
