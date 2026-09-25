@@ -342,6 +342,65 @@ Deno.test("generateStaleStackCleanupScript: phase 1 — a failed stop keeps the 
   }
 })
 
+Deno.test("generateStaleStackCleanupScript: phase 1's failed-stop message names the folder; phase 2's own doesn't have one (#243 review)", async () => {
+  // "its folder was left in place" is only true for phase 1 (the folder
+  // is a real, still-existing directory the operator can go retry). A
+  // phase-2 orphan's folder is already gone — that clause would be a
+  // lie there, so its own failure message must omit it. One stack in
+  // each phase, both failing to stop, so both messages are visible in
+  // the same run.
+  const pathApps = await makeStacksDir(["traefik", "oldstack"])
+  const binDir = await Deno.makeTempDir({ prefix: "rostok-fake-docker-bin-" })
+  try {
+    const goneStackDir = join(pathApps, "stacks", "gone-stack")
+    const oldstackDir = join(pathApps, "stacks", "oldstack")
+    const logPath = join(binDir, "log.txt")
+    await Deno.writeTextFile(logPath, "")
+    const dockerScript = `#!/bin/sh
+echo "$* (cwd=$(pwd))" >> ${JSON.stringify(logPath)}
+if [ "$1" = "ps" ]; then
+  case "$*" in
+    *"working_dir=${oldstackDir}"*) printf 'abc123|oldstack-deployed-as\\n' ;;
+    *"working_dir=${goneStackDir}"*) printf 'def456|gone-project\\n' ;;
+    *"working_dir="*) printf '' ;;
+    *) printf '${goneStackDir}\\n' ;;
+  esac
+elif [ "$1" = "compose" ]; then
+  exit 1
+fi
+`
+    await Deno.writeTextFile(join(binDir, "docker"), dockerScript, { mode: 0o755 })
+    const script = generateStaleStackCleanupScript(["traefik"], pathApps, "/srv/volumes")
+    const previousPath = Deno.env.get("PATH") ?? ""
+    Deno.env.set("PATH", `${binDir}:${previousPath}`)
+    try {
+      const proc = new Deno.Command("sh", {
+        args: ["-c", script],
+        stdout: "piped",
+        stderr: "piped",
+      })
+      const out = await proc.output()
+      const stdout = new TextDecoder().decode(out.stdout)
+      assertEquals(out.success, false, `stdout:\n${stdout}`)
+      assertStringIncludes(
+        stdout,
+        "FAILED to stop stale stack 'oldstack': its folder was left in place.",
+      )
+      assertStringIncludes(stdout, "FAILED to stop stale stack 'gone-stack'.")
+      assertEquals(
+        stdout.includes("FAILED to stop stale stack 'gone-stack': its folder was left in place."),
+        false,
+        `gone-stack's folder is already gone; the message must not claim otherwise, got:\n${stdout}`,
+      )
+    } finally {
+      Deno.env.set("PATH", previousPath)
+    }
+  } finally {
+    await Deno.remove(binDir, { recursive: true })
+    await Deno.remove(pathApps, { recursive: true })
+  }
+})
+
 Deno.test("generateStaleStackCleanupScript: phase 2 — a failed stop survives the piped subshell (review round)", async () => {
   // The container's folder is already gone (this is the "folder-gone"
   // phase 2 scan) — before this fix, `stop_and_remove`'s own `exit 1`
