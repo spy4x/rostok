@@ -231,8 +231,10 @@ Deno.test("buildPathsCheckScript: skips sudo entirely when VOLUMES_PATH already 
   // must still be able to deploy. `sudo -n mkdir -p` used to run
   // unconditionally whenever needsSudo was true, which failed here even
   // though nothing needed creating. Runs the REAL script through a REAL
-  // sh with NO `sudo` on PATH at all — the strongest possible proof that
-  // this path never even tries to invoke it.
+  // sh, with a fake `sudo` that always fails placed EARLIER on PATH than
+  // the real one (still reachable via /usr/bin, so the fake's own exec
+  // lookup below stays honest) — proof that the `[ -d X ] ||` guard
+  // never even reaches that fake when the directory already exists.
   const remoteRoot = await Deno.makeTempDir({ prefix: "rostok-preflight-existing-volumes-" })
   try {
     const pathApps = join(remoteRoot, "apps")
@@ -316,10 +318,20 @@ Deno.test("buildPathsCheckScript: a failed PATH_APPS mkdir still aborts the scri
     const binDir = await Deno.makeTempDir({ prefix: "rostok-fake-sudo-ok-" })
     try {
       // A `sudo` that always SUCCEEDS — the failure must come from
-      // PATH_APPS's own mkdir, not from sudo being denied.
+      // PATH_APPS's own mkdir, not from sudo being denied. Recursion
+      // guard (house rule): this fake execs the REST of its own argv,
+      // so if that argv ever named "sudo" again (it never does in this
+      // script — always "mkdir" — but the guard costs nothing and the
+      // rule applies to every fake regardless), the depth variable
+      // stops it from calling itself forever instead of the real tool.
       await Deno.writeTextFile(
         join(binDir, "sudo"),
-        '#!/bin/sh\nshift\nexec "$@"\n',
+        "#!/bin/sh\n" +
+          'if [ -n "$ROSTOK_FAKE_SUDO_DEPTH" ]; then exit 1; fi\n' +
+          "ROSTOK_FAKE_SUDO_DEPTH=1\n" +
+          "export ROSTOK_FAKE_SUDO_DEPTH\n" +
+          "shift\n" +
+          'exec "$@"\n',
         { mode: 0o755 },
       )
       const proc = new Deno.Command("sh", {
@@ -389,4 +401,33 @@ Deno.test("needsRemoteSudo: names the step and says the server is unreachable, n
       assertEquals(err.message.includes("could not determine"), false)
     },
   )
+})
+
+Deno.test("checkRemotePathsNotNested: refuses TWO absolute-path lines (missing the third) — the line-count check alone, isolated from the absolute-path check", async () => {
+  // Every line here IS absolute, so `lines.some((l) => !l.startsWith("/"))`
+  // is false on its own — only the `lines.length !== 3` half catches
+  // this. Without it, destructuring a short array would leave
+  // realStacksDir undefined and crash the pathComponents() call below
+  // with a TypeError instead of a clean UserError.
+  await withFakeSsh("/srv/apps\n/srv/volumes\n", async () => {
+    const err = await assertRejects(
+      () => checkRemotePathsNotNested("root@example.com", "/srv/apps", "/srv/volumes"),
+      UserError,
+    )
+    assertStringIncludes(err.message, "exactly one absolute path")
+  })
+})
+
+Deno.test("checkRemotePathsNotNested: refuses FOUR absolute-path lines (one extra) — the line-count check alone", async () => {
+  // Every line here is also absolute — without the length check, a
+  // fourth line would just be silently ignored (only the first three
+  // are ever destructured), accepting output the caller never asked
+  // for instead of refusing it.
+  await withFakeSsh("/srv/apps\n/srv/volumes\n/srv/apps/stacks\n/extra\n", async () => {
+    const err = await assertRejects(
+      () => checkRemotePathsNotNested("root@example.com", "/srv/apps", "/srv/volumes"),
+      UserError,
+    )
+    assertStringIncludes(err.message, "exactly one absolute path")
+  })
 })
