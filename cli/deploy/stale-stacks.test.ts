@@ -26,6 +26,8 @@ async function runWithFakeDocker(
      * `failCompose`'s all-or-nothing.
      */
     failComposeProjects?: string[]
+    /** `docker ps` itself fails (nonzero exit, no output) for the exact-match filter — simulates the daemon being unreachable while a stack folder still exists. */
+    failPsExact?: boolean
   } = {},
 ): Promise<{ log: string[]; success: boolean; stdout: string }> {
   const binDir = await Deno.makeTempDir({ prefix: "rostok-fake-docker-bin-" })
@@ -46,7 +48,12 @@ async function runWithFakeDocker(
 echo "$* (cwd=$(pwd))" >> ${JSON.stringify(logPath)}
 if [ "$1" = "ps" ]; then
   case "$*" in
-    *"working_dir="*) cat ${JSON.stringify(exactOutputPath)} ;;
+    *"working_dir="*)
+      if ${opts.failPsExact ? "true" : "false"}; then
+        exit 1
+      fi
+      cat ${JSON.stringify(exactOutputPath)}
+      ;;
     *) cat ${JSON.stringify(broadOutputPath)} ;;
   esac
 elif [ "$1" = "compose" ]; then
@@ -70,7 +77,8 @@ fi
       const out = await proc.output()
       if (!out.success) {
         const stderrText = new TextDecoder().decode(out.stderr)
-        const expectedFailure = opts.failCompose || (opts.failComposeProjects ?? []).length > 0
+        const expectedFailure = opts.failCompose || opts.failPsExact ||
+          (opts.failComposeProjects ?? []).length > 0
         if (stderrText.trim() && !expectedFailure) {
           throw new Error(`script errored: ${stderrText}`)
         }
@@ -125,6 +133,47 @@ Deno.test("generateStaleStackCleanupScript: stops a stale stack via its compose 
 
     const remaining = [...Deno.readDirSync(join(pathApps, "stacks"))].map((e) => e.name).sort()
     assertEquals(remaining, ["traefik"])
+  } finally {
+    await Deno.remove(pathApps, { recursive: true })
+  }
+})
+
+Deno.test("generateStaleStackCleanupScript: the 'Removed' message names VOLUMES_PATH as a whole, never a per-stack subfolder (lead review)", async () => {
+  // Not every catalog stack lays its data out under VOLUMES_PATH/<name>:
+  // usememos keeps its data in .../memos, woodpecker splits into
+  // woodpecker-server/woodpecker-agent, and librespeed has no data
+  // folder at all. Naming a specific subfolder here would be wrong for
+  // part of the catalog, so the message says everything under
+  // VOLUMES_PATH survives, not "VOLUMES_PATH/<name>" — the same wording
+  // stack-remove.ts's own next-steps message uses.
+  const pathApps = await makeStacksDir(["traefik", "oldstack"])
+  try {
+    const script = generateStaleStackCleanupScript(["traefik"], pathApps, "/srv/volumes")
+    const { stdout, success, log } = await runWithFakeDocker(script, {
+      exactOutput: `abc123|oldstack-deployed-as\n`,
+    })
+    assert(success, log.join("\n"))
+    assertStringIncludes(stdout, "Removed stale stack 'oldstack'. Data under '/srv/volumes' kept.")
+  } finally {
+    await Deno.remove(pathApps, { recursive: true })
+  }
+})
+
+Deno.test("generateStaleStackCleanupScript: the 'Stopped' (folder-already-gone) message also names VOLUMES_PATH as a whole", async () => {
+  const pathApps = await makeStacksDir(["traefik"])
+  try {
+    const goneStackDir = join(pathApps, "stacks", "gone-stack")
+    const script = generateStaleStackCleanupScript(["traefik"], pathApps, "/srv/volumes")
+    const { stdout, success, log } = await runWithFakeDocker(script, {
+      broadOutput: `${goneStackDir}\n`,
+      exactOutput: `abc123|gone-project\n`,
+    })
+    assert(success, log.join("\n"))
+    assertStringIncludes(
+      stdout,
+      "Stopped stale stack 'gone-stack' (its folder was already gone). Data under " +
+        "'/srv/volumes' kept.",
+    )
   } finally {
     await Deno.remove(pathApps, { recursive: true })
   }
@@ -558,5 +607,126 @@ Deno.test("generateStaleStackCleanupScript: never emits an rm/docker command roo
         `a command line referenced VOLUMES_PATH: ${line}`,
       )
     }
+  }
+})
+
+Deno.test("generateStaleStackCleanupScript: `docker ps` itself failing keeps the folder, never prints Removed (#243 review)", async () => {
+  // Before this fix, `docker ps ... | while read ...; do ...; done`
+  // lost `docker ps`'s own exit code: an empty-input `while` loop exits
+  // 0 regardless of why its input was empty, so a failing `docker ps`
+  // (daemon unreachable) read as "found zero containers" and cleanup
+  // went on to `rm -rf` the folder without ever having actually checked
+  // for running containers.
+  const pathApps = await makeStacksDir(["traefik", "oldstack"])
+  try {
+    const script = generateStaleStackCleanupScript(["traefik"], pathApps, "/srv/volumes")
+    const { success, stdout, log } = await runWithFakeDocker(script, { failPsExact: true })
+    assertEquals(
+      success,
+      false,
+      `script must exit non-zero when docker ps itself fails, log:\n${log.join("\n")}`,
+    )
+    assertStringIncludes(stdout, "FAILED")
+    assertEquals(stdout.includes("Removed stale stack 'oldstack'"), false)
+    assertEquals(stdout.includes("Stopped stale stack 'oldstack'"), false)
+    const remaining = [...Deno.readDirSync(join(pathApps, "stacks"))].map((e) => e.name).sort()
+    assertEquals(
+      remaining,
+      ["oldstack", "traefik"],
+      "a docker ps failure must not remove the folder",
+    )
+  } finally {
+    await Deno.remove(pathApps, { recursive: true })
+  }
+})
+
+Deno.test("generateStaleStackCleanupScript: a failed-to-stop stack's folder gets one FAILED report, not two (#243 review)", async () => {
+  // Phase 1 (exact per-folder scan) tries "oldstack", fails to stop it,
+  // and — correctly — leaves its folder in place. Phase 2's broad scan
+  // (any container under STACKS_DIR, folder-existence-agnostic) then
+  // sees the SAME still-running container again. Before the guard that
+  // skips a name whose folder still exists, phase 2 would call
+  // stop_and_remove("oldstack") a second time and print a second FAILED
+  // line for the one stack phase 1 already reported.
+  const pathApps = await makeStacksDir(["traefik", "oldstack"])
+  try {
+    const oldstackDir = join(pathApps, "stacks", "oldstack")
+    const script = generateStaleStackCleanupScript(["traefik"], pathApps, "/srv/volumes")
+    const { success, stdout, log } = await runWithFakeDocker(script, {
+      exactOutput: `abc123|oldstack-deployed-as\n`,
+      broadOutput: `${oldstackDir}\n`,
+      failCompose: true,
+    })
+    assertEquals(success, false, `script must fail, log:\n${log.join("\n")}`)
+    const failedCount = stdout.split("\n")
+      .filter((l) => l.includes("FAILED to stop stale stack 'oldstack'")).length
+    assertEquals(
+      failedCount,
+      1,
+      `expected exactly one 'FAILED to stop stale stack' line for 'oldstack', got ` +
+        `${failedCount}:\n${stdout}`,
+    )
+  } finally {
+    await Deno.remove(pathApps, { recursive: true })
+  }
+})
+
+Deno.test("generateStaleStackCleanupScript: removing the phase-2 already-handled guard reports a stopped stack twice (mutation proof)", async () => {
+  // Same scenario as the double-report test above, but with the guard's
+  // case arm rewritten to a no-op so phase 2 reaches stop_and_remove
+  // again unconditionally — proves the guard, not some other check, is
+  // what stops the duplicate report.
+  const pathApps = await makeStacksDir(["traefik", "oldstack"])
+  try {
+    const oldstackDir = join(pathApps, "stacks", "oldstack")
+    const script = generateStaleStackCleanupScript(["traefik"], pathApps, "/srv/volumes")
+    const mutated = script.replace(
+      '      case "$rel" in\n' +
+        "        ''|*[!A-Za-z0-9_-]*) ;;\n" +
+        "        *)\n" +
+        '          if [ -e "$STACKS_DIR/$rel" ] || [ -L "$STACKS_DIR/$rel" ]; then continue; fi\n' +
+        "          ;;\n" +
+        "      esac\n",
+      "",
+    )
+    assert(mutated !== script, "mutation string not found in generated script")
+    const { success, stdout, log } = await runWithFakeDocker(mutated, {
+      exactOutput: `abc123|oldstack-deployed-as\n`,
+      broadOutput: `${oldstackDir}\n`,
+      failCompose: true,
+    })
+    assertEquals(success, false, log.join("\n"))
+    const failedCount = stdout.split("\n")
+      .filter((l) => l.includes("FAILED to stop stale stack 'oldstack'")).length
+    assertEquals(
+      failedCount,
+      2,
+      `expected the mutated script to report 'oldstack' twice, got ${failedCount}:\n${stdout}`,
+    )
+  } finally {
+    await Deno.remove(pathApps, { recursive: true })
+  }
+})
+
+Deno.test("generateStaleStackCleanupScript: a 'not a directory' entry's name is printed with escape bytes replaced (#243 review)", async () => {
+  // The stale-cleanup review already strips control characters from an
+  // UNSAFE-NAME skip (tested above) — this proves the separate
+  // "not a directory" skip (a file, not a symlink, sitting directly
+  // under stacks/) gets the same treatment, since it's a distinct
+  // `echo` line in the generated script.
+  const pathApps = await Deno.makeTempDir({ prefix: "rostok-stale-stacks-test-" })
+  try {
+    await Deno.mkdir(join(pathApps, "stacks"), { recursive: true })
+    const plantedName = "x\x1b]0;PWNED\x07"
+    await Deno.writeTextFile(join(pathApps, "stacks", plantedName), "just a file")
+
+    const script = generateStaleStackCleanupScript(["traefik"], pathApps, "/srv/volumes")
+    const { success, stdout, log } = await runWithFakeDocker(script)
+    assert(success, log.join("\n"))
+    assertStringIncludes(stdout, "skipped 'x??0?PWNED?': not a directory")
+    assertEquals(stdout.includes("\x1b"), false, stdout)
+    assertEquals(stdout.includes("\x07"), false, stdout)
+  } finally {
+    await Deno.remove(pathApps, { recursive: true })
   }
 })
