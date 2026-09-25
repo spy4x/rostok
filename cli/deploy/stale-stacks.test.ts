@@ -1021,9 +1021,14 @@ Deno.test("generateStaleStackCleanupScript: a $(...) in VOLUMES_PATH is printed,
     const script = generateStaleStackCleanupScript(["traefik"], pathApps, volumesPath)
     const { stdout, success, log } = await runWithFakeDocker(script, {
       exactOutput: `abc123|oldstack-deployed-as\n`,
+      broadOutput: `${join(pathApps, "stacks", "gone")}\n`,
     })
     assert(success, log.join("\n"))
-    assertStringIncludes(stdout, `Data under '${volumesPath}' kept.`)
+    assertStringIncludes(
+      stdout,
+      `Removed stale stack 'oldstack'. Data under '${volumesPath}' kept.`,
+    )
+    assertStringIncludes(stdout, `(its folder was already gone). Data under '${volumesPath}' kept.`)
     const injected = await Deno.stat(marker).then(() => true, () => false)
     assertEquals(injected, false)
   } finally {
