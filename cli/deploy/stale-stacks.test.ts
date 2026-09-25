@@ -480,6 +480,9 @@ Deno.test("generateStaleStackCleanupScript: phase 1's failed-stop message names 
     const logPath = join(binDir, "log.txt")
     await Deno.writeTextFile(logPath, "")
     const dockerScript = `#!/bin/sh
+if [ -n "$ROSTOK_FAKE_DOCKER_DEPTH" ]; then exit 1; fi
+ROSTOK_FAKE_DOCKER_DEPTH=1
+export ROSTOK_FAKE_DOCKER_DEPTH
 echo "$* (cwd=$(pwd))" >> ${JSON.stringify(logPath)}
 if [ "$1" = "ps" ]; then
   case "$*" in

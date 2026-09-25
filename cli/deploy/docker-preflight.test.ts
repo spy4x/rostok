@@ -247,7 +247,16 @@ Deno.test("buildPathsCheckScript: skips sudo entirely when VOLUMES_PATH already 
       // `[ -d X ] ||` guard were ever removed, this would fail the
       // script even though VOLUMES_PATH already exists and nothing
       // needed creating.
-      await Deno.writeTextFile(join(binDir, "sudo"), "#!/bin/sh\nexit 1\n", { mode: 0o755 })
+      await Deno.writeTextFile(
+        join(binDir, "sudo"),
+        `#!/bin/sh
+if [ -n "$ROSTOK_FAKE_SUDO_DEPTH" ]; then exit 1; fi
+ROSTOK_FAKE_SUDO_DEPTH=1
+export ROSTOK_FAKE_SUDO_DEPTH
+exit 1
+`,
+        { mode: 0o755 },
+      )
       const proc = new Deno.Command("sh", {
         args: ["-c", script],
         env: { PATH: `${binDir}:/usr/bin:/bin` },
@@ -280,7 +289,16 @@ Deno.test("buildPathsCheckScript: a failed sudo mkdir aborts the script, never r
     const binDir = await Deno.makeTempDir({ prefix: "rostok-fake-sudo-" })
     try {
       // A `sudo` that always fails, simulating "no passwordless rule".
-      await Deno.writeTextFile(join(binDir, "sudo"), "#!/bin/sh\nexit 1\n", { mode: 0o755 })
+      await Deno.writeTextFile(
+        join(binDir, "sudo"),
+        `#!/bin/sh
+if [ -n "$ROSTOK_FAKE_SUDO_DEPTH" ]; then exit 1; fi
+ROSTOK_FAKE_SUDO_DEPTH=1
+export ROSTOK_FAKE_SUDO_DEPTH
+exit 1
+`,
+        { mode: 0o755 },
+      )
       const proc = new Deno.Command("sh", {
         args: ["-c", script],
         env: { PATH: `${binDir}:/usr/bin:/bin` },
