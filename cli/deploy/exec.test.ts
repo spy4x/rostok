@@ -166,3 +166,12 @@ Deno.test("stripControlChars: removes escape and bell bytes, keeps the rest", ()
 Deno.test("stripControlChars: keeps newlines and tabs", () => {
   assertEquals(stripControlChars("line1\n\tline2"), "line1\n\tline2")
 })
+
+Deno.test("stripControlChars: removes C1 control characters (\\x80-\\x9f)", () => {
+  // Some terminals treat an 8-bit C1 code (e.g. 0x9b, "CSI") the same
+  // as a `\x1b`-prefixed escape sequence — this is a second encoding
+  // of the same attack the \x1b/\x07 test above already covers, not a
+  // duplicate of it.
+  const input = "x\x9bPWNED\x9c real text"
+  assertEquals(stripControlChars(input), "xPWNED real text")
+})
