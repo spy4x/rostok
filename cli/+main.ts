@@ -180,7 +180,7 @@ export function formatCliError(err: unknown, debug: boolean): string[] {
     "this is a bug, please report it at https://github.com/spy4x/rostok/issues",
   ]
   if (debug && err instanceof Error && err.stack) {
-    lines.push(err.stack)
+    lines.push(stripControlChars(err.stack))
   }
   return lines
 }

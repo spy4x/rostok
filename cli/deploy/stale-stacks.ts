@@ -51,7 +51,7 @@ import { shQuote } from "./exec.ts"
  * folder under `${pathApps}/stacks/` that `activeStackNames` (the FULL
  * config.json list, never a single-stack deploy's filtered one) doesn't
  * name, plus any container left behind by an already-missing folder.
- * `pathApps` must already be validated AND normalised (server-keys.ts's
+ * `pathApps` and `volumesPath` must already be validated AND normalised (server-keys.ts's
  * validateRemotePath/normalizeRemotePath) — this only re-quotes it for
  * the shell, never re-checks its shape.
  *
@@ -87,6 +87,9 @@ export function generateStaleStackCleanupScript(
     // ZERO words instead, which is what the loop actually wants.
     'if [ -n "${ZSH_VERSION:-}" ]; then setopt nullglob 2>/dev/null || true; fi',
     `STACKS_DIR=${quotedStacksDir}`,
+    // Quoted once here, then only ever expanded as "$VOLUMES_SHOWN", so a
+    // `$(...)` in the value is printed, never run.
+    `VOLUMES_SHOWN=${shQuote(volumesPath)}`,
     "FAILED=0",
     "",
     // Prints a name that failed validation with every byte outside a
@@ -212,10 +215,10 @@ export function generateStaleStackCleanupScript(
     // naming a specific subfolder here would be wrong for part of the
     // catalog. stack-remove.ts's own next-steps message uses the same
     // wording for the same reason.
-    `    echo "Removed stale stack '$name'. Data under '${volumesPath}' kept."`,
+    `    echo "Removed stale stack '$name'. Data under '$VOLUMES_SHOWN' kept."`,
     "  else",
     `    echo "Stopped stale stack '$name' (its folder was already gone). Data under ` +
-    `'${volumesPath}' kept."`,
+    `'$VOLUMES_SHOWN' kept."`,
     "  fi",
     "  return 0",
     "}",

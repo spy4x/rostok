@@ -4,6 +4,7 @@
 // parseVarFlags regression coverage (circular-input handling).
 
 import {
+  assert,
   assertEquals,
   assertExists,
   assertNotStrictEquals,
@@ -670,4 +671,11 @@ Deno.test({
       await Deno.remove(tmp, { recursive: true }).catch(() => {})
     }
   },
+})
+
+Deno.test("formatCliError: strips control characters from the debug stack trace too (#243 security review)", () => {
+  const lines = formatCliError(new Error("x\x1b]0;PWNED\x07\u009b31m"), true)
+  assertEquals(lines.length, 3)
+  assertStringIncludes(lines[2], "x]0;PWNED31m")
+  for (const c of ["\x1b", "\x07", "\u009b"]) assert(!lines[2].includes(c), lines[2])
 })

@@ -1012,3 +1012,21 @@ Deno.test("generateStaleStackCleanupScript: a 'not a directory' entry's name is 
     await Deno.remove(pathApps, { recursive: true })
   }
 })
+
+Deno.test("generateStaleStackCleanupScript: a $(...) in VOLUMES_PATH is printed, never run (#243 security review)", async () => {
+  const pathApps = await makeStacksDir(["traefik", "oldstack"])
+  const marker = join(pathApps, "INJECTED")
+  try {
+    const volumesPath = `/srv/v$(touch ${marker})`
+    const script = generateStaleStackCleanupScript(["traefik"], pathApps, volumesPath)
+    const { stdout, success, log } = await runWithFakeDocker(script, {
+      exactOutput: `abc123|oldstack-deployed-as\n`,
+    })
+    assert(success, log.join("\n"))
+    assertStringIncludes(stdout, `Data under '${volumesPath}' kept.`)
+    const injected = await Deno.stat(marker).then(() => true, () => false)
+    assertEquals(injected, false)
+  } finally {
+    await Deno.remove(pathApps, { recursive: true })
+  }
+})
