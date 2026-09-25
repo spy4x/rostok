@@ -22,15 +22,20 @@ export interface StackRemoveCommandOverrides {
 
 /**
  * Remove `name` from `options.server`, then print what to do next.
- * `rostok deploy <server>` deletes the removed stack's directory on the
- * server (cli/deploy/run-deploy.ts's stale-stack cleanup), but it does
- * NOT stop or remove that stack's containers first — they're only
- * managed through the compose file that deploy is about to delete, so
- * they keep running, unmanaged, until stopped by hand. The message
- * below names the real directory (`<PATH_APPS>/stacks/<name>`, read
- * from the server's own `.env`) and a real command (`docker compose
- * down` there) — never a `container-*` glob, which docker doesn't
- * expand.
+ * Since 1.2.0 (#241), `rostok deploy <server>` (a full deploy, no
+ * `<stack>` argument) stops the removed stack's containers itself, via
+ * its stale-stack cleanup (cli/deploy/stale-stacks.ts), then removes
+ * its directory (`<PATH_APPS>/stacks/<name>`) — a single-stack deploy
+ * (`rostok deploy <server> <name>`) never runs that cleanup and so
+ * never removes it (run-deploy.ts). The message says its data is kept
+ * under `<VOLUMES_PATH>` as a whole, never `<VOLUMES_PATH>/<name>`: a
+ * stack's data doesn't always live in a folder named after the stack
+ * (usememos keeps its data in `memos`, woodpecker splits into
+ * `woodpecker-server`/`woodpecker-agent`, librespeed has no data folder
+ * at all). Both paths are read from the server's own `.env`; when
+ * either is missing, the message falls back to naming the variable
+ * instead of a path, since printing a stale or empty value would be
+ * worse than saying nothing.
  */
 export async function runStackRemove(
   name: string,
@@ -50,22 +55,29 @@ export async function runStackRemove(
   const serverDir = serverDirFor(cwd, options.server)
   const entries = await readEnvFile(join(serverDir, ".env"))
   const pathApps = entries.find((e) => e.key === "PATH_APPS")?.value
+  const volumesPath = entries.find((e) => e.key === "VOLUMES_PATH")?.value
 
   console.log("")
   console.log("Next steps:")
   console.log(`  rostok deploy ${options.server}`)
-  if (pathApps) {
+  if (pathApps && volumesPath) {
     const stackDir = `${pathApps}/stacks/${result.stackName}`
     console.log(
-      `  (deletes ${stackDir} on the server, but does not stop its containers — run ` +
-        `\`docker compose down\` in ${stackDir} on the server first, or stop them by hand ` +
-        `afterward.)`,
+      `  (stops ${result.stackName}, removes ${stackDir} and keeps everything under ` +
+        `${volumesPath}; \`rostok deploy ${options.server} ` +
+        `${result.stackName}\` does not remove it.)`,
     )
   } else {
+    const missing = [
+      pathApps ? undefined : "PATH_APPS",
+      volumesPath ? undefined : "VOLUMES_PATH",
+    ].filter((v): v is string => v !== undefined).join(" and ")
     console.log(
-      `  (deletes ${result.stackName}'s directory on the server, but does not stop its ` +
-        `containers — run \`docker compose down\` in that stack's directory on the server ` +
-        `first, or stop them by hand afterward.)`,
+      `  (stops ${result.stackName}, removes its directory and keeps its data — the exact ` +
+        `paths aren't shown because ${missing} ${
+          missing.includes(" and ") ? "aren't" : "isn't"
+        } set in ${options.server}'s .env; \`rostok deploy ${options.server} ` +
+        `${result.stackName}\` does not remove it.)`,
     )
   }
   return result
