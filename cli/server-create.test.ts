@@ -780,6 +780,36 @@ Deno.test("server create accepts a ONE-component VOLUMES_PATH like /data (review
     }))
 })
 
+Deno.test("server create rejects a ONE-component PATH_APPS like /data (#243 test gap)", async () => {
+  // Unlike VOLUMES_PATH, PATH_APPS keeps the two-component floor
+  // (server-keys.ts's validateRemotePath default) — a full deploy's
+  // `rsync --delete` runs under PATH_APPS, so `/data` (or `/srv`) is
+  // shallow enough that a typo could delete everything else already on
+  // the server under it. #243 point 5: this stayed green even with the
+  // call site's `minComponents` set to 1, so it must actually exercise
+  // the real floor, not just PATH_APPS's other validation (shell
+  // metacharacters, `..`).
+  await withFakeSsh(OK_SSH, () =>
+    withTmpDir(async (dir) => {
+      await assertRejects(
+        () =>
+          serverCreate({
+            cwd: dir,
+            failFast: true,
+            providedVars: {
+              SERVER_NAME: "home",
+              SSH_ADDRESS: "root@192.0.2.1",
+              DOMAIN: "example.com",
+              CONTACT_EMAIL: "a@example.com",
+              PATH_APPS: "/data",
+            },
+          }),
+        UserError,
+        "invalid PATH_APPS",
+      )
+    }))
+})
+
 // ─────────────────────────────────────────────────────────────────────
 // Review fix #4 (round 4, cosmetic) — a failed probe on an existing
 // server must say the saved values are kept, not "using default" (they

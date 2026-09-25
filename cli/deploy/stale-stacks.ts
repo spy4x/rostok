@@ -51,7 +51,7 @@ import { shQuote } from "./exec.ts"
  * folder under `${pathApps}/stacks/` that `activeStackNames` (the FULL
  * config.json list, never a single-stack deploy's filtered one) doesn't
  * name, plus any container left behind by an already-missing folder.
- * `pathApps` must already be validated AND normalised (server-keys.ts's
+ * `pathApps` and `volumesPath` must already be validated AND normalised (server-keys.ts's
  * validateRemotePath/normalizeRemotePath) — this only re-quotes it for
  * the shell, never re-checks its shape.
  *
@@ -75,7 +75,21 @@ export function generateStaleStackCleanupScript(
 
   const lines = [
     "set -u",
+    // ssh invokes this script through the REMOTE user's login shell,
+    // which is often zsh, not sh — this whole script must behave the
+    // same way under both. zsh's default NOMATCH option makes an
+    // unmatched glob (an empty STACKS_DIR/*, e.g. a fresh server) abort
+    // the command outright ("zsh: no matches found: .../stacks/*")
+    // instead of leaving the pattern as a literal word the way POSIX
+    // sh/bash do — the `for` loop below would never even start.
+    // `setopt nullglob` (zsh only, guarded by $ZSH_VERSION so this is a
+    // silent no-op everywhere else) makes an unmatched glob expand to
+    // ZERO words instead, which is what the loop actually wants.
+    'if [ -n "${ZSH_VERSION:-}" ]; then setopt nullglob 2>/dev/null || true; fi',
     `STACKS_DIR=${quotedStacksDir}`,
+    // Quoted once here, then only ever expanded as "$VOLUMES_SHOWN", so a
+    // `$(...)` in the value is printed, never run.
+    `VOLUMES_SHOWN=${shQuote(volumesPath)}`,
     "FAILED=0",
     "",
     // Prints a name that failed validation with every byte outside a
@@ -128,9 +142,37 @@ export function generateStaleStackCleanupScript(
     // container printed (and risked failing) once per CONTAINER instead
     // of once per project (review round: "smaller" item).
     "  seen=' '",
-    '  if ! docker ps -a --filter "label=com.docker.compose.project.working_dir=$dir" ' +
-    "--format '{{.ID}}|{{.Label \"com.docker.compose.project\"}}' 2>/dev/null | " +
-    "while IFS='|' read -r id proj; do",
+    // `docker ps` output is captured into a variable first, never piped
+    // straight into the `while` below (#243 review): a plain
+    // `docker ps ... | while ...; do ...; done` loses `docker ps`'s OWN
+    // exit code — a `while` over empty input (docker ps itself failing,
+    // e.g. a dead daemon, prints nothing and exits nonzero) still exits
+    // 0 itself (zero iterations, nothing to report), so the failure was
+    // silently read as "no containers found" and cleanup went on to
+    // remove the folder without ever actually having checked. `$?` on
+    // the command substitution is the real, load-bearing check.
+    '  ps_output=$(docker ps -a --filter "label=com.docker.compose.project.working_dir=$dir" ' +
+    "--format '{{.ID}}|{{.Label \"com.docker.compose.project\"}}' 2>/dev/null)",
+    "  ps_rc=$?",
+    '  if [ "$ps_rc" -ne 0 ]; then',
+    '    if [ -e "$dir" ] || [ -L "$dir" ]; then',
+    `      echo "FAILED to list containers for stale stack '$name': its folder was left in place."`,
+    "    else",
+    `      echo "FAILED to list containers for stale stack '$name'."`,
+    "    fi",
+    "    FAILED=1",
+    "    return 1",
+    "  fi",
+    // Explicit `( ... )` subshell around the `while`, not a bare pipe
+    // into it (#243 review, zsh): POSIX only requires each pipeline
+    // stage to run in its OWN subshell, but zsh's default job control
+    // runs a pipeline's LAST stage in the CURRENT shell whenever it
+    // can — the remote login shell this script runs under, per
+    // ssh/sshd, is often zsh. Without the explicit `(...)`, `exit 1`
+    // below would exit the WHOLE script under zsh instead of just this
+    // loop, well past what `stop_and_remove`'s own caller expects to
+    // observe as a return value.
+    "  if ! printf '%s\\n' \"$ps_output\" | ( while IFS='|' read -r id proj; do",
     '    case "$proj" in',
     "      ''|*[!A-Za-z0-9_.-]*) continue ;;",
     "    esac",
@@ -142,11 +184,18 @@ export function generateStaleStackCleanupScript(
     "      echo \"FAILED to stop project '$proj' for stale stack '$name'\"",
     "      exit 1",
     "    fi",
-    "  done; then",
+    "  done ); then",
     // The stop failed: never remove the folder — the operator needs
     // its compose file to retry or investigate — and never print
-    // "Removed"/"Stopped" (review round).
-    `    echo "FAILED to stop stale stack '$name': its folder was left in place."`,
+    // "Removed"/"Stopped" (review round). The message names the folder
+    // only when there still is one (#243 review): phase 2 calls this for
+    // an orphaned container whose folder is already gone, so "its
+    // folder was left in place" would be a lie there.
+    '    if [ -e "$dir" ] || [ -L "$dir" ]; then',
+    `      echo "FAILED to stop stale stack '$name': its folder was left in place."`,
+    "    else",
+    `      echo "FAILED to stop stale stack '$name'."`,
+    "    fi",
     "    FAILED=1",
     "    return 1",
     "  fi",
@@ -158,10 +207,18 @@ export function generateStaleStackCleanupScript(
     "      FAILED=1",
     "      return 1",
     "    fi",
-    `    echo "Removed stale stack '$name'. Data kept at '${volumesPath}/$name'."`,
+    // "Data under VOLUMES_PATH kept", never "VOLUMES_PATH/<name>" (lead
+    // review): several catalog stacks don't lay their data out under a
+    // folder named after the stack itself (usememos keeps its data in
+    // .../memos, woodpecker splits into woodpecker-server and
+    // woodpecker-agent, librespeed has no data folder at all), so
+    // naming a specific subfolder here would be wrong for part of the
+    // catalog. stack-remove.ts's own next-steps message uses the same
+    // wording for the same reason.
+    `    echo "Removed stale stack '$name'. Data under '$VOLUMES_SHOWN' kept."`,
     "  else",
-    `    echo "Stopped stale stack '$name' (its folder was already gone). Data kept at ` +
-    `'${volumesPath}/$name'."`,
+    `    echo "Stopped stale stack '$name' (its folder was already gone). Data under ` +
+    `'$VOLUMES_SHOWN' kept."`,
     "  fi",
     "  return 0",
     "}",
@@ -197,27 +254,70 @@ export function generateStaleStackCleanupScript(
     // and re-checked against the active list before stop_and_remove
     // (which itself re-validates it, and re-matches working_dir
     // EXACTLY) ever touches it.
-    "docker ps -a --filter 'label=com.docker.compose.project.working_dir' " +
-    "--format '{{.Label \"com.docker.compose.project.working_dir\"}}' 2>/dev/null | " +
-    "while IFS= read -r wd; do",
-    '  case "$wd" in',
-    `    ${quotedStacksDir}/*)`,
-    `      rel=\${wd#${quotedStacksDir}/}`,
-    '      case "$rel" in */*) continue ;; esac',
-    '      case " $rel " in',
-    `${activePattern.length > 0 ? `        ${activePattern}) ;;\n` : ""
-      // `|| exit 1` here is load-bearing, not decorative (review
-      // round): this call runs inside a piped `while` loop, which
-      // POSIX runs in its own subshell — a failure `stop_and_remove`
-      // reports via its return value would otherwise be swallowed the
-      // moment this iteration ends, never reaching the `done ||
-      // FAILED=1` below. `exit 1` here terminates THIS subshell
-      // immediately, which IS what that `done || FAILED=1` observes.
-    }        *) stop_and_remove "$rel" || exit 1 ;;`,
-    "      esac",
-    "      ;;",
+    //
+    // The `docker ps` call itself is captured into a variable and its
+    // own `$?` checked (#243 review — same bug class as
+    // stop_and_remove's exact-match scan above): piping straight into
+    // `while` would lose a failure here too, silently treating "docker
+    // ps itself failed" as "found nothing to stop" instead of reporting
+    // and failing. `2>/dev/null` is dropped for the same reason — a
+    // failure's own stderr belongs on the operator's screen, not
+    // discarded.
+    "broad_ps_output=$(docker ps -a --filter 'label=com.docker.compose.project.working_dir' " +
+    "--format '{{.Label \"com.docker.compose.project.working_dir\"}}')",
+    "broad_ps_rc=$?",
+    'if [ "$broad_ps_rc" -ne 0 ]; then',
+    '  echo "FAILED to list containers for the orphaned-container scan."',
+    "  FAILED=1",
+    "else",
+    // Explicit `( rc=0; while ...; done; exit "$rc" )` subshell, never a
+    // bare pipe into the `while` (#243 review, zsh — same reasoning as
+    // stop_and_remove's own loop above: zsh runs a pipeline's LAST
+    // stage in the CURRENT shell, and the remote login shell this
+    // script runs under is often zsh). `rc` accumulates every failure
+    // instead of `exit`-ing on the first one (#243 point 3: one stale
+    // stack failing to stop must never stop the rest from being tried)
+    // — the loop always runs to completion; only the subshell's FINAL
+    // exit status, taken from `rc`, decides whether the outer `||
+    // FAILED=1` fires.
+    "  printf '%s\\n' \"$broad_ps_output\" | ( rc=0",
+    "  while IFS= read -r wd; do",
+    '    case "$wd" in',
+    `      ${quotedStacksDir}/*)`,
+    `        rel=\${wd#${quotedStacksDir}/}`,
+    '        case "$rel" in */*) continue ;; esac',
+    // Skip a name only when it's a REAL DIRECTORY under STACKS_DIR
+    // (#243 review — regression fix): phase 1 already called
+    // stop_and_remove for every real directory, success or failure, so
+    // this broad, prefix-only scan would otherwise reach an
+    // already-handled stack again and double-report it. `-d` alone,
+    // never `-e`/`-L` (the branch's earlier mistake): phase 1 does NOT
+    // call stop_and_remove for a BROKEN symlink or a plain file under
+    // STACKS_DIR (it reports "not a directory" and moves on), so this
+    // scan is the ONLY place that ever stops and removes an orphaned
+    // container sitting behind one — origin/main does this, and
+    // skipping on `-e`/`-L` here would silently stop this branch from
+    // doing it. Only checked for a name that's otherwise safe (the
+    // same charset stop_and_remove itself requires) — an unsafe name
+    // like ".." must still fall through to stop_and_remove's own
+    // report, never be silently skipped here ("$STACKS_DIR/.." is
+    // always a real directory — it's the parent directory itself —
+    // which would otherwise defeat the unsafe-name guard entirely).
+    '    case "$rel" in',
+    "      ''|*[!A-Za-z0-9_-]*) ;;",
+    "      *)",
+    '        if [ -d "$STACKS_DIR/$rel" ]; then continue; fi',
+    "        ;;",
+    "    esac",
+    '    case " $rel " in',
+    `${keepArm}      *) stop_and_remove "$rel" || rc=1 ;;`,
+    "    esac",
+    "    ;;",
     "  esac",
-    "done || FAILED=1",
+    "  done",
+    '  exit "$rc"',
+    "  ) || FAILED=1",
+    "fi",
     "",
     '[ "$FAILED" = 0 ]',
   ]

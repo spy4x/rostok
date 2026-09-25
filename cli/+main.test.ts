@@ -4,6 +4,7 @@
 // parseVarFlags regression coverage (circular-input handling).
 
 import {
+  assert,
   assertEquals,
   assertExists,
   assertNotStrictEquals,
@@ -318,6 +319,20 @@ Deno.test("formatCliError: debug=false never appends a trace even if one exists"
   const err = new Error("boom")
   const lines = formatCliError(err, false)
   assertEquals(lines.length, 2)
+})
+
+Deno.test("formatCliError: strips control characters from a UserError's message (#243 review)", () => {
+  // Several thrown UserErrors embed remote text (readlink -f output, a
+  // getent group line, an SSH connection error) without stripping it
+  // at the point where the message is built — this is the single,
+  // central point that must catch every one of those instead.
+  const lines = formatCliError(new UserError("bad path: x\x1b]0;PWNED\x07ume"), false)
+  assertEquals(lines, ["rostok: bad path: x]0;PWNEDume"])
+})
+
+Deno.test("formatCliError: strips C1 control characters too", () => {
+  const lines = formatCliError(new UserError("bad path: x\x9bPWNED\x9c"), false)
+  assertEquals(lines, ["rostok: bad path: xPWNED"])
 })
 
 const MAIN_TS = join(import.meta.dirname!, "+main.ts")
@@ -656,4 +671,11 @@ Deno.test({
       await Deno.remove(tmp, { recursive: true }).catch(() => {})
     }
   },
+})
+
+Deno.test("formatCliError: strips control characters from the debug stack trace too (#243 security review)", () => {
+  const lines = formatCliError(new Error("x\x1b]0;PWNED\x07\u009b31m"), true)
+  assertEquals(lines.length, 3)
+  assertStringIncludes(lines[2], "x]0;PWNED31m")
+  for (const c of ["\x1b", "\x07", "\u009b"]) assert(!lines[2].includes(c), lines[2])
 })

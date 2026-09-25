@@ -7,7 +7,13 @@
 
 import { UserError } from "../errors.ts"
 import { pathComponents, pathsNestedOrEqual } from "../server-keys.ts"
-import { type CommandResult, runRemoteCommand, runRemoteShell, shQuote } from "./exec.ts"
+import {
+  type CommandResult,
+  runRemoteCommand,
+  runRemoteShell,
+  shQuote,
+  stripControlChars,
+} from "./exec.ts"
 
 /**
  * ssh's own connection-level failures (can't resolve/connect/reach the
@@ -133,10 +139,30 @@ export function buildPathsCheckScript(
   needsSudo = false,
 ): string {
   const stacksDir = `${pathApps}/stacks`
+  const quotedVolumesPath = shQuote(volumesPath)
   // VOLUMES_PATH gets `sudo -n` like volumes.ts's own mkdir of the same
   // tree: its parent is often root-owned (/srv). PATH_APPS never does,
   // since rsync writes there as the deploy user anyway.
-  const sudo = needsSudo ? "sudo -n " : ""
+  //
+  // #243: only actually ESCALATE when the directory is still missing.
+  // `sudo -n mkdir -p` used to run unconditionally whenever needsSudo
+  // was true, even though `mkdir -p` on an existing directory is a
+  // no-op — a non-root deploy user without passwordless sudo, but whose
+  // VOLUMES_PATH the operator had already created (or who owns it
+  // directly), could no longer deploy at all, even though nothing here
+  // actually needed to create anything. `[ -d X ] ||` only reaches
+  // `sudo -n mkdir` when the directory doesn't already exist.
+  // Wrapped in a subshell `( ... )`, not left as a bare
+  // `cmd1 && [ -d X ] || sudo ... && cmd4` chain: `&&`/`||` share one
+  // precedence level and associate left to right, so an un-grouped
+  // `A && B || C && D` parses as `((A && B) || C) && D` — a FAILED `A`
+  // would still let `C` (the sudo mkdir) run, since `false || C`
+  // reduces to `C` regardless of `A`. The subshell's own exit status is
+  // `[ -d X ] || sudo ...`'s result, so the surrounding `&&` chain sees
+  // one command and short-circuits correctly on every earlier failure.
+  const volumesMkdir = needsSudo
+    ? `( [ -d ${quotedVolumesPath} ] || sudo -n mkdir -p -- ${quotedVolumesPath} )`
+    : `mkdir -p -- ${quotedVolumesPath}`
   // A single script STRING (runRemoteShell), never several argv
   // elements handed to runRemoteCommand — ssh joins trailing argv with
   // plain spaces before sending it to the remote shell, which would
@@ -145,10 +171,14 @@ export function buildPathsCheckScript(
   // runRemoteShell for the same reason.
   // One `readlink -f` per line; the caller requires exactly three
   // lines, so a resolved path that itself holds a newline is refused.
+  // `&&` throughout, never `;` — a failed mkdir (sudo denied, disk full)
+  // must stop the script right there instead of feeding a nonexistent
+  // path to `readlink -f` and reporting a confusing resolve failure
+  // instead of the real mkdir error.
   return `mkdir -p -- ${shQuote(pathApps)} ${shQuote(stacksDir)} && ` +
-    `${sudo}mkdir -p -- ${shQuote(volumesPath)} && ` +
+    `${volumesMkdir} && ` +
     `readlink -f -- ${shQuote(pathApps)} && ` +
-    `readlink -f -- ${shQuote(volumesPath)} && ` +
+    `readlink -f -- ${quotedVolumesPath} && ` +
     `readlink -f -- ${shQuote(stacksDir)}`
 }
 
@@ -180,11 +210,19 @@ export async function checkRemotePathsNotNested(
         `${sshAddress} — \`readlink -f\` didn't return exactly one absolute path for each.`,
     )
   }
+  // The three resolved paths came back from the server itself
+  // (`readlink -f`) — anyone with write access there (a symlink target
+  // name, in particular) can shape one into terminal escape sequences.
+  // Stripped before they ever reach a refusal message printed to the
+  // operator's terminal.
+  const cleanPathApps = stripControlChars(realPathApps)
+  const cleanVolumesPath = stripControlChars(realVolumesPath)
+  const cleanStacksDir = stripControlChars(realStacksDir)
   if (pathsNestedOrEqual(realPathApps, realVolumesPath)) {
     throw new UserError(
       `on ${sshAddress}, PATH_APPS and VOLUMES_PATH resolve (readlink -f) to nested or equal ` +
-        `real paths — PATH_APPS "${pathApps}" -> "${realPathApps}", VOLUMES_PATH ` +
-        `"${volumesPath}" -> "${realVolumesPath}" — even though their .env values look like ` +
+        `real paths — PATH_APPS "${pathApps}" -> "${cleanPathApps}", VOLUMES_PATH ` +
+        `"${volumesPath}" -> "${cleanVolumesPath}" — even though their .env values look like ` +
         `separate directories. A symlink on the server itself must be the cause; deploy ` +
         `refuses to sync or clean up anything until it's fixed, since a full deploy's ` +
         `rsync --delete would otherwise be able to reach VOLUMES_PATH's data.`,
@@ -197,8 +235,8 @@ export async function checkRemotePathsNotNested(
   if (stacksRedirected) {
     throw new UserError(
       `on ${sshAddress}, PATH_APPS/stacks doesn't resolve to PATH_APPS's own stacks directory ` +
-        `— "${stacksDir}" -> "${realStacksDir}", but PATH_APPS itself -> "${realPathApps}" ` +
-        `(expected "${realPathApps}/stacks"). A symlink replacing the stacks/ folder itself ` +
+        `— "${stacksDir}" -> "${cleanStacksDir}", but PATH_APPS itself -> "${cleanPathApps}" ` +
+        `(expected "${cleanPathApps}/stacks"). A symlink replacing the stacks/ folder itself ` +
         `must be the cause — every stale-stack removal and per-stack sync runs under this ` +
         `path, so this must be fixed before deploy touches anything.`,
     )

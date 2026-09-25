@@ -212,3 +212,17 @@ export async function runRemoteSyncEntry(
 export function shQuote(value: string): string {
   return `'${value.replaceAll("'", `'\\''`)}'`
 }
+
+/**
+ * Remove ASCII control characters (except newline and tab) and C1
+ * control characters (`\x80`-`\x9f`) from remote output before it
+ * reaches the terminal. Several deploy-time messages embed folder
+ * names, docker labels or `readlink -f` output the server itself
+ * supplied, and anyone with access there can shape those into escape
+ * sequences — including 8-bit C1 codes, which some terminals interpret
+ * the same as a `\x1b`-prefixed escape sequence.
+ */
+export function stripControlChars(s: string): string {
+  // deno-lint-ignore no-control-regex
+  return s.replace(/[\x00-\x08\x0b-\x1f\x7f-\x9f]/g, "")
+}
