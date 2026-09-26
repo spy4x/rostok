@@ -1,5 +1,6 @@
 import { assert, assertEquals, assertRejects, assertStringIncludes } from "@std/assert"
 import { join, toFileUrl } from "@std/path"
+import { loadCatalog } from "../catalog.ts"
 import { UserError } from "../errors.ts"
 import { buildHookEnv, type HookContext, isDeniedEnvKey, runHook } from "./hooks.ts"
 import {
@@ -646,18 +647,36 @@ Deno.test("buildHookEnv: a key owned by another INSTALLED stack is dropped silen
   assertEquals(env.LIBRESPEED_IMAGE_TAG, undefined)
 })
 
-Deno.test("buildHookEnv: a key matching no installed stack (and no server key) still warns (#234)", () => {
+Deno.test("buildHookEnv: a key of a catalog stack that is not installed is dropped silently (#256)", () => {
+  // `stack remove librespeed -n` keeps librespeed's values in .env; every
+  // later deploy must not warn about them from every remaining hook.
+  assert(
+    loadCatalog().some((e) => e.name === "librespeed"),
+    "this test needs librespeed in the bundled catalog; pick another catalog stack",
+  )
   const ctx: HookContext = {
     ...BASE_CTX,
     serverEnv: { LIBRESPEED_IMAGE_TAG: "latest" },
-    // librespeed isn't installed on this server — e.g. `stack remove`
-    // already dropped it from config.json, or the key is a plain typo.
+    installedStackNames: ["test-stack"],
+  }
+  const { env, warnings } = buildHookEnv(ctx, STACK_NAME, {})
+  assertEquals(warnings, [])
+  // Only the warning is gone: the key still never reaches this hook.
+  assertEquals(env.LIBRESPEED_IMAGE_TAG, undefined)
+})
+
+Deno.test("buildHookEnv: a key matching no installed and no catalog stack still warns (#234, #256)", () => {
+  const ctx: HookContext = {
+    ...BASE_CTX,
+    // A typo of librespeed's prefix: no stack, installed or in the catalog, owns it.
+    serverEnv: { LIBRESPED_IMAGE_TAG: "latest", LIBRESPEED_IMAGE_TAG: "latest" },
     installedStackNames: ["test-stack"],
   }
   const { env, warnings } = buildHookEnv(ctx, STACK_NAME, {})
   assertEquals(warnings.length, 1, warnings.join("\n"))
-  assertStringIncludes(warnings[0], "LIBRESPEED_IMAGE_TAG")
-  assertEquals(env.LIBRESPEED_IMAGE_TAG, undefined)
+  assertStringIncludes(warnings[0], "dropped 1 key(s)")
+  assertStringIncludes(warnings[0], "LIBRESPED_IMAGE_TAG")
+  assertEquals(env.LIBRESPED_IMAGE_TAG, undefined)
 })
 
 Deno.test("buildHookEnv: installedStackNames never lets a key through for the wrong stack (#234)", () => {
