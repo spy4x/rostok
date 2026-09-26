@@ -27,7 +27,9 @@ steps:
   # check that in Woodpecker before the first release. `$$` stops Woodpecker
   # substituting the variable itself; the shell reads the secret.
   publish:
-    image: denoland/deno:2.9.0
+    # Pinned by digest: this step holds the token, so a re-pushed tag must not
+    # change what runs. Bump the digest together with `check`'s tag.
+    image: denoland/deno:2.9.0@sha256:8d24854de78a79c56e74b49aa4c5996c60e1fe3730efba8fbdd2692c582e6e29
     when:
       event: tag
       ref: refs/tags/v*

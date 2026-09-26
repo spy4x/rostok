@@ -280,11 +280,15 @@ After the version-bump PR merges to `main`. No need to ask first:
    `scripts/release/+main.ts` refuses a tag that differs from
    `deno.jsonc` or `cli/version.ts`, and `deno publish` uses the
    `JSR_TOKEN` repository secret. That secret must be allowed for the
-   `tag` event only, never `push` or `pull_request`. Only tag a commit
+   `tag` event only, never `push` or `pull_request`. Create the token on
+   jsr.io with "publish" permission for `@rostok/cli` only and an
+   expiry date. Only tag a commit
    that is on `main`: the pipeline does not check it. The
    CI checkout is clean, so no untracked local file can ship. A failed
-   step publishes nothing: fix the cause in a PR, then move the tag to
-   the new merge commit (`git tag -f`, `git push -f origin <tag>`).
+   `check` or guard publishes nothing: fix the cause in a PR, then move
+   the tag to the new merge commit (`git tag -f`, `git push -f origin
+   <tag>`). If `deno publish` itself failed, check jsr.io for the
+   version first: JSR may have accepted the upload anyway.
 3. Verify the new version with `deno install -A --global
    --minimum-dependency-age=0 -n rostok --force jsr:@rostok/cli`
    (the dep-age flag bypasses deno's 24h install delay on fresh
