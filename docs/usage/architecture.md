@@ -176,10 +176,12 @@ What `servers/<name>/` lists is what runs on the server — nothing else.
   `docker compose -p <project> down --remove-orphans`, which needs no
   compose file at all.
 - A hidden folder under `PATH_APPS/stacks/` (a name starting with `.`,
-  such as `stacks/.old-app`) is left alone: stale-stack cleanup never
-  looks at it, and the root sync excludes `stacks/`, so deploy neither
-  reports nor removes it. Delete such a folder by hand once you no
-  longer need it.
+  such as `stacks/.old-app`) is left alone: deploy never stops its
+  containers and never removes it. The folder scan skips hidden names,
+  and the root sync excludes `stacks/`. If a container still runs from
+  such a folder, the cleanup's container scan prints
+  `skipped '.old-app': unsafe name` and moves on. Stop those containers
+  and delete the folder by hand once you no longer need them.
 
 **`PATH_APPS` must be a directory rostok owns entirely** — at least two
 path components deep (`/srv/apps`, never `/srv`, `/home` or `/`):
