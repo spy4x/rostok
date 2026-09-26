@@ -81,38 +81,6 @@ Deno.test("runStackRemove: next steps name the stack's real directory and data p
   })
 })
 
-Deno.test("runStackRemove: falls back to naming the missing env vars when PATH_APPS and VOLUMES_PATH aren't known", async () => {
-  await withTmpDir(async (dir) => {
-    const catalogDir = join(dir, "catalog")
-    await writeLibrespeedCatalog(catalogDir)
-    await Deno.mkdir(join(dir, "servers", "home"), { recursive: true })
-    await Deno.writeTextFile(join(dir, "servers", "home", ".env"), "DOMAIN=example.com\n")
-    await stackAdd("librespeed", "home", { cwd: dir, catalogDir, nonInteractive: true })
-
-    const lines: string[] = []
-    const originalLog = console.log
-    console.log = (...args: unknown[]) => lines.push(args.join(" "))
-    try {
-      await runStackRemove(
-        "librespeed",
-        { server: "home", catalog: catalogDir, dropEnv: true },
-        dir,
-      )
-    } finally {
-      console.log = originalLog
-    }
-    assertEquals(
-      lines.includes(
-        "  (stops librespeed, removes its directory and keeps its data — the exact paths " +
-          "aren't shown because PATH_APPS and VOLUMES_PATH aren't set in home's .env; " +
-          "`rostok deploy home librespeed` does not remove it.)",
-      ),
-      true,
-      lines.join("\n"),
-    )
-  })
-})
-
 Deno.test("runStackRemove: falls back to naming VOLUMES_PATH alone when only it is missing", async () => {
   await withTmpDir(async (dir) => {
     const catalogDir = join(dir, "catalog")
@@ -139,11 +107,105 @@ Deno.test("runStackRemove: falls back to naming VOLUMES_PATH alone when only it 
     assertEquals(
       lines.includes(
         "  (stops librespeed, removes its directory and keeps its data — the exact paths " +
-          "aren't shown because VOLUMES_PATH isn't set in home's .env; " +
+          "aren't shown because VOLUMES_PATH isn't set, or can't be resolved, in home's .env or .env.root; " +
           "`rostok deploy home librespeed` does not remove it.)",
       ),
       true,
       lines.join("\n"),
     )
   })
+})
+
+/**
+ * Add librespeed to `home` (whose `.env` is `serverEnv`, with `.env.root`
+ * holding `rootEnv` when given), remove it, and return what
+ * runStackRemove printed.
+ */
+async function removeAndCapture(serverEnv: string, rootEnv?: string): Promise<string[]> {
+  return await withTmpDir(async (dir) => {
+    const catalogDir = join(dir, "catalog")
+    await writeLibrespeedCatalog(catalogDir)
+    await Deno.mkdir(join(dir, "servers", "home"), { recursive: true })
+    await Deno.writeTextFile(join(dir, "servers", "home", ".env"), serverEnv)
+    if (rootEnv !== undefined) await Deno.writeTextFile(join(dir, ".env.root"), rootEnv)
+    await stackAdd("librespeed", "home", { cwd: dir, catalogDir, nonInteractive: true })
+
+    const lines: string[] = []
+    const originalLog = console.log
+    console.log = (...args: unknown[]) => lines.push(args.join(" "))
+    try {
+      await runStackRemove(
+        "librespeed",
+        { server: "home", catalog: catalogDir, dropEnv: true },
+        dir,
+      )
+    } finally {
+      console.log = originalLog
+    }
+    return lines
+  })
+}
+
+function pathsLine(stackDir: string, volumesPath: string): string {
+  return `  (stops librespeed, removes ${stackDir} and keeps everything under ${volumesPath}; ` +
+    "`rostok deploy home librespeed` does not remove it.)"
+}
+
+Deno.test("runStackRemove: reads VOLUMES_PATH from .env.root when the server .env lacks it", async () => {
+  const lines = await removeAndCapture(
+    "DOMAIN=example.com\nPATH_APPS=/srv/apps\n",
+    "VOLUMES_PATH=/srv/volumes\n",
+  )
+  assertEquals(
+    lines.includes(pathsLine("/srv/apps/stacks/librespeed", "/srv/volumes")),
+    true,
+    lines.join("\n"),
+  )
+})
+
+Deno.test("runStackRemove: the server .env wins over .env.root for the same key", async () => {
+  const lines = await removeAndCapture(
+    "DOMAIN=example.com\nVOLUMES_PATH=/data/server\n",
+    "VOLUMES_PATH=/data/root\n",
+  )
+  assertEquals(
+    lines.includes(pathsLine("/srv/apps/stacks/librespeed", "/data/server")),
+    true,
+    lines.join("\n"),
+  )
+})
+
+Deno.test("runStackRemove: uses deploy's PATH_APPS default when PATH_APPS is unset", async () => {
+  const lines = await removeAndCapture("DOMAIN=example.com\nVOLUMES_PATH=/srv/volumes\n")
+  assertEquals(
+    lines.includes(pathsLine("/srv/apps/stacks/librespeed", "/srv/volumes")),
+    true,
+    lines.join("\n"),
+  )
+})
+
+Deno.test("runStackRemove: strips a trailing slash and expands ${VAR} references like deploy", async () => {
+  const lines = await removeAndCapture(
+    "DOMAIN=example.com\nPATH_APPS=/srv/apps/\nVOLUMES_PATH=${BASE_PATH}/volumes/\n",
+    "BASE_PATH=/data\n",
+  )
+  assertEquals(
+    lines.includes(pathsLine("/srv/apps/stacks/librespeed", "/data/volumes")),
+    true,
+    lines.join("\n"),
+  )
+})
+
+Deno.test("runStackRemove: a reference deploy refuses to expand is named, not printed", async () => {
+  // expandEnvRefs only expands path-shaped keys (PATH_* or *_PATH); a
+  // reference to DOMAIN makes deploy itself refuse VOLUMES_PATH.
+  const lines = await removeAndCapture(
+    "DOMAIN=example.com\nPATH_APPS=/srv/apps\nVOLUMES_PATH=/srv/${DOMAIN}\n",
+  )
+  assertEquals(
+    lines.some((l) => l.includes("because VOLUMES_PATH isn't set, or can't be resolved")),
+    true,
+    lines.join("\n"),
+  )
+  assertEquals(lines.some((l) => l.includes("example.com")), false, lines.join("\n"))
 })
