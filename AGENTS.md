@@ -346,3 +346,11 @@ grep -H '"version"' deno.jsonc cli/version.ts
 - `docs/usage/ENCRYPTED_ENV_FILES.md` — age64 workflow
 - `docs/contributing/adding-services.md` — author a stack
 - `docs/contributing/contributing.md` — PR checklist for contributors
+
+## Shared libraries
+
+Before writing a component, helper or library here, search
+[spy4x/ts-libs](https://github.com/spy4x/ts-libs) and
+[spy4x/preact-components](https://github.com/spy4x/preact-components) for it. The global rule
+["Shared libs before local code"](https://github.com/spy4x/dotfiles/blob/main/ai-harnesses/AGENTS.md)
+says what belongs in each library; code only this repo needs stays here.
