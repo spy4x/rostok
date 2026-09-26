@@ -40,7 +40,7 @@ deploy code run my machines, and
   `docker compose` there. No agent to install on the server.
 - **Sensible defaults.** Each stack's `+meta.ts` declares its variables with
   defaults; the wizard asks only for what has none, and checks the server's
-  name, SSH address and paths before writing anything.
+  name, SSH address and paths before writing the server's files.
 - **Standard parts.** The CLI is a TypeScript ES module on JSR that runs on
   Deno; every stack is an ordinary Docker Compose file you can read and change.
 
