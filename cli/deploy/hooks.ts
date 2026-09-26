@@ -62,9 +62,14 @@
 // dropping librespeed's LIBRESPEED_* keys, say): the allow-list itself
 // doesn't change (buildHookEnv still only ever hands a hook ITS OWN
 // keys, proven by a test asserting the resolved hook env is unchanged),
-// only the warning does. A key matching NO installed stack — a typo, or
-// a leftover from a stack `stack remove` already dropped from
-// config.json — still gets one warning line naming it.
+// only the warning does.
+// (#256) The same silent drop covers a key carrying the prefix of a
+// catalog stack that is NOT installed here: `stack remove` keeps a
+// removed stack's values in `.env` unless `--drop-env` is passed, so
+// warning about them on every deploy, once per hook, only taught
+// operators to ignore deploy warnings. A key matching no installed stack
+// and no catalog stack (a typo, or a removed project-local stack) still
+// gets one warning line naming it.
 //
 // DENIED_ENV_KEY_NAMES/PREFIXES is a backstop that runs BEFORE the
 // allowlist check: a stack whose own prefix happens to collide with a
@@ -117,6 +122,7 @@
 // alias, the same as before #229 and the same as every non-hook ssh call
 // deploy makes.
 
+import { loadCatalog } from "../catalog.ts"
 import { UserError } from "../errors.ts"
 import { isServerKey, parseSshAddress, stackKeyPrefix } from "../server-keys.ts"
 import { setsidAvailable, supportsProcessGroupKill, trackChild } from "./process-registry.ts"
@@ -138,11 +144,21 @@ export interface HookContext {
    * dropped from `.env`/`.env.root` because it isn't THIS stack's own
    * (`isAllowedFileEnvKey` below) is still routine, not a warning, when
    * it carries another INSTALLED stack's prefix: e.g. librespeed's
-   * `LIBRESPEED_*` keys reaching the traefik hook. Only a key matching no
-   * installed stack (and no server key) still gets a warning.
+   * `LIBRESPEED_*` keys reaching the traefik hook. Since #256 the same
+   * holds for a bundled catalog stack that isn't installed (its values
+   * kept by `stack remove`). Only a key matching no installed stack, no
+   * catalog stack and no server key still gets a warning.
    */
   installedStackNames: string[]
 }
+
+/**
+ * Every bundled catalog stack name (#256). A key carrying one of their
+ * prefixes is dropped silently even when that stack is not installed on
+ * this server: `stack remove` keeps a removed stack's values unless
+ * `--drop-env` is passed, so those keys are there on purpose.
+ */
+const CATALOG_STACK_NAMES = loadCatalog().map((entry) => entry.name)
 
 /**
  * Names/prefixes always dropped from `.env`/`.env.root` before the
@@ -312,13 +328,14 @@ export function buildHookEnv(
     if (!isAllowedFileEnvKey(key, stackName)) {
       // #234: a key carrying another INSTALLED stack's own prefix is
       // routine — every stack's keys sit in the same server .env, and a
-      // hook only ever gets its own. Only a key matching no installed
-      // stack (and no server key, already handled by
+      // hook only ever gets its own. #256: so is one carrying a catalog
+      // stack's prefix, installed or not (kept by `stack remove`). Only a
+      // key matching neither (and no server key, already handled by
       // isAllowedFileEnvKey/isServerKey above) still warns.
-      const ownedByAnotherInstalledStack = ctx.installedStackNames.some(
+      const ownedByAnotherStack = [...ctx.installedStackNames, ...CATALOG_STACK_NAMES].some(
         (otherStack) => otherStack !== stackName && key.startsWith(stackKeyPrefix(otherStack)),
       )
-      if (!(key in processEnv) && !ownedByAnotherInstalledStack) {
+      if (!(key in processEnv) && !ownedByAnotherStack) {
         const list = droppedByFile.get(source) ?? []
         list.push(sanitizeForLog(key))
         droppedByFile.set(source, list)
