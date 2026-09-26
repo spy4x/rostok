@@ -87,17 +87,22 @@ their image, and the kernel log shows medium errors (`journalctl -k | grep
 "I/O error"`). Docker keeps images and container layers under
 `/var/lib/docker`, on the system disk by default. Move them to a healthy disk
 (`/mnt/data/docker` below) before the disk dies completely. All containers
-stop for a few minutes.
+stop for a few minutes. The steps assume the `overlay2` storage driver: with
+the containerd image store, images live in `/var/lib/containerd` and do not
+move with `data-root`.
 
 ```bash
+docker info --format '{{.Driver}}'   # must print overlay2
 NEW=/mnt/data/docker
 sudo mkdir -p "$NEW" && sudo chmod 710 "$NEW"
 # 1. Copy while Docker runs; a few "vanished" files are normal.
 sudo rsync -aHAX --numeric-ids --delete /var/lib/docker/ "$NEW"/
 # 2. Stop Docker and copy what changed.
 sudo systemctl stop docker.socket docker
-sudo rsync -aHAX --numeric-ids --delete /var/lib/docker/ "$NEW"/
-# 3. Point Docker at the new path: add to /etc/docker/daemon.json
+sudo rsync -aHAX --numeric-ids --delete /var/lib/docker/ "$NEW"/ 2> rsync.err
+grep "Input/output error" rsync.err   # files lost to bad sectors, see below
+# 3. Point Docker at the new path: add this key to the JSON object in
+#    /etc/docker/daemon.json (create the file as {"data-root": "..."} if absent)
 #      "data-root": "/mnt/data/docker"
 # 4. SELinux hosts: label the new path like /var/lib/docker.
 sudo semanage fcontext -a -e /var/lib/docker "$NEW" && sudo restorecon -R "$NEW"
@@ -111,9 +116,14 @@ sudo systemctl daemon-reload && sudo systemctl start docker
 docker info --format '{{.DockerRootDir}}'
 ```
 
-A container whose image file sits on a bad sector still fails after the move:
-remove the image and pull it again (`docker rmi`, then redeploy the stack).
-Rollback: remove `data-root`, move `/var/lib/docker.old` back, restart Docker.
+The copy skips files it cannot read. For each "Input/output error" line: a
+file under `image/` or `overlay2/` belongs to an image, so remove the image and
+pull it again (`docker rmi`, then redeploy the stack); a file under `volumes/`
+or `containers/` is data, so restore it from backup (Scenario 1) before
+deleting the old copy.
+
+Rollback: stop Docker, remove `data-root`, move `/var/lib/docker.old` back,
+start Docker.
 Delete `/var/lib/docker.old` once everything has run for a few days.
 
 ## Scenario 4 — corrupted Restic repo
