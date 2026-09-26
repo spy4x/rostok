@@ -54,9 +54,10 @@ const FAKE_SSH = `#!/bin/sh
 # after a successful \`docker compose up\`. Anything else (proxy network,
 # stale-stack cleanup, volume mkdir/chown) is accepted silently, matching
 # a healthy remote. Never calls \`ssh\`, \`rsync\` or any other name by
-# looking it up on PATH — it only ever prints to its own stdout/stderr —
-# so it can't recurse the way an earlier fake \`rsync\` elsewhere in this
-# PR did. Plain POSIX \`sh\`, never a \`deno\` script (owner's rule: no fake
+# looking it up on PATH: \`grep\` and \`sleep\` are absolute paths that
+# setupFixture fills in through placeholders, and FAKE_SSH_DEPTH makes it
+# exit at once if it ever runs inside itself, so it can't recurse the way
+# an earlier fake \`rsync\` elsewhere in this PR did. Plain POSIX \`sh\`, never a \`deno\` script (owner's rule: no fake
 # binary may be a Deno process — each spawn is a full process).
 #
 # Every real call is \`ssh -o ConnectTimeout=10 [-o BatchMode=yes] [-p <port>]
@@ -64,6 +65,13 @@ const FAKE_SSH = `#!/bin/sh
 # cli/server-keys.ts) — the target and command sit right after the first
 # \`--\`, wherever the options before it land.
 set -u
+
+if [ -n "\${FAKE_SSH_DEPTH:-}" ]; then
+  echo "fake ssh: called from inside itself, refusing" >&2
+  exit 97
+fi
+FAKE_SSH_DEPTH=1
+export FAKE_SSH_DEPTH
 
 found_dashdash=0
 skip_target=0
@@ -112,7 +120,7 @@ if [ -n "\${FAKE_SSH_UNREACHABLE:-}" ]; then
   # 20s instead of dying immediately. Once \`exec\`'d, there's no shell
   # left to defer anything: the pid IS sleep's own, and sleep terminates
   # on the signal's ordinary default disposition right away.
-  exec sleep 20
+  exec @SLEEP@ 20
 fi
 
 # FAKE_SSH_HANG_WHEN_STAGED hangs forever on the first call made while
@@ -137,7 +145,7 @@ if [ -n "\${FAKE_SSH_HANG_WHEN_STAGED:-}" ]; then
     # foregrounded \`sleep\` would let a signal go unnoticed for the full
     # 20s on some shells. The pid just written stays correct after
     # \`exec\`: it never forks, it replaces this same process.
-    exec sleep 20
+    exec @SLEEP@ 20
   done
 fi
 
@@ -164,7 +172,7 @@ case "$script" in
     # FAKE_DEPLOY_FAIL_STACK lets a test simulate a stack whose
     # \`docker compose up\` fails on the remote — everything else about
     # the fake remote (docker group, uid) stays healthy.
-    echo "$script" | grep -oE 'DEPLOY_START:[^ ]+:[^ ]+' |
+    echo "$script" | @GREP@ -oE 'DEPLOY_START:[^ ]+:[^ ]+' |
     while IFS=: read -r _tag stack id; do
       echo "DEPLOY_START:$stack:$id"
       if [ "$stack" = "\${FAKE_DEPLOY_FAIL_STACK:-}" ]; then
@@ -188,45 +196,52 @@ interface Fixture {
   logPath: string
 }
 
-async function setupFixture(): Promise<Fixture> {
+async function setupFixture(
+  childTools: [name: string, required: boolean][] = CHILD_TOOLS,
+): Promise<Fixture> {
   const projectDir = await Deno.makeTempDir({ prefix: "rostok-e2e-project-" })
   const binDir = await Deno.makeTempDir({ prefix: "rostok-e2e-bin-" })
   const remoteDir = await Deno.makeTempDir({ prefix: "rostok-e2e-remote-" })
   const logPath = join(binDir, "ssh.log")
+  const f = { projectDir, binDir, childPath: "", remoteDir, logPath }
+  try {
+    // Only `ssh` — never `rsync` (#233 review). Every test that needs
+    // files to actually reach a "remote" drives runDeploy in-process with
+    // an injected RunDeployIO (makeFakeIO below) instead.
+    const fakeSsh = FAKE_SSH
+      .replaceAll("@GREP@", await requireOnHostPath("grep"))
+      .replaceAll("@SLEEP@", await requireOnHostPath("sleep"))
+    await Deno.writeTextFile(join(binDir, "ssh"), fakeSsh, { mode: 0o755 })
 
-  // Only `ssh` — never `rsync` (#233 review). Every test that needs
-  // files to actually reach a "remote" drives runDeploy in-process with
-  // an injected RunDeployIO (makeFakeIO below) instead.
-  await Deno.writeTextFile(join(binDir, "ssh"), FAKE_SSH, { mode: 0o755 })
-
-  const toolsDir = join(binDir, "tools")
-  await Deno.mkdir(toolsDir)
-  for (const [name, required] of CHILD_TOOLS) {
-    const target = await findOnHostPath(name)
-    if (target) await Deno.symlink(target, join(toolsDir, name))
-    else if (required) throw new Error(`e2e fixture: ${name} not found on the host PATH`)
+    const toolsDir = join(binDir, "tools")
+    await Deno.mkdir(toolsDir)
+    for (const [name, required] of childTools) {
+      const target = required ? await requireOnHostPath(name) : await findOnHostPath(name)
+      if (target) await Deno.symlink(target, join(toolsDir, name))
+    }
+    f.childPath = `${binDir}:${toolsDir}`
+    const rsyncDirs = await dirsContaining(f.childPath, "rsync")
+    if (rsyncDirs.length > 0) {
+      throw new Error(`e2e fixture: the child PATH contains rsync in ${rsyncDirs.join(", ")}`)
+    }
+    return f
+  } catch (err) {
+    // A fixture that refuses to start must not leave its folders behind.
+    await teardownFixture(f)
+    throw err
   }
-  const childPath = `${binDir}:${toolsDir}`
-  const rsyncDirs = await dirsContaining(childPath, "rsync")
-  if (rsyncDirs.length > 0) {
-    throw new Error(`e2e fixture: the child PATH contains rsync in ${rsyncDirs.join(", ")}`)
-  }
-
-  return { projectDir, binDir, childPath, remoteDir, logPath }
 }
 
 /**
  * Host tools a CLI child may run by name, each linked by its absolute
  * path into the fixture's own tools directory, and whether the fixture
- * fails without it. FAKE_SSH uses `grep` and `sleep` (its shebang names
- * /bin/sh directly; `sh` is here for anything that spawns it by name).
+ * fails without it. FAKE_SSH itself names /bin/sh, `grep` and `sleep` by
+ * absolute path; `sh` is here for anything that spawns it by name.
  * Deploy runs a hook under `setsid` when it exists and falls back
  * without it (process-registry.ts), so `setsid` is optional.
  */
 const CHILD_TOOLS: [name: string, required: boolean][] = [
   ["sh", true],
-  ["grep", true],
-  ["sleep", true],
   ["setsid", false],
 ]
 
@@ -239,6 +254,13 @@ async function findOnHostPath(name: string): Promise<string | undefined> {
     if (info?.isFile) return candidate
   }
   return undefined
+}
+
+/** Like findOnHostPath, but throws when `name` isn't on the host PATH. */
+async function requireOnHostPath(name: string): Promise<string> {
+  const found = await findOnHostPath(name)
+  if (!found) throw new Error(`e2e fixture: ${name} not found on the host PATH`)
+  return found
 }
 
 /** Every directory of the colon-separated `path` that holds an entry called `name`. */
@@ -884,6 +906,28 @@ Deno.test("e2e: a volume path with .. is refused before any volume command reach
   } finally {
     await teardownFixture(f)
   }
+})
+
+Deno.test("e2e: a fixture that refuses to start removes the folders it created", async () => {
+  // The system temp folder, found the same way the fixture's own
+  // makeTempDir calls find it.
+  const probe = await Deno.makeTempDir({ prefix: "rostok-e2e-probe-" })
+  await Deno.remove(probe)
+  const tmp = dirname(probe)
+  const listFixtureDirs = async () => {
+    const names: string[] = []
+    for await (const e of Deno.readDir(tmp)) {
+      if (/^rostok-e2e-(project|bin|remote)-/.test(e.name)) names.push(e.name)
+    }
+    return names.sort()
+  }
+  const before = await listFixtureDirs()
+  await assertRejects(
+    () => setupFixture([["rostok-no-such-tool-for-e2e", true]]),
+    Error,
+    "rostok-no-such-tool-for-e2e not found on the host PATH",
+  )
+  assertEquals(await listFixtureDirs(), before)
 })
 
 Deno.test("e2e: a CLI child's PATH holds only the fake ssh and linked tools, never rsync", async () => {
