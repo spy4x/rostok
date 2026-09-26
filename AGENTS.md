@@ -204,9 +204,9 @@ change, leave the PR open and tell the user.
 - Some commits fix independent things → `gh pr merge --rebase --delete-branch`
 
 Publishing follows the same rule: once the version-bump PR is merged
-and both gates are green, run `deno publish` without asking (see
-"Publish flow" below). JSR versions are immutable, so publish only
-from a clean checkout of `main` at the merged bump commit.
+and both gates are green, push the release tag without asking (see
+"Publish flow" below). JSR versions are immutable, so tag only the
+merged bump commit on `main`.
 
 Then clean up. Worktrees live in the sibling `worktrees/rostok/`; these
 commands work from any directory inside the repo or a worktree. `-D` is
@@ -274,14 +274,15 @@ Semver:
 
 After the version-bump PR merges to `main`. No need to ask first:
 
-1. Confirm `deno task check` passes on the bumped source.
-2. `deno publish` from a clean checkout of `main`, for example a
-   detached worktree at the bump commit. Untracked files in the main
-   checkout, such as `.claude/scheduled_tasks.lock`, would otherwise
-   ship: run `deno publish --dry-run` and read the file list first.
-   Authentication is browser OAuth. It needs a terminal, so an agent
-   runs it in a pty; a shell with no terminal needs a JSR token from
-   `jsr.io/account/tokens`.
+1. Tag the merge commit and push the tag:
+   `git tag v1.0.4 <merge commit> && git push origin v1.0.4`.
+2. Woodpecker runs `check` on the tag, then the `publish` step:
+   `scripts/release/+main.ts` refuses a tag that differs from
+   `deno.jsonc` or `cli/version.ts`, and `deno publish` uses the
+   `JSR_TOKEN` repository secret (allowed for the tag event only). The
+   CI checkout is clean, so no untracked local file can ship. A failed
+   step publishes nothing: fix the cause in a PR, then move the tag to
+   the new merge commit (`git tag -f`, `git push -f origin <tag>`).
 3. Verify the new version with `deno install -A --global
    --minimum-dependency-age=0 -n rostok --force jsr:@rostok/cli`
    (the dep-age flag bypasses deno's 24h install delay on fresh
