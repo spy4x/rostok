@@ -252,8 +252,9 @@ async function writeRunDeployServer(projectDir: string, stackNames: string[]): P
 
 Deno.test("runDeploy: a .. volume path is refused before any hook, sync, cleanup or volume script", async () => {
   // #250: the refusal used to come after both syncs and the stale
-  // cleanup. Now only the read-only preflight (docker group, remote
-  // uid, the PATH_APPS/VOLUMES_PATH check) runs before it.
+  // cleanup. Now only the preflight (docker group, remote uid, the
+  // PATH_APPS/VOLUMES_PATH check, which may create those two folders)
+  // runs before it.
   const f = await setupRunDeployFixture()
   try {
     const stackDir = join(f.projectDir, "stacks", "escape")
