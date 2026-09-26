@@ -909,25 +909,23 @@ Deno.test("e2e: a volume path with .. is refused before any volume command reach
 })
 
 Deno.test("e2e: a fixture that refuses to start removes the folders it created", async () => {
-  // The system temp folder, found the same way the fixture's own
-  // makeTempDir calls find it.
-  const probe = await Deno.makeTempDir({ prefix: "rostok-e2e-probe-" })
-  await Deno.remove(probe)
-  const tmp = dirname(probe)
-  const listFixtureDirs = async () => {
-    const names: string[] = []
-    for await (const e of Deno.readDir(tmp)) {
-      if (/^rostok-e2e-(project|bin|remote)-/.test(e.name)) names.push(e.name)
-    }
-    return names.sort()
+  // Its own temp root, so another test run on this machine can't add or
+  // remove a rostok-e2e-* folder between setup and the check.
+  const tmp = await Deno.makeTempDir({ prefix: "rostok-e2e-tmproot-" })
+  const previousTmp = Deno.env.get("TMPDIR")
+  Deno.env.set("TMPDIR", tmp)
+  try {
+    await assertRejects(
+      () => setupFixture([["rostok-no-such-tool-for-e2e", true]]),
+      Error,
+      "rostok-no-such-tool-for-e2e not found on the host PATH",
+    )
+    assertEquals([...Deno.readDirSync(tmp)].map((e) => e.name), [])
+  } finally {
+    if (previousTmp === undefined) Deno.env.delete("TMPDIR")
+    else Deno.env.set("TMPDIR", previousTmp)
+    await Deno.remove(tmp, { recursive: true })
   }
-  const before = await listFixtureDirs()
-  await assertRejects(
-    () => setupFixture([["rostok-no-such-tool-for-e2e", true]]),
-    Error,
-    "rostok-no-such-tool-for-e2e not found on the host PATH",
-  )
-  assertEquals(await listFixtureDirs(), before)
 })
 
 Deno.test("e2e: a CLI child's PATH holds only the fake ssh and linked tools, never rsync", async () => {
