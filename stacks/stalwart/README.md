@@ -147,3 +147,14 @@ Stalwart replaces the older `docker-mailserver` stack. The migration
 involves exporting mailboxes / DKIM keys from the old setup and
 importing them into Stalwart via the admin API. As of this rewrite
 the migration is not first-class — the user runs the steps manually.
+
+## Deploy order
+
+The `cert-sync` sidecar mounts Traefik's
+`${VOLUMES_PATH}/traefik/letsencrypt/acme.json`. `+meta.ts` declares it
+in `fileMounts`, so deploy checks that the file exists before it changes
+any stack, stops if it doesn't, and never creates a folder in its place.
+On a new server, deploy Traefik first and let it start once, so it
+writes `acme.json`. If this stack is already in `config.json`, run
+`rostok deploy <server> traefik` for that first deploy, then deploy the
+whole server.

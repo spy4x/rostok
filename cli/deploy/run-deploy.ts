@@ -84,7 +84,12 @@ import { checkDockerGroup, checkRemotePathsNotNested, needsRemoteSudo } from "./
 import { type ResolvedStackFiles, resolveStackFiles } from "./stack-files.ts"
 import { validateStackConfigs } from "./validate-stack-config.ts"
 import { type HookContext, runHook } from "./hooks.ts"
-import { extractVolumePaths, generateVolumeCreationScript } from "./volumes.ts"
+import {
+  extractVolumePaths,
+  generateFileMountCheckScript,
+  generateVolumeCreationScript,
+  loadStackFileMounts,
+} from "./volumes.ts"
 import {
   type DeployResult,
   generateDeployScript,
@@ -325,6 +330,29 @@ export async function runDeploy(
       }
     }
     const volumePaths = extractVolumePaths(composeContents, resolvedEnv)
+    // #258: volumes a stack's +meta.ts declares as files (fileMounts) are
+    // checked, never mkdir'd or chowned.
+    const fileMounts: string[] = []
+    for (const [stackName, resolved] of stackFiles) {
+      for (const rel of await loadStackFileMounts(stackName, resolved.files)) {
+        fileMounts.push(`${VOLUMES_PATH}/${rel}`)
+      }
+    }
+    // Checked now, in a read-only call, before any hook, stale cleanup,
+    // file sync or container change: a missing file mount stops the
+    // deploy while every stack is still as it was.
+    const fileMountScript = VOLUMES_PATH
+      ? generateFileMountCheckScript({ volumePaths, fileMounts, needsSudo })
+      : ""
+    if (fileMountScript) {
+      console.log("Checking declared file mounts...")
+      const fileMountResult = await io.runRemoteShell(SSH_ADDRESS, fileMountScript)
+      if (!fileMountResult.success) {
+        throw new UserError(
+          `a file mount is not ready on ${SSH_ADDRESS}: ${fileMountResult.error.trim()}`,
+        )
+      }
+    }
 
     // config.json's per-stack `envs` (`${VAR}` filled from .env.root
     // merged with the server .env — a referenced key can legitimately
@@ -573,20 +601,31 @@ export async function runDeploy(
     if (stacks.length > 0) {
       // volumePaths was extracted and checked right after staging, above.
       if (volumePaths.length > 0 && VOLUMES_PATH) {
-        console.log(`Creating ${volumePaths.length} volume directories with correct ownership...`)
-        const script = generateVolumeCreationScript(volumePaths, PUID, PGID, needsSudo)
+        console.log(
+          `Preparing ${volumePaths.length} volume path(s) (declared file mounts are left ` +
+            `alone)...`,
+        )
+        const script = generateVolumeCreationScript({
+          volumesPath: VOLUMES_PATH,
+          volumePaths,
+          fileMounts,
+          puid: PUID,
+          pgid: PGID,
+          needsSudo,
+        })
         const volumesResult = await io.runRemoteShell(SSH_ADDRESS, script)
         if (!volumesResult.success) {
           const sudoHint = needsSudo
-            ? ` The remote user on ${SSH_ADDRESS} isn't root — mkdir/chown need passwordless ` +
-              `sudo (a NOPASSWD rule in /etc/sudoers for that user).`
+            ? ` The remote user on ${SSH_ADDRESS} isn't root — creating or chowning a volume ` +
+              `folder runs \`sudo -n sh -c\`, so that user needs a NOPASSWD rule in ` +
+              `/etc/sudoers that allows \`sh\`.`
             : ""
           throw new UserError(
             `failed to create/chown volume directories on ${SSH_ADDRESS}: ` +
               `${volumesResult.error.trim()}.${sudoHint}`,
           )
         }
-        console.log("Volume directories created")
+        console.log("Volume paths ready")
       }
 
       const deployScript = generateDeployScript(stacks, PATH_APPS, restartStacks)

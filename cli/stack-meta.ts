@@ -53,6 +53,16 @@ export interface StackMeta {
    * optional deps, ...).
    */
   requires?: string[]
+  /**
+   * Volume paths, relative to VOLUMES_PATH, that this stack mounts as a
+   * FILE rather than a folder, e.g. `traefik/letsencrypt/acme.json`
+   * (#258). Deploy never creates one and never targets it with mkdir or
+   * chown; before stale cleanup, file sync or any container change, it
+   * checks that each one is already a regular file and stops otherwise,
+   * because Docker would create a folder in place of a missing file. Each
+   * entry must match the path after `${VOLUMES_PATH}/` in `compose.yml`.
+   */
+  fileMounts?: string[]
 }
 
 // Runtime schemas — defense-in-depth beyond TypeScript's `satisfies` check.
@@ -84,6 +94,7 @@ export const StackMetaSchema: type.Any = type({
   "category?": "string",
   variables: VariableSpec.array(),
   "requires?": "string[]",
+  "fileMounts?": "string[]",
 })
 
 /**
@@ -108,6 +119,17 @@ export function validateStackMeta(input: unknown): StackMeta {
           }. only \${SERVER_NAME} is allowed in v1.`,
         )
       }
+    }
+  }
+  for (const mount of result.fileMounts ?? []) {
+    const parts = mount.split("/")
+    if (
+      mount.startsWith("/") || parts.includes("..") || !parts.some((p: string) => p && p !== ".")
+    ) {
+      throw new Error(
+        `Invalid +meta.ts: fileMounts entry "${mount}" must be a path relative to VOLUMES_PATH, ` +
+          `with no ".." component (e.g. "traefik/letsencrypt/acme.json").`,
+      )
     }
   }
   return result as StackMeta
