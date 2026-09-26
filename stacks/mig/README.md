@@ -179,7 +179,7 @@ recreates the container if it changed — `docker compose up -d --build`
 would otherwise keep whatever image is already on disk, since
 `--build` is a no-op for a service with no `build:` and compose only
 pulls a missing image on its own. Watchtower also polls every
-container daily (`--cleanup`) and pulls `latest` on its own, so a
+container daily and pulls `latest` on its own, so a
 stable release mig's CI publishes goes live within a day with no human
 step either way.
 

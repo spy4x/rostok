@@ -19,4 +19,6 @@ services:
     security_opt:
       - no-new-privileges:true
       - label=type:container_runtime_t # Required for SELinux to access docker.sock
-    command: --interval 86400 --cleanup
+    # --include-restarting: a container crash-looping on a broken image would
+    # otherwise never receive the upstream fix.
+    command: --interval 86400 --cleanup --include-restarting
