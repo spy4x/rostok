@@ -50,6 +50,11 @@ Deno.test("generateVolumeCreationScript: prefixes mkdir and chown with sudo -n w
   assertStringIncludes(script, "sudo -n chown -R '1000':'1000' -- '/volumes/app'")
 })
 
+Deno.test("generateVolumeCreationScript: the ownership check compares uid first, then gid", () => {
+  const script = generateVolumeCreationScript(["/volumes/app"], "1000", "1001", true)
+  assertStringIncludes(script, `[ "$(stat -c %u:%g -- '/volumes/app')" = '1000':'1001' ]`)
+})
+
 Deno.test("generateVolumeCreationScript joins multiple paths with &&", () => {
   const script = generateVolumeCreationScript(
     ["/volumes/a", "/volumes/b"],
