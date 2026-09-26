@@ -39,6 +39,10 @@ async function runWithFakeDocker(
      * `failCompose`'s all-or-nothing.
      */
     failComposeProjects?: string[]
+    /** Served for the after-`down` check by project label (#255 — bare container IDs). */
+    leftoverOutput?: string
+    /** `docker ps` itself fails for the after-`down` check by project label (#255). */
+    failPsLeftover?: boolean
     /** `docker ps` itself fails (nonzero exit, no output) for the exact-match filter — simulates the daemon being unreachable while a stack folder still exists. */
     failPsExact?: boolean
     /** `docker ps` itself fails (nonzero exit) for phase 2's broad, unfiltered scan. */
@@ -51,7 +55,9 @@ async function runWithFakeDocker(
   const logPath = join(binDir, "log.txt")
   const exactOutputPath = join(binDir, "exact-output.txt")
   const broadOutputPath = join(binDir, "broad-output.txt")
+  const leftoverOutputPath = join(binDir, "leftover-output.txt")
   await Deno.writeTextFile(logPath, "")
+  await Deno.writeTextFile(leftoverOutputPath, opts.leftoverOutput ?? "")
   await Deno.writeTextFile(exactOutputPath, opts.exactOutput ?? "")
   await Deno.writeTextFile(broadOutputPath, opts.broadOutput ?? "")
   try {
@@ -78,6 +84,13 @@ if [ "$1" = "ps" ]; then
         exit 1
       fi
       cat ${JSON.stringify(exactOutputPath)}
+      ;;
+    *"compose.project="*)
+      if ${opts.failPsLeftover ? "true" : "false"}; then
+        echo "fake docker: leftover ps failed" >&2
+        exit 1
+      fi
+      cat ${JSON.stringify(leftoverOutputPath)}
       ;;
     *)
       if ${opts.failPsBroad ? "true" : "false"}; then
@@ -111,6 +124,7 @@ fi
       if (!out.success) {
         const stderrText = new TextDecoder().decode(out.stderr)
         const expectedFailure = opts.failCompose || opts.failPsExact || opts.failPsBroad ||
+          opts.failPsLeftover ||
           (opts.failComposeProjects ?? []).length > 0
         if (stderrText.trim() && !expectedFailure) {
           throw new Error(`script errored: ${stderrText}`)
@@ -606,6 +620,7 @@ if [ "$1" = "ps" ]; then
     *"working_dir=${goneA}"*) printf 'idA|proj-a\\n' ;;
     *"working_dir=${goneB}"*) printf 'idB|proj-b\\n' ;;
     *"working_dir="*) printf '' ;;
+    *"compose.project="*) printf '' ;;
     *) printf '${goneA}\\n${goneB}\\n' ;;
   esac
 elif [ "$1" = "compose" ]; then
@@ -1263,6 +1278,108 @@ Deno.test("generateStaleStackCleanupScript: phase 1's failed docker ps passes it
     const { success, stderr } = await runWithFakeDocker(script, { failPsExact: true })
     assertEquals(success, false)
     assertStringIncludes(stderr, "fake docker: cannot connect to the daemon")
+  } finally {
+    await Deno.remove(pathApps, { recursive: true })
+  }
+})
+
+/** Lines of `stdout` that name the stale stack `name`. */
+function stackLines(stdout: string, name: string): string[] {
+  return stdout.split("\n").filter((l) => l.includes(`'${name}'`))
+}
+
+for (const shell of ["sh", "zsh"] as const) {
+  Deno.test(`generateStaleStackCleanupScript: a container left after compose down gets one line and keeps the folder (#255, ${shell})`, async () => {
+    const pathApps = await makeStacksDir(["traefik", "oldstack"])
+    try {
+      const staleDir = join(pathApps, "stacks", "oldstack")
+      const script = generateStaleStackCleanupScript(["traefik"], pathApps, "/srv/volumes")
+      const { log, success, stdout } = await runWithFakeDocker(script, {
+        exactOutput: `abc123|oldstack-alias\n`,
+        broadOutput: `${staleDir}\n`,
+        leftoverOutput: `abc123\n`,
+        shell,
+      })
+      assert(success, `a leftover is reported, not a failure, stdout:\n${stdout}`)
+      const downAt = log.findIndex((l) => l.startsWith("compose -p oldstack-alias down "))
+      const checkAt = log.findIndex((l) =>
+        l.startsWith("ps -aq --filter label=com.docker.compose.project=oldstack-alias ")
+      )
+      assert(
+        downAt >= 0 && checkAt > downAt,
+        `expected a check by project label after down, log:\n${log.join("\n")}`,
+      )
+      const lines = stackLines(stdout, "oldstack")
+      assertEquals(lines.length, 1, `the stack must be reported once, stdout:\n${stdout}`)
+      assertStringIncludes(lines[0], "skipped container abc123 of stale stack 'oldstack'")
+      assertStringIncludes(lines[0], "still there after 'docker compose -p oldstack-alias down'")
+      assertStringIncludes(lines[0], "Its folder was kept.")
+      assertStringIncludes(lines[0], "docker inspect abc123")
+      assertEquals(stdout.includes("Removed stale stack"), false, stdout)
+      assertEquals(stdout.includes("Stopped stale stack"), false, stdout)
+      assert(Deno.statSync(staleDir).isDirectory, "the stale folder must be kept")
+    } finally {
+      await Deno.remove(pathApps, { recursive: true })
+    }
+  })
+
+  Deno.test(`generateStaleStackCleanupScript: a container left after compose down never prints "Stopped … already gone" once its folder is gone (#255, ${shell})`, async () => {
+    const pathApps = await makeStacksDir(["traefik"])
+    try {
+      const goneDir = join(pathApps, "stacks", "oldstack")
+      const script = generateStaleStackCleanupScript(["traefik"], pathApps, "/srv/volumes")
+      const { success, stdout } = await runWithFakeDocker(script, {
+        exactOutput: `abc123|oldstack\n`,
+        broadOutput: `${goneDir}\n`,
+        leftoverOutput: `abc123\n`,
+        shell,
+      })
+      assert(success, `a leftover is reported, not a failure, stdout:\n${stdout}`)
+      const lines = stackLines(stdout, "oldstack")
+      assertEquals(lines.length, 1, `the stack must be reported once, stdout:\n${stdout}`)
+      assertStringIncludes(lines[0], "skipped container abc123 of stale stack 'oldstack'")
+      assertEquals(lines[0].includes("Its folder was kept"), false, lines[0])
+      assertEquals(stdout.includes("Stopped stale stack"), false, stdout)
+    } finally {
+      await Deno.remove(pathApps, { recursive: true })
+    }
+  })
+
+  Deno.test(`generateStaleStackCleanupScript: every container left after compose down is named (#255, ${shell})`, async () => {
+    const pathApps = await makeStacksDir(["traefik", "oldstack"])
+    try {
+      const script = generateStaleStackCleanupScript(["traefik"], pathApps, "/srv/volumes")
+      const { success, stdout } = await runWithFakeDocker(script, {
+        exactOutput: `abc123|oldstack\n`,
+        leftoverOutput: `abc123\ndef456\n`,
+        shell,
+      })
+      assert(success, stdout)
+      const lines = stackLines(stdout, "oldstack")
+      assertEquals(lines.length, 2, `one line per leftover container, stdout:\n${stdout}`)
+      assertStringIncludes(lines[0], "skipped container abc123 ")
+      assertStringIncludes(lines[1], "skipped container def456 ")
+      assertEquals(stdout.includes("Removed stale stack"), false, stdout)
+    } finally {
+      await Deno.remove(pathApps, { recursive: true })
+    }
+  })
+}
+
+Deno.test("generateStaleStackCleanupScript: a failed check for leftover containers fails the script and keeps the folder (#255)", async () => {
+  const pathApps = await makeStacksDir(["traefik", "oldstack"])
+  try {
+    const staleDir = join(pathApps, "stacks", "oldstack")
+    const script = generateStaleStackCleanupScript(["traefik"], pathApps, "/srv/volumes")
+    const { success, stdout, stderr } = await runWithFakeDocker(script, {
+      exactOutput: `abc123|oldstack\n`,
+      failPsLeftover: true,
+    })
+    assertEquals(success, false, `the script must fail, stdout:\n${stdout}`)
+    assertStringIncludes(stdout, "FAILED to check for containers left by project 'oldstack'")
+    assertStringIncludes(stderr, "fake docker: leftover ps failed")
+    assertEquals(stdout.includes("Removed stale stack"), false, stdout)
+    assert(Deno.statSync(staleDir).isDirectory, "the stale folder must be kept")
   } finally {
     await Deno.remove(pathApps, { recursive: true })
   }

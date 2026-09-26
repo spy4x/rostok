@@ -255,6 +255,27 @@ export function generateStaleStackCleanupScript(
     "      echo \"FAILED to stop project '$proj' for stale stack '$name'\"",
     "      exit 1",
     "    fi",
+    // `compose down` exits 0 even when it left a container behind (#255):
+    // with no compose file it only knows containers that carry Compose's
+    // full label set, so one made by `docker create` with just the
+    // project label keeps running. Check the label again and report
+    // every container still there, the same way as a skip above, so the
+    // folder stays and nothing says "Removed"/"Stopped". `-q` prints
+    // bare IDs only; no `2>/dev/null`, a failure's stderr is the reason.
+    '    left=$(docker ps -aq --filter "label=com.docker.compose.project=$proj")',
+    '    if [ "$?" -ne 0 ]; then',
+    "      echo \"FAILED to check for containers left by project '$proj' of stale stack '$name'\"",
+    "      exit 1",
+    "    fi",
+    '    if [ -n "$left" ]; then',
+    // Its own pipe into a `while`: under zsh that loop may run in this
+    // subshell, so it only prints and never sets `skipped` itself.
+    "      printf '%s\\n' \"$left\" | while IFS= read -r left_id; do",
+    '        [ -n "$left_id" ] || continue',
+    `        skip_container "$left_id" "it is still there after 'docker compose -p $proj down'"`,
+    "      done",
+    "      skipped=1",
+    "    fi",
     "  done",
     // 2 = at least one container was skipped: the stack is only partly
     // stopped, so its folder stays and nothing says "Removed"/"Stopped".
