@@ -20,7 +20,7 @@ wraps a self-hosted protocol server.
 | Tool                  | Description                                              |
 | --------------------- | -------------------------------------------------------- |
 | `list_accounts`       | List configured accounts                                 |
-| `list_mailboxes`      | List IMAP folders (INBOX, Sent, Drafts, Trash, â€¦)      |
+| `list_mailboxes`      | List IMAP folders (INBOX, Sent, Drafts, Trash, …)        |
 | `get_mailbox_status`  | Unread count + total per folder                          |
 | `search_emails`       | Search by sender, subject, body, date range              |
 | `get_emails_content`  | Read full email (body + headers + attachment list)       |
@@ -31,7 +31,7 @@ wraps a self-hosted protocol server.
 | `delete_email`        | Trash or hard-delete                                     |
 | `mark_email`          | Read/unread, flag/unflag                                 |
 | `save_draft`          | Save draft to Drafts folder                              |
-| `download_attachment` | Download attachment (disabled by default â€” see below)  |
+| `download_attachment` | Download attachment (disabled by default — see below)    |
 
 ## Setup
 
@@ -45,16 +45,19 @@ If `anton@antonshubin.com` is missing, create it:
 
 ```bash
 ssh cloud 'docker exec -it mailserver setup email add anton@antonshubin.com'
-# Enter the same password as EMAIL_MCP_PRIMARY_PASSWORD in servers/home/.env
+# Enter the same password as EMAIL_MCP_PERSONAL_PASSWORD in servers/home/.env
 ```
 
 ### 2. Add env vars to `servers/home/.env`
 
 ```bash
 #region Email MCP
+# Mail host is mail.${EMAIL_MCP_DOMAIN}
+EMAIL_MCP_DOMAIN=example.com
 EMAIL_MCP_PRIMARY_USER=anton@antonshubin.com
-EMAIL_MCP_PRIMARY_PASSWORD=YOUR_PASSWORD_HERE
-# Optional second account (any additional accounts follow the same pattern):
+# Single-quote passwords that contain `$`: the hook does not unescape `$$`.
+EMAIL_MCP_PERSONAL_PASSWORD=YOUR_PASSWORD_HERE
+# Second account (required by the template; more accounts follow the same pattern):
 EMAIL_MCP_NEATSOFT_USER=anton@neatsoft.dev
 EMAIL_MCP_NEATSOFT_PASSWORD=YOUR_PASSWORD_HERE
 #endregion Email MCP
@@ -62,7 +65,8 @@ EMAIL_MCP_NEATSOFT_PASSWORD=YOUR_PASSWORD_HERE
 
 These are interpolated into `config.toml.template` by `before.deploy.ts`
 and mounted into the container as `/config.toml`. **Do not commit the
-rendered `config.toml`** — it's in `.gitignore`.
+rendered `config.toml`** — it's in `.gitignore`. `before.deploy.ts`
+stops the deploy if any of these five keys is missing.
 
 ### 3. Deploy
 
@@ -113,7 +117,8 @@ In Open WebUI chat:
 
 `SMTP_HOST=mail.${DOMAIN}` resolves via Cloudflare to the cloud server's
 public IP. STARTTLS on port 587 uses a Let's Encrypt certificate
-(CN=mail.${DOMAIN}). VERIFY_SSL stays `true`.
+(CN=mail.${DOMAIN}). The template still sets `verify_ssl = false` on all four
+connections; [#143](https://github.com/spy4x/rostok/issues/143) tracks turning it on.
 
 If you ever point this at a self-signed bridge (e.g. ProtonMail Bridge),
 set `MCP_EMAIL_SERVER_SMTP_VERIFY_SSL=false` and `MCP_EMAIL_SERVER_IMAP_VERIFY_SSL=false`.
@@ -137,18 +142,19 @@ To add another account:
    `servers/home/.env`.
 2. Add a `[[emails]]` block (with nested `[emails.incoming]` /
    `[emails.outgoing]`) to `stacks/email-mcp/config.toml.template`.
-3. Update `before.deploy.ts` to substitute the new vars.
+3. Add the new keys to the required list in `before.deploy.ts` (it already
+   substitutes every `EMAIL_MCP_*` placeholder).
 4. Redeploy: `deno task deploy home email-mcp`.
 
 The default template ships with **two** accounts preconfigured:
-`primary` (anton@antonshubin.com) and `neatsoft` (anton@neatsoft.dev),
+`personal` (anton@antonshubin.com) and `neatsoft` (anton@neatsoft.dev),
 both pointed at the same mailserver via direct DNS (mail.antonshubin.com).
 
 ## Security notes
 
 - DNS rebinding protection is enabled. Allowed hosts/origins are restricted
   to the email-mcp container, Open WebUI, and localhost.
-- No Traefik labels â€” the MCP is only reachable from the proxy Docker network.
+- No Traefik labels — the MCP is only reachable from the proxy Docker network.
 - Container has `no-new-privileges:true` and a 256M memory limit.
 - The MCP holds your plaintext password in env. Rotate via
   `setup email update` on the mailserver if leaked.
@@ -158,7 +164,7 @@ both pointed at the same mailserver via direct DNS (mail.antonshubin.com).
 | Symptom                              | Cause                                  | Fix                                                               |
 | ------------------------------------ | -------------------------------------- | ----------------------------------------------------------------- |
 | `535 Authentication failed`          | Wrong password or missing account      | `setup email update anton@antonshubin.com`                        |
-| `Connection refused` on port 993/587 | Firewall blocks home â†’ cloud         | Check cloud security group                                        |
+| `Connection refused` on port 993/587 | Firewall blocks home → cloud           | Check cloud security group                                        |
 | `CERTIFICATE_VERIFY_FAILED`          | Wrong cert or clock skew               | Verify `mail.${DOMAIN}` resolves to cloud, check `date`           |
 | Tools not showing in Open WebUI      | TOOL_SERVER_CONNECTIONS misconfigured  | Check JSON syntax; restart Open WebUI container                   |
 | 403 from MCP                         | DNS rebinding protection blocks origin | Add host to `MCP_ALLOWED_HOSTS` / origin to `MCP_ALLOWED_ORIGINS` |
