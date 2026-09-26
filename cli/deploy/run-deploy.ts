@@ -422,6 +422,9 @@ export async function runDeploy(
         allStackNames,
         PATH_APPS,
         VOLUMES_PATH,
+        // A stack deployed under a `deployAs` alias runs as that compose
+        // project, so its alias must be protected too (#250).
+        (config.stacks ?? []).flatMap((s) => s.deployAs ? [s.deployAs] : []),
       )
       const staleCleanupResult = await io.runRemoteShell(SSH_ADDRESS, staleCleanupScript)
       const cleanupOutput = stripControlChars(staleCleanupResult.output).trim()
