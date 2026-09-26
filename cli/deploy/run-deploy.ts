@@ -306,6 +306,26 @@ export async function runDeploy(
       )
     }
 
+    // Volume paths, extracted (and a `..` or out-of-VOLUMES_PATH path
+    // refused, volumes.ts) right after staging, before any hook, sync,
+    // cleanup or other remote write: a refused path must leave the
+    // server exactly as it was (#250). Merged env: a compose file's
+    // ${VOLUMES_PATH} (or any other var referenced inside a volume path)
+    // can live in .env.root alone — using the server .env in isolation
+    // here silently extracted the literal, unexpanded "${VOLUMES_PATH}/..."
+    // string and deploy reported success while creating nothing real on
+    // the remote.
+    const composeContents: string[] = []
+    for (const stackConfig of stacks) {
+      const composePath = join(stagingDir, "stacks", stackConfig.name, "compose.yml")
+      try {
+        composeContents.push(await Deno.readTextFile(composePath))
+      } catch {
+        // No compose.yml (e.g. a host-level stack like deepseek-harness) — skip.
+      }
+    }
+    const volumePaths = extractVolumePaths(composeContents, resolvedEnv)
+
     // config.json's per-stack `envs` (`${VAR}` filled from .env.root
     // merged with the server .env — a referenced key can legitimately
     // live in either file) — written into the staging .env once, if not
@@ -548,21 +568,7 @@ export async function runDeploy(
 
     let results: DeployResult[] = []
     if (stacks.length > 0) {
-      const composeContents: string[] = []
-      for (const stackConfig of stacks) {
-        const composePath = join(stagingDir, "stacks", stackConfig.name, "compose.yml")
-        try {
-          composeContents.push(await Deno.readTextFile(composePath))
-        } catch {
-          // No compose.yml (e.g. a host-level stack like deepseek-harness) — skip.
-        }
-      }
-      // Merged env: a compose file's ${VOLUMES_PATH} (or any other var
-      // referenced inside a volume path) can live in .env.root alone —
-      // using the server .env in isolation here silently extracted the
-      // literal, unexpanded "${VOLUMES_PATH}/..." string and deploy
-      // reported success while creating nothing real on the remote.
-      const volumePaths = extractVolumePaths(composeContents, resolvedEnv)
+      // volumePaths was extracted and checked right after staging, above.
       if (volumePaths.length > 0 && VOLUMES_PATH) {
         console.log(`Creating ${volumePaths.length} volume directories with correct ownership...`)
         const script = generateVolumeCreationScript(volumePaths, PUID, PGID, needsSudo)

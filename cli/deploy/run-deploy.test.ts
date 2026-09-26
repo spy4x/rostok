@@ -250,6 +250,35 @@ async function writeRunDeployServer(projectDir: string, stackNames: string[]): P
   )
 }
 
+Deno.test("runDeploy: a .. volume path is refused before any sync, cleanup or remote script", async () => {
+  // #250: the refusal used to come after both syncs and the stale
+  // cleanup. Now only the read-only preflight (docker group, remote
+  // uid, the PATH_APPS/VOLUMES_PATH check) runs before it.
+  const f = await setupRunDeployFixture()
+  try {
+    const stackDir = join(f.projectDir, "stacks", "escape")
+    await Deno.mkdir(stackDir, { recursive: true })
+    await Deno.writeTextFile(
+      join(stackDir, "compose.yml"),
+      "name: ${PROJECT}\nservices:\n  esc:\n    image: busybox\n    volumes:\n" +
+        "      - ${VOLUMES_PATH}/../../etc:/x\n",
+    )
+    await writeRunDeployServer(f.projectDir, ["escape"])
+    f.remote.remoteNeedsSudo = true
+
+    await assertRejects(
+      () => runDeploy({ cwd: f.projectDir, server: "test" }, f.io),
+      UserError,
+      `contains a ".." component`,
+    )
+    assertEquals(f.remote.calls, ["docker-group", "sudo", "readlink"])
+    assertEquals(f.remote.shellScripts, [])
+    assertEquals(f.remote.rsyncCalls, [])
+  } finally {
+    await teardownRunDeployFixture(f)
+  }
+})
+
 Deno.test("runDeploy: a full deploy's root rsync carries --delete, excludes /stacks, and drops -u (#233)", async () => {
   const f = await setupRunDeployFixture()
   try {
