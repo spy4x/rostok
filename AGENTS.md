@@ -135,7 +135,8 @@ See `docs/contributing/adding-services.md` for the full author guide.
 
 From `deno.jsonc` `fmt`:
 
-- 2-space indent, 100 col, double quotes
+- 2-space indent, 100 col, double quotes (this overrides the global
+  "backticks for strings" rule; backticks only for interpolation)
 - No semicolons, prose-wrap preserved
 - Trust `deno fmt` — don't argue with it
 
@@ -168,13 +169,11 @@ Per-value encryption: only changed lines re-encrypt. No churn on
 unrelated keys.
 
 `deno task env:encrypt`/`env:decrypt` (`jsr:@spy4x/server/env-age64/cli`)
-now exit 1 when `.age/key.txt` is missing. The old tool printed that
-the key was missing and exited 0. A missing key is now a real error,
-not an optional prerequisite. That means `hooks:pre-commit` (`deno task check && deno
-task env:encrypt`) fails on a project that hasn't run `rostok env
-setup` yet. This is a deliberate choice, not an oversight: run `rostok
-env setup` once per project before the first commit that touches
-`.env`.
+exit 1 when `.age/key.txt` is missing, so `hooks:pre-commit`
+(`deno task check && deno task env:encrypt`) fails on a project that
+hasn't run `rostok env setup` yet. That is deliberate: run
+`rostok env setup` once per project before the first commit that
+touches `.env`.
 
 ---
 
@@ -200,8 +199,13 @@ when both gates are green:
 If a gate fails twice on the same cause, or a revert can't undo the
 change, leave the PR open and tell the user.
 
-- All commits relate to one feature → `gh pr merge --squash --delete-branch`
-- Some commits fix independent things → `gh pr merge --rebase --delete-branch`
+- All commits relate to one feature →
+  `gh pr merge <n> --repo spy4x/rostok --squash --delete-branch`
+- Some commits fix independent things →
+  `gh pr merge <n> --repo spy4x/rostok --rebase --delete-branch`
+
+Always pass `--repo`: without it, `gh` tries to delete the local branch,
+fails while its worktree exists, and skips the remote delete.
 
 Publishing follows the same rule: once the version-bump PR is merged
 and both gates are green, push the release tag without asking (see
