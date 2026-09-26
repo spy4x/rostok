@@ -34,8 +34,9 @@
 // referenced by any command here — only named in the printed message —
 // so app data always survives.
 //
-// `rm -rf` always gets the stack's ABSOLUTE directory with NO trailing
-// slash, and `--` ahead of it (#233 review): a trailing slash makes
+// The script enters the real `stacks/` once with `cd -P` (#250), and
+// `rm -rf` then gets `./<name>` relative to it, with NO trailing slash
+// and `--` ahead of it (#233 review): a trailing slash makes
 // `rm` (and a shell glob that finds the entry with one) FOLLOW a
 // symlink into whatever it points at instead of unlinking the symlink
 // itself — confirmed directly: `rm -rf "$dir/"` on a stack folder
@@ -145,9 +146,9 @@ export function generateStaleStackCleanupScript(
     // its ID, why, and what the operator can do by hand. The stack's
     // folder is kept, so the next deploy finds the stack again.
     "skip_container() {",
-    `  echo "skipped container $(printable "$1") of stale stack '$name': $2. Its folder was ` +
-    `kept. Check it with 'docker inspect $(printable "$1")' and remove it by hand if it is a ` +
-    `leftover."`,
+    '  if has_entry "$name"; then kept=" Its folder was kept."; else kept=""; fi',
+    `  echo "skipped container $(printable "$1") of stale stack '$name': $2.$kept Check it ` +
+    `with 'docker inspect $(printable "$1")' and remove it by hand if it is a leftover."`,
     "}",
     "",
     // A stop-and-remove for one stack name, called for every stale name
@@ -280,8 +281,8 @@ export function generateStaleStackCleanupScript(
     "    FAILED=1",
     "    return 1",
     "  fi",
-    // Absolute path, no trailing slash, `--` first — see the module
-    // comment for why each of those three matters.
+    // Relative to the `cd -P`'d stacks/, no trailing slash, `--` first —
+    // see the module comment for why each of those matters.
     '  if has_entry "$name"; then',
     '    if ! rm -rf -- "./$name"; then',
     '      echo "FAILED to remove $dir"',
@@ -305,11 +306,11 @@ export function generateStaleStackCleanupScript(
     "}",
     "",
     // Phase 1: every entry under STACKS_DIR not in the active list,
-    // found via a STACKS_DIR-prefixed glob (never a bare `*` after a
-    // `cd`) so an empty or missing STACKS_DIR never iterates a literal,
-    // non-existent "*" — `[ -e "$entry" ] || [ -L "$entry" ]` is what
-    // actually guards that: an unmatched glob stays a literal pattern in
-    // every POSIX shell without nullglob, so this must never assume the
+    // found via a `./*` glob inside the `cd -P`'d stacks/, so an empty
+    // or missing STACKS_DIR never iterates a literal, non-existent "*" —
+    // `[ -e "$entry" ] || [ -L "$entry" ]` is what actually guards that:
+    // an unmatched glob stays a literal pattern in every POSIX shell
+    // without nullglob, so this must never assume the
     // loop only ever sees real entries. No trailing slash on the glob
     // (review round): a trailing-slash glob (`*/`) silently drops
     // anything that isn't already a directory — including a FILE
