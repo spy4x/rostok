@@ -51,6 +51,9 @@ import { shQuote } from "./exec.ts"
  * folder under `${pathApps}/stacks/` that `activeStackNames` (the FULL
  * config.json list, never a single-stack deploy's filtered one) doesn't
  * name, plus any container left behind by an already-missing folder.
+ * `activeProjects` names extra compose projects the active stacks run
+ * under (their `deployAs` values); a container labelled with one of
+ * them, or with an active stack's own name, is never stopped.
  * `pathApps` and `volumesPath` must already be validated AND normalised (server-keys.ts's
  * validateRemotePath/normalizeRemotePath) — this only re-quotes it for
  * the shell, never re-checks its shape.
@@ -63,6 +66,7 @@ export function generateStaleStackCleanupScript(
   activeStackNames: string[],
   pathApps: string,
   volumesPath: string,
+  activeProjects: string[] = [],
 ): string {
   const stacksDir = `${pathApps}/stacks`
   const quotedStacksDir = shQuote(stacksDir)
@@ -72,6 +76,15 @@ export function generateStaleStackCleanupScript(
   // arm at all, so every folder correctly counts as stale.
   const activePattern = activeStackNames.map((s) => shQuote(` ${s} `)).join("|")
   const keepArm = activePattern.length > 0 ? `        ${activePattern}) ;;\n` : ""
+  // Compose projects the active stacks run under: each stack's name
+  // plus any `activeProjects` (a `deployAs` alias), deduplicated.
+  const protectedProjects = [...new Set([...activeStackNames, ...activeProjects])]
+  const protectedPattern = protectedProjects.map((p) => shQuote(` ${p} `)).join("|")
+  const protectArm = protectedPattern.length > 0
+    ? `    case " $proj " in\n      ${protectedPattern})\n` +
+      `        echo "skipped project '$proj' for stale stack '$name': an active stack uses it"\n` +
+      `        continue\n        ;;\n    esac`
+    : ""
 
   const lines = [
     "set -u",
@@ -87,6 +100,13 @@ export function generateStaleStackCleanupScript(
     // ZERO words instead, which is what the loop actually wants.
     'if [ -n "${ZSH_VERSION:-}" ]; then setopt nullglob 2>/dev/null || true; fi',
     `STACKS_DIR=${quotedStacksDir}`,
+    // Preflight's symlink check ran in an earlier SSH session (#250), so
+    // STACKS_DIR could have been swapped for a symlink since. Every `rm`
+    // below is rooted here: refuse before any of them runs.
+    'if [ -L "$STACKS_DIR" ]; then',
+    '  echo "FAILED: $STACKS_DIR is a symlink, refusing to clean up stale stacks."',
+    "  exit 1",
+    "fi",
     // Quoted once here, then only ever expanded as "$VOLUMES_SHOWN", so a
     // `$(...)` in the value is printed, never run.
     `VOLUMES_SHOWN=${shQuote(volumesPath)}`,
@@ -151,8 +171,10 @@ export function generateStaleStackCleanupScript(
     // silently read as "no containers found" and cleanup went on to
     // remove the folder without ever actually having checked. `$?` on
     // the command substitution is the real, load-bearing check.
+    // No `2>/dev/null` (#250): when `docker ps` fails, its own stderr is
+    // the only thing that says why, so it goes to the operator.
     '  ps_output=$(docker ps -a --filter "label=com.docker.compose.project.working_dir=$dir" ' +
-    "--format '{{.ID}}|{{.Label \"com.docker.compose.project\"}}' 2>/dev/null)",
+    "--format '{{.ID}}|{{.Label \"com.docker.compose.project\"}}')",
     "  ps_rc=$?",
     '  if [ "$ps_rc" -ne 0 ]; then',
     '    if [ -e "$dir" ] || [ -L "$dir" ]; then',
@@ -180,6 +202,14 @@ export function generateStaleStackCleanupScript(
     '      *" $proj "*) continue ;;',
     "    esac",
     '    seen="$seen$proj "',
+    // Never stop a project an active stack runs under (#250). The
+    // project comes from a container label, and anyone with docker
+    // access on the server can set labels: a stale container labelled
+    // `project=traefik` would otherwise make `compose -p traefik down`
+    // take down the live traefik. Checked after the dedupe so it is
+    // reported once per project. A skip is deliberate, so it is
+    // reported but never counted as a failure.
+    protectArm,
     '    if ! docker compose -p "$proj" down --remove-orphans; then',
     "      echo \"FAILED to stop project '$proj' for stale stack '$name'\"",
     "      exit 1",
