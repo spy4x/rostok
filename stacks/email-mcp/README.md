@@ -45,16 +45,19 @@ If `anton@antonshubin.com` is missing, create it:
 
 ```bash
 ssh cloud 'docker exec -it mailserver setup email add anton@antonshubin.com'
-# Enter the same password as EMAIL_MCP_PRIMARY_PASSWORD in servers/home/.env
+# Enter the same password as EMAIL_MCP_PERSONAL_PASSWORD in servers/home/.env
 ```
 
 ### 2. Add env vars to `servers/home/.env`
 
 ```bash
 #region Email MCP
+# Mail host is mail.${EMAIL_MCP_DOMAIN}
+EMAIL_MCP_DOMAIN=example.com
 EMAIL_MCP_PRIMARY_USER=anton@antonshubin.com
-EMAIL_MCP_PRIMARY_PASSWORD=YOUR_PASSWORD_HERE
-# Optional second account (any additional accounts follow the same pattern):
+# Single-quote passwords that contain `$`: the hook does not unescape `$$`.
+EMAIL_MCP_PERSONAL_PASSWORD=YOUR_PASSWORD_HERE
+# Second account (required by the template; more accounts follow the same pattern):
 EMAIL_MCP_NEATSOFT_USER=anton@neatsoft.dev
 EMAIL_MCP_NEATSOFT_PASSWORD=YOUR_PASSWORD_HERE
 #endregion Email MCP
@@ -62,7 +65,8 @@ EMAIL_MCP_NEATSOFT_PASSWORD=YOUR_PASSWORD_HERE
 
 These are interpolated into `config.toml.template` by `before.deploy.ts`
 and mounted into the container as `/config.toml`. **Do not commit the
-rendered `config.toml`** — it's in `.gitignore`.
+rendered `config.toml`** — it's in `.gitignore`. `before.deploy.ts`
+stops the deploy if any of these five keys is missing.
 
 ### 3. Deploy
 
