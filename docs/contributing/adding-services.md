@@ -277,6 +277,29 @@ export default {
 - **`${SERVER_NAME}` is the only allowed placeholder** — server-level
   vars resolved before stack vars; v1 only supports this one.
 
+### File mounts (`fileMounts`)
+
+Deploy treats every `${VOLUMES_PATH}/...` path in `compose.yml` as a
+folder: it creates it and chowns it to `PUID:PGID`. A volume that is a
+single file, such as Traefik's certificate store, must be listed in
+`fileMounts`, relative to `VOLUMES_PATH`:
+
+```ts
+export default {
+  // ...
+  fileMounts: ["traefik/letsencrypt/acme.json"],
+} satisfies StackMeta
+```
+
+Deploy never creates, mkdirs or chowns a file mount. It only checks
+that the file already exists as a regular file, before it changes
+anything else on the server, and fails with a clear message otherwise.
+It never creates the file for you either: Docker would mount a folder
+in place of a missing file, so deploy the stack that writes the file
+(here Traefik) first. Deploy reads `fileMounts` from the project's own
+`stacks/<name>/+meta.ts` when there is one, otherwise from the bundled
+catalog.
+
 ---
 
 ## Verify before opening a PR

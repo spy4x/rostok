@@ -84,7 +84,7 @@ import { checkDockerGroup, checkRemotePathsNotNested, needsRemoteSudo } from "./
 import { type ResolvedStackFiles, resolveStackFiles } from "./stack-files.ts"
 import { validateStackConfigs } from "./validate-stack-config.ts"
 import { type HookContext, runHook } from "./hooks.ts"
-import { extractVolumePaths, generateVolumeCreationScript } from "./volumes.ts"
+import { extractVolumePaths, generateVolumeCreationScript, loadStackFileMounts } from "./volumes.ts"
 import {
   type DeployResult,
   generateDeployScript,
@@ -325,6 +325,14 @@ export async function runDeploy(
       }
     }
     const volumePaths = extractVolumePaths(composeContents, resolvedEnv)
+    // #258: volumes a stack's +meta.ts declares as files (fileMounts) are
+    // checked, never mkdir'd or chowned.
+    const fileMounts: string[] = []
+    for (const [stackName, resolved] of stackFiles) {
+      for (const rel of await loadStackFileMounts(stackName, resolved.files)) {
+        fileMounts.push(`${VOLUMES_PATH}/${rel}`)
+      }
+    }
 
     // config.json's per-stack `envs` (`${VAR}` filled from .env.root
     // merged with the server .env — a referenced key can legitimately
@@ -573,8 +581,18 @@ export async function runDeploy(
     if (stacks.length > 0) {
       // volumePaths was extracted and checked right after staging, above.
       if (volumePaths.length > 0 && VOLUMES_PATH) {
-        console.log(`Creating ${volumePaths.length} volume directories with correct ownership...`)
-        const script = generateVolumeCreationScript(volumePaths, PUID, PGID, needsSudo)
+        console.log(
+          `Preparing ${volumePaths.length} volume path(s): folders created with correct ` +
+            `ownership, declared file mounts checked...`,
+        )
+        const script = generateVolumeCreationScript({
+          volumesPath: VOLUMES_PATH,
+          volumePaths,
+          fileMounts,
+          puid: PUID,
+          pgid: PGID,
+          needsSudo,
+        })
         const volumesResult = await io.runRemoteShell(SSH_ADDRESS, script)
         if (!volumesResult.success) {
           const sudoHint = needsSudo
@@ -586,7 +604,7 @@ export async function runDeploy(
               `${volumesResult.error.trim()}.${sudoHint}`,
           )
         }
-        console.log("Volume directories created")
+        console.log("Volume paths ready")
       }
 
       const deployScript = generateDeployScript(stacks, PATH_APPS, restartStacks)

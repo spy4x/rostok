@@ -148,6 +148,21 @@ Deno.test("validateStackMeta: optional `category`", () => {
   assertEquals(noCategory.category, undefined)
 })
 
+Deno.test("validateStackMeta: accepts fileMounts relative to VOLUMES_PATH", () => {
+  const meta = validateStackMeta({ ...validStack, fileMounts: ["traefik/letsencrypt/acme.json"] })
+  assertEquals(meta.fileMounts, ["traefik/letsencrypt/acme.json"])
+})
+
+Deno.test("validateStackMeta: rejects an absolute or .. fileMounts entry", () => {
+  for (const bad of ["/etc/passwd", "traefik/../../etc/passwd", ".", ""]) {
+    assertThrows(
+      () => validateStackMeta({ ...validStack, fileMounts: [bad] }),
+      Error,
+      `fileMounts entry "${bad}" must be a path relative to VOLUMES_PATH`,
+    )
+  }
+})
+
 Deno.test("normalizeVariableSpec: defaults required=true when missing", () => {
   const spec = normalizeVariableSpec({ key: "X" })
   assertEquals(spec.required, true)

@@ -58,3 +58,11 @@ Create a room, share the link. Participants join in browser — no install.
 
 - [MiroTalk P2P GitHub](https://github.com/miroslavpejic85/mirotalk)
 - [coturn](https://github.com/coturn/coturn)
+
+## Deploy order
+
+The `mirotalk-cert-extract` sidecar mounts Traefik's
+`${VOLUMES_PATH}/traefik/letsencrypt/acme.json`. `+meta.ts` declares it
+in `fileMounts`, so deploy only checks that the file exists and never
+creates a folder in its place. On a new server, deploy Traefik first and
+let it start once, so it writes `acme.json`; then deploy this stack.

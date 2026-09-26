@@ -943,6 +943,48 @@ Deno.test("e2e: a CLI child's PATH holds only the fake ssh and linked tools, nev
   }
 })
 
+Deno.test("e2e: a volume the stack's +meta.ts declares in fileMounts is checked as a file, never mkdir'd", async () => {
+  // #258: mirotalk and stalwart mount traefik's acme.json. The volume
+  // script used to mkdir every volume path, so it created a folder named
+  // acme.json or failed with "File exists".
+  const f = await setupFixture()
+  try {
+    const stackDir = join(f.projectDir, "stacks", "acme-reader")
+    await Deno.mkdir(stackDir, { recursive: true })
+    await Deno.writeTextFile(
+      join(stackDir, "compose.yml"),
+      [
+        "name: ${PROJECT}",
+        "services:",
+        "  reader:",
+        "    image: busybox",
+        "    volumes:",
+        "      - ${VOLUMES_PATH}/traefik/letsencrypt/acme.json:/acme.json:ro,z",
+        "      - ${VOLUMES_PATH}/acme-reader/data:/data:z",
+      ].join("\n") + "\n",
+    )
+    await Deno.writeTextFile(
+      join(stackDir, "+meta.ts"),
+      `export default { name: "acme-reader", description: "d", variables: [], ` +
+        `fileMounts: ["traefik/letsencrypt/acme.json"] }\n`,
+    )
+    await writeServer(f.projectDir, [], ["acme-reader"])
+
+    const { remote, result } = await runDeployInProcess(f)
+    assertEquals(result.deployedStacks, ["acme-reader"])
+    const volumeScript = remote.shellScripts.find((s) => s.includes("rostok_resolve '"))
+    assert(volumeScript, `expected a volume script, got:\n${remote.shellScripts.join("\n---\n")}`)
+    assertStringIncludes(volumeScript!, "rostok_file '/srv/volumes/traefik/letsencrypt/acme.json'")
+    assertStringIncludes(volumeScript!, "rostok_resolve '/srv/volumes/acme-reader/data'")
+    assertEquals(
+      volumeScript!.includes("rostok_resolve '/srv/volumes/traefik/letsencrypt/acme.json'"),
+      false,
+    )
+  } finally {
+    await teardownFixture(f)
+  }
+})
+
 Deno.test("e2e: VOLUMES_PATH declared only in .env.root still resolves real volume paths", async () => {
   // Regression: run-deploy.ts used to extract volume paths from the
   // server .env alone. With VOLUMES_PATH only in .env.root, the
@@ -975,12 +1017,12 @@ Deno.test("e2e: VOLUMES_PATH declared only in .env.root still resolves real volu
     // not the OTHER "mkdir -p" script this deploy also runs
     // (`mkdir -p -- 'PATH_APPS/stacks'`, #233 point 2), hence the
     // volumes-specific match.
-    const volumeScript = remote.shellScripts.find((s) => s.includes("mkdir -p '/srv/volumes"))
+    const volumeScript = remote.shellScripts.find((s) => s.includes("rostok_resolve '/srv/volumes"))
     assert(
       volumeScript,
       `expected a volume mkdir script, got:\n${remote.shellScripts.join("\n---\n")}`,
     )
-    assertStringIncludes(volumeScript!, "mkdir -p '/srv/volumes/vol-stack/data'")
+    assertStringIncludes(volumeScript!, "rostok_resolve '/srv/volumes/vol-stack/data'")
     // ...never the literal, unexpanded placeholder.
     assertEquals(volumeScript!.includes("${VOLUMES_PATH}"), false)
   } finally {
