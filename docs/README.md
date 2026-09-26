@@ -11,6 +11,8 @@
 ## Use
 
 - [Quickstart](../README.md#quick-start) — install + run the wizard
+- [Commands](commands.md) — every command and flag, install notes
+- [How it works](how-it-works.md) — CLI, catalog and your project; who it's for
 - [ENCRYPTED_ENV_FILES](usage/ENCRYPTED_ENV_FILES.md) — age64 workflow
 - [Disaster recovery](usage/disaster-recovery.md) — backup, restore, spin up a new server
 
@@ -24,6 +26,7 @@
 
 - [Contributing](contributing/contributing.md) — what to read before opening a PR
 - [Adding services](contributing/adding-services.md) — schema + checklist for new stacks
+- [demo.tape](demo.tape) — re-records the README's terminal GIF: `vhs docs/demo.tape`
 
 ## External
 
