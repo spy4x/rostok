@@ -22,8 +22,9 @@ steps:
       - deno task check
 
   # Publishes @rostok/cli to JSR, only on a `v*` tag and only after `check`
-  # passed. JSR_TOKEN is a repository secret allowed for the tag event only,
-  # so no push or pull-request build can read it. `$$` stops Woodpecker
+  # passed. JSR_TOKEN is a repository secret that must be allowed for the tag
+  # event only (never push or pull_request), so no other build can read it;
+  # check that in Woodpecker before the first release. `$$` stops Woodpecker
   # substituting the variable itself; the shell reads the secret.
   publish:
     image: denoland/deno:2.9.0

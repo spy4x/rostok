@@ -17,7 +17,9 @@ Deno.test("refuses a tag without the v prefix", () => {
 })
 
 Deno.test("refuses a build with no tag", () => {
-  assertEquals(checkReleaseTag(undefined, { a: "1.2.1" }).length, 1)
+  assertEquals(checkReleaseTag(undefined, { a: "1.2.1" }), [
+    "No tag: this guard runs only on a tag build (CI_COMMIT_TAG is empty).",
+  ])
 })
 
 Deno.test("refuses a source that declares no version", () => {
@@ -31,4 +33,16 @@ Deno.test("reads the version from a commented jsonc", () => {
 Deno.test("deno.jsonc and cli/version.ts declare the same version", async () => {
   const config = await Deno.readTextFile(new URL("../../deno.jsonc", import.meta.url))
   assertEquals(readVersion(config), VERSION)
+})
+
+Deno.test("the guard exits 1 on a tag that does not match the version", async () => {
+  const { code, stderr } = await new Deno.Command(Deno.execPath(), {
+    args: ["run", "-R", "--allow-env=CI_COMMIT_TAG", import.meta.resolve("./+main.ts")],
+    env: { CI_COMMIT_TAG: "v0.0.0", NO_COLOR: "1" },
+    stdout: "null",
+    stderr: "piped",
+  }).output()
+  assertEquals(code, 1)
+  const text = new TextDecoder().decode(stderr)
+  assertEquals(text.includes("deno.jsonc is at") && text.includes("cli/version.ts is at"), true)
 })

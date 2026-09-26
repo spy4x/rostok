@@ -279,7 +279,9 @@ After the version-bump PR merges to `main`. No need to ask first:
 2. Woodpecker runs `check` on the tag, then the `publish` step:
    `scripts/release/+main.ts` refuses a tag that differs from
    `deno.jsonc` or `cli/version.ts`, and `deno publish` uses the
-   `JSR_TOKEN` repository secret (allowed for the tag event only). The
+   `JSR_TOKEN` repository secret. That secret must be allowed for the
+   `tag` event only, never `push` or `pull_request`. Only tag a commit
+   that is on `main`: the pipeline does not check it. The
    CI checkout is clean, so no untracked local file can ship. A failed
    step publishes nothing: fix the cause in a PR, then move the tag to
    the new merge commit (`git tag -f`, `git push -f origin <tag>`).
@@ -288,7 +290,8 @@ After the version-bump PR merges to `main`. No need to ask first:
    (the dep-age flag bypasses deno's 24h install delay on fresh
    publishes).
 4. `rostok --version` must print the new version. If it prints an
-   older one, you forgot to bump `cli/version.ts`.
+   older one, the install used a stale cache or the tag build did not
+   publish: read the tag's Woodpecker log.
 
 ### Avoid drift with `git grep`
 
