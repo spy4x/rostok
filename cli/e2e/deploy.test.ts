@@ -21,21 +21,30 @@
 // script: the owner's rule is no fake binary may be a Deno process,
 // since each spawn is a full process, and this one never re-execs
 // anything by a bare name on PATH, so it can't recurse the way an
-// earlier fake `rsync` elsewhere in this PR did) is enough for those; no
-// `rsync` binary needs to exist on `PATH` at all for any test in this
-// file — every fixture that can lose its "kill before the sync step"
-// race also sets `FAKE_SSH_HANG_ON` (see runInterruptedDeploy and the
-// ~1,500-file staging test) so a late signal still lands on this fake,
-// harmless, never on the system's real `rsync`.
+// earlier fake `rsync` elsewhere in this PR did) is enough for those.
+// #249: a CLI child's PATH (`childPath`) holds only the fake ssh and a
+// few named host tools, linked one by one, never a whole host directory
+// such as /usr/bin, so the system's real `rsync` is never reachable from
+// a child at all (setupFixture refuses a PATH that contains one). Every
+// fixture that can lose its "kill before the sync step" race also sets
+// `FAKE_SSH_HANG_WHEN_STAGED` (see runInterruptedDeploy and the ~1,500-
+// file staging test), so a late signal still lands on this fake.
 //
 // If cli/deploy/shipped-stacks.ts under-lists a catalog stack's files
 // (or run-deploy.ts fails to stage one), the corresponding assertion
 // below fails.
 
-import { assert, assertEquals, assertExists, assertStringIncludes } from "@std/assert"
+import {
+  assert,
+  assertEquals,
+  assertExists,
+  assertRejects,
+  assertStringIncludes,
+} from "@std/assert"
 import { dirname, join } from "@std/path"
 import { runDeploy, type RunDeployIO } from "../deploy/run-deploy.ts"
 import type { CommandResult } from "../deploy/exec.ts"
+import { UserError } from "../errors.ts"
 
 const FAKE_SSH = `#!/bin/sh
 # Records every invocation to FAKE_SSH_LOG, then fakes just enough of a
@@ -45,9 +54,10 @@ const FAKE_SSH = `#!/bin/sh
 # after a successful \`docker compose up\`. Anything else (proxy network,
 # stale-stack cleanup, volume mkdir/chown) is accepted silently, matching
 # a healthy remote. Never calls \`ssh\`, \`rsync\` or any other name by
-# looking it up on PATH — it only ever prints to its own stdout/stderr —
-# so it can't recurse the way an earlier fake \`rsync\` elsewhere in this
-# PR did. Plain POSIX \`sh\`, never a \`deno\` script (owner's rule: no fake
+# looking it up on PATH: \`grep\` and \`sleep\` are absolute paths that
+# setupFixture fills in through placeholders, and FAKE_SSH_DEPTH makes it
+# exit at once if it ever runs inside itself, so it can't recurse the way
+# an earlier fake \`rsync\` elsewhere in this PR did. Plain POSIX \`sh\`, never a \`deno\` script (owner's rule: no fake
 # binary may be a Deno process — each spawn is a full process).
 #
 # Every real call is \`ssh -o ConnectTimeout=10 [-o BatchMode=yes] [-p <port>]
@@ -55,6 +65,13 @@ const FAKE_SSH = `#!/bin/sh
 # cli/server-keys.ts) — the target and command sit right after the first
 # \`--\`, wherever the options before it land.
 set -u
+
+if [ -n "\${FAKE_SSH_DEPTH:-}" ]; then
+  echo "fake ssh: called from inside itself, refusing" >&2
+  exit 97
+fi
+FAKE_SSH_DEPTH=1
+export FAKE_SSH_DEPTH
 
 found_dashdash=0
 skip_target=0
@@ -103,33 +120,33 @@ if [ -n "\${FAKE_SSH_UNREACHABLE:-}" ]; then
   # 20s instead of dying immediately. Once \`exec\`'d, there's no shell
   # left to defer anything: the pid IS sleep's own, and sleep terminates
   # on the signal's ordinary default disposition right away.
-  exec sleep 20
+  exec @SLEEP@ 20
 fi
 
-# FAKE_SSH_HANG_ON hangs forever the first time \`script\` contains this
-# text — used to hold a deploy open mid-run so a test can send it a
-# signal while the staging directory still exists, and needed so the
-# SIGINT/SIGTERM tests below prove deploy actually KILLS this child, not
-# just that it happened to already exit on its own. Same self-deadline as
-# above.
-if [ -n "\${FAKE_SSH_HANG_ON:-}" ]; then
-  case "$script" in
-    *"\${FAKE_SSH_HANG_ON}"*)
-      # FAKE_SSH_PID_FILE: record this process's own pid before hanging,
-      # so a test can prove deploy actually killed THIS process (not
-      # just that deploy itself exited) by checking the pid is gone
-      # afterward.
-      if [ -n "\${FAKE_SSH_PID_FILE:-}" ]; then
-        echo "$$" > "$FAKE_SSH_PID_FILE"
-      fi
-      # \`exec\` — see the FAKE_SSH_UNREACHABLE branch above for why a
-      # plain foregrounded \`sleep\` would let a signal go unnoticed for
-      # the full 20s on some shells. The pid just written is still
-      # correct after \`exec\`: it never forks, it replaces this same
-      # process.
-      exec sleep 20
-      ;;
-  esac
+# FAKE_SSH_HANG_WHEN_STAGED hangs forever on the first call made while
+# a deploy staging directory (\$TMPDIR/rostok-deploy-*) exists, whatever
+# that call's command is. Deploy creates and fills the staging directory
+# before its first post-preflight remote call, so this holds a deploy
+# open mid-run for a test to send it a signal, without depending on the
+# exact text of any one remote command. It also lets the SIGINT/SIGTERM
+# tests below prove deploy actually KILLS this child, not just that it
+# happened to already exit on its own. Only the shell's own glob and
+# \`[\` are used here, never another binary. Same self-deadline as above.
+if [ -n "\${FAKE_SSH_HANG_WHEN_STAGED:-}" ]; then
+  for staged in "\${TMPDIR:-/tmp}"/rostok-deploy-*; do
+    [ -d "$staged" ] || continue
+    # FAKE_SSH_PID_FILE: record this process's own pid before hanging,
+    # so a test can prove deploy actually killed THIS process (not just
+    # that deploy itself exited) by checking the pid is gone afterward.
+    if [ -n "\${FAKE_SSH_PID_FILE:-}" ]; then
+      echo "$$" > "$FAKE_SSH_PID_FILE"
+    fi
+    # \`exec\` — see the FAKE_SSH_UNREACHABLE branch above for why a plain
+    # foregrounded \`sleep\` would let a signal go unnoticed for the full
+    # 20s on some shells. The pid just written stays correct after
+    # \`exec\`: it never forks, it replaces this same process.
+    exec @SLEEP@ 20
+  done
 fi
 
 case "$script" in
@@ -155,7 +172,7 @@ case "$script" in
     # FAKE_DEPLOY_FAIL_STACK lets a test simulate a stack whose
     # \`docker compose up\` fails on the remote — everything else about
     # the fake remote (docker group, uid) stays healthy.
-    echo "$script" | grep -oE 'DEPLOY_START:[^ ]+:[^ ]+' |
+    echo "$script" | @GREP@ -oE 'DEPLOY_START:[^ ]+:[^ ]+' |
     while IFS=: read -r _tag stack id; do
       echo "DEPLOY_START:$stack:$id"
       if [ "$stack" = "\${FAKE_DEPLOY_FAIL_STACK:-}" ]; then
@@ -173,22 +190,86 @@ exit 0
 interface Fixture {
   projectDir: string
   binDir: string
+  /** The PATH a CLI child gets: the fake ssh plus the host tools in CHILD_TOOLS. */
+  childPath: string
   remoteDir: string
   logPath: string
 }
 
-async function setupFixture(): Promise<Fixture> {
+async function setupFixture(
+  childTools: [name: string, required: boolean][] = CHILD_TOOLS,
+): Promise<Fixture> {
   const projectDir = await Deno.makeTempDir({ prefix: "rostok-e2e-project-" })
   const binDir = await Deno.makeTempDir({ prefix: "rostok-e2e-bin-" })
   const remoteDir = await Deno.makeTempDir({ prefix: "rostok-e2e-remote-" })
   const logPath = join(binDir, "ssh.log")
+  const f = { projectDir, binDir, childPath: "", remoteDir, logPath }
+  try {
+    // Only `ssh` — never `rsync` (#233 review). Every test that needs
+    // files to actually reach a "remote" drives runDeploy in-process with
+    // an injected RunDeployIO (makeFakeIO below) instead.
+    const fakeSsh = FAKE_SSH
+      .replaceAll("@GREP@", await requireOnHostPath("grep"))
+      .replaceAll("@SLEEP@", await requireOnHostPath("sleep"))
+    await Deno.writeTextFile(join(binDir, "ssh"), fakeSsh, { mode: 0o755 })
 
-  // Only `ssh` — never `rsync` (#233 review). Every test that needs
-  // files to actually reach a "remote" drives runDeploy in-process with
-  // an injected RunDeployIO (makeFakeIO below) instead.
-  await Deno.writeTextFile(join(binDir, "ssh"), FAKE_SSH, { mode: 0o755 })
+    const toolsDir = join(binDir, "tools")
+    await Deno.mkdir(toolsDir)
+    for (const [name, required] of childTools) {
+      const target = required ? await requireOnHostPath(name) : await findOnHostPath(name)
+      if (target) await Deno.symlink(target, join(toolsDir, name))
+    }
+    f.childPath = `${binDir}:${toolsDir}`
+    const rsyncDirs = await dirsContaining(f.childPath, "rsync")
+    if (rsyncDirs.length > 0) {
+      throw new Error(`e2e fixture: the child PATH contains rsync in ${rsyncDirs.join(", ")}`)
+    }
+    return f
+  } catch (err) {
+    // A fixture that refuses to start must not leave its folders behind.
+    await teardownFixture(f)
+    throw err
+  }
+}
 
-  return { projectDir, binDir, remoteDir, logPath }
+/**
+ * Host tools a CLI child may run by name, each linked by its absolute
+ * path into the fixture's own tools directory, and whether the fixture
+ * fails without it. FAKE_SSH itself names /bin/sh, `grep` and `sleep` by
+ * absolute path; `sh` is here for anything that spawns it by name.
+ * Deploy runs a hook under `setsid` when it exists and falls back
+ * without it (process-registry.ts), so `setsid` is optional.
+ */
+const CHILD_TOOLS: [name: string, required: boolean][] = [
+  ["sh", true],
+  ["setsid", false],
+]
+
+/** The first absolute path of `name` on this process's own PATH, or undefined. */
+async function findOnHostPath(name: string): Promise<string | undefined> {
+  for (const dir of (Deno.env.get("PATH") ?? "").split(":")) {
+    if (!dir.startsWith("/")) continue
+    const candidate = join(dir, name)
+    const info = await Deno.stat(candidate).catch(() => undefined)
+    if (info?.isFile) return candidate
+  }
+  return undefined
+}
+
+/** Like findOnHostPath, but throws when `name` isn't on the host PATH. */
+async function requireOnHostPath(name: string): Promise<string> {
+  const found = await findOnHostPath(name)
+  if (!found) throw new Error(`e2e fixture: ${name} not found on the host PATH`)
+  return found
+}
+
+/** Every directory of the colon-separated `path` that holds an entry called `name`. */
+async function dirsContaining(path: string, name: string): Promise<string[]> {
+  const found: string[] = []
+  for (const dir of path.split(":")) {
+    if (await Deno.lstat(join(dir, name)).then(() => true).catch(() => false)) found.push(dir)
+  }
+  return found
 }
 
 async function teardownFixture(f: Fixture): Promise<void> {
@@ -242,7 +323,7 @@ async function runDeployCli(
     cwd: f.projectDir,
     env: {
       ...Deno.env.toObject(),
-      PATH: `${f.binDir}:${Deno.env.get("PATH") ?? ""}`,
+      PATH: f.childPath,
       FAKE_REMOTE_DIR: f.remoteDir,
       FAKE_SSH_LOG: f.logPath,
       ...extraEnv,
@@ -792,6 +873,76 @@ Deno.test("e2e: config.json envs resolves a \${VAR} defined only in .env.root", 
   }
 })
 
+Deno.test("e2e: a volume path with .. is refused before any volume command reaches the remote", async () => {
+  // #250: `${VOLUMES_PATH}/../../etc` used to become
+  // `sudo -n chown -R ... '/srv/volumes/../../etc'` on the server.
+  const f = await setupFixture()
+  try {
+    const stackDir = join(f.projectDir, "stacks", "escape-stack")
+    await Deno.mkdir(stackDir, { recursive: true })
+    await Deno.writeTextFile(
+      join(stackDir, "compose.yml"),
+      [
+        "name: ${PROJECT}",
+        "services:",
+        "  esc:",
+        "    image: busybox",
+        "    volumes:",
+        "      - ${VOLUMES_PATH}/../../etc:/x",
+      ].join("\n") + "\n",
+    )
+    await writeServer(f.projectDir, [], ["escape-stack"])
+
+    const remote: FakeRemote = { root: f.remoteDir, calls: [], shellScripts: [] }
+    // A non-root remote: the path that used to reach `sudo -n chown -R`.
+    const io: RunDeployIO = { ...makeFakeIO(remote), needsRemoteSudo: () => Promise.resolve(true) }
+    const err = await assertRejects(
+      () => runDeploy({ cwd: f.projectDir, server: "test" }, io),
+      UserError,
+    )
+    assertStringIncludes(err.message, `contains a ".." component`)
+    const volumeScripts = remote.shellScripts.filter((s) => s.includes("chown"))
+    assertEquals(volumeScripts, [], "no mkdir/chown script may reach the remote")
+  } finally {
+    await teardownFixture(f)
+  }
+})
+
+Deno.test("e2e: a fixture that refuses to start removes the folders it created", async () => {
+  // Its own temp root, so another test run on this machine can't add or
+  // remove a rostok-e2e-* folder between setup and the check.
+  const tmp = await Deno.makeTempDir({ prefix: "rostok-e2e-tmproot-" })
+  const previousTmp = Deno.env.get("TMPDIR")
+  Deno.env.set("TMPDIR", tmp)
+  try {
+    await assertRejects(
+      () => setupFixture([["rostok-no-such-tool-for-e2e", true]]),
+      Error,
+      "rostok-no-such-tool-for-e2e not found on the host PATH",
+    )
+    assertEquals([...Deno.readDirSync(tmp)].map((e) => e.name), [])
+  } finally {
+    if (previousTmp === undefined) Deno.env.delete("TMPDIR")
+    else Deno.env.set("TMPDIR", previousTmp)
+    await Deno.remove(tmp, { recursive: true })
+  }
+})
+
+Deno.test("e2e: a CLI child's PATH holds only the fake ssh and linked tools, never rsync", async () => {
+  const f = await setupFixture()
+  try {
+    assertEquals(await dirsContaining(f.childPath, "rsync"), [])
+    // Every PATH entry is one of this fixture's own directories, so no
+    // host directory (such as /usr/bin, where rsync usually lives) can
+    // leak in.
+    for (const dir of f.childPath.split(":")) {
+      assert(dir.startsWith(f.binDir), `${dir} is not inside the fixture's ${f.binDir}`)
+    }
+  } finally {
+    await teardownFixture(f)
+  }
+})
+
 Deno.test("e2e: VOLUMES_PATH declared only in .env.root still resolves real volume paths", async () => {
   // Regression: run-deploy.ts used to extract volume paths from the
   // server .env alone. With VOLUMES_PATH only in .env.root, the
@@ -988,7 +1139,7 @@ Deno.test("e2e: an unreachable server fails fast, naming the step and saying it'
       cwd: f.projectDir,
       env: {
         ...Deno.env.toObject(),
-        PATH: `${f.binDir}:${Deno.env.get("PATH") ?? ""}`,
+        PATH: f.childPath,
         FAKE_REMOTE_DIR: f.remoteDir,
         FAKE_SSH_LOG: f.logPath,
         FAKE_SSH_UNREACHABLE: "1",
@@ -1079,36 +1230,6 @@ async function isPidAliveAfter(pid: number, ms = 3000): Promise<boolean> {
   return false
 }
 
-/** Poll `path`'s content every 20ms (up to ~10s) until it includes `text`, or throw. */
-async function waitForFileToInclude(path: string, text: string): Promise<void> {
-  for (let i = 0; i < 500; i++) {
-    const content = await Deno.readTextFile(path).catch(() => "")
-    if (content.includes(text)) return
-    await new Promise((r) => setTimeout(r, 20))
-  }
-  throw new Error(`${path} never contained ${JSON.stringify(text)}`)
-}
-
-/**
- * The hang point every SIGINT/SIGTERM/SIGHUP test below blocks on:
- * run-deploy.ts's post-staging `mkdir -p -- PATH_APPS/stacks` call
- * (#233 point 2) — the first remote call after staging finishes, and
- * the first one this fixture's FAKE_SSH answers, so it's the natural
- * hang point. Neither a bare "mkdir -p" substring NOR just
- * "-- '/srv/apps/stacks'" is enough (review round, found by actually
- * running this fixture and watching the ssh log): checkRemotePathsNotNested's
- * own preflight (docker-preflight.ts, fixed this round to `mkdir -p`
- * before `readlink -f` on a fresh server) runs BEFORE staging even
- * starts, and its script is `mkdir -p -- '/srv/apps' '/srv/volumes'
- * '/srv/apps/stacks' && readlink -f -- '/srv/apps' && ... && readlink -f
- * -- '/srv/apps/stacks'` — its OWN trailing readlink call also contains
- * "-- '/srv/apps/stacks'" verbatim, so that substring alone still
- * matched the preflight and hung the deploy before staging even began.
- * The full literal "mkdir -p -- '/srv/apps/stacks'" (this exact
- * sequence, immediately adjacent) only ever appears in run-deploy.ts's
- * own post-staging call — the preflight's own "mkdir -p --" is followed
- * by '/srv/apps' first, never directly by the stacks path.
- */
 /**
  * Stop a CLI child a signal test spawned but never saw exit (the test
  * threw first), so it can never carry on past the hang point into a
@@ -1127,23 +1248,16 @@ async function killUnfinishedChild(
   await child.output().catch(() => {})
 }
 
-const POST_STAGING_MKDIR_HANG_POINT = `mkdir -p -- '/srv/apps/stacks'`
-
 /**
- * Spawn `rostok deploy test` with FAKE_SSH_HANG_ON set (holds the fake
- * ssh call busy — see FAKE_SSH above — after the staging dir is
- * created and populated, but BEFORE any sync would run — #233 review:
- * this file has no `rsync` binary on PATH at all anymore, so the hang
- * point has to be a remote SHELL call, not the old "docker network
- * inspect proxy" (which ran AFTER both syncs). See
- * POST_STAGING_MKDIR_HANG_POINT above for which call and why.) Waits
- * for the fake ssh's own log to actually show the blocking command —
- * not just for the staging dir to exist, which can appear well before
- * that ssh call starts — before sending `signal`. Returns the exit
- * code, whether the staging dir survived, and whether the fake ssh's
- * own pid (written to a file right before it hangs) is still alive
- * afterward — the real proof that deploy KILLED it, not just that
- * deploy itself exited.
+ * Spawn `rostok deploy test` with FAKE_SSH_HANG_WHEN_STAGED set: the
+ * fake ssh hangs on the first remote call made once the staging dir
+ * exists (see FAKE_SSH above). Deploy creates and fills staging before
+ * that call and runs no sync before it, so the deploy is held open with
+ * staging fully populated and nothing synced yet, whatever that call's
+ * command text is. Waits for the hanging fake ssh to write its own pid,
+ * then sends `signal`. Returns the exit code, whether the staging dir
+ * survived, and whether that fake ssh's pid is still alive afterward:
+ * the real proof that deploy KILLED it, not just that deploy exited.
  */
 async function runInterruptedDeploy(
   f: Fixture,
@@ -1165,12 +1279,12 @@ async function runInterruptedDeploy(
       cwd: f.projectDir,
       env: {
         ...Deno.env.toObject(),
-        PATH: `${f.binDir}:${Deno.env.get("PATH") ?? ""}`,
+        PATH: f.childPath,
         FAKE_REMOTE_DIR: f.remoteDir,
         FAKE_SSH_LOG: f.logPath,
         // Hold the deploy open after staging is fully populated but
         // before the first sync (see this function's own comment).
-        FAKE_SSH_HANG_ON: POST_STAGING_MKDIR_HANG_POINT,
+        FAKE_SSH_HANG_WHEN_STAGED: "1",
         FAKE_SSH_PID_FILE: pidFile,
         TMPDIR: tmpRoot,
       },
@@ -1179,12 +1293,10 @@ async function runInterruptedDeploy(
     })
     child = command.spawn()
 
-    await waitForFileToInclude(f.logPath, POST_STAGING_MKDIR_HANG_POINT)
-    // The blocking ssh call writes its pid before it starts hanging —
-    // by the time its own invocation shows up in the log, the pid file
-    // exists too, but poll briefly in case of a write-then-flush gap.
+    // The hanging ssh call writes its pid right before it hangs. Poll
+    // every 20ms for up to ~10s.
     let pid: number | undefined
-    for (let i = 0; i < 100 && pid === undefined; i++) {
+    for (let i = 0; i < 500 && pid === undefined; i++) {
       const text = await Deno.readTextFile(pidFile).catch(() => "")
       if (text.trim()) pid = Number(text.trim())
       else await new Promise((r) => setTimeout(r, 20))
@@ -1262,10 +1374,10 @@ Deno.test("e2e: SIGINT during a ~1,500-file stage leaves no staging directory be
   // after staging already finished), deploy would carry on into the
   // first sync step, and this fixture has NO `rsync` on PATH at all
   // (#233 review) — a late signal would fall through to the system's
-  // REAL rsync. FAKE_SSH_HANG_ON holds it at the first remote shell call
-  // instead (same hang point the three dedicated signal tests below
-  // use), so a late signal still lands somewhere `sh`-fake and harmless,
-  // never at a real sync step.
+  // REAL rsync. FAKE_SSH_HANG_WHEN_STAGED holds it at the first remote
+  // call made once staging exists (same hang point the three dedicated
+  // signal tests above use), so a late signal still lands somewhere
+  // `sh`-fake and harmless, never at a real sync step.
   const f = await setupFixture()
   const tmpRoot = await Deno.makeTempDir({ prefix: "rostok-e2e-tmproot-" })
   let child: Deno.ChildProcess | undefined
@@ -1290,12 +1402,12 @@ Deno.test("e2e: SIGINT during a ~1,500-file stage leaves no staging directory be
       cwd: f.projectDir,
       env: {
         ...Deno.env.toObject(),
-        PATH: `${f.binDir}:${Deno.env.get("PATH") ?? ""}`,
+        PATH: f.childPath,
         FAKE_REMOTE_DIR: f.remoteDir,
         FAKE_SSH_LOG: f.logPath,
         // Never let a late signal fall through staging into a real sync
         // step — see this test's own comment above.
-        FAKE_SSH_HANG_ON: POST_STAGING_MKDIR_HANG_POINT,
+        FAKE_SSH_HANG_WHEN_STAGED: "1",
         TMPDIR: tmpRoot,
       },
       stdout: "piped",

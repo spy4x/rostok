@@ -250,6 +250,44 @@ async function writeRunDeployServer(projectDir: string, stackNames: string[]): P
   )
 }
 
+Deno.test("runDeploy: a .. volume path is refused before any hook, sync, cleanup or volume script", async () => {
+  // #250: the refusal used to come after both syncs and the stale
+  // cleanup. Now only the preflight (docker group, remote uid, the
+  // PATH_APPS/VOLUMES_PATH check, which may create those two folders)
+  // runs before it.
+  const f = await setupRunDeployFixture()
+  try {
+    const stackDir = join(f.projectDir, "stacks", "escape")
+    await Deno.mkdir(stackDir, { recursive: true })
+    await Deno.writeTextFile(
+      join(stackDir, "compose.yml"),
+      "name: ${PROJECT}\nservices:\n  esc:\n    image: busybox\n    volumes:\n" +
+        "      - ${VOLUMES_PATH}/../../etc:/x\n",
+    )
+    // A before-hook can change the server (syncthing's runs mkdir/chown
+    // over ssh), so the refusal must also come before every hook.
+    const marker = join(f.projectDir, "before-hook-ran")
+    await Deno.writeTextFile(
+      join(stackDir, "before.deploy.ts"),
+      `await Deno.writeTextFile(${JSON.stringify(marker)}, "ran")\n`,
+    )
+    await writeRunDeployServer(f.projectDir, ["escape"])
+    f.remote.remoteNeedsSudo = true
+
+    await assertRejects(
+      () => runDeploy({ cwd: f.projectDir, server: "test" }, f.io),
+      UserError,
+      `contains a ".." component`,
+    )
+    assertEquals(f.remote.calls, ["docker-group", "sudo", "readlink"])
+    assertEquals(f.remote.shellScripts, [])
+    assertEquals(f.remote.rsyncCalls, [])
+    assertEquals(await Deno.stat(marker).then(() => true).catch(() => false), false)
+  } finally {
+    await teardownRunDeployFixture(f)
+  }
+})
+
 Deno.test("runDeploy: a full deploy's root rsync carries --delete, excludes /stacks, and drops -u (#233)", async () => {
   const f = await setupRunDeployFixture()
   try {

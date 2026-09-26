@@ -252,6 +252,9 @@ Deno.test("smoke: --help renders the Usage banner", async () => {
   const mainTs = new URL("../+main.ts", import.meta.url).pathname
   const cmd = new Deno.Command(Deno.execPath(), {
     args: ["run", "-A", mainTs, "--help"],
+    // --help runs nothing by name, so the child gets an empty PATH: no
+    // e2e child can ever reach the host's rsync (#249).
+    env: { PATH: "" },
     stdout: "piped",
     stderr: "piped",
   })
