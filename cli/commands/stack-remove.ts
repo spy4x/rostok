@@ -4,7 +4,12 @@ import { Command } from "@cliffy/command"
 import { join } from "@std/path"
 import { stackRemove, type StackRemoveResult } from "../stack-remove.ts"
 import { readEnvFile } from "../env-files.ts"
-import { normalizeRemotePath, serverDirFor } from "../server-keys.ts"
+import {
+  normalizeRemotePath,
+  pathsNestedOrEqual,
+  serverDirFor,
+  validateRemotePath,
+} from "../server-keys.ts"
 import { expandEnvRefs, resolvePathApps } from "../deploy/env.ts"
 import type { ConfirmFn } from "../prompts.ts"
 
@@ -53,65 +58,99 @@ export async function runStackRemove(
     confirmFn: overrides.confirmFn,
   })
 
-  const { pathApps, volumesPath } = await nextStepPaths(cwd, options.server)
+  const paths = await nextStepPaths(cwd, options.server)
 
   console.log("")
   console.log("Next steps:")
   console.log(`  rostok deploy ${options.server}`)
-  if (pathApps && volumesPath) {
-    const stackDir = `${pathApps}/stacks/${result.stackName}`
+  if (paths.ok) {
+    const stackDir = `${paths.pathApps}/stacks/${result.stackName}`
     console.log(
       `  (stops ${result.stackName}, removes ${stackDir} and keeps everything under ` +
-        `${volumesPath}; \`rostok deploy ${options.server} ` +
+        `${paths.volumesPath}; \`rostok deploy ${options.server} ` +
         `${result.stackName}\` does not remove it.)`,
     )
   } else {
-    const missing = [
-      pathApps ? undefined : "PATH_APPS",
-      volumesPath ? undefined : "VOLUMES_PATH",
-    ].filter((v): v is string => v !== undefined).join(" and ")
+    const reasons: string[] = []
+    if (paths.missing.length > 0) {
+      reasons.push(
+        `${paths.missing.join(" and ")} ${paths.missing.length > 1 ? "aren't" : "isn't"} set`,
+      )
+    }
+    if (paths.invalid.length > 0) {
+      reasons.push(
+        `${paths.invalid.join(" and ")} ${paths.invalid.length > 1 ? "are" : "is"} invalid`,
+      )
+    }
+    const refusal = paths.invalid.length > 0
+      ? `, so deploy would refuse ${paths.invalid.length > 1 ? "them" : "it"}`
+      : ""
     console.log(
       `  (stops ${result.stackName}, removes its directory and keeps its data — the exact ` +
-        `paths aren't shown because ${missing} ${
-          missing.includes(" and ") ? "aren't" : "isn't"
-        } set, or can't be resolved, in ${options.server}'s .env or .env.root; \`rostok deploy ${options.server} ` +
+        `paths aren't shown because ${reasons.join(" and ")} in ${options.server}'s .env ` +
+        `or .env.root${refusal}; \`rostok deploy ${options.server} ` +
         `${result.stackName}\` does not remove it.)`,
     )
   }
   return result
 }
 
+/** Next-step paths deploy would use, or which keys stop them from being shown. */
+type NextStepPaths =
+  | { ok: true; pathApps: string; volumesPath: string }
+  | { ok: false; missing: string[]; invalid: string[] }
+
 /**
- * PATH_APPS and VOLUMES_PATH as deploy would use them (#249): `.env.root`
- * merged with the server's `.env` (server wins), PATH_APPS falling back
- * to deploy's default, `${VAR}` references expanded with deploy's own
- * `expandEnvRefs`, and the result normalised (no trailing or doubled
- * slash). A value that deploy itself would refuse to expand is returned
- * as undefined rather than printed half-resolved.
+ * PATH_APPS and VOLUMES_PATH as deploy would use them (#249), in
+ * resolveDeployEnv's own order: `.env.root` merged with the server
+ * `.env` (server wins), PATH_APPS falling back to deploy's default,
+ * PATH_APPS expanded first and VOLUMES_PATH expanded against that
+ * (not yet normalised) value, both checked with validateRemotePath,
+ * then normalised and checked for nesting. A key deploy would refuse is
+ * reported as invalid and never printed; VOLUMES_PATH missing from both
+ * files is reported as not set.
  */
-async function nextStepPaths(
-  cwd: string,
-  server: string,
-): Promise<{ pathApps?: string; volumesPath?: string }> {
+async function nextStepPaths(cwd: string, server: string): Promise<NextStepPaths> {
   const env: Record<string, string> = {}
   // Later entries win, so the server's own .env overrides .env.root.
   for (const path of [join(cwd, ".env.root"), join(serverDirFor(cwd, server), ".env")]) {
     for (const { key, value } of await readEnvFile(path)) env[key] = value
   }
-  const resolve = (key: string, value: string | undefined): string | undefined => {
-    if (!value) return undefined
+  const missing: string[] = []
+  const invalid: string[] = []
+
+  let pathApps: string | undefined
+  try {
+    pathApps = expandEnvRefs("PATH_APPS", resolvePathApps(env).value, env)
+    validateRemotePath("PATH_APPS", pathApps)
+  } catch {
+    pathApps = undefined
+    invalid.push("PATH_APPS")
+  }
+
+  let volumesPath: string | undefined
+  if (!env.VOLUMES_PATH) {
+    missing.push("VOLUMES_PATH")
+  } else {
     try {
-      return normalizeRemotePath(expandEnvRefs(key, value, env))
+      const expandEnv = pathApps === undefined ? env : { ...env, PATH_APPS: pathApps }
+      volumesPath = expandEnvRefs("VOLUMES_PATH", env.VOLUMES_PATH, expandEnv)
+      validateRemotePath("VOLUMES_PATH", volumesPath, 1)
     } catch {
-      return undefined
+      volumesPath = undefined
+      invalid.push("VOLUMES_PATH")
     }
   }
-  const pathApps = resolve("PATH_APPS", resolvePathApps(env).value)
-  // VOLUMES_PATH may reference PATH_APPS: expand against its final value,
-  // the same order resolveDeployEnv uses.
-  if (pathApps) env.PATH_APPS = pathApps
-  const volumesPath = resolve("VOLUMES_PATH", env.VOLUMES_PATH)
-  return { pathApps, volumesPath }
+
+  if (pathApps === undefined || volumesPath === undefined) {
+    return { ok: false, missing, invalid }
+  }
+  pathApps = normalizeRemotePath(pathApps)
+  volumesPath = normalizeRemotePath(volumesPath)
+  if (pathsNestedOrEqual(pathApps, volumesPath)) {
+    return { ok: false, missing, invalid: ["PATH_APPS", "VOLUMES_PATH"] }
+  }
+  return { ok: true, pathApps, volumesPath }
 }
 
 export const stackRemoveCommand = new Command()
