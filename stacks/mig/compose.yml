@@ -17,7 +17,7 @@ services:
     # only pulls an image that's missing locally, and `--build` is a
     # no-op here since this service has no `build:`) and recreates the
     # container if the digest changed. Watchtower (this repo's
-    # `watchtower` stack, `--interval 86400 --cleanup`) also polls every
+    # `watchtower` stack, daily) also polls every
     # container daily on its own, so a stable release mig's CI publishes
     # goes live within a day with no human step either way.
     # Pin or roll back to a specific release by setting in the server's
