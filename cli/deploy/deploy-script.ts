@@ -6,7 +6,7 @@
 // still let `$(...)`/backticks run inside it and broke outright on an
 // embedded `"` — single quotes suppress both.
 
-import { runRemoteShell, shQuote } from "./exec.ts"
+import { runRemoteShell, shQuote, stripControlChars } from "./exec.ts"
 
 export interface StackConfig {
   name: string
@@ -158,9 +158,10 @@ export function printDeploySummary(results: DeployResult[]): void {
         : result.name
       console.log(`   ✗ ${displayName}`)
       if (result.error) {
-        console.log(
-          `     Error: ${result.error.substring(0, 200)}${result.error.length > 200 ? "..." : ""}`,
-        )
+        // The error is raw `docker compose` output from the server, so
+        // anyone there could plant terminal escape sequences in it (#250).
+        const error = stripControlChars(result.error)
+        console.log(`     Error: ${error.substring(0, 200)}${error.length > 200 ? "..." : ""}`)
       }
     }
   }

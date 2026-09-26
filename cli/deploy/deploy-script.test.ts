@@ -171,3 +171,26 @@ Deno.test(
     }
   },
 )
+
+Deno.test("printDeploySummary strips OSC and CSI escape sequences from a stack's error (#250)", () => {
+  const lines: string[] = []
+  const originalLog = console.log
+  console.log = (...args: unknown[]) => lines.push(args.join(" "))
+  try {
+    printDeploySummary([
+      {
+        name: "web",
+        deployAs: "web",
+        success: false,
+        error: "\x1b]0;PWNED\x07compose \x1b[31mfailed\x9b2J",
+      },
+    ])
+  } finally {
+    console.log = originalLog
+  }
+  const out = lines.join("\n")
+  // deno-lint-ignore no-control-regex
+  assertEquals(/[\x00-\x08\x0b-\x1f\x7f-\x9f]/.test(out), false, JSON.stringify(out))
+  assertStringIncludes(out, "compose")
+  assertStringIncludes(out, "failed")
+})
