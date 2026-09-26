@@ -21,12 +21,44 @@
 // exists with the right owner needs no change, so a user without
 // passwordless sudo can still deploy a stack whose volume folders were
 // prepared once by an admin.
+//
+// (#250) A volume path with a `..` component, or one that doesn't stay
+// strictly inside VOLUMES_PATH, is refused: it would otherwise reach
+// `sudo chown -R` and could take over any folder on the server, such as
+// `/etc`.
 
 import { shQuote } from "./exec.ts"
+import { UserError } from "../errors.ts"
+import { pathComponents } from "../server-keys.ts"
+
+/**
+ * Throw a UserError unless `path` is a real subfolder of `volumesPath`:
+ * no `..` component anywhere, and inside `volumesPath` (never equal to
+ * it) after normalising doubled slashes and `.` segments.
+ */
+function assertInsideVolumesPath(path: string, volumesPath: string): void {
+  const components = path.split("/")
+  if (components.includes("..")) {
+    throw new UserError(
+      `volume path "${path}" contains a ".." component — a compose volume must stay inside ` +
+        `VOLUMES_PATH (${volumesPath}). Fix the stack's compose.yml or the variable it uses.`,
+    )
+  }
+  const base = pathComponents(volumesPath)
+  const target = pathComponents(path)
+  const inside = target.length > base.length && base.every((c, i) => target[i] === c)
+  if (!inside) {
+    throw new UserError(
+      `volume path "${path}" is not a subfolder of VOLUMES_PATH (${volumesPath}). ` +
+        `Fix the stack's compose.yml or the variable it uses.`,
+    )
+  }
+}
 
 /**
  * Extract every `${VOLUMES_PATH}/...` reference from a set of compose
- * files.
+ * files. Throws a UserError for a path that would leave VOLUMES_PATH
+ * (see `assertInsideVolumesPath`), before any command is built from it.
  */
 export function extractVolumePaths(
   composeContents: string[],
@@ -44,6 +76,7 @@ export function extractVolumePaths(
       })
       const volumesPath = env["VOLUMES_PATH"] || "${VOLUMES_PATH}"
       const fullPath = `${volumesPath}/${expandedPath}`
+      assertInsideVolumesPath(fullPath, volumesPath)
       volumePaths.add(fullPath)
     }
   }

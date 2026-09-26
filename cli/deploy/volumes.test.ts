@@ -1,6 +1,7 @@
-import { assertEquals, assertStringIncludes } from "@std/assert"
+import { assertEquals, assertStringIncludes, assertThrows } from "@std/assert"
 import { join } from "@std/path"
 import { extractVolumePaths, generateVolumeCreationScript } from "./volumes.ts"
+import { UserError } from "../errors.ts"
 
 Deno.test("extractVolumePaths finds VOLUMES_PATH references", () => {
   const composeContents = [
@@ -121,6 +122,39 @@ Deno.test("generateVolumeCreationScript: a path with $(), \" and ' never execute
     await Deno.remove(tmp, { recursive: true })
     await Deno.remove(binDir, { recursive: true })
   }
+})
+
+Deno.test("extractVolumePaths refuses a volume path with a .. component", () => {
+  const compose = [`- \${VOLUMES_PATH}/../../etc:/x`]
+  const err = assertThrows(
+    () => extractVolumePaths(compose, { VOLUMES_PATH: "/srv/volumes" }),
+    UserError,
+  )
+  assertStringIncludes(err.message, `"/srv/volumes/../../etc" contains a ".." component`)
+})
+
+Deno.test("extractVolumePaths refuses a .. that only appears after expanding a variable", () => {
+  const compose = [`- \${VOLUMES_PATH}/\${SUB}:/x`]
+  assertThrows(
+    () => extractVolumePaths(compose, { VOLUMES_PATH: "/srv/volumes", SUB: "app/../../../etc" }),
+    UserError,
+    `contains a ".." component`,
+  )
+})
+
+Deno.test("extractVolumePaths refuses a path that normalises to VOLUMES_PATH itself", () => {
+  const compose = [`- \${VOLUMES_PATH}/.:/x`]
+  assertThrows(
+    () => extractVolumePaths(compose, { VOLUMES_PATH: "/srv/volumes" }),
+    UserError,
+    `is not a subfolder of VOLUMES_PATH (/srv/volumes)`,
+  )
+})
+
+Deno.test("extractVolumePaths accepts a path with . and doubled slashes that stays inside", () => {
+  const compose = [`- \${VOLUMES_PATH}/./app//data:/x`]
+  const paths = extractVolumePaths(compose, { VOLUMES_PATH: "/srv/volumes" })
+  assertEquals(paths, ["/srv/volumes/./app//data"])
 })
 
 /**
