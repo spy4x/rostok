@@ -291,14 +291,24 @@ export default {
 } satisfies StackMeta
 ```
 
-Deploy never creates, mkdirs or chowns a file mount. It only checks
-that the file already exists as a regular file, before it changes
-anything else on the server, and fails with a clear message otherwise.
-It never creates the file for you either: Docker would mount a folder
-in place of a missing file, so deploy the stack that writes the file
-(here Traefik) first. Deploy reads `fileMounts` from the project's own
-`stacks/<name>/+meta.ts` when there is one, otherwise from the bundled
-catalog.
+Deploy never creates a file mount and never targets it with mkdir or
+chown. Early in the deploy, in a read-only call, it checks that each
+file mount the compose files use is already a regular file. It stops
+with a clear message otherwise, before stale cleanup, file sync or any
+container change. By then only the preflight has written to the server:
+it creates `PATH_APPS` and `VOLUMES_PATH` when they are missing. Deploy
+never creates the file for you either: Docker would mount a folder in
+place of a missing file, so deploy the stack that writes the file (here
+Traefik) first. If the stack is already in `config.json`, deploy only
+Traefik with `rostok deploy <server> traefik`, let it start, then deploy
+everything.
+
+Deploy reads `fileMounts` from the project's own `stacks/<name>/+meta.ts`
+when there is one, otherwise from the bundled catalog. The installed
+rostok CLI imports a project's own `+meta.ts` without the project's
+`deno.jsonc`, so a bare `"@rostok/cli"` import works there only as
+`import type`; import values such as `generatePassword` from
+`"jsr:@rostok/cli/lib"`.
 
 ---
 

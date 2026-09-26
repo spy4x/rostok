@@ -63,6 +63,9 @@ Create a room, share the link. Participants join in browser — no install.
 
 The `mirotalk-cert-extract` sidecar mounts Traefik's
 `${VOLUMES_PATH}/traefik/letsencrypt/acme.json`. `+meta.ts` declares it
-in `fileMounts`, so deploy only checks that the file exists and never
-creates a folder in its place. On a new server, deploy Traefik first and
-let it start once, so it writes `acme.json`; then deploy this stack.
+in `fileMounts`, so deploy checks that the file exists before it changes
+any stack, stops if it doesn't, and never creates a folder in its place.
+On a new server, deploy Traefik first and let it start once, so it
+writes `acme.json`. If this stack is already in `config.json`, run
+`rostok deploy <server> traefik` for that first deploy, then deploy the
+whole server.
