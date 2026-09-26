@@ -36,6 +36,7 @@ import { reencryptAfterWrite } from "./reencrypt.ts"
 import { type EnvEntry, readEnvFile, writeEnvFilePreservingFormat } from "./env-files.ts"
 import { type PromptFn, promptValue, withKeyLabel } from "./prompts.ts"
 import { tryCaptureStdout } from "./shell.ts"
+import { stripControlChars } from "./deploy/exec.ts"
 import {
   detectTimezone as detectTimezoneFromSources,
   remoteTimedatectlTimezone,
@@ -44,6 +45,7 @@ import {
   DEFAULT_PATH_APPS,
   parseSshAddress,
   serverDirFor,
+  SSH_USER_PATTERN,
   sshArgs,
   validateRemotePath,
   validateServerName,
@@ -482,6 +484,9 @@ function sanitizeTargetForLog(s: string): string {
   return s.replace(/[\x00-\x1f\x7f]/g, "")
 }
 
+/** A uid or gid as `id` and `getent` print it: digits only. */
+const NUMERIC_ID_PATTERN = /^\d{1,10}$/
+
 /**
  * Probe `target` once over SSH for the docker group GID (`getent group
  * docker`), the SSH user's `id -u` / `id -g` / `id -un`. Best-effort: any
@@ -563,7 +568,9 @@ export async function probeServer(
     }
   }
   if (!success) {
-    const firstLine = stderr.trim().split("\n")[0] ?? ""
+    // Remote stderr: the server can shape it into terminal escape
+    // sequences, so strip them before it reaches the reason (#250).
+    const firstLine = stripControlChars(stderr.trim().split("\n")[0] ?? "").trim()
     return {
       reason: `couldn't probe ${sanitizeTargetForLog(target)} over SSH: ${
         describeSshFailure(firstLine)
@@ -578,22 +585,47 @@ export async function probeServer(
     values[line.slice(0, eq).trim()] = line.slice(eq + 1).trim()
   }
 
-  const sshUid = values.SSH_UID
-  const sshGid = values.SSH_GID
+  // The server controls every value here, and each one becomes a .env
+  // default (#250 review). Anything that isn't a plain number or a valid
+  // user name is dropped and named in the reason, never written.
+  const invalid: string[] = []
+  const numeric = (key: string): string | undefined => {
+    const v = values[key]
+    if (!v) return undefined
+    if (NUMERIC_ID_PATTERN.test(v)) return v
+    invalid.push(key)
+    return undefined
+  }
+  const dockerGid = numeric("DOCKER_GID")
+  const sshUid = numeric("SSH_UID")
+  const sshGid = numeric("SSH_GID")
+  let sshUser = values.SSH_USER || undefined
+  if (sshUser !== undefined && !SSH_USER_PATTERN.test(sshUser)) {
+    invalid.push("SSH_USER")
+    sshUser = undefined
+  }
   const isRoot = sshUid === "0"
   const puid = sshUid ? (isRoot ? "1000" : sshUid) : undefined
   const pgid = sshGid ? (isRoot ? "1000" : sshGid) : undefined
-  const sshUser = values.SSH_USER || undefined
 
-  if (!values.DOCKER_GID) {
-    return {
-      puid,
-      pgid,
-      sshUser,
-      reason: `docker group not found on ${sanitizeTargetForLog(target)} (is docker installed?)`,
-    }
+  const reasons: string[] = []
+  if (invalid.length > 0) {
+    reasons.push(
+      `${sanitizeTargetForLog(target)} returned an invalid ${invalid.join("/")}, ignored`,
+    )
   }
-  return { dockerGroupId: values.DOCKER_GID, puid, pgid, sshUser }
+  if (!dockerGid && !invalid.includes("DOCKER_GID")) {
+    reasons.push(
+      `docker group not found on ${sanitizeTargetForLog(target)} (is docker installed?)`,
+    )
+  }
+  return {
+    dockerGroupId: dockerGid,
+    puid,
+    pgid,
+    sshUser,
+    ...(reasons.length > 0 ? { reason: reasons.join("; ") } : {}),
+  }
 }
 
 /**

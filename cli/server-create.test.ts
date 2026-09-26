@@ -547,6 +547,52 @@ Deno.test("probeServer: strips control characters from the target before it reac
   assertStringIncludes(result.reason ?? "", "192.0.2.1evil")
 })
 
+// #250: ssh's stderr comes from the remote side, so a hostile server
+// could send escape sequences through the probe's failure reason.
+const ESCAPE_SSH = `#!/bin/sh
+if [ -n "$ROSTOK_FAKE_SSH_DEPTH" ]; then exit 1; fi
+ROSTOK_FAKE_SSH_DEPTH=1
+export ROSTOK_FAKE_SSH_DEPTH
+printf 'banner \\033]0;PWNED\\007\\033[2Jgone\\n' >&2
+exit 255
+`
+
+Deno.test("probeServer: strips OSC and CSI escape sequences from ssh's stderr in the reason", async () => {
+  await withFakeSsh(ESCAPE_SSH, async () => {
+    const result = await probeServer("root@192.0.2.1")
+    const reason = result.reason ?? ""
+    // deno-lint-ignore no-control-regex
+    assertEquals(/[\x00-\x1f\x7f-\x9f]/.test(reason), false, JSON.stringify(reason))
+    assertStringIncludes(reason, "banner")
+    assertStringIncludes(reason, "gone")
+  })
+})
+
+// #250 review: a successful probe's values become .env defaults, so a
+// hostile server must not get anything but a number or a user name in.
+const HOSTILE_VALUES_SSH = `#!/bin/sh
+if [ -n "$ROSTOK_FAKE_SSH_DEPTH" ]; then exit 1; fi
+ROSTOK_FAKE_SSH_DEPTH=1
+export ROSTOK_FAKE_SSH_DEPTH
+printf 'DOCKER_GID=988\\033]0;PWNED\\007\\n'
+printf 'SSH_UID=1000;x\\n'
+echo "SSH_GID=1000"
+printf 'SSH_USER=bob\\033[2J\\n'
+`
+
+Deno.test("probeServer: refuses a non-numeric gid or uid and an invalid user name from the server", async () => {
+  await withFakeSsh(HOSTILE_VALUES_SSH, async () => {
+    const result = await probeServer("root@192.0.2.1")
+    assertEquals(result.dockerGroupId, undefined)
+    assertEquals(result.puid, undefined)
+    assertEquals(result.pgid, "1000")
+    assertEquals(result.sshUser, undefined)
+    assertStringIncludes(result.reason ?? "", "invalid DOCKER_GID/SSH_UID/SSH_USER, ignored")
+    // deno-lint-ignore no-control-regex
+    assertEquals(/[\x00-\x1f\x7f-\x9f]/.test(result.reason ?? ""), false, result.reason)
+  })
+})
+
 Deno.test("server create uses the SSH probe's docker GID as the default", async () => {
   await withFakeSsh(OK_SSH, () =>
     withTmpDir(async (dir) => {

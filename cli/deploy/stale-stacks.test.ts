@@ -14,6 +14,14 @@ import { generateStaleStackCleanupScript } from "./stale-stacks.ts"
 /** `sh` or `zsh` — the script must behave identically under both: ssh invokes it through the remote user's own login shell, which is often zsh, not sh. */
 type FakeShell = "sh" | "zsh"
 
+/**
+ * Argv for running `script` under `shell`. zsh gets `-f` so it never
+ * reads the developer's own `~/.zshenv`, which could change the result.
+ */
+function shellArgs(shell: FakeShell, script: string): string[] {
+  return shell === "zsh" ? ["-f", "-c", script] : ["-c", script]
+}
+
 async function runWithFakeDocker(
   script: string,
   opts: {
@@ -22,6 +30,8 @@ async function runWithFakeDocker(
     /** Served for the broad existence-only scan (phase 2 — bare `working_dir` lines). */
     broadOutput?: string
     failCompose?: boolean
+    /** A POSIX sh snippet the fake runs first on every `compose` call (binaries by absolute path). */
+    onCompose?: string
     /**
      * `docker compose -p <project> down` fails only for these project
      * names (others succeed) — lets a test give two stale stacks their
@@ -36,7 +46,7 @@ async function runWithFakeDocker(
     /** Runs the script under this shell instead of `sh` — pass "zsh" to prove the same behavior under the remote's likely login shell. */
     shell?: FakeShell
   } = {},
-): Promise<{ log: string[]; success: boolean; stdout: string }> {
+): Promise<{ log: string[]; success: boolean; stdout: string; stderr: string }> {
   const binDir = await Deno.makeTempDir({ prefix: "rostok-fake-docker-bin-" })
   const logPath = join(binDir, "log.txt")
   const exactOutputPath = join(binDir, "exact-output.txt")
@@ -64,6 +74,7 @@ if [ "$1" = "ps" ]; then
   case "$*" in
     *"working_dir="*)
       if ${opts.failPsExact ? "true" : "false"}; then
+        echo "fake docker: cannot connect to the daemon" >&2
         exit 1
       fi
       cat ${JSON.stringify(exactOutputPath)}
@@ -77,6 +88,7 @@ if [ "$1" = "ps" ]; then
       ;;
   esac
 elif [ "$1" = "compose" ]; then
+${opts.onCompose ?? ""}
   if ${opts.failCompose ? "true" : "false"}; then
     exit 1
   fi
@@ -89,8 +101,9 @@ fi
     const previousPath = Deno.env.get("PATH") ?? ""
     Deno.env.set("PATH", `${binDir}:${previousPath}`)
     try {
-      const proc = new Deno.Command(opts.shell ?? "sh", {
-        args: ["-c", script],
+      const shell = opts.shell ?? "sh"
+      const proc = new Deno.Command(shell, {
+        args: shellArgs(shell, script),
         stdout: "piped",
         stderr: "piped",
       })
@@ -104,7 +117,12 @@ fi
         }
       }
       const log = (await Deno.readTextFile(logPath)).split("\n").filter((l) => l.length > 0)
-      return { log, success: out.success, stdout: new TextDecoder().decode(out.stdout) }
+      return {
+        log,
+        success: out.success,
+        stdout: new TextDecoder().decode(out.stdout),
+        stderr: new TextDecoder().decode(out.stderr),
+      }
     } finally {
       Deno.env.set("PATH", previousPath)
     }
@@ -424,7 +442,7 @@ fi
     Deno.env.set("PATH", `${binDir}:${previousPath}`)
     try {
       const proc = new Deno.Command(shell, {
-        args: ["-c", script],
+        args: shellArgs(shell, script),
         stdout: "piped",
         stderr: "piped",
       })
@@ -501,7 +519,7 @@ fi
     Deno.env.set("PATH", `${binDir}:${previousPath}`)
     try {
       const proc = new Deno.Command("sh", {
-        args: ["-c", script],
+        args: shellArgs("sh", script),
         stdout: "piped",
         stderr: "piped",
       })
@@ -602,7 +620,7 @@ fi
     Deno.env.set("PATH", `${binDir}:${previousPath}`)
     try {
       const proc = new Deno.Command(shell, {
-        args: ["-c", script],
+        args: shellArgs(shell, script),
         stdout: "piped",
         stderr: "piped",
       })
@@ -966,7 +984,7 @@ Deno.test("generateStaleStackCleanupScript: removing the phase-2 already-handled
       '    case "$rel" in\n' +
         "      ''|*[!A-Za-z0-9_-]*) ;;\n" +
         "      *)\n" +
-        '        if [ -d "$STACKS_DIR/$rel" ]; then continue; fi\n' +
+        '        if [ "$IN_STACKS" = 1 ] && [ -d "./$rel" ]; then continue; fi\n' +
         "        ;;\n" +
         "    esac\n",
       "",
@@ -1031,6 +1049,220 @@ Deno.test("generateStaleStackCleanupScript: a $(...) in VOLUMES_PATH is printed,
     assertStringIncludes(stdout, `(its folder was already gone). Data under '${volumesPath}' kept.`)
     const injected = await Deno.stat(marker).then(() => true, () => false)
     assertEquals(injected, false)
+  } finally {
+    await Deno.remove(pathApps, { recursive: true })
+  }
+})
+
+/** Absolute path of `name` on PATH, so a fake never calls a real binary by name. */
+function resolveBin(name: string): string {
+  for (const dir of (Deno.env.get("PATH") ?? "").split(":")) {
+    const candidate = join(dir, name)
+    try {
+      if (Deno.statSync(candidate).isFile) return candidate
+    } catch {
+      // not in this PATH entry
+    }
+  }
+  throw new Error(`${name} not found on PATH`)
+}
+
+/** `docker compose` calls in a fake-docker log, without the `(cwd=...)` suffix. */
+function composeCalls(log: string[]): string[] {
+  return log.filter((l) => l.startsWith("compose ")).map((l) => l.replace(/ \(cwd=.*\)$/, ""))
+}
+
+/**
+ * A stale stack's only container carries `label` as its compose
+ * project (#250): the cleanup must never run `compose down` for it,
+ * must report the container in one line, must keep the stale folder,
+ * and must mention the stack once, although phase 2's scan also lists
+ * the folder (real docker returns every container's working_dir).
+ */
+async function assertSkippedAndKept(
+  shell: FakeShell,
+  label: string,
+  active: { names: string[]; projects?: string[] },
+  reason: string,
+): Promise<void> {
+  const pathApps = await makeStacksDir([...active.names, "oldstack"])
+  try {
+    const staleDir = join(pathApps, "stacks", "oldstack")
+    const script = generateStaleStackCleanupScript(
+      active.names,
+      pathApps,
+      "/srv/volumes",
+      active.projects,
+    )
+    const { log, success, stdout } = await runWithFakeDocker(script, {
+      exactOutput: `abc123|${label}\n`,
+      broadOutput: `${staleDir}\n`,
+      shell,
+    })
+    assert(success, `a skip is not a failure, stdout:\n${stdout}`)
+    assertEquals(composeCalls(log), [], `no compose call may run, log:\n${log.join("\n")}`)
+    const lines = stdout.split("\n").filter((l) => l.includes("'oldstack'"))
+    assertEquals(lines.length, 1, `the stack must be reported once, stdout:\n${stdout}`)
+    assertStringIncludes(lines[0], "skipped container abc123 of stale stack 'oldstack'")
+    assertStringIncludes(lines[0], reason)
+    assertStringIncludes(lines[0], "docker inspect abc123")
+    assert(Deno.statSync(staleDir).isDirectory, "the stale folder must be kept")
+  } finally {
+    await Deno.remove(pathApps, { recursive: true })
+  }
+}
+
+for (const shell of ["sh", "zsh"] as const) {
+  Deno.test(`generateStaleStackCleanupScript: a stale container labelled with an active stack's project never stops it (#250, ${shell})`, () =>
+    assertSkippedAndKept(
+      shell,
+      "traefik",
+      { names: ["traefik"] },
+      "its project 'traefik' belongs to an active stack",
+    ))
+
+  Deno.test(`generateStaleStackCleanupScript: a label "Traefik" never stops the active "traefik", which Compose would lowercase to (#250, ${shell})`, () =>
+    assertSkippedAndKept(
+      shell,
+      "Traefik",
+      { names: ["traefik"] },
+      "its project label 'Traefik' is not a valid project name",
+    ))
+
+  Deno.test(`generateStaleStackCleanupScript: a deployAs alias in activeProjects is never stopped (#250, ${shell})`, () =>
+    assertSkippedAndKept(
+      shell,
+      "edge",
+      { names: ["proxy"], projects: ["edge"] },
+      "its project 'edge' belongs to an active stack",
+    ))
+
+  Deno.test(`generateStaleStackCleanupScript: a label "EDGE" never stops the active alias "edge" (#250, ${shell})`, () =>
+    assertSkippedAndKept(
+      shell,
+      "EDGE",
+      { names: ["proxy"], projects: ["edge"] },
+      "its project label 'EDGE' is not a valid project name",
+    ))
+}
+
+Deno.test("generateStaleStackCleanupScript: a partly skipped stack stops its own project, keeps its folder and prints no Removed/Stopped (#250)", async () => {
+  const pathApps = await makeStacksDir(["traefik", "oldstack"])
+  try {
+    const staleDir = join(pathApps, "stacks", "oldstack")
+    const script = generateStaleStackCleanupScript(["traefik"], pathApps, "/srv/volumes")
+    const { log, success, stdout } = await runWithFakeDocker(script, {
+      exactOutput: `abc123|oldstack\ndef456|traefik\n`,
+      broadOutput: `${staleDir}\n${staleDir}\n`,
+    })
+    assert(success, `a skip is not a failure, stdout:\n${stdout}`)
+    assertEquals(composeCalls(log), ["compose -p oldstack down --remove-orphans"])
+    assertStringIncludes(stdout, "skipped container def456 of stale stack 'oldstack'")
+    assertEquals(stdout.includes("Removed stale stack"), false, stdout)
+    assertEquals(stdout.includes("Stopped stale stack"), false, stdout)
+    assert(Deno.statSync(staleDir).isDirectory, "the stale folder must be kept")
+  } finally {
+    await Deno.remove(pathApps, { recursive: true })
+  }
+})
+
+Deno.test("generateStaleStackCleanupScript: an orphaned container listed twice by phase 2 reports its stack once (#250)", async () => {
+  const pathApps = await makeStacksDir(["traefik"])
+  try {
+    const goneDir = join(pathApps, "stacks", "gone")
+    const script = generateStaleStackCleanupScript(["traefik"], pathApps, "/srv/volumes")
+    const { stdout } = await runWithFakeDocker(script, {
+      exactOutput: `abc123|gone\n`,
+      broadOutput: `${goneDir}\n${goneDir}\n`,
+    })
+    const lines = stdout.split("\n").filter((l) => l.includes("'gone'"))
+    assertEquals(lines.length, 1, `the stack must be reported once, stdout:\n${stdout}`)
+  } finally {
+    await Deno.remove(pathApps, { recursive: true })
+  }
+})
+
+Deno.test("generateStaleStackCleanupScript: protection matches whole project names, so traefik-old and old-traefik still stop next to an active traefik (#250)", async () => {
+  const pathApps = await makeStacksDir(["traefik", "oldstack"])
+  try {
+    const script = generateStaleStackCleanupScript(["traefik"], pathApps, "/srv/volumes")
+    const { log, success, stdout } = await runWithFakeDocker(script, {
+      exactOutput: `abc123|traefik-old\ndef456|old-traefik\n`,
+    })
+    assert(success, stdout)
+    assertEquals(composeCalls(log), [
+      "compose -p traefik-old down --remove-orphans",
+      "compose -p old-traefik down --remove-orphans",
+    ])
+  } finally {
+    await Deno.remove(pathApps, { recursive: true })
+  }
+})
+
+Deno.test("generateStaleStackCleanupScript: stacks/ swapped for a symlink during compose down never redirects rm -rf (#250)", async () => {
+  const pathApps = await makeStacksDir(["oldstack"])
+  const decoy = await makeStacksDir(["oldstack"])
+  try {
+    const stacks = join(pathApps, "stacks")
+    const moved = join(pathApps, "stacks-real")
+    const mv = resolveBin("mv")
+    const ln = resolveBin("ln")
+    // The first compose call moves the real stacks/ away and puts a
+    // symlink to the decoy in its place.
+    const onCompose = `  if [ ! -L ${JSON.stringify(stacks)} ]; then
+    ${mv} ${JSON.stringify(stacks)} ${JSON.stringify(moved)}
+    ${ln} -s ${JSON.stringify(join(decoy, "stacks"))} ${JSON.stringify(stacks)}
+  fi`
+    const script = generateStaleStackCleanupScript([], pathApps, "/srv/volumes")
+    const { stdout } = await runWithFakeDocker(script, {
+      exactOutput: `abc123|oldstack\n`,
+      onCompose,
+    })
+    let decoyKept = false
+    try {
+      decoyKept = Deno.statSync(join(decoy, "stacks", "oldstack")).isDirectory
+    } catch {
+      // removed: decoyKept stays false
+    }
+    assert(
+      decoyKept,
+      `rm -rf followed the swapped-in symlink into the decoy, stdout:\n${stdout}`,
+    )
+    assertEquals([...Deno.readDirSync(moved)].map((e) => e.name), [])
+  } finally {
+    await Deno.remove(pathApps, { recursive: true })
+    await Deno.remove(decoy, { recursive: true })
+  }
+})
+
+Deno.test("generateStaleStackCleanupScript: a symlinked stacks/ directory stops the script before any docker call or rm (#250)", async () => {
+  const pathApps = await Deno.makeTempDir({ prefix: "rostok-stale-stacks-test-" })
+  const target = await makeStacksDir(["oldstack"])
+  try {
+    await Deno.symlink(join(target, "stacks"), join(pathApps, "stacks"))
+    const script = generateStaleStackCleanupScript([], pathApps, "/srv/volumes")
+    const { log, success, stdout } = await runWithFakeDocker(script)
+    assertEquals(success, false, `a symlinked stacks/ must fail the script, stdout:\n${stdout}`)
+    assertStringIncludes(stdout, "is a symlink, refusing to clean up stale stacks")
+    assertEquals(log, [], "no docker command may run")
+    assertEquals(
+      [...Deno.readDirSync(join(target, "stacks"))].map((e) => e.name),
+      ["oldstack"],
+      "the symlink's target must be left untouched",
+    )
+  } finally {
+    await Deno.remove(pathApps, { recursive: true })
+    await Deno.remove(target, { recursive: true })
+  }
+})
+
+Deno.test("generateStaleStackCleanupScript: phase 1's failed docker ps passes its own error through to stderr (#250)", async () => {
+  const pathApps = await makeStacksDir(["traefik", "oldstack"])
+  try {
+    const script = generateStaleStackCleanupScript(["traefik"], pathApps, "/srv/volumes")
+    const { success, stderr } = await runWithFakeDocker(script, { failPsExact: true })
+    assertEquals(success, false)
+    assertStringIncludes(stderr, "fake docker: cannot connect to the daemon")
   } finally {
     await Deno.remove(pathApps, { recursive: true })
   }

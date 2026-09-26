@@ -572,6 +572,27 @@ Deno.test("runDeploy: a full deploy's stale-stack cleanup uses the FULL config.s
   }
 })
 
+Deno.test("runDeploy: the stale-stack cleanup protects a deployAs alias's compose project (#250)", async () => {
+  const f = await setupRunDeployFixture()
+  try {
+    await writeLocalStack(f.projectDir, "alpha")
+    await writeRunDeployServer(f.projectDir, ["alpha"])
+    await Deno.writeTextFile(
+      join(f.projectDir, "servers", "test", "config.json"),
+      JSON.stringify({ stacks: [{ name: "alpha", deployAs: "alpha-prod" }] }),
+    )
+
+    await runDeploy({ cwd: f.projectDir, server: "test" }, f.io)
+
+    const cleanupScript = f.remote.shellScripts.find((s) => s.includes("stop_and_remove"))
+    assert(cleanupScript, "expected a stale-cleanup script")
+    const protectArm = cleanupScript!.slice(cleanupScript!.indexOf(`case " $proj " in`))
+    assertStringIncludes(protectArm, "' alpha-prod '")
+  } finally {
+    await teardownRunDeployFixture(f)
+  }
+})
+
 Deno.test("runDeploy: hooks get the FULL config.stacks list even during a single-stack deploy, never the filtered one (#234)", async () => {
   // buildHookEnv (hooks.ts) only stays silent about another stack's own
   // key when that stack is in HookContext.installedStackNames — if
