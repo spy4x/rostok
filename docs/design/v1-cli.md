@@ -21,7 +21,7 @@ Three personas, served by one CLI:
 | **Multi-server homelabber** — 3 boxes, 20+ services | Cross-server wiring, dependency graph |
 | **Small company** — replaces SaaS with self-hosted | SSO, backups, monitoring baked in; sensible security defaults |
 
-Big companies out of scope. The README carries an explicit table so each
+Big companies out of scope. `docs/how-it-works.md` carries an explicit table so each
 reader knows the tool is for them.
 
 ---
@@ -258,8 +258,7 @@ imports (`import { type } from "arktype"`).
         ├── config.json  # which stacks (CLI-managed, committed)
         ├── .env         # CLI-managed per-server vars (gitignored)
         ├── .env.age     # encrypted — safe to commit
-        ├── configs/     # per-service overrides (committed)
-        └── README.md
+        └── configs/     # per-service overrides (committed)
 ```
 
 **`.env.age` and `.env.root.age` are safe to commit.** They're age64-
@@ -423,8 +422,9 @@ simpler than a global key across projects.
 
 ## 9. Documentation
 
-- `README.md` — personas table, quickstart (`$ rostok`), command
-  reference, link to `docs/design/v1-cli.md`.
+- `README.md` — pitch, quickstart (`$ rostok`), links to the docs below.
+- `docs/how-it-works.md` — personas table and how the pieces fit.
+- `docs/commands.md` — command and flag reference.
 - `docs/design/v1-cli.md` — this file.
 - `docs/design/v2-cli.md` — v2 backlog.
 - `docs/design/v2-website.md` — future static site idea.

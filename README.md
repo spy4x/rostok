@@ -38,8 +38,9 @@ deploy code run my machines, and
   `.env.age` with age, in-process, with no extra binary to install.
 - **Deploys over SSH.** `rostok deploy` rsyncs a server's files and runs
   `docker compose` there. No agent to install on the server.
-- **Checked inputs.** Each stack's `+meta.ts` declares its variables; the
-  wizard prompts for each one and rejects values that don't fit.
+- **Sensible defaults.** Each stack's `+meta.ts` declares its variables with
+  defaults; the wizard asks only for what has none, and checks the server's
+  name, SSH address and paths before writing anything.
 - **Standard parts.** The CLI is a TypeScript ES module on JSR that runs on
   Deno; every stack is an ordinary Docker Compose file you can read and change.
 
