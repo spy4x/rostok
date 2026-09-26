@@ -1295,20 +1295,24 @@ for (const shell of ["sh", "zsh"] as const) {
       const staleDir = join(pathApps, "stacks", "oldstack")
       const script = generateStaleStackCleanupScript(["traefik"], pathApps, "/srv/volumes")
       const { log, success, stdout } = await runWithFakeDocker(script, {
-        exactOutput: `abc123|oldstack\n`,
+        exactOutput: `abc123|oldstack-alias\n`,
         broadOutput: `${staleDir}\n`,
         leftoverOutput: `abc123\n`,
         shell,
       })
       assert(success, `a leftover is reported, not a failure, stdout:\n${stdout}`)
+      const downAt = log.findIndex((l) => l.startsWith("compose -p oldstack-alias down "))
+      const checkAt = log.findIndex((l) =>
+        l.startsWith("ps -aq --filter label=com.docker.compose.project=oldstack-alias ")
+      )
       assert(
-        log.some((l) => l.startsWith("ps -aq --filter label=com.docker.compose.project=oldstack ")),
+        downAt >= 0 && checkAt > downAt,
         `expected a check by project label after down, log:\n${log.join("\n")}`,
       )
       const lines = stackLines(stdout, "oldstack")
       assertEquals(lines.length, 1, `the stack must be reported once, stdout:\n${stdout}`)
       assertStringIncludes(lines[0], "skipped container abc123 of stale stack 'oldstack'")
-      assertStringIncludes(lines[0], "still there after 'docker compose -p oldstack down'")
+      assertStringIncludes(lines[0], "still there after 'docker compose -p oldstack-alias down'")
       assertStringIncludes(lines[0], "Its folder was kept.")
       assertStringIncludes(lines[0], "docker inspect abc123")
       assertEquals(stdout.includes("Removed stale stack"), false, stdout)
