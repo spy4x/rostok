@@ -8,7 +8,7 @@
  * would ship a binary whose `rostok --version` prints the old number.
  *
  * ```bash
- * CI_COMMIT_TAG=v1.2.1 deno run -R --allow-env=CI_COMMIT_TAG scripts/release/+main.ts
+ * CI_COMMIT_TAG=v1.2.1 deno run --allow-read=deno.jsonc,cli/version.ts --allow-env=CI_COMMIT_TAG scripts/release/+main.ts
  * ```
  *
  * @module

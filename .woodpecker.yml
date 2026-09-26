@@ -29,7 +29,7 @@ steps:
   # event only (never push or pull_request), so push and pull-request builds
   # cannot read it. A tag build runs the tagged commit's own copy of this
   # file, so whoever can push a `v*` tag can publish and can read the token
-  # (see "Publish flow" in AGENTS.md). `$$` stops Woodpecker substituting the
+  # (see "The publish token" in AGENTS.md). `$$` stops Woodpecker substituting the
   # variable itself; the shell reads the secret.
   publish:
     # Pinned by digest: this step holds the token, so a re-pushed image tag

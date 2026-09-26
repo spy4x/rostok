@@ -37,7 +37,12 @@ Deno.test("deno.jsonc and cli/version.ts declare the same version", async () => 
 
 Deno.test("the guard exits 1 on a tag that does not match the version", async () => {
   const { code, stderr } = await new Deno.Command(Deno.execPath(), {
-    args: ["run", "-R", "--allow-env=CI_COMMIT_TAG", import.meta.resolve("./+main.ts")],
+    args: [
+      "run",
+      "--allow-read=deno.jsonc,cli/version.ts",
+      "--allow-env=CI_COMMIT_TAG",
+      import.meta.resolve("./+main.ts"),
+    ],
     env: { CI_COMMIT_TAG: "v0.0.0", NO_COLOR: "1" },
     stdout: "null",
     stderr: "piped",
