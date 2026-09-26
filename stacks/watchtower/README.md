@@ -5,7 +5,9 @@ Automatic Docker container updates.
 ## Features
 
 - Monitors Docker Hub for image updates
-- Auto-pulls and restarts containers with new images
+- Auto-pulls and restarts containers with new images, including containers stuck
+  in a restart loop (`--include-restarting`), so a crash caused by a broken image
+  heals once upstream publishes a fix
 - Configurable schedules
 - Notification support
 
