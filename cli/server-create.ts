@@ -36,6 +36,7 @@ import { reencryptAfterWrite } from "./reencrypt.ts"
 import { type EnvEntry, readEnvFile, writeEnvFilePreservingFormat } from "./env-files.ts"
 import { type PromptFn, promptValue, withKeyLabel } from "./prompts.ts"
 import { tryCaptureStdout } from "./shell.ts"
+import { stripControlChars } from "./deploy/exec.ts"
 import {
   detectTimezone as detectTimezoneFromSources,
   remoteTimedatectlTimezone,
@@ -563,7 +564,9 @@ export async function probeServer(
     }
   }
   if (!success) {
-    const firstLine = stderr.trim().split("\n")[0] ?? ""
+    // Remote stderr: the server can shape it into terminal escape
+    // sequences, so strip them before it reaches the reason (#250).
+    const firstLine = stripControlChars(stderr.trim().split("\n")[0] ?? "").trim()
     return {
       reason: `couldn't probe ${sanitizeTargetForLog(target)} over SSH: ${
         describeSshFailure(firstLine)
