@@ -82,8 +82,8 @@ export function generateStaleStackCleanupScript(
   const protectedPattern = protectedProjects.map((p) => shQuote(` ${p} `)).join("|")
   const protectArm = protectedPattern.length > 0
     ? `    case " $proj " in\n      ${protectedPattern})\n` +
-      `        echo "skipped project '$proj' for stale stack '$name': an active stack uses it"\n` +
-      `        continue\n        ;;\n    esac`
+      `        skip_container "$id" "its project '$proj' belongs to an active stack"\n` +
+      `        skipped=1\n        continue\n        ;;\n    esac`
     : ""
 
   const lines = [
@@ -107,6 +107,20 @@ export function generateStaleStackCleanupScript(
     '  echo "FAILED: $STACKS_DIR is a symlink, refusing to clean up stale stacks."',
     "  exit 1",
     "fi",
+    // Enter the real directory once (#250 review), so every later
+    // existence check and `rm` works on `./<name>` relative to it.
+    // Swapping stacks/ for a symlink while a `compose down` runs can then
+    // no longer redirect an `rm -rf` into the symlink's target. A missing
+    // STACKS_DIR (a fresh server) leaves IN_STACKS=0: no folder exists to
+    // check or remove, and the cwd is never treated as STACKS_DIR.
+    "IN_STACKS=0",
+    'if [ -d "$STACKS_DIR" ]; then',
+    '  if ! cd -P -- "$STACKS_DIR"; then',
+    '    echo "FAILED: cannot enter $STACKS_DIR, refusing to clean up stale stacks."',
+    "    exit 1",
+    "  fi",
+    "  IN_STACKS=1",
+    "fi",
     // Quoted once here, then only ever expanded as "$VOLUMES_SHOWN", so a
     // `$(...)` in the value is printed, never run.
     `VOLUMES_SHOWN=${shQuote(volumesPath)}`,
@@ -118,6 +132,22 @@ export function generateStaleStackCleanupScript(
     // line (a newline) to the operator's terminal.
     "printable() {",
     "  printf '%s' \"$1\" | tr -c 'A-Za-z0-9._ -' '?'",
+    "}",
+    "",
+    // Whether STACKS_DIR holds an entry `$1` (a symlink counts, even a
+    // broken one). Always relative to the directory entered above.
+    "has_entry() {",
+    '  [ "$IN_STACKS" = 1 ] || return 1',
+    '  [ -e "./$1" ] || [ -L "./$1" ]',
+    "}",
+    "",
+    // One line for a container the cleanup refuses to stop (#250 review):
+    // its ID, why, and what the operator can do by hand. The stack's
+    // folder is kept, so the next deploy finds the stack again.
+    "skip_container() {",
+    `  echo "skipped container $(printable "$1") of stale stack '$name': $2. Its folder was ` +
+    `kept. Check it with 'docker inspect $(printable "$1")' and remove it by hand if it is a ` +
+    `leftover."`,
     "}",
     "",
     // A stop-and-remove for one stack name, called for every stale name
@@ -177,7 +207,7 @@ export function generateStaleStackCleanupScript(
     "--format '{{.ID}}|{{.Label \"com.docker.compose.project\"}}')",
     "  ps_rc=$?",
     '  if [ "$ps_rc" -ne 0 ]; then',
-    '    if [ -e "$dir" ] || [ -L "$dir" ]; then',
+    '    if has_entry "$name"; then',
     `      echo "FAILED to list containers for stale stack '$name': its folder was left in place."`,
     "    else",
     `      echo "FAILED to list containers for stale stack '$name'."`,
@@ -194,34 +224,55 @@ export function generateStaleStackCleanupScript(
     // below would exit the WHOLE script under zsh instead of just this
     // loop, well past what `stop_and_remove`'s own caller expects to
     // observe as a return value.
-    "  if ! printf '%s\\n' \"$ps_output\" | ( while IFS='|' read -r id proj; do",
+    "  printf '%s\\n' \"$ps_output\" | ( skipped=0",
+    "  while IFS='|' read -r id proj; do",
+    // The one empty line `printf` makes from empty output: no container.
+    '    [ -n "$id" ] || continue',
+    // A project label that could not be a stack name (the same shape as
+    // STACK_NAME_PATTERN in validate-stack-config.ts) is never used
+    // (#250 review): Compose lowercases `-p`, so a label "Traefik" would
+    // otherwise stop the live "traefik". Reported, never silent.
     '    case "$proj" in',
-    "      ''|*[!A-Za-z0-9_.-]*) continue ;;",
+    "      ''|*[!a-z0-9_-]*)",
+    '        skip_container "$id" "its project label \'$(printable "$proj")\' is not a valid project name"',
+    "        skipped=1",
+    "        continue",
+    "        ;;",
     "    esac",
-    '    case "$seen" in',
-    '      *" $proj "*) continue ;;',
-    "    esac",
-    '    seen="$seen$proj "',
     // Never stop a project an active stack runs under (#250). The
     // project comes from a container label, and anyone with docker
     // access on the server can set labels: a stale container labelled
     // `project=traefik` would otherwise make `compose -p traefik down`
-    // take down the live traefik. Checked after the dedupe so it is
-    // reported once per project. A skip is deliberate, so it is
-    // reported but never counted as a failure.
+    // take down the live traefik. Checked per container, before the
+    // dedupe, so every skipped container's ID is reported.
     protectArm,
+    '    case "$seen" in',
+    '      *" $proj "*) continue ;;',
+    "    esac",
+    '    seen="$seen$proj "',
     '    if ! docker compose -p "$proj" down --remove-orphans; then',
     "      echo \"FAILED to stop project '$proj' for stale stack '$name'\"",
     "      exit 1",
     "    fi",
-    "  done ); then",
+    "  done",
+    // 2 = at least one container was skipped: the stack is only partly
+    // stopped, so its folder stays and nothing says "Removed"/"Stopped".
+    '  [ "$skipped" = 0 ] || exit 2',
+    "  exit 0 )",
+    "  loop_rc=$?",
+    '  if [ "$loop_rc" -eq 2 ]; then',
+    // A skip is deliberate and already reported: not a failure.
+    "    return 0",
+    "  fi",
+    '  if [ "$loop_rc" -ne 0 ]; then',
+
     // The stop failed: never remove the folder — the operator needs
     // its compose file to retry or investigate — and never print
     // "Removed"/"Stopped" (review round). The message names the folder
     // only when there still is one (#243 review): phase 2 calls this for
     // an orphaned container whose folder is already gone, so "its
     // folder was left in place" would be a lie there.
-    '    if [ -e "$dir" ] || [ -L "$dir" ]; then',
+    '    if has_entry "$name"; then',
     `      echo "FAILED to stop stale stack '$name': its folder was left in place."`,
     "    else",
     `      echo "FAILED to stop stale stack '$name'."`,
@@ -231,8 +282,8 @@ export function generateStaleStackCleanupScript(
     "  fi",
     // Absolute path, no trailing slash, `--` first — see the module
     // comment for why each of those three matters.
-    '  if [ -e "$dir" ] || [ -L "$dir" ]; then',
-    '    if ! rm -rf -- "$dir"; then',
+    '  if has_entry "$name"; then',
+    '    if ! rm -rf -- "./$name"; then',
     '      echo "FAILED to remove $dir"',
     "      FAILED=1",
     "      return 1",
@@ -266,7 +317,8 @@ export function generateStaleStackCleanupScript(
     // exactly the silent-skip the review flagged. `-L` (not just `-e`)
     // keeps a BROKEN symlink in scope too, so it gets the same reported
     // "not a directory" skip instead of vanishing from both checks.
-    `for entry in ${quotedStacksDir}/*; do`,
+    'if [ "$IN_STACKS" = 1 ]; then',
+    "for entry in ./*; do",
     '  [ -e "$entry" ] || [ -L "$entry" ] || continue',
     '  dir_name="${entry##*/}"',
     '  if [ ! -d "$entry" ]; then',
@@ -277,6 +329,7 @@ export function generateStaleStackCleanupScript(
     `${keepArm}      *) stop_and_remove "$dir_name" || FAILED=1 ;;`,
     "  esac",
     "done",
+    "fi",
     "",
     // Phase 2: a container whose working_dir sits under STACKS_DIR but
     // whose folder is already gone (phase 1's `[ -e ]` guard skipped it
@@ -310,7 +363,10 @@ export function generateStaleStackCleanupScript(
     // — the loop always runs to completion; only the subshell's FINAL
     // exit status, taken from `rc`, decides whether the outer `||
     // FAILED=1` fires.
-    "  printf '%s\\n' \"$broad_ps_output\" | ( rc=0",
+    // `handled` (#250 review): several containers can share one gone
+    // folder's working_dir, and each one's line would otherwise call
+    // stop_and_remove again and report the same stack twice.
+    "  printf '%s\\n' \"$broad_ps_output\" | ( rc=0; handled=' '",
     "  while IFS= read -r wd; do",
     '    case "$wd" in',
     `      ${quotedStacksDir}/*)`,
@@ -336,9 +392,13 @@ export function generateStaleStackCleanupScript(
     '    case "$rel" in',
     "      ''|*[!A-Za-z0-9_-]*) ;;",
     "      *)",
-    '        if [ -d "$STACKS_DIR/$rel" ]; then continue; fi',
+    '        if [ "$IN_STACKS" = 1 ] && [ -d "./$rel" ]; then continue; fi',
     "        ;;",
     "    esac",
+    '    case "$handled" in',
+    '      *" $rel "*) continue ;;',
+    "    esac",
+    '    handled="$handled$rel "',
     '    case " $rel " in',
     `${keepArm}      *) stop_and_remove "$rel" || rc=1 ;;`,
     "    esac",
