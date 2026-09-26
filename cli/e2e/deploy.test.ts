@@ -413,6 +413,23 @@ function makeFakeIO(remote: FakeRemote): RunDeployIO {
     },
     runRemoteShell: async (_address: string, script: string) => {
       remote.shellScripts.push(script)
+      // The read-only file-mount check (volumes.ts): passes only when
+      // every checked path is a regular file under the fake remote root.
+      if (script.includes("rostok_file() {")) {
+        remote.calls.push("file-mounts")
+        for (const m of script.matchAll(/^rostok_file '([^']*)'/gm)) {
+          const isFile = await Deno.stat(remote.root + m[1]).then((i) => i.isFile, () => false)
+          if (!isFile) {
+            return {
+              success: false,
+              code: 1,
+              output: "",
+              error: `rostok: file mount ${m[1]} does not exist yet`,
+            }
+          }
+        }
+        return ok()
+      }
       const mkdirMatch = script.match(/^mkdir -p -- '(.*)'$/)
       if (mkdirMatch) {
         remote.calls.push("mkdir")
@@ -943,41 +960,77 @@ Deno.test("e2e: a CLI child's PATH holds only the fake ssh and linked tools, nev
   }
 })
 
-Deno.test("e2e: a volume the stack's +meta.ts declares in fileMounts is checked as a file, never mkdir'd", async () => {
+/** A local stack `acme-reader` that mounts traefik's acme.json (declared in fileMounts) and one folder. */
+async function writeAcmeReaderStack(projectDir: string): Promise<void> {
+  const stackDir = join(projectDir, "stacks", "acme-reader")
+  await Deno.mkdir(stackDir, { recursive: true })
+  await Deno.writeTextFile(
+    join(stackDir, "compose.yml"),
+    [
+      "name: ${PROJECT}",
+      "services:",
+      "  reader:",
+      "    image: busybox",
+      "    volumes:",
+      "      - ${VOLUMES_PATH}/traefik/letsencrypt/acme.json:/acme.json:ro,z",
+      "      - ${VOLUMES_PATH}/acme-reader/data:/data:z",
+    ].join("\n") + "\n",
+  )
+  await Deno.writeTextFile(
+    join(stackDir, "+meta.ts"),
+    `export default { name: "acme-reader", description: "d", variables: [], ` +
+      `fileMounts: ["traefik/letsencrypt/acme.json"] }\n`,
+  )
+  await writeServer(projectDir, [], ["acme-reader"])
+}
+
+Deno.test("e2e: a declared file mount is checked before any write, and the volume script leaves it alone", async () => {
   // #258: mirotalk and stalwart mount traefik's acme.json. The volume
   // script used to mkdir every volume path, so it created a folder named
   // acme.json or failed with "File exists".
   const f = await setupFixture()
   try {
-    const stackDir = join(f.projectDir, "stacks", "acme-reader")
-    await Deno.mkdir(stackDir, { recursive: true })
-    await Deno.writeTextFile(
-      join(stackDir, "compose.yml"),
-      [
-        "name: ${PROJECT}",
-        "services:",
-        "  reader:",
-        "    image: busybox",
-        "    volumes:",
-        "      - ${VOLUMES_PATH}/traefik/letsencrypt/acme.json:/acme.json:ro,z",
-        "      - ${VOLUMES_PATH}/acme-reader/data:/data:z",
-      ].join("\n") + "\n",
-    )
-    await Deno.writeTextFile(
-      join(stackDir, "+meta.ts"),
-      `export default { name: "acme-reader", description: "d", variables: [], ` +
-        `fileMounts: ["traefik/letsencrypt/acme.json"] }\n`,
-    )
-    await writeServer(f.projectDir, [], ["acme-reader"])
+    await writeAcmeReaderStack(f.projectDir)
+    const acme = `${f.remoteDir}/srv/volumes/traefik/letsencrypt/acme.json`
+    await Deno.mkdir(dirname(acme), { recursive: true })
+    await Deno.writeTextFile(acme, "{}")
 
     const { remote, result } = await runDeployInProcess(f)
     assertEquals(result.deployedStacks, ["acme-reader"])
+    // The check comes before the first write to the server: the
+    // PATH_APPS/stacks mkdir, stale cleanup and the file sync.
+    const at = (call: string) => remote.calls.indexOf(call)
+    assert(at("file-mounts") >= 0, `no file-mount check in ${remote.calls.join(", ")}`)
+    for (const later of ["mkdir", "stale-cleanup", "rsync:root", "network", "deploy-script"]) {
+      assert(at("file-mounts") < at(later), `file-mount check after ${later}: ${remote.calls}`)
+    }
     const volumeScript = remote.shellScripts.find((s) => s.includes("rostok_resolve '"))
     assert(volumeScript, `expected a volume script, got:\n${remote.shellScripts.join("\n---\n")}`)
-    assertStringIncludes(volumeScript!, "rostok_file '/srv/volumes/traefik/letsencrypt/acme.json'")
     assertStringIncludes(volumeScript!, "rostok_resolve '/srv/volumes/acme-reader/data'")
+    assertEquals(volumeScript!.includes("acme.json"), false)
+  } finally {
+    await teardownFixture(f)
+  }
+})
+
+Deno.test("e2e: a missing declared file mount stops the deploy before stale cleanup or file sync", async () => {
+  const f = await setupFixture()
+  try {
+    await writeAcmeReaderStack(f.projectDir)
+    // A stale stack on the server, so a cleanup that ran would show.
+    await Deno.mkdir(`${f.remoteDir}/srv/apps/stacks/old-stack`, { recursive: true })
+    const remote: FakeRemote = { root: f.remoteDir, calls: [], shellScripts: [] }
+    const err = await runDeploy({ cwd: f.projectDir, server: "test" }, makeFakeIO(remote))
+      .then(() => null, (e) => e)
+    assert(err instanceof UserError, `expected a UserError, got ${err}`)
+    assertStringIncludes(err.message, "a file mount is not ready on")
+    assertStringIncludes(err.message, "acme.json does not exist yet")
+    assertEquals(remote.calls.at(-1), "file-mounts")
+    for (const write of ["mkdir", "stale-cleanup", "rsync:root", "network", "deploy-script"]) {
+      assertEquals(remote.calls.includes(write), false, `${write} ran: ${remote.calls}`)
+    }
     assertEquals(
-      volumeScript!.includes("rostok_resolve '/srv/volumes/traefik/letsencrypt/acme.json'"),
+      await Deno.stat(`${f.remoteDir}/srv/volumes/traefik`).then(() => true, () => false),
       false,
     )
   } finally {

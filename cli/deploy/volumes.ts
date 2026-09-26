@@ -29,23 +29,29 @@
 //
 // (#257) The `..` check above reads only the path text. A folder partway
 // along the path can still be a symlink on the server, and `mkdir -p` or
-// `chown -R` would follow it out of VOLUMES_PATH. The generated script
-// therefore resolves every path on the server first: it finds the
+// `chown -R` would follow it out of VOLUMES_PATH. Before either runs,
+// the generated script resolves the path on the server: it finds the
 // deepest part of the path that already exists, resolves it with
 // `cd -P` + `pwd -P` (POSIX, so busybox, dash, bash and zsh all behave
 // the same, unlike `realpath -m`, which busybox lacks), and refuses the
 // path unless the result stays strictly inside the resolved
 // VOLUMES_PATH. mkdir and chown then act on that resolved path, and the
 // path is resolved and checked again between mkdir and chown, all in the
-// same remote shell.
+// same remote shell. For a deploy user that isn't root, the check runs
+// inside the same `sudo -n sh -c` as the mkdir and chown it guards: with
+// the user's own rights, `cd` fails on a folder it may not enter (umask
+// 027, a PUID-owned mode-700 folder) that sudo can still create or chown.
+// The paths reach that `sh -c` as positional arguments, never inside the
+// script text.
 //
 // (#258) A stack's `+meta.ts` can declare `fileMounts`: volume paths
-// that are files, such as traefik's `acme.json`. The script never
-// creates, mkdirs or chowns those. It only checks that each one is a
-// regular file, before it changes anything else, and fails otherwise:
-// Docker creates a folder in place of a missing bind-mount source, so
-// skipping a missing file would still end with a folder named
-// `acme.json`.
+// that are files, such as traefik's `acme.json`. The volume script never
+// targets them with mkdir or chown. `generateFileMountCheckScript`
+// checks, in a separate read-only call that deploy makes before stale
+// cleanup, file sync or any container change, that each one is a
+// regular file, and deploy stops otherwise: Docker creates a folder in
+// place of a missing bind-mount source, so skipping a missing file would
+// still end with a folder named `acme.json`.
 
 import { shQuote } from "./exec.ts"
 import { UserError } from "../errors.ts"
@@ -107,6 +113,17 @@ export function extractVolumePaths(
 }
 
 /**
+ * How to fix a local `+meta.ts` that fails to import. The installed
+ * rostok CLI imports it without the project's `deno.jsonc`, so a bare
+ * `@rostok/cli` import resolves only when it is `import type` (erased
+ * at run time); a value such as `generatePassword` must come from the
+ * full JSR specifier.
+ */
+const META_IMPORT_HINT = `A project's own +meta.ts is imported without the project's deno.jsonc: ` +
+  `use \`import type\` for "@rostok/cli", and import values such as generatePassword ` +
+  `from "jsr:@rostok/cli/lib".`
+
+/**
  * The `fileMounts` a stack declares in its `+meta.ts`, relative to
  * VOLUMES_PATH. `files` is the stack's resolved deploy files
  * (stack-files.ts): a local `stacks/<name>/+meta.ts` is imported from
@@ -130,12 +147,13 @@ export async function loadStackFileMounts(
     const reason = err instanceof Error ? err.message : String(err)
     if (!bundled) {
       throw new UserError(
-        `could not load stacks/${stackName}/+meta.ts to read its fileMounts: ${reason}`,
+        `could not load stacks/${stackName}/+meta.ts to read its fileMounts: ${reason}. ` +
+          META_IMPORT_HINT,
       )
     }
     console.warn(
       `Warning: could not load stacks/${stackName}/+meta.ts (${reason}); ` +
-        `using the bundled catalog's fileMounts for ${stackName} instead.`,
+        `using the bundled catalog's fileMounts for ${stackName} instead. ${META_IMPORT_HINT}`,
     )
     return bundled.fileMounts ?? []
   }
@@ -156,13 +174,20 @@ export interface VolumeScriptOptions {
 }
 
 /**
- * Shell functions the generated script defines once. `rostok_resolve P`
- * sets `rostok_real` to P's resolved path, or prints why and fails when
- * P would leave the resolved VOLUMES_PATH (`rostok_base`). `rostok_file
- * P` fails unless P is a regular file. Every variable is quoted, so the
- * functions behave the same in sh and in zsh, which doesn't split words.
+ * Shell functions for the volume script. `rostok_base_init V` resolves
+ * VOLUMES_PATH into `rostok_base` and `rostok_prefix` (`rostok_base/`).
+ * `rostok_resolve P` sets `rostok_real` to P's resolved path, or prints
+ * why and fails when P would leave the resolved VOLUMES_PATH. Every
+ * variable is quoted, so they behave the same in sh and in zsh, which
+ * doesn't split words.
  */
-const SCRIPT_FUNCTIONS = `rostok_resolve() {
+const RESOLVE_FUNCTIONS = `rostok_base_init() {
+  rostok_base=$(cd -P -- "$1" >/dev/null && pwd -P && echo x) || return 1
+  rostok_base=\${rostok_base%x}
+  rostok_base=\${rostok_base%?}
+  case $rostok_base in /) rostok_prefix=/ ;; *) rostok_prefix=$rostok_base/ ;; esac
+}
+rostok_resolve() {
   rostok_d=$1
   while [ ! -e "$rostok_d" ] && [ ! -L "$rostok_d" ]; do
     rostok_up=\${rostok_d%/*}
@@ -184,8 +209,19 @@ const SCRIPT_FUNCTIONS = `rostok_resolve() {
   esac
   printf 'rostok: volume path %s resolves to %s, outside VOLUMES_PATH (%s), refusing to create or chown it\\n' "$1" "$rostok_real" "$rostok_base" >&2
   return 1
-}
-rostok_file() {
+}`
+
+/**
+ * The script `sudo -n sh -c` runs for one folder: `$1` is the volume
+ * path, `$2` the `uid:gid` owner, `$3` VOLUMES_PATH. A constant, so no
+ * value from `.env` or a compose file is ever part of the script text.
+ */
+const SUDO_FOLDER_SCRIPT = `${RESOLVE_FUNCTIONS}
+rostok_base_init "$3" && rostok_resolve "$1" && mkdir -p -- "$rostok_real" &&
+rostok_resolve "$1" && chown -R "$2" -- "$rostok_real"`
+
+/** Prints why and fails unless `$1` is a regular file. */
+const FILE_FUNCTION = `rostok_file() {
   [ -f "$1" ] && return 0
   if [ -e "$1" ] || [ -L "$1" ]; then
     printf 'rostok: file mount %s exists but is not a regular file. Remove it (an older deploy may have created it as a folder), then deploy again\\n' "$1" >&2
@@ -195,55 +231,82 @@ rostok_file() {
   return 1
 }`
 
+/** `path` normalised for comparison: doubled slashes and `.` segments dropped. */
+function pathKey(path: string): string {
+  return pathComponents(path).join("/")
+}
+
+/** The declared file mounts that a compose file actually mounts. */
+function fileMountsInUse(volumePaths: string[], fileMounts: string[]): string[] {
+  const declared = new Set(fileMounts.map(pathKey))
+  return volumePaths.filter((p) => declared.has(pathKey(p)))
+}
+
 /**
- * Build the remote script that checks every file mount, then creates and
- * chowns every other volume path to `puid:pgid`. Any failure fails the
- * whole script and its stderr reaches the caller: nothing is hidden
- * behind `|| true` or `2>/dev/null`.
+ * Build the read-only remote script that checks every file mount a
+ * compose file uses is already a regular file, or "" when there is none.
+ * Deploy runs it before stale cleanup, file sync or any container change,
+ * so a missing file stops the deploy before it touches a stack.
  *
- * It first resolves VOLUMES_PATH itself, then checks every file mount
- * (`rostok_file`), so a missing or wrong file mount stops the script
- * before it changes anything. Each folder path is then resolved and
- * checked (`rostok_resolve`, see the module comment) before it is used.
+ * A user that isn't root first tests the file with its own rights and
+ * falls back to `sudo -n sh -c` (the path passed as `$1`) only when that
+ * test fails, e.g. because a folder on the way is mode 700: it only reads.
+ */
+export function generateFileMountCheckScript(
+  opts: Pick<VolumeScriptOptions, "volumePaths" | "fileMounts" | "needsSudo">,
+): string {
+  const mounts = fileMountsInUse(opts.volumePaths, opts.fileMounts)
+  if (mounts.length === 0) return ""
+  if (!opts.needsSudo) {
+    return `${FILE_FUNCTION}\n${mounts.map((p) => `rostok_file ${shQuote(p)}`).join(" &&\n")}\n`
+  }
+  const sudoScript = shQuote(`${FILE_FUNCTION}\nrostok_file "$1"`)
+  return mounts
+    .map((p) => `( [ -f ${shQuote(p)} ] || sudo -n sh -c ${sudoScript} sh ${shQuote(p)} )`)
+    .join(" &&\n") + "\n"
+}
+
+/**
+ * Build the remote script that creates and chowns every volume folder
+ * (every volume path except the file mounts) to `puid:pgid`. Any failure
+ * fails the whole script and its stderr reaches the caller: nothing is
+ * hidden behind `|| true` or `2>/dev/null`.
  *
- * As root (`needsSudo` false), every folder gets `mkdir -p` and
- * `chown -R`. Otherwise each folder is wrapped as `( [ -d R ] &&
- * [ "$(stat -c %u:%g R)" = U:G ] || { sudo -n mkdir -p -- R && ... &&
- * sudo -n chown -R U:G -- R; } )`, so sudo runs only for a folder that
- * is missing or owned by someone else. The subshell keeps the `&&`
- * chain between paths intact: without it, `a && [ -d P ] || b && c`
- * would parse as `((a && [ -d P ]) || b) && c`, and a failure of `a`
- * would run `b` instead of stopping (the same reason #248 wrapped the
- * VOLUMES_PATH mkdir in docker-preflight.ts).
+ * As root (`needsSudo` false), each folder is resolved and checked
+ * (`rostok_resolve`, see the module comment), then gets `mkdir -p` and
+ * `chown -R` on its resolved path.
+ *
+ * Otherwise each folder is wrapped as `( [ -d P ] && [ "$(stat -c %u:%g
+ * P)" = U:G ] || sudo -n sh -c SCRIPT sh P U:G V )`. The first half is the
+ * #249 fast path: a folder that already exists with the right owner
+ * needs nothing privileged, so no check is needed either, and a user
+ * without passwordless sudo can still deploy. Anything else runs the
+ * check, mkdir and chown as root in one `sh -c` (`SUDO_FOLDER_SCRIPT`).
+ * The subshell keeps the `&&` chain between paths intact: without it,
+ * `a && [ -d P ] || b && c` would parse as `((a && [ -d P ]) || b) && c`,
+ * and a failure of `a` would run `b` instead of stopping (the same reason
+ * #248 wrapped the VOLUMES_PATH mkdir in docker-preflight.ts).
  */
 export function generateVolumeCreationScript(opts: VolumeScriptOptions): string {
   const owner = `${shQuote(opts.puid)}:${shQuote(opts.pgid)}`
   const base = shQuote(opts.volumesPath)
-  const fileKeys = new Set(opts.fileMounts.map((p) => pathComponents(p).join("/")))
-  const isFile = (p: string) => fileKeys.has(pathComponents(p).join("/"))
-  const steps: string[] = [
-    `rostok_base=$(cd -P -- ${base} >/dev/null && pwd -P && echo x)`,
-    `rostok_base=\${rostok_base%x}`,
-    `rostok_base=\${rostok_base%?}`,
-    `case $rostok_base in /) rostok_prefix=/ ;; *) rostok_prefix=$rostok_base/ ;; esac`,
-  ]
-  for (const path of opts.volumePaths.filter(isFile)) {
-    steps.push(`rostok_file ${shQuote(path)}`)
-  }
-  for (const path of opts.volumePaths.filter((p) => !isFile(p))) {
-    const p = shQuote(path)
-    const r = `"$rostok_real"`
-    if (!opts.needsSudo) {
+  const files = new Set(fileMountsInUse(opts.volumePaths, opts.fileMounts))
+  const folders = opts.volumePaths.filter((p) => !files.has(p))
+  if (!opts.needsSudo) {
+    const steps = [`rostok_base_init ${base}`]
+    for (const path of folders) {
+      const p = shQuote(path)
+      const r = `"$rostok_real"`
       steps.push(
         `rostok_resolve ${p} && mkdir -p -- ${r} && rostok_resolve ${p} && chown -R ${owner} -- ${r}`,
       )
-      continue
     }
-    steps.push(
-      `rostok_resolve ${p} && ( [ -d ${r} ] && [ "$(stat -c %u:%g -- ${r})" = ${owner} ] || ` +
-        `{ sudo -n mkdir -p -- ${r} && rostok_resolve ${p} && ` +
-        `sudo -n chown -R ${owner} -- ${r}; } )`,
-    )
+    return `${RESOLVE_FUNCTIONS}\n${steps.join(" &&\n")}\n`
   }
-  return `${SCRIPT_FUNCTIONS}\n${steps.join(" &&\n")}\n`
+  const sudoScript = shQuote(SUDO_FOLDER_SCRIPT)
+  return folders.map((path) => {
+    const p = shQuote(path)
+    return `( [ -d ${p} ] && [ "$(stat -c %u:%g -- ${p})" = ${owner} ] || ` +
+      `sudo -n sh -c ${sudoScript} sh ${p} ${owner} ${base} )`
+  }).join(" &&\n") + "\n"
 }

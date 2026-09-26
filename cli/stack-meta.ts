@@ -56,10 +56,11 @@ export interface StackMeta {
   /**
    * Volume paths, relative to VOLUMES_PATH, that this stack mounts as a
    * FILE rather than a folder, e.g. `traefik/letsencrypt/acme.json`
-   * (#258). Deploy never creates, mkdirs or chowns them; it only checks
-   * that each one is already a regular file and fails otherwise, because
-   * Docker would create a folder in place of a missing file. Each entry
-   * must match the path after `${VOLUMES_PATH}/` in `compose.yml`.
+   * (#258). Deploy never creates one and never targets it with mkdir or
+   * chown; before stale cleanup, file sync or any container change, it
+   * checks that each one is already a regular file and stops otherwise,
+   * because Docker would create a folder in place of a missing file. Each
+   * entry must match the path after `${VOLUMES_PATH}/` in `compose.yml`.
    */
   fileMounts?: string[]
 }
