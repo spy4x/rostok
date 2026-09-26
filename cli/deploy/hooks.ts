@@ -144,8 +144,10 @@ export interface HookContext {
    * dropped from `.env`/`.env.root` because it isn't THIS stack's own
    * (`isAllowedFileEnvKey` below) is still routine, not a warning, when
    * it carries another INSTALLED stack's prefix: e.g. librespeed's
-   * `LIBRESPEED_*` keys reaching the traefik hook. Only a key matching no
-   * installed stack (and no server key) still gets a warning.
+   * `LIBRESPEED_*` keys reaching the traefik hook. Since #256 the same
+   * holds for a bundled catalog stack that isn't installed (its values
+   * kept by `stack remove`). Only a key matching no installed stack, no
+   * catalog stack and no server key still gets a warning.
    */
   installedStackNames: string[]
 }
