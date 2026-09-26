@@ -1,10 +1,17 @@
+# Checks run on every push and pull request. A `v*` tag runs the same checks
+# and then publishes to JSR (see "Publish flow" in AGENTS.md).
 when:
   - event: push
   - event: pull_request
+  - event: tag
+    ref: refs/tags/v*
 
 steps:
   check:
-    image: denoland/deno:2.9.0
+    # Pinned by digest, like `publish`: both steps share the working folder,
+    # and the publish image has no git, so `deno publish` cannot refuse files
+    # that `check` changed. Bump both digests together.
+    image: denoland/deno:2.9.0@sha256:8d24854de78a79c56e74b49aa4c5996c60e1fe3730efba8fbdd2692c582e6e29
     commands:
       # Install git for the .gitignore checks (cli/init.test.ts runs
       # `git check-ignore`) and worktree/hook fixtures elsewhere. `age`
@@ -16,3 +23,27 @@ steps:
       # works under sh must fail loudly here, not be silently skipped.
       - apt-get update && apt-get install -y git zsh
       - deno task check
+
+  # Publishes @rostok/cli to JSR, only on a `v*` tag and only after `check`
+  # passed. JSR_TOKEN is a repository secret that must be allowed for the tag
+  # event only (never push or pull_request), so push and pull-request builds
+  # cannot read it. A tag build runs the tagged commit's own copy of this
+  # file, so whoever can push a `v*` tag can publish and can read the token
+  # (see "The publish token" in AGENTS.md). `$$` stops Woodpecker substituting the
+  # variable itself; the shell reads the secret.
+  publish:
+    # Pinned by digest: this step holds the token, so a re-pushed image tag
+    # must not change what runs.
+    image: denoland/deno:2.9.0@sha256:8d24854de78a79c56e74b49aa4c5996c60e1fe3730efba8fbdd2692c582e6e29
+    when:
+      event: tag
+      ref: refs/tags/v*
+    environment:
+      JSR_TOKEN:
+        from_secret: JSR_TOKEN
+    commands:
+      # `deno publish` exits 0 when the version is already on JSR, so a tag
+      # pushed without the version bump would go green and publish nothing;
+      # this refuses any tag that is not `v` plus the declared version.
+      - deno run --allow-read=deno.jsonc,cli/version.ts --allow-env=CI_COMMIT_TAG scripts/release/+main.ts
+      - deno publish --token "$${JSR_TOKEN}"

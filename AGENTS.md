@@ -204,9 +204,9 @@ change, leave the PR open and tell the user.
 - Some commits fix independent things → `gh pr merge --rebase --delete-branch`
 
 Publishing follows the same rule: once the version-bump PR is merged
-and both gates are green, run `deno publish` without asking (see
-"Publish flow" below). JSR versions are immutable, so publish only
-from a clean checkout of `main` at the merged bump commit.
+and both gates are green, push the release tag without asking (see
+"Publish flow" below). JSR versions are immutable, so tag only the
+merged bump commit on `main`.
 
 Then clean up. Worktrees live in the sibling `worktrees/rostok/`; these
 commands work from any directory inside the repo or a worktree. `-D` is
@@ -274,20 +274,49 @@ Semver:
 
 After the version-bump PR merges to `main`. No need to ask first:
 
-1. Confirm `deno task check` passes on the bumped source.
-2. `deno publish` from a clean checkout of `main`, for example a
-   detached worktree at the bump commit. Untracked files in the main
-   checkout, such as `.claude/scheduled_tasks.lock`, would otherwise
-   ship: run `deno publish --dry-run` and read the file list first.
-   Authentication is browser OAuth. It needs a terminal, so an agent
-   runs it in a pty; a shell with no terminal needs a JSR token from
-   `jsr.io/account/tokens`.
+1. Tag the merge commit and push the tag:
+   `git tag v1.0.4 <merge commit> && git push origin v1.0.4`.
+2. Woodpecker runs `check` on the tag, then the `publish` step:
+   `scripts/release/+main.ts` refuses a tag that differs from
+   `deno.jsonc` or `cli/version.ts`, and `deno publish` uses the
+   `JSR_TOKEN` repository secret. A failed `check` or guard publishes
+   nothing: fix the cause in a PR, then move the tag to the new merge
+   commit (`git tag -f`, `git push -f origin <tag>`). If `deno publish`
+   itself failed, check jsr.io for the version first: JSR may have
+   accepted the upload anyway. An expired or revoked token also fails
+   here; replace it as described under "The publish token" below.
 3. Verify the new version with `deno install -A --global
    --minimum-dependency-age=0 -n rostok --force jsr:@rostok/cli`
    (the dep-age flag bypasses deno's 24h install delay on fresh
    publishes).
 4. `rostok --version` must print the new version. If it prints an
-   older one, you forgot to bump `cli/version.ts`.
+   older one, the install used a stale cache or the tag build did not
+   publish: read the tag's Woodpecker log.
+
+### The publish token
+
+Pushing a `v*` tag publishes. No person approves it, unlike the old
+browser flow, where every approval named the package and version.
+Whoever can push a tag to this repo (the owner and every agent on the
+shared GitHub account) can publish, and a tag build runs the tagged
+commit's own `.woodpecker.yml` with the token, even on an unmerged
+commit. Woodpecker hides only the token's exact value, and the build
+logs of this public repo are public. So:
+
+- Tag only merge commits on `main`; the pipeline does not check it.
+- The jsr.io token has "publish" permission for `@rostok/cli` only,
+  and an expiry date.
+- The Woodpecker secret `JSR_TOKEN` belongs to this repository (not
+  the organisation or the server), is allowed for the `tag` event
+  only (never `push` or `pull_request`; Woodpecker preselects `push`),
+  and has no image filter (Woodpecker refuses image-filtered secrets
+  to steps that run commands).
+- Keep the Woodpecker webhook URL secret: it carries the token that
+  lets GitHub start builds.
+
+If the token leaks or expires: revoke it on jsr.io, create a new one
+with the same scope, replace the Woodpecker secret, and check jsr.io
+for versions nobody released.
 
 ### Avoid drift with `git grep`
 
