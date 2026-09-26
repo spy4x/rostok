@@ -34,10 +34,17 @@
 // (or run-deploy.ts fails to stage one), the corresponding assertion
 // below fails.
 
-import { assert, assertEquals, assertExists, assertStringIncludes } from "@std/assert"
+import {
+  assert,
+  assertEquals,
+  assertExists,
+  assertRejects,
+  assertStringIncludes,
+} from "@std/assert"
 import { dirname, join } from "@std/path"
 import { runDeploy, type RunDeployIO } from "../deploy/run-deploy.ts"
 import type { CommandResult } from "../deploy/exec.ts"
+import { UserError } from "../errors.ts"
 
 const FAKE_SSH = `#!/bin/sh
 # Records every invocation to FAKE_SSH_LOG, then fakes just enough of a
@@ -839,6 +846,41 @@ Deno.test("e2e: config.json envs resolves a \${VAR} defined only in .env.root", 
 
     const shippedEnv = await Deno.readTextFile(join(f.remoteDir, "srv", "apps", ".env"))
     assertStringIncludes(shippedEnv, "INJECTED_KEY=root-only-value")
+  } finally {
+    await teardownFixture(f)
+  }
+})
+
+Deno.test("e2e: a volume path with .. is refused before any volume command reaches the remote", async () => {
+  // #250: `${VOLUMES_PATH}/../../etc` used to become
+  // `sudo -n chown -R ... '/srv/volumes/../../etc'` on the server.
+  const f = await setupFixture()
+  try {
+    const stackDir = join(f.projectDir, "stacks", "escape-stack")
+    await Deno.mkdir(stackDir, { recursive: true })
+    await Deno.writeTextFile(
+      join(stackDir, "compose.yml"),
+      [
+        "name: ${PROJECT}",
+        "services:",
+        "  esc:",
+        "    image: busybox",
+        "    volumes:",
+        "      - ${VOLUMES_PATH}/../../etc:/x",
+      ].join("\n") + "\n",
+    )
+    await writeServer(f.projectDir, [], ["escape-stack"])
+
+    const remote: FakeRemote = { root: f.remoteDir, calls: [], shellScripts: [] }
+    // A non-root remote: the path that used to reach `sudo -n chown -R`.
+    const io: RunDeployIO = { ...makeFakeIO(remote), needsRemoteSudo: () => Promise.resolve(true) }
+    const err = await assertRejects(
+      () => runDeploy({ cwd: f.projectDir, server: "test" }, io),
+      UserError,
+    )
+    assertStringIncludes(err.message, `contains a ".." component`)
+    const volumeScripts = remote.shellScripts.filter((s) => s.includes("chown"))
+    assertEquals(volumeScripts, [], "no mkdir/chown script may reach the remote")
   } finally {
     await teardownFixture(f)
   }
