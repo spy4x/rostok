@@ -3,7 +3,7 @@
 # Multi-account via [[emails]] array. Per-account credentials nest under
 # [emails.incoming] (IMAP) and [emails.outgoing] (SMTP).
 
-# --- Account: primary (anton@antonshubin.com) ---
+# --- Account: personal (anton@antonshubin.com) ---
 [[emails]]
 account_name = "personal"
 full_name = "Anton Shubin"
