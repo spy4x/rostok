@@ -306,7 +306,9 @@ export function generateVolumeCreationScript(opts: VolumeScriptOptions): string 
   const sudoScript = shQuote(SUDO_FOLDER_SCRIPT)
   return folders.map((path) => {
     const p = shQuote(path)
-    return `( [ -d ${p} ] && [ "$(stat -c %u:%g -- ${p})" = ${owner} ] || ` +
+    // `[ ! -L ]`: `stat` without -L reads a symlink's own owner, so a
+    // PUID-owned link to `/etc` would otherwise skip the sudo check.
+    return `( [ -d ${p} ] && [ ! -L ${p} ] && [ "$(stat -c %u:%g -- ${p})" = ${owner} ] || ` +
       `sudo -n sh -c ${sudoScript} sh ${p} ${owner} ${base} )`
   }).join(" &&\n") + "\n"
 }

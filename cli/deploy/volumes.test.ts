@@ -442,14 +442,17 @@ for (const shell of SHELLS) {
     try {
       const acme = `${root}/traefik/letsencrypt/acme.json`
       await Deno.mkdir(acme, { recursive: true })
-      const script = generateFileMountCheckScript({
-        volumePaths: [acme],
-        fileMounts: [acme],
-        needsSudo: false,
-      })
-      const result = await runScript(script, shell)
-      assertEquals(result.success, false)
-      assertStringIncludes(result.stderr, `file mount ${acme} exists but is not a regular file`)
+      for (const needsSudo of [false, true]) {
+        const script = generateFileMountCheckScript({
+          volumePaths: [acme],
+          fileMounts: [acme],
+          needsSudo,
+        })
+        const result = await runScript(script, shell)
+        assertEquals(result.success, false)
+        assertStringIncludes(result.stderr, `file mount ${acme} exists but is not a regular file`)
+        assertEquals(result.sudoCalls, needsSudo ? [`sh -c <script> sh ${acme}`] : [])
+      }
     } finally {
       await Deno.remove(root, { recursive: true })
     }
@@ -507,6 +510,24 @@ Deno.test("generateVolumeCreationScript: a non-root user never runs sudo for a f
     const result = await runScript(script)
     assertEquals(result.success, true, result.stderr)
     assertEquals(result.sudoCalls, [])
+  } finally {
+    await Deno.remove(root, { recursive: true })
+  }
+})
+
+Deno.test("generateVolumeCreationScript: a non-root user's owned symlink as the last folder goes through the sudo check", async () => {
+  const root = await escapeFixture("rostok-volumes-ownedlink-")
+  try {
+    const path = `${root}/volumes/app`
+    const { uid, gid } = await ownerOf(`${root}/outside`)
+    const script = generateVolumeCreationScript(
+      opts(`${root}/volumes`, [path], { puid: uid, pgid: gid, needsSudo: true }),
+    )
+    const result = await runScript(script)
+    assertEquals(result.success, false)
+    assertEquals(result.sudoCalls, [`sh -c <script> sh ${path} ${uid}:${gid} ${root}/volumes`])
+    assertStringIncludes(result.stderr, `resolves to ${root}/outside, outside VOLUMES_PATH`)
+    assertEquals(result.chownCalls, [])
   } finally {
     await Deno.remove(root, { recursive: true })
   }

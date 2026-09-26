@@ -296,7 +296,7 @@ chown. Early in the deploy, in a read-only call, it checks that each
 file mount the compose files use is already a regular file. It stops
 with a clear message otherwise, before stale cleanup, file sync or any
 container change. By then only the preflight has written to the server:
-it creates `PATH_APPS` and `VOLUMES_PATH` when they are missing. Deploy
+it creates `PATH_APPS`, `PATH_APPS/stacks` and `VOLUMES_PATH` when they are missing. Deploy
 never creates the file for you either: Docker would mount a folder in
 place of a missing file, so deploy the stack that writes the file (here
 Traefik) first. If the stack is already in `config.json`, deploy only
