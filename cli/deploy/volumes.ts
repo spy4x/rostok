@@ -15,10 +15,19 @@
 // Every value below comes from `.env` or a compose file, so it's quoted
 // with `shQuote` (single quotes) before going into the remote script —
 // double quotes would still let `$(...)`/backticks run.
+//
+// (#249) A deploy user that isn't root runs `sudo -n` only for a folder
+// that is missing or not owned by `PUID:PGID` yet. A folder that already
+// exists with the right owner needs no change, so a user without
+// passwordless sudo can still deploy a stack whose volume folders were
+// prepared once by an admin.
 
 import { shQuote } from "./exec.ts"
 
-/** Extract every `${VOLUMES_PATH}/...` reference from a set of compose files. */
+/**
+ * Extract every `${VOLUMES_PATH}/...` reference from a set of compose
+ * files.
+ */
 export function extractVolumePaths(
   composeContents: string[],
   env: Record<string, string>,
@@ -33,7 +42,9 @@ export function extractVolumePaths(
       const expandedPath = volumeSubPath.replace(/\$\{([^}]+)\}/g, (_m, varName) => {
         return env[varName.trim()] || `\${${varName}}`
       })
-      volumePaths.add(`${env["VOLUMES_PATH"] || "${VOLUMES_PATH}"}/${expandedPath}`)
+      const volumesPath = env["VOLUMES_PATH"] || "${VOLUMES_PATH}"
+      const fullPath = `${volumesPath}/${expandedPath}`
+      volumePaths.add(fullPath)
     }
   }
 
@@ -42,9 +53,18 @@ export function extractVolumePaths(
 
 /**
  * Build the remote script that creates and chowns every volume path to
- * `puid:pgid`. Every command is quoted, joined with `&&` (no
- * `|| true`/`2>/dev/null`), so any failure fails the whole script and
- * its stderr reaches the caller.
+ * `puid:pgid`. Any failure fails the whole script and its stderr reaches
+ * the caller: nothing is hidden behind `|| true` or `2>/dev/null`.
+ *
+ * As root (`needsSudo` false), every path gets `mkdir -p` and
+ * `chown -R`, as before. Otherwise each path is wrapped as
+ * `( [ -d P ] && [ "$(stat -c %u:%g P)" = U:G ] || { sudo -n mkdir -p -- P &&
+ * sudo -n chown -R U:G -- P; } )`, so sudo runs only for a folder that
+ * is missing or owned by someone else. The subshell keeps the `&&`
+ * chain between paths intact: without it, `a && [ -d P ] || b && c`
+ * would parse as `((a && [ -d P ]) || b) && c`, and a failure of `a`
+ * would run `b` instead of stopping (the same reason #248 wrapped the
+ * VOLUMES_PATH mkdir in docker-preflight.ts).
  */
 export function generateVolumeCreationScript(
   volumePaths: string[],
@@ -52,12 +72,12 @@ export function generateVolumeCreationScript(
   pgid: string,
   needsSudo: boolean,
 ): string {
-  const sudo = needsSudo ? "sudo -n " : ""
+  const owner = `${shQuote(puid)}:${shQuote(pgid)}`
   const commands = volumePaths.map((path) => {
-    const quotedPath = shQuote(path)
-    return `${sudo}mkdir -p ${quotedPath} && ${sudo}chown -R ${shQuote(puid)}:${
-      shQuote(pgid)
-    } ${quotedPath}`
+    const p = shQuote(path)
+    if (!needsSudo) return `mkdir -p ${p} && chown -R ${owner} ${p}`
+    return `( [ -d ${p} ] && [ "$(stat -c %u:%g -- ${p})" = ${owner} ] || ` +
+      `{ sudo -n mkdir -p -- ${p} && sudo -n chown -R ${owner} -- ${p}; } )`
   })
   return commands.join(" && ")
 }
