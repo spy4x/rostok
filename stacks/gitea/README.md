@@ -40,11 +40,12 @@ PostgreSQL dump + data directory backed up nightly via Restic.
 Declared in `+meta.ts`. Requires the `traefik` stack. Ships `compose.yml` and `public/`
 (`robots.txt`).
 
-| Key                   | Default           | Meaning                         |
-| --------------------- | ----------------- | ------------------------------- |
-| `GITEA_DB_PASSWORD`   | generated, secret | Postgres password               |
-| `GITEA_SMTP_HOST`     | asked             | SMTP server host                |
-| `GITEA_SMTP_PORT`     | `587`             | SMTP server port                |
-| `GITEA_SMTP_USERNAME` | asked             | SMTP login                      |
-| `GITEA_SMTP_PASSWORD` | asked, secret     | SMTP password                   |
-| `GITEA_SMTP_FROM`     | asked             | Sender address of outgoing mail |
+| Key                   | Default           | Meaning                                  |
+| --------------------- | ----------------- | ---------------------------------------- |
+| `GITEA_DOMAIN`        | `git.${DOMAIN}`   | Public host of the web UI and clone URLs |
+| `GITEA_DB_PASSWORD`   | generated, secret | Postgres password                        |
+| `GITEA_SMTP_HOST`     | asked             | SMTP server host                         |
+| `GITEA_SMTP_PORT`     | `587`             | SMTP server port                         |
+| `GITEA_SMTP_USERNAME` | asked             | SMTP login                               |
+| `GITEA_SMTP_PASSWORD` | asked, secret     | SMTP password                            |
+| `GITEA_SMTP_FROM`     | asked             | Sender address of outgoing mail          |

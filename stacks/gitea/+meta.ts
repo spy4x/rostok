@@ -14,6 +14,12 @@ export default {
   requires: ["traefik"],
   variables: [
     {
+      key: "GITEA_DOMAIN",
+      question: "Public domain for Gitea?",
+      default: "git.${DOMAIN}",
+      required: true,
+    },
+    {
       key: "GITEA_DB_PASSWORD",
       question: "Postgres password (auto-generated)?",
       default: () => generatePassword(32),
