@@ -14,7 +14,7 @@
 // Skips silently if configs/syncthing.yml is missing (server doesn't run
 // Syncthing).
 
-import { parse as parseYaml } from "yaml"
+import { parse as parseYaml } from "npm:yaml@2.8.2"
 
 // ── Pure helpers (exported for unit tests) ────────────────────────────
 

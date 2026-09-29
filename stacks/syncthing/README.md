@@ -28,13 +28,28 @@ Server C: ~/sync/backups/myservice
 3. Share folders (typically `~/sync`)
 4. Accept shares on other servers
 
-## Environment Variables
+## Variables
 
-```bash
-SYNCTHING_DOMAIN=sync.example.com  # Full host for the Traefik rule
-SYNCTHING_GUI_USER=admin              # Web UI username
-SYNCTHING_GUI_PASSWORD=...            # Generated password
-```
+Declared in `+meta.ts`; `rostok stack add syncthing` writes them to the
+server's `.env`. Requires the `traefik` stack. Server-level keys (`PUID`,
+`PGID`) are shared by every stack.
+
+| Key                   | Default                         | Meaning                                                    |
+| --------------------- | ------------------------------- | ---------------------------------------------------------- |
+| `SYNCTHING_DOMAIN`    | `sync-${SERVER_NAME}.${DOMAIN}` | Host of the web UI (Traefik rule)                          |
+| `SYNCTHING_API_KEY`   | generated, secret               | GUI API key; deploy refuses a missing or short (<16) value |
+| `SYNCTHING_CPU_LIMIT` | `1`                             | CPU limit of the container                                 |
+| `SYNCTHING_MEM_LIMIT` | `1024M`                         | Memory limit                                               |
+
+## Host paths and folders
+
+`compose.yml` defines no volumes. Before the first deploy, add
+`servers/<server>/compose-override/syncthing.yml` with the bind mounts
+(config at `/var/syncthing/config`, plus your data folders), and optionally
+`servers/<server>/configs/syncthing.yml` (`data_dir`, `mounts`, `folders`,
+`devices`) so the deploy hooks create the host directories and reconcile
+folders and devices through the REST API. Without the override the
+container starts with throwaway storage.
 
 ## Folder Configuration
 

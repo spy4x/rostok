@@ -1,12 +1,12 @@
-# Base Home Assistant compose — shared config for all deploy variants.
+# Home Assistant with HOST networking: mDNS/SSDP/DHCP discovery of IoT
+# devices (Zigbee bulbs, smart plugs, sensors) does not work through a
+# Docker bridge. Reachable on http://<lan-ip>:8123 from the whole LAN, so
+# run it on a trusted home network only, never on a public-facing host.
 #
-# Add a variant file via -f to enable specific features:
-#   compose.traefik.yml — public HTTPS via Traefik (no auth middleware)
-#   compose.host.yml    — host networking for mDNS/SSDP/DHCP discovery
-#
-# Examples:
+# Public HTTPS instead: add compose.traefik.yml as an override
 #   docker compose -f compose.yml -f compose.traefik.yml up -d
-#   docker compose -f compose.yml -f compose.host.yml up -d
+# (`rostok deploy` deploys compose.yml plus servers/<server>/compose-override/
+# home-assistant.yml, so copy compose.traefik.yml there to use it.)
 #
 # Local data lives at ${VOLUMES_PATH}/home-assistant (gitignored).
 
@@ -21,16 +21,17 @@ services:
       # canonical deploy data dir keeps the same compose file portable.
       - ${VOLUMES_PATH}/home-assistant:/config:z
       - /etc/localtime:/etc/localtime:ro
+    network_mode: host
     devices:
-      - /dev/ttyUSB0:/dev/ttyUSB0 # Zigbee USB dongle
+      - ${HOME_ASSISTANT_ZIGBEE_DEVICE:-/dev/ttyUSB0}:/dev/ttyUSB0 # Zigbee USB dongle
     environment:
       - TZ=${TIMEZONE}
     restart: unless-stopped
     deploy:
       resources:
         limits:
-          memory: 2048M
-          cpus: "2"
+          memory: ${HOME_ASSISTANT_MEM_LIMIT:-2048M}
+          cpus: ${HOME_ASSISTANT_CPU_LIMIT:-2}
     security_opt:
       - no-new-privileges:true
       # Pin SELinux MCS label to s0 (Fedora/RHEL only). Without this, docker

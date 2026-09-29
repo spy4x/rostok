@@ -23,7 +23,7 @@
 // API errors include response body for diagnosis. JSON parse failures are
 // wrapped with endpoint + 200-byte snippet.
 
-import { parse as parseYaml } from "yaml"
+import { parse as parseYaml } from "npm:yaml@2.8.2"
 import { type FolderRef, validateConfig } from "./before.deploy.ts"
 
 // ── API types ─────────────────────────────────────────────────────────
