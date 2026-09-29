@@ -1,7 +1,9 @@
-import { substituteEnvVars } from "../../scripts/+lib.ts"
+import { substituteEnvVars } from "./substitute-env.ts"
 
-const templateFile = new URL("config.properties.template", import.meta.url).pathname
-const outputFile = new URL("config.properties", import.meta.url).pathname
+// Paths are relative to the working directory: deploy runs the hook from its source (possibly
+// a jsr.io URL, where `import.meta.url` is no file) with cwd = the staging folder.
+const templateFile = "stacks/piped/config.properties.template"
+const outputFile = "stacks/piped/config.properties"
 
 // --- Main execution ---
 try {

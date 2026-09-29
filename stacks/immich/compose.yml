@@ -138,7 +138,7 @@ services:
       - KIOSK_IMMICH_URL=http://server:2283
       - KIOSK_IMMICH_EXTERNAL_URL=https://photos.${DOMAIN}
       - KIOSK_BEHIND_PROXY=true
-      - TZ=${TIMEZONE:-Asia/Singapore}
+      - TZ=${TIMEZONE:-UTC}
       - KIOSK_IMMICH_API_KEY=${IMMICH_KIOSK_API_KEY}
       - KIOSK_PASSWORD=${IMMICH_KIOSK_PASSWORD}
       - KIOSK_SHOW_TIME=true
@@ -157,7 +157,7 @@ services:
       - KIOSK_SHOW_IMAGE_LOCATION=true
       - KIOSK_LIKE_BUTTON_ACTION=favorite
       - KIOSK_HIDE_BUTTON_ACTION=tag
-      - KIOSK_EXCLUDED_PEOPLE=37182c81-9a18-4b0b-ba3f-1ba371c66cbb
+      - KIOSK_EXCLUDED_PEOPLE=${IMMICH_KIOSK_EXCLUDED_PEOPLE:-}
     deploy:
       resources:
         limits:

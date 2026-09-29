@@ -35,6 +35,13 @@ OpenCode can connect to the Playwright MCP server for browser automation tasks b
 
 No direct access needed - services connect via Docker network.
 
+## Variables
+
+No variables: compose reads none, and nothing is routed through Traefik. Other containers reach the server at `ws://playwright:3000` and the MCP proxy at `http://hl-playwright-mcp:8099`.
+
+| Key | Default | Meaning |
+| --- | ------- | ------- |
+
 ## Resources
 
 - [Playwright Documentation](https://playwright.dev/)

@@ -80,6 +80,14 @@ Push to `main` triggers the Woodpecker pipeline (`.woodpecker.yml`) to
 build + push `ghcr.io/spy4x/oko:latest`. Watchtower (already deployed
 on every server) picks up the new image and restarts the container.
 
+## Variables
+
+Declared in `+meta.ts`; `rostok stack add oko` writes them to the server's `.env`. Requires the `traefik` stack. The dashboard is served at `dash.${DOMAIN}`; the service list is the file `${PATH_APPS}/configs/oko/config.json` on the server, which you provide (see "Adding services").
+
+| Key                | Default                           | Meaning                                         |
+| ------------------ | --------------------------------- | ----------------------------------------------- |
+| `OKO_UPTIME_HOSTS` | `uptime-${SERVER_NAME}.${DOMAIN}` | Comma-separated Gatus hosts to read badges from |
+
 ## Resources
 
 - ~10 MB RSS baseline (Go, distroless-static, single goroutine + cache)
