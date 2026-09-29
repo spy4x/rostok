@@ -1,0 +1,8 @@
+# Starter config: one target, so zond starts with no manual step. Replace it by writing
+# servers/<server>/configs/zond.yaml (see README.md). Target URLs are container names on the
+# `proxy` network.
+port: 8080
+
+targets:
+  - name: traefik
+    url: http://hl-traefik:8080/api/version

@@ -15,21 +15,22 @@ Self-hosted collection of everyday online tools — all running entirely client-
 - Math Tools — prime numbers, electrical calculations
 - Data Tools — JSON, CSV, XML tools
 
-## Configuration
+## Variables
 
-```bash
-OMNI_TOOLS_DOMAIN=tools.example.com    # Full host for the Traefik rule
-OMNI_TOOLS_CPU_LIMIT=0.5                  # Optional (default: 0.5)
-OMNI_TOOLS_MEM_LIMIT=256M                 # Optional (default: 256M)
-```
+`rostok stack add omni-tools` writes these to the server's `.env`. Requires
+the `traefik` stack.
+
+| Key                    | Default           | Meaning                        |
+| ---------------------- | ----------------- | ------------------------------ |
+| `OMNI_TOOLS_DOMAIN`    | `tools.${DOMAIN}` | Full host for the Traefik rule |
+| `OMNI_TOOLS_CPU_LIMIT` | `0.5`             | CPU limit of the container     |
+| `OMNI_TOOLS_MEM_LIMIT` | `256M`            | Memory limit                   |
 
 The container itself is stateless and needs no persistent storage.
 
 ## Access
 
-Dashboard: `https://${OMNI_TOOLS_DOMAIN}` — no default yet (no `+meta.ts`
-wizard for this stack); set it in `servers/<server>/.env`, e.g.
-`tools.${DOMAIN}`.
+Dashboard: `https://${OMNI_TOOLS_DOMAIN}`.
 
 ## Auth
 

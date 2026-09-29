@@ -11,20 +11,18 @@ Actions, code search, users, and more. Used by OpenWebUI and OpenCode Web.
 
 ## Setup
 
-1. Add `GITHUB_MCP_TOKEN` to `servers/home/.env`:
-   ```
-   GITHUB_MCP_TOKEN=github_pat_YOUR_TOKEN
-   ```
-2. The stack is registered in `servers/home/config.json` and will be deployed
-   automatically.
+`rostok stack add github-mcp` asks for the token and writes it to the
+server's `.env`. The stack builds its image from the `Dockerfile` next to
+`compose.yml` and has no Traefik route, so it needs no domain and no
+`traefik` stack.
 
-## Environment Variables
+## Variables
 
-| Variable              | Required | Default  | Description                                                                            |
-| --------------------- | -------- | -------- | -------------------------------------------------------------------------------------- |
-| `GITHUB_MCP_TOKEN`    | Yes      | —        | GitHub Personal Access Token (from `servers/home/.env`)                                |
-| `GITHUB_MCP_VERSION`  | No       | `v1.5.0` | GitHub MCP server release tag                                                          |
-| `GITHUB_MCP_TOOLSETS` | No       | `*`      | Tool groups to enable (repos,issues,pull_requests,actions,code_security,users,context) |
+| Key                   | Default          | Meaning                                                                                |
+| --------------------- | ---------------- | -------------------------------------------------------------------------------------- |
+| `GITHUB_MCP_TOKEN`    | required, secret | GitHub personal access token (`repo` and `read:user` scopes at least)                  |
+| `GITHUB_MCP_TOOLSETS` | `all`            | Tool groups to enable (repos,issues,pull_requests,actions,code_security,users,context) |
+| `GITHUB_MCP_VERSION`  | `v1.5.0`         | GitHub MCP server release tag the image is built from                                  |
 
 ## Tool Groups
 

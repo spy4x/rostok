@@ -6,12 +6,11 @@ Speaks IMAP + SMTP via the [Model Context Protocol](https://modelcontextprotocol
 - **Upstream**: [ai-zerolab/mcp-email-server](https://github.com/ai-zerolab/mcp-email-server) (BSD-3-Clause)
 - **Image**: `ghcr.io/ai-zerolab/mcp-email-server:latest`
 - **Transport**: Streamable HTTP on port 9557
-- **Backend**: `mailserver` stack on the **cloud** server (mail.${DOMAIN})
+- **Backend**: any IMAP/SMTP server; by default `mail.${DOMAIN}`
 
 ## Why this MCP?
 
-The user has a self-hosted Docker Mailserver on the cloud server. This MCP
-exposes it to AI agents without going through Gmail/OAuth. Same pattern as
+This MCP exposes a self-hosted mail server to AI agents without going through Gmail/OAuth. Same pattern as
 `caldav-mcp` (events/todos): a thin HTTP MCP that
 wraps a self-hosted protocol server.
 
@@ -37,41 +36,37 @@ wraps a self-hosted protocol server.
 
 ### 1. Ensure the IMAP/SMTP account exists
 
-```bash
-ssh cloud 'docker exec -it mailserver setup email list'
-```
+The account must already exist on your mail server (for Docker Mailserver:
+`docker exec -it mailserver setup email add you@example.com`).
 
-If `anton@antonshubin.com` is missing, create it:
+### 2. Add the variables
 
-```bash
-ssh cloud 'docker exec -it mailserver setup email add anton@antonshubin.com'
-# Enter the same password as EMAIL_MCP_PERSONAL_PASSWORD in servers/home/.env
-```
+`rostok stack add email-mcp` asks for them and writes them to the server's
+`.env`. `before.deploy.ts` renders them into `stacks/email-mcp/config.toml`
+(mode 0600), which the container mounts as `/config.toml`. Do not commit the
+rendered file. The deploy stops if a required key is missing.
 
-### 2. Add env vars to `servers/home/.env`
+## Variables
 
-```bash
-#region Email MCP
-# Mail host is mail.${EMAIL_MCP_DOMAIN}
-EMAIL_MCP_DOMAIN=example.com
-EMAIL_MCP_PRIMARY_USER=anton@antonshubin.com
-# Single-quote passwords that contain `$`: the hook does not unescape `$$`.
-EMAIL_MCP_PERSONAL_PASSWORD=YOUR_PASSWORD_HERE
-# Second account (required by the template; more accounts follow the same pattern):
-EMAIL_MCP_NEATSOFT_USER=anton@neatsoft.dev
-EMAIL_MCP_NEATSOFT_PASSWORD=YOUR_PASSWORD_HERE
-#endregion Email MCP
-```
+| Key                        | Default          | Meaning                                                     |
+| -------------------------- | ---------------- | ----------------------------------------------------------- |
+| `EMAIL_MCP_HOST`           | `mail.${DOMAIN}` | Mail server host: IMAP on 993 (TLS), SMTP on 587 (STARTTLS) |
+| `EMAIL_MCP_USER`           | required         | Login and address of the first account                      |
+| `EMAIL_MCP_PASSWORD`       | required, secret | Password of the first account                               |
+| `EMAIL_MCP_ACCOUNT_NAME`   | `main`           | Account name the assistant sees for the first account       |
+| `EMAIL_MCP_FULL_NAME`      | the address      | Display name of the first account                           |
+| `EMAIL_MCP_USER_2`         | none             | Login and address of an optional second account             |
+| `EMAIL_MCP_PASSWORD_2`     | none, secret     | Password of the second account (required with a user)       |
+| `EMAIL_MCP_FULL_NAME_2`    | its address      | Display name of the second account                          |
+| `EMAIL_MCP_ACCOUNT_NAME_2` | `second`         | Account name the assistant sees for the second account      |
+| `EMAIL_MCP_VERIFY_SSL`     | `false`          | `true` verifies the mail server's certificate               |
 
-These are interpolated into `config.toml.template` by `before.deploy.ts`
-and mounted into the container as `/config.toml`. **Do not commit the
-rendered `config.toml`** — it's in `.gitignore`. `before.deploy.ts`
-stops the deploy if any of these five keys is missing.
+The stack has no Traefik route, so it needs no domain and no `traefik` stack.
 
 ### 3. Deploy
 
 ```bash
-deno task deploy home email-mcp
+rostok deploy <server>
 ```
 
 ### 4. Wire into Open WebUI
@@ -90,7 +85,7 @@ Add to `TOOL_SERVER_CONNECTIONS` in `stacks/open-webui/compose.yml`:
   "info": {
     "id": "email-mcp",
     "name": "Email MCP",
-    "description": "IMAP + SMTP via mail.antonshubin.com"
+    "description": "IMAP + SMTP via mail.example.com"
   },
   "config": {
     "enable": true,
@@ -102,7 +97,7 @@ Add to `TOOL_SERVER_CONNECTIONS` in `stacks/open-webui/compose.yml`:
 Then restart Open WebUI:
 
 ```bash
-deno task deploy home open-webui
+rostok deploy <server>
 ```
 
 ### 5. Verify
@@ -113,15 +108,12 @@ In Open WebUI chat:
 > "Show me unread emails in INBOX"
 > "Send an email to test@example.com with subject 'hello' and body 'world'"
 
-## DNS / TLS
+## TLS
 
-`SMTP_HOST=mail.${DOMAIN}` resolves via Cloudflare to the cloud server's
-public IP. STARTTLS on port 587 uses a Let's Encrypt certificate
-(CN=mail.${DOMAIN}). The template still sets `verify_ssl = false` on all four
-connections; [#143](https://github.com/spy4x/rostok/issues/143) tracks turning it on.
-
-If you ever point this at a self-signed bridge (e.g. ProtonMail Bridge),
-set `MCP_EMAIL_SERVER_SMTP_VERIFY_SSL=false` and `MCP_EMAIL_SERVER_IMAP_VERIFY_SSL=false`.
+`EMAIL_MCP_VERIFY_SSL` defaults to `false` because the default host is your
+own mail stack, often behind a certificate the container does not trust
+([#143](https://github.com/spy4x/rostok/issues/143) tracks a safer default).
+Set it to `true` for a mail host with a public certificate.
 
 ## Attachment downloads (optional)
 
@@ -130,25 +122,12 @@ Disabled by default for safety. To enable, set
 The LLM can then call `download_attachment` to save files to a path inside
 the container. Mount a volume if you need files on the host.
 
-## Multi-account
+## Second account
 
-mcp-email-server reads a `[[emails]]` TOML array from
-`MCP_EMAIL_SERVER_CONFIG_PATH`. The upstream library does **not** support
-multiple accounts via env vars — only via the TOML file.
-
-To add another account:
-
-1. Append `EMAIL_MCP_<NAME>_USER` and `EMAIL_MCP_<NAME>_PASSWORD` to
-   `servers/home/.env`.
-2. Add a `[[emails]]` block (with nested `[emails.incoming]` /
-   `[emails.outgoing]`) to `stacks/email-mcp/config.toml.template`.
-3. Add the new keys to the required list in `before.deploy.ts` (it already
-   substitutes every `EMAIL_MCP_*` placeholder).
-4. Redeploy: `deno task deploy home email-mcp`.
-
-The default template ships with **two** accounts preconfigured:
-`personal` (anton@antonshubin.com) and `neatsoft` (anton@neatsoft.dev),
-both pointed at the same mailserver via direct DNS (mail.antonshubin.com).
+Set `EMAIL_MCP_USER_2` and `EMAIL_MCP_PASSWORD_2`; both accounts use the same
+host and port settings. For more than two, extend `renderConfig` in
+`before.deploy.ts` (mcp-email-server reads several `[[emails]]` blocks only
+from the TOML file, not from env vars).
 
 ## Security notes
 
@@ -163,7 +142,7 @@ both pointed at the same mailserver via direct DNS (mail.antonshubin.com).
 
 | Symptom                              | Cause                                  | Fix                                                               |
 | ------------------------------------ | -------------------------------------- | ----------------------------------------------------------------- |
-| `535 Authentication failed`          | Wrong password or missing account      | `setup email update anton@antonshubin.com`                        |
+| `535 Authentication failed`          | Wrong password or missing account      | `setup email update you@example.com`                              |
 | `Connection refused` on port 993/587 | Firewall blocks home → cloud           | Check cloud security group                                        |
 | `CERTIFICATE_VERIFY_FAILED`          | Wrong cert or clock skew               | Verify `mail.${DOMAIN}` resolves to cloud, check `date`           |
 | Tools not showing in Open WebUI      | TOOL_SERVER_CONNECTIONS misconfigured  | Check JSON syntax; restart Open WebUI container                   |

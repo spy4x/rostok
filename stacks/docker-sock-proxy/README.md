@@ -8,6 +8,19 @@ Prevents mounting `/var/run/docker.sock` directly into containers like Watchtowe
 
 Internal service only (no Traefik labels). Reachable on the `proxy` network at `hl-docker-sock-proxy:2375`.
 
+## Variables
+
+None: `rostok stack add docker-sock-proxy` asks nothing. The allowed
+endpoints are fixed in `compose.yml`. No Traefik route, so no `traefik` stack
+is needed.
+
+## Security
+
+There is no authentication. Any container on the `proxy` network can reach
+`hl-docker-sock-proxy:2375`, and the permission model below allows exec, kill
+and container create, which is close to root on the host. Attach only
+containers you trust to that network.
+
 ## Configuration
 
 Env vars are documented upstream:

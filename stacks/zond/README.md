@@ -12,25 +12,43 @@ Internal health probe bridge — probes Docker containers and returns 200/503 st
 
 ## Access
 
-- Probe endpoint: `https://probe-${SERVER_NAME}.${DOMAIN}`
+- Probe endpoint: `https://${ZOND_DOMAIN}`
 - Returns `200 OK` if all probes pass, `503 Service Unavailable` on failure
+
+## Variables
+
+`rostok stack add zond` writes these to the server's `.env`. Requires the
+`traefik` stack.
+
+| Key              | Default                          | Meaning                    |
+| ---------------- | -------------------------------- | -------------------------- |
+| `ZOND_DOMAIN`    | `probe-${SERVER_NAME}.${DOMAIN}` | Host of the probe endpoint |
+| `ZOND_CPU_LIMIT` | `0.25`                           | CPU limit of the container |
+| `ZOND_MEM_LIMIT` | `64M`                            | Memory limit               |
 
 ## Configuration
 
-Probes defined in `servers/home/configs/zond.yaml` (deployed to
-`<PATH_APPS>/configs/zond.yaml`, mounted into the container via
-`$ZOND_CONFIG_PATH`):
+The stack ships a starter `config.yml` with one target (Traefik), so deploy
+gives a container that starts with no manual step. To probe your own
+services, write `servers/<server>/configs/zond.yaml`; `before.deploy.ts`
+copies it over the starter at deploy time (the starter stays when the file is
+absent):
 
 ```yaml
+port: 8080
+
 targets:
   - name: example
     url: http://hl-example:8080/health
-    interval: 30s
 ```
 
-The yaml is server-specific — it lists which containers actually run on this
-homelab. Other servers that want to run zond would commit their own copy under
-`stacks/zond/` or in their own server's `configs/`.
+Target URLs use container names on the `proxy` network.
+
+## Monitoring it from gatus
+
+Zond answers for services that have no public URL. Point a
+[gatus](../gatus/README.md) check, on this server or another, at
+`https://<ZOND_DOMAIN>/health/<target name>` and expect `[STATUS] == 200`.
 
 ## Resources
 
