@@ -29,6 +29,18 @@ export default {
   requires: ["traefik"],
   variables: [
     {
+      key: "IMMICH_DOMAIN",
+      question: "Public domain for Immich?",
+      default: "photos.${DOMAIN}",
+      required: true,
+    },
+    {
+      key: "IMMICH_KIOSK_DOMAIN",
+      question: "Public domain for the Immich kiosk slideshow?",
+      default: "kiosk.${DOMAIN}",
+      required: true,
+    },
+    {
       key: "IMMICH_VERSION",
       question: "Immich image tag?",
       default: "release",

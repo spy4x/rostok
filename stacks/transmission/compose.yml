@@ -39,7 +39,7 @@ services:
       - "traefik.enable=true"
       - "traefik.docker.network=proxy"
       - "traefik.http.services.hl-transmission.loadbalancer.server.port=9091"
-      - "traefik.http.routers.hl-transmission.rule=Host(`torrents.${DOMAIN}`)"
+      - "traefik.http.routers.hl-transmission.rule=Host(`${TRANSMISSION_DOMAIN}`)"
       - "traefik.http.routers.hl-transmission.entrypoints=websecure"
       - "traefik.http.routers.hl-transmission.tls=true"
       - "traefik.http.routers.hl-transmission.tls.certresolver=myresolver"

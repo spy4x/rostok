@@ -12,7 +12,7 @@ Self-hosted time tracking tool.
 
 ## Access
 
-Web UI: `https://time.${DOMAIN}` (protected by Authelia SSO)
+Web UI: `https://${TRAGGO_DOMAIN}` (protected by Authelia SSO)
 
 ## Backup
 
@@ -26,10 +26,11 @@ Time entries data backed up nightly via Restic.
 
 Declared in `+meta.ts`. Requires the `traefik` stack.
 
-| Key                | Default | Meaning                       |
-| ------------------ | ------- | ----------------------------- |
-| `TRAGGO_MEM_LIMIT` | `128M`  | Memory limit of the container |
-| `TRAGGO_CPU_LIMIT` | `0.2`   | CPU limit of the container    |
+| Key                | Default          | Meaning                       |
+| ------------------ | ---------------- | ----------------------------- |
+| `TRAGGO_DOMAIN`    | `time.${DOMAIN}` | Public host of the web UI     |
+| `TRAGGO_MEM_LIMIT` | `128M`           | Memory limit of the container |
+| `TRAGGO_CPU_LIMIT` | `0.2`            | CPU limit of the container    |
 
 ## Authelia middleware
 

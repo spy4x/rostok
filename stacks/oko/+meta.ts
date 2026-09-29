@@ -20,6 +20,12 @@ export default {
   requires: ["traefik"],
   variables: [
     {
+      key: "OKO_DOMAIN",
+      question: "Public domain for the Oko dashboard?",
+      default: "dash.${DOMAIN}",
+      required: true,
+    },
+    {
       key: "OKO_UPTIME_HOSTS",
       question: "Gatus hosts to read badges from (comma-separated)?",
       default: "uptime-${SERVER_NAME}.${DOMAIN}",

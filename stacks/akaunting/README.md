@@ -13,12 +13,12 @@ Self-hosted accounting and invoicing software.
 
 ## Access
 
-Web UI: `https://invoices.${DOMAIN}` (protected by Authelia SSO)
+Web UI: `https://${AKAUNTING_DOMAIN}` (protected by Authelia SSO)
 
 ## Configuration
 
 ```bash
-APP_URL=https://invoices.${DOMAIN}
+APP_URL=https://${AKAUNTING_DOMAIN}
 DB_CONNECTION=mysql
 DB_HOST=akaunting-db
 DB_DATABASE=akaunting
@@ -37,10 +37,11 @@ PostgreSQL dump + storage data backed up nightly via Restic.
 
 Declared in `+meta.ts`. Requires the `traefik` stack.
 
-| Key                          | Default           | Meaning                             |
-| ---------------------------- | ----------------- | ----------------------------------- |
-| `AKAUNTING_DB_ROOT_PASSWORD` | generated, secret | MariaDB root password               |
-| `AKAUNTING_DB_PASSWORD`      | generated, secret | Password of the `akaunting` DB user |
+| Key                          | Default              | Meaning                             |
+| ---------------------------- | -------------------- | ----------------------------------- |
+| `AKAUNTING_DOMAIN`           | `invoices.${DOMAIN}` | Public host of the web UI           |
+| `AKAUNTING_DB_ROOT_PASSWORD` | generated, secret    | MariaDB root password               |
+| `AKAUNTING_DB_PASSWORD`      | generated, secret    | Password of the `akaunting` DB user |
 
 ## Authelia middleware
 

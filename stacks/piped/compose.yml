@@ -13,7 +13,7 @@ services:
       backend:
         condition: service_healthy
     environment:
-      - BACKEND_HOSTNAME=pipedapi.${DOMAIN}
+      - BACKEND_HOSTNAME=${PIPED_API_DOMAIN}
     healthcheck:
       test: ["CMD-SHELL", "curl -fsS -o /dev/null http://localhost:80/ || exit 1"]
       interval: 30s
@@ -33,7 +33,7 @@ services:
     labels:
       - "traefik.enable=true"
       - "traefik.docker.network=proxy"
-      - "traefik.http.routers.hl-piped.rule=Host(`piped.${DOMAIN}`)"
+      - "traefik.http.routers.hl-piped.rule=Host(`${PIPED_DOMAIN}`)"
       - "traefik.http.routers.hl-piped.middlewares=robots-deny@file"
       - "traefik.http.routers.hl-piped.entrypoints=websecure"
       - "traefik.http.routers.hl-piped.tls=true"
@@ -72,7 +72,7 @@ services:
     labels:
       - "traefik.enable=true"
       - "traefik.docker.network=proxy"
-      - "traefik.http.routers.hl-piped-api.rule=Host(`pipedapi.${DOMAIN}`)"
+      - "traefik.http.routers.hl-piped-api.rule=Host(`${PIPED_API_DOMAIN}`)"
       - "traefik.http.routers.hl-piped-api.middlewares=robots-deny@file"
       - "traefik.http.routers.hl-piped-api.entrypoints=websecure"
       - "traefik.http.routers.hl-piped-api.tls=true"
@@ -102,7 +102,7 @@ services:
     labels:
       - "traefik.enable=true"
       - "traefik.docker.network=proxy"
-      - "traefik.http.routers.hl-piped-proxy.rule=Host(`pipedproxy.${DOMAIN}`)"
+      - "traefik.http.routers.hl-piped-proxy.rule=Host(`${PIPED_PROXY_DOMAIN}`)"
       - "traefik.http.routers.hl-piped-proxy.middlewares=robots-deny@file"
       - "traefik.http.routers.hl-piped-proxy.entrypoints=websecure"
       - "traefik.http.routers.hl-piped-proxy.tls=true"

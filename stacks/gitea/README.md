@@ -13,12 +13,12 @@ Self-hosted Git service with CI/CD (Woodpecker integration).
 
 ## Access
 
-Web UI: `https://git.${DOMAIN}`
+Web UI: `https://${GITEA_DOMAIN}`
 
 ## Configuration
 
 ```bash
-GITEA__server__ROOT_URL=https://git.${DOMAIN}
+GITEA__server__ROOT_URL=https://${GITEA_DOMAIN}
 GITEA__database__DB_TYPE=postgres
 GITEA__mailer__ENABLED=true
 GITEA__service__DISABLE_REGISTRATION=true
@@ -40,11 +40,12 @@ PostgreSQL dump + data directory backed up nightly via Restic.
 Declared in `+meta.ts`. Requires the `traefik` stack. Ships `compose.yml` and `public/`
 (`robots.txt`).
 
-| Key                   | Default           | Meaning                         |
-| --------------------- | ----------------- | ------------------------------- |
-| `GITEA_DB_PASSWORD`   | generated, secret | Postgres password               |
-| `GITEA_SMTP_HOST`     | asked             | SMTP server host                |
-| `GITEA_SMTP_PORT`     | `587`             | SMTP server port                |
-| `GITEA_SMTP_USERNAME` | asked             | SMTP login                      |
-| `GITEA_SMTP_PASSWORD` | asked, secret     | SMTP password                   |
-| `GITEA_SMTP_FROM`     | asked             | Sender address of outgoing mail |
+| Key                   | Default           | Meaning                                  |
+| --------------------- | ----------------- | ---------------------------------------- |
+| `GITEA_DOMAIN`        | `git.${DOMAIN}`   | Public host of the web UI and clone URLs |
+| `GITEA_DB_PASSWORD`   | generated, secret | Postgres password                        |
+| `GITEA_SMTP_HOST`     | asked             | SMTP server host                         |
+| `GITEA_SMTP_PORT`     | `587`             | SMTP server port                         |
+| `GITEA_SMTP_USERNAME` | asked             | SMTP login                               |
+| `GITEA_SMTP_PASSWORD` | asked, secret     | SMTP password                            |
+| `GITEA_SMTP_FROM`     | asked             | Sender address of outgoing mail          |

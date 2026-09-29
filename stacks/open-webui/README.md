@@ -12,7 +12,7 @@ Self-hosted ChatGPT-like interface with Ollama integration.
 
 ## Access
 
-Web UI: `https://ai.${DOMAIN}`
+Web UI: `https://${OPEN_WEBUI_DOMAIN}`
 
 ## Configuration
 
@@ -25,10 +25,11 @@ docker exec -it open-webui ollama pull codellama
 
 ## Variables
 
-Declared in `+meta.ts`; `rostok stack add open-webui` writes them to the server's `.env`. Requires the `traefik` stack. Served at `ai.${DOMAIN}`. `after.deploy.ts` copies the provider list into Open WebUI's database on every deploy. The stack talks to sibling stacks by container name (`ollama`, `searxng`, `playwright`, `caldav-mcp`, `email-mcp`, `google-maps-mcp`, `github-mcp`); a missing one only makes its tool fail. The default document extraction engine is `tika`, which this catalog does not ship: clear `OPEN_WEBUI_CONTENT_EXTRACTION_ENGINE` in the server's `.env` after `stack add` to use the built-in one.
+Declared in `+meta.ts`; `rostok stack add open-webui` writes them to the server's `.env`. Requires the `traefik` stack. Served at `${OPEN_WEBUI_DOMAIN}`. `after.deploy.ts` copies the provider list into Open WebUI's database on every deploy. The stack talks to sibling stacks by container name (`ollama`, `searxng`, `playwright`, `caldav-mcp`, `email-mcp`, `google-maps-mcp`, `github-mcp`); a missing one only makes its tool fail. The default document extraction engine is `tika`, which this catalog does not ship: clear `OPEN_WEBUI_CONTENT_EXTRACTION_ENGINE` in the server's `.env` after `stack add` to use the built-in one.
 
 | Key                                                    | Default                                  | Meaning                                                          |
 | ------------------------------------------------------ | ---------------------------------------- | ---------------------------------------------------------------- |
+| `OPEN_WEBUI_DOMAIN`                                    | `ai.${DOMAIN}`                           | Public host of the web UI                                        |
 | `OPEN_WEBUI_OPENAI_API_KEYS`                           | none, secret, required                   | Keys of your OpenAI-compatible providers, `;`-separated          |
 | `OPEN_WEBUI_OPENAI_API_BASE_URLS`                      | none, required                           | Base URLs of those providers, same order                         |
 | `OPEN_WEBUI_WEBUI_SECRET_KEY`                          | generated, secret                        | Session signing key (`WEBUI_SECRET_KEY`)                         |

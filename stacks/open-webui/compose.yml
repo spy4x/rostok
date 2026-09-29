@@ -30,7 +30,7 @@ services:
 
       # --- Feature Toggles ---
       # Calendar: AI can create/search events, requires WEBUI_URL
-      - WEBUI_URL=https://ai.${DOMAIN}
+      - WEBUI_URL=https://${OPEN_WEBUI_DOMAIN}
       - ENABLE_CALENDAR=true
       - ENABLE_MEMORIES=true
       - ENABLE_NOTES=true
@@ -106,7 +106,7 @@ services:
       - "traefik.enable=true"
       - "traefik.docker.network=proxy"
       - "traefik.http.services.hl-open-webui.loadbalancer.server.port=8080"
-      - "traefik.http.routers.hl-open-webui.rule=Host(`ai.${DOMAIN}`)"
+      - "traefik.http.routers.hl-open-webui.rule=Host(`${OPEN_WEBUI_DOMAIN}`)"
       - "traefik.http.routers.hl-open-webui.middlewares=robots-deny@file"
       - "traefik.http.routers.hl-open-webui.entrypoints=websecure"
       - "traefik.http.routers.hl-open-webui.tls=true"

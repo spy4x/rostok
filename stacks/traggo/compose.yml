@@ -32,7 +32,7 @@ services:
       - "traefik.enable=true"
       - "traefik.docker.network=proxy"
       - "traefik.http.services.hl-traggo.loadbalancer.server.port=3030"
-      - "traefik.http.routers.hl-traggo.rule=Host(`time.${DOMAIN}`)"
+      - "traefik.http.routers.hl-traggo.rule=Host(`${TRAGGO_DOMAIN}`)"
       - "traefik.http.routers.hl-traggo.entrypoints=websecure"
       - "traefik.http.routers.hl-traggo.tls=true"
       - "traefik.http.routers.hl-traggo.middlewares=authelia@file,robots-deny@file"

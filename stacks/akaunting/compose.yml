@@ -43,7 +43,7 @@ services:
       - ${VOLUMES_PATH}/akaunting/data:/var/www/akaunting/storage:z
       - ./health.html:/var/www/html/health.html
     environment:
-      - APP_URL=https://invoices.${DOMAIN}
+      - APP_URL=https://${AKAUNTING_DOMAIN}
       - DB_CONNECTION=mysql
       - DB_HOST=akaunting-db
       - DB_PORT=3306
@@ -63,7 +63,7 @@ services:
       - "traefik.enable=true"
       - "traefik.docker.network=proxy"
       - "traefik.http.services.hl-akaunting.loadbalancer.server.port=80"
-      - "traefik.http.routers.hl-akaunting.rule=Host(`invoices.${DOMAIN}`)"
+      - "traefik.http.routers.hl-akaunting.rule=Host(`${AKAUNTING_DOMAIN}`)"
       - "traefik.http.routers.hl-akaunting.entrypoints=websecure"
       - "traefik.http.routers.hl-akaunting.tls=true"
       - "traefik.http.routers.hl-akaunting.middlewares=authelia@file,robots-deny@file"

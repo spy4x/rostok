@@ -245,12 +245,13 @@ export async function checkStack(
     }
   }
 
-  // 4. Host() rules use exactly the stack's own <PREFIX>DOMAIN.
+  // 4. Host() rules read one of the stack's own domain variables: <PREFIX>DOMAIN, or
+  // <PREFIX>…DOMAIN for a stack with several hosts (IMMICH_KIOSK_DOMAIN).
   if (composeText) {
-    const expected = "`${" + prefix + "DOMAIN}`"
+    const ownDomain = new RegExp("^`\\$\\{" + prefix + "[A-Z0-9_]*DOMAIN\\}`$")
     for (const rule of findHostRules(composeText)) {
-      if (rule !== expected) {
-        violations.push(`Host(${rule}) does not read \${${prefix}DOMAIN}`)
+      if (!ownDomain.test(rule)) {
+        violations.push(`Host(${rule}) does not read \${${prefix}DOMAIN} or \${${prefix}…DOMAIN}`)
       }
     }
   }
@@ -614,6 +615,47 @@ Deno.test("checkStack: flags a Host() rule that doesn't use <PREFIX>_DOMAIN", as
       violations.some((v) => v.includes("Host(") && v.includes("ACME_DOMAIN")),
       true,
     )
+  } finally {
+    await Deno.remove(dir, { recursive: true })
+  }
+})
+
+Deno.test("checkStack: a Host() rule may read any <PREFIX>…DOMAIN of its own stack, not another stack's", async () => {
+  const dir = await Deno.makeTempDir()
+  try {
+    const meta: StackMeta = {
+      name: "acme",
+      description: "test",
+      variables: [
+        { key: "ACME_DOMAIN", required: true, default: "a.${DOMAIN}" },
+        { key: "ACME_KIOSK_DOMAIN", required: true, default: "k.${DOMAIN}" },
+      ],
+    }
+    await Deno.writeTextFile(
+      `${dir}/compose.yml`,
+      "labels:\n" +
+        '  - "traefik.http.routers.a.rule=Host(`${ACME_DOMAIN}`)"\n' +
+        '  - "traefik.http.routers.k.rule=Host(`${ACME_KIOSK_DOMAIN}`)"\n',
+    )
+    const ok = await checkStack(dir, "acme", meta, new Map())
+    assertEquals(ok.filter((v) => v.includes("Host(")), [])
+
+    await Deno.writeTextFile(
+      `${dir}/compose.yml`,
+      "labels:\n" +
+        '  - "traefik.http.routers.a.rule=Host(`${ACME_DOMAIN}`)"\n' +
+        '  - "traefik.http.routers.k.rule=Host(`${OTHER_KIOSK_DOMAIN}`)"\n',
+    )
+    const bad = await checkStack(dir, "acme", meta, new Map())
+    assertEquals(bad.filter((v) => v.includes("Host(")).length, 1)
+
+    // The variable must be the whole host, not a part of it.
+    await Deno.writeTextFile(
+      `${dir}/compose.yml`,
+      "labels:\n" + '  - "traefik.http.routers.a.rule=Host(`api.${ACME_DOMAIN}`)"\n',
+    )
+    const partial = await checkStack(dir, "acme", meta, new Map())
+    assertEquals(partial.filter((v) => v.includes("Host(")).length, 1)
   } finally {
     await Deno.remove(dir, { recursive: true })
   }

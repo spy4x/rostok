@@ -4,7 +4,7 @@ Privacy-respecting metasearch engine. Aggregates results from multiple search en
 
 ## Access
 
-- Web UI: `https://search.${DOMAIN}`
+- Web UI: `https://${SEARXNG_DOMAIN}`
 - JSON API: `http://searxng:8080/search?format=json` (internal, for OpenWebUI)
 
 ## Integration with OpenWebUI
@@ -28,8 +28,9 @@ Generated from `searxng-settings.yml` template during deployment.
 
 ## Variables
 
-Declared in `+meta.ts`; `rostok stack add searxng` writes them to the server's `.env`. Requires the `traefik` stack. Served at `search.${DOMAIN}`.
+Declared in `+meta.ts`; `rostok stack add searxng` writes them to the server's `.env`. Requires the `traefik` stack. Served at `${SEARXNG_DOMAIN}`.
 
-| Key                  | Default           | Meaning                                           |
-| -------------------- | ----------------- | ------------------------------------------------- |
-| `SEARXNG_SECRET_KEY` | generated, secret | Written into `settings.yml` by `before.deploy.ts` |
+| Key                  | Default            | Meaning                                           |
+| -------------------- | ------------------ | ------------------------------------------------- |
+| `SEARXNG_DOMAIN`     | `search.${DOMAIN}` | Public host of the search page                    |
+| `SEARXNG_SECRET_KEY` | generated, secret  | Written into `settings.yml` by `before.deploy.ts` |

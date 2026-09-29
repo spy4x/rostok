@@ -12,7 +12,7 @@ services:
     image: woodpeckerci/woodpecker-server:v3.11.0
     environment:
       - WOODPECKER_OPEN=false
-      - WOODPECKER_HOST=https://ci.${DOMAIN}
+      - WOODPECKER_HOST=https://${WOODPECKER_DOMAIN}
       - WOODPECKER_AGENT_SECRET=${WOODPECKER_AGENT_SECRET}
       # GitHub integration (comment out if using Gitea/GitLab)
       - WOODPECKER_GITHUB=true
@@ -46,7 +46,7 @@ services:
       - "traefik.enable=true"
       - "traefik.docker.network=proxy"
       - "traefik.http.services.hl-woodpecker.loadbalancer.server.port=8000"
-      - "traefik.http.routers.hl-woodpecker.rule=Host(`ci.${DOMAIN}`)"
+      - "traefik.http.routers.hl-woodpecker.rule=Host(`${WOODPECKER_DOMAIN}`)"
       - "traefik.http.routers.hl-woodpecker.middlewares=robots-deny@file"
       - "traefik.http.routers.hl-woodpecker.entrypoints=websecure"
       - "traefik.http.routers.hl-woodpecker.tls=true"

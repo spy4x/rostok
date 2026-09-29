@@ -39,13 +39,13 @@ Before deployment, a `config.properties` file is generated from the template wit
 
 ## Access
 
-- **Frontend**: `https://piped.${DOMAIN}`
-- **API**: `https://pipedapi.${DOMAIN}`
-- **Proxy**: `https://pipedproxy.${DOMAIN}`
+- **Frontend**: `https://${PIPED_DOMAIN}`
+- **API**: `https://${PIPED_API_DOMAIN}`
+- **Proxy**: `https://${PIPED_PROXY_DOMAIN}`
 
 ## First-Time Setup
 
-1. Open `https://piped.${DOMAIN}`
+1. Open `https://${PIPED_DOMAIN}`
 2. Create an account (stored locally in your database)
 3. Import subscriptions from YouTube (via OPML or CSV)
 4. Configure preferences (quality, autoplay, etc.)
@@ -74,10 +74,13 @@ Videos and thumbnails are not stored locally (proxied from YouTube).
 
 ## Variables
 
-Declared in `+meta.ts`; `rostok stack add piped` writes them to the server's `.env`. Requires the `traefik` stack. Server-level keys (`DOMAIN`, `VOLUMES_PATH`) are shared by every stack. The three hosts `piped.`, `pipedapi.` and `pipedproxy.` under `${DOMAIN}` need DNS records.
+Declared in `+meta.ts`; `rostok stack add piped` writes them to the server's `.env`. Requires the `traefik` stack. Server-level keys (`DOMAIN`, `VOLUMES_PATH`) are shared by every stack. The three hosts need DNS records.
 
-| Key                 | Default           | Meaning           |
-| ------------------- | ----------------- | ----------------- |
-| `PIPED_DB_NAME`     | `piped`           | Postgres database |
-| `PIPED_DB_USER`     | `piped`           | Postgres user     |
-| `PIPED_DB_PASSWORD` | generated, secret | Postgres password |
+| Key                  | Default                | Meaning                        |
+| -------------------- | ---------------------- | ------------------------------ |
+| `PIPED_DOMAIN`       | `piped.${DOMAIN}`      | Public host of the frontend    |
+| `PIPED_API_DOMAIN`   | `pipedapi.${DOMAIN}`   | Public host of the API         |
+| `PIPED_PROXY_DOMAIN` | `pipedproxy.${DOMAIN}` | Public host of the video proxy |
+| `PIPED_DB_NAME`      | `piped`                | Postgres database              |
+| `PIPED_DB_USER`      | `piped`                | Postgres user                  |
+| `PIPED_DB_PASSWORD`  | generated, secret      | Postgres password              |

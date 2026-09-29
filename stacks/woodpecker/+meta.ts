@@ -14,6 +14,12 @@ export default {
   requires: ["traefik"],
   variables: [
     {
+      key: "WOODPECKER_DOMAIN",
+      question: "Public domain for Woodpecker?",
+      default: "ci.${DOMAIN}",
+      required: true,
+    },
+    {
       key: "WOODPECKER_AGENT_SECRET",
       question: "Shared secret between server and agent (auto-generated)?",
       default: () => generatePassword(32),

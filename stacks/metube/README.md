@@ -12,7 +12,7 @@ YouTube downloader web interface.
 
 ## Access
 
-Web UI: `https://metube.${DOMAIN}`
+Web UI: `https://${METUBE_DOMAIN}`
 
 ## Usage
 
@@ -28,10 +28,11 @@ Paste YouTube URL and click download. Files saved to configured output directory
 Declared in `+meta.ts`. Requires the `traefik` stack. Server-level keys (`DOMAIN`, `TIMEZONE`,
 `PUID`, `PGID`) are shared by every stack.
 
-| Key           | Default                  | Meaning                              |
-| ------------- | ------------------------ | ------------------------------------ |
-| `PATH_VIDEOS` | `${VOLUMES_PATH}/videos` | Host folder for video downloads      |
-| `PATH_MUSIC`  | `${VOLUMES_PATH}/music`  | Host folder for audio-only downloads |
+| Key             | Default                  | Meaning                              |
+| --------------- | ------------------------ | ------------------------------------ |
+| `METUBE_DOMAIN` | `metube.${DOMAIN}`       | Public host of the web UI            |
+| `PATH_VIDEOS`   | `${VOLUMES_PATH}/videos` | Host folder for video downloads      |
+| `PATH_MUSIC`    | `${VOLUMES_PATH}/music`  | Host folder for audio-only downloads |
 
 ## Authelia middleware
 

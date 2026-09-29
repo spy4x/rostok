@@ -42,7 +42,7 @@ services:
       - "traefik.enable=true"
       - "traefik.docker.network=proxy"
       - "traefik.http.services.hl-metube.loadbalancer.server.port=8081"
-      - "traefik.http.routers.hl-metube.rule=Host(`metube.${DOMAIN}`)"
+      - "traefik.http.routers.hl-metube.rule=Host(`${METUBE_DOMAIN}`)"
       - "traefik.http.routers.hl-metube.entrypoints=websecure"
       - "traefik.http.routers.hl-metube.tls=true"
       - "traefik.http.routers.hl-metube.tls.certresolver=myresolver"
