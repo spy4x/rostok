@@ -33,7 +33,7 @@ services:
     volumes:
       - ${PATH_APPS}/stacks/searxng/settings.yml:/etc/searxng/settings.yml:ro,z
     environment:
-      - SEARXNG_BASE_URL=https://search.${DOMAIN}
+      - SEARXNG_BASE_URL=https://${SEARXNG_DOMAIN}
       - SEARXNG_REDIS_URL=redis://searxng-redis:6379/0
     cap_drop:
       - ALL
@@ -56,7 +56,7 @@ services:
       - "traefik.enable=true"
       - "traefik.docker.network=proxy"
       - "traefik.http.services.hl-searxng.loadbalancer.server.port=8080"
-      - "traefik.http.routers.hl-searxng.rule=Host(`search.${DOMAIN}`)"
+      - "traefik.http.routers.hl-searxng.rule=Host(`${SEARXNG_DOMAIN}`)"
       - "traefik.http.routers.hl-searxng.middlewares=robots-deny@file"
       - "traefik.http.routers.hl-searxng.entrypoints=websecure"
       - "traefik.http.routers.hl-searxng.tls=true"

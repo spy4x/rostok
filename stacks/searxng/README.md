@@ -30,6 +30,7 @@ Generated from `searxng-settings.yml` template during deployment.
 
 Declared in `+meta.ts`; `rostok stack add searxng` writes them to the server's `.env`. Requires the `traefik` stack. Served at `search.${DOMAIN}`.
 
-| Key                  | Default           | Meaning                                           |
-| -------------------- | ----------------- | ------------------------------------------------- |
-| `SEARXNG_SECRET_KEY` | generated, secret | Written into `settings.yml` by `before.deploy.ts` |
+| Key                  | Default            | Meaning                                           |
+| -------------------- | ------------------ | ------------------------------------------------- |
+| `SEARXNG_DOMAIN`     | `search.${DOMAIN}` | Public host of the search page                    |
+| `SEARXNG_SECRET_KEY` | generated, secret  | Written into `settings.yml` by `before.deploy.ts` |

@@ -18,6 +18,12 @@ export default {
   requires: ["traefik"],
   variables: [
     {
+      key: "SEARXNG_DOMAIN",
+      question: "Public domain for SearXNG?",
+      default: "search.${DOMAIN}",
+      required: true,
+    },
+    {
       key: "SEARXNG_SECRET_KEY",
       question: "SearXNG secret key (auto-generated)?",
       default: () => generatePassword(32),
