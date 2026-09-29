@@ -14,6 +14,12 @@ export default {
   requires: ["traefik"],
   variables: [
     {
+      key: "AKAUNTING_DOMAIN",
+      question: "Public domain for Akaunting?",
+      default: "invoices.${DOMAIN}",
+      required: true,
+    },
+    {
       key: "AKAUNTING_DB_ROOT_PASSWORD",
       question: "MariaDB root password (auto-generated)?",
       default: () => generatePassword(32),

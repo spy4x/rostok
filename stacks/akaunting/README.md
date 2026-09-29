@@ -37,10 +37,11 @@ PostgreSQL dump + storage data backed up nightly via Restic.
 
 Declared in `+meta.ts`. Requires the `traefik` stack.
 
-| Key                          | Default           | Meaning                             |
-| ---------------------------- | ----------------- | ----------------------------------- |
-| `AKAUNTING_DB_ROOT_PASSWORD` | generated, secret | MariaDB root password               |
-| `AKAUNTING_DB_PASSWORD`      | generated, secret | Password of the `akaunting` DB user |
+| Key                          | Default              | Meaning                             |
+| ---------------------------- | -------------------- | ----------------------------------- |
+| `AKAUNTING_DOMAIN`           | `invoices.${DOMAIN}` | Public host of the web UI           |
+| `AKAUNTING_DB_ROOT_PASSWORD` | generated, secret    | MariaDB root password               |
+| `AKAUNTING_DB_PASSWORD`      | generated, secret    | Password of the `akaunting` DB user |
 
 ## Authelia middleware
 
