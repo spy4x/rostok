@@ -24,6 +24,13 @@ for the full setup.
 - [Transmission Remote GUI](https://github.com/transmission-remote-gui/transgui)
 - [Transdroid](http://www.transdroid.org/) (Android)
 
+## Variables
+
+No stack-owned variables. Requires the `traefik` stack, and Authelia for the forward-auth middleware on the router. Downloads go to the server-level `PATH_MOVIES`, `PATH_SERIES`, `PATH_MUSIC`, `PATH_BOOKS` and `PATH_OTHER`.
+
+| Key | Default | Meaning |
+| --- | ------- | ------- |
+
 ## Resources
 
 - [Transmission Wiki](https://github.com/transmission/transmission/wiki)
