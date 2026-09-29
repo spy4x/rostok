@@ -27,6 +27,12 @@ export default {
   requires: ["traefik"],
   variables: [
     {
+      key: "OPEN_WEBUI_DOMAIN",
+      question: "Public domain for Open WebUI?",
+      default: "ai.${DOMAIN}",
+      required: true,
+    },
+    {
       key: "OPEN_WEBUI_OPENAI_API_KEYS",
       question: "API keys of your OpenAI-compatible providers (semicolon-separated)?",
       required: true,
