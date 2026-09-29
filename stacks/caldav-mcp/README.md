@@ -18,16 +18,21 @@ Internal MCP server — no external web UI. Two access modes:
 2. **Local stdio** — for OpenCode running on the host. Launched via a script in
    `~/sync/code/mcps/caldav/start.sh` (see [OpenCode MCP setup](#opencode-mcp-setup) below).
 
-## Configuration
+## Variables
 
-```bash
-CALDAV_MCP_SERVER_URL=<caldav-server-url>
-CALDAV_MCP_USERNAME=<username>
-CALDAV_MCP_PASSWORD=<password>
-```
+`rostok stack add caldav-mcp` asks for these and writes them to the server's
+`.env`. The stack builds its image from the `Dockerfile` next to
+`compose.yml` and has no Traefik route, so it needs no domain and no
+`traefik` stack.
+
+| Key                     | Default          | Meaning           |
+| ----------------------- | ---------------- | ----------------- |
+| `CALDAV_MCP_SERVER_URL` | required         | CalDAV server URL |
+| `CALDAV_MCP_USERNAME`   | required         | CalDAV username   |
+| `CALDAV_MCP_PASSWORD`   | required, secret | CalDAV password   |
 
 For Stalwart on `mail.${DOMAIN}`, the URL is `https://mail.${DOMAIN}/dav/cal/`.
-The username is the full mailbox email (e.g. `anton@antonshubin.com`).
+The username is the full mailbox address (e.g. `you@example.com`).
 
 ## OpenCode MCP setup
 
