@@ -48,15 +48,18 @@ rendered file. The deploy stops if a required key is missing.
 
 ## Variables
 
-| Key                    | Default          | Meaning                                                      |
-| ---------------------- | ---------------- | ------------------------------------------------------------ |
-| `EMAIL_MCP_HOST`       | `mail.${DOMAIN}` | Mail server host: IMAP on 993 (TLS), SMTP on 587 (STARTTLS)  |
-| `EMAIL_MCP_USER`       | required         | Login and address of the first account                       |
-| `EMAIL_MCP_PASSWORD`   | required, secret | Password of the first account                                |
-| `EMAIL_MCP_FULL_NAME`  | the address      | Display name of the first account                            |
-| `EMAIL_MCP_USER_2`     | none             | Login and address of an optional second account              |
-| `EMAIL_MCP_PASSWORD_2` | none, secret     | Password of the second account (required when a user is set) |
-| `EMAIL_MCP_VERIFY_SSL` | `false`          | `true` verifies the mail server's certificate                |
+| Key                        | Default          | Meaning                                                     |
+| -------------------------- | ---------------- | ----------------------------------------------------------- |
+| `EMAIL_MCP_HOST`           | `mail.${DOMAIN}` | Mail server host: IMAP on 993 (TLS), SMTP on 587 (STARTTLS) |
+| `EMAIL_MCP_USER`           | required         | Login and address of the first account                      |
+| `EMAIL_MCP_PASSWORD`       | required, secret | Password of the first account                               |
+| `EMAIL_MCP_ACCOUNT_NAME`   | `main`           | Account name the assistant sees for the first account       |
+| `EMAIL_MCP_FULL_NAME`      | the address      | Display name of the first account                           |
+| `EMAIL_MCP_USER_2`         | none             | Login and address of an optional second account             |
+| `EMAIL_MCP_PASSWORD_2`     | none, secret     | Password of the second account (required with a user)       |
+| `EMAIL_MCP_FULL_NAME_2`    | its address      | Display name of the second account                          |
+| `EMAIL_MCP_ACCOUNT_NAME_2` | `second`         | Account name the assistant sees for the second account      |
+| `EMAIL_MCP_VERIFY_SSL`     | `false`          | `true` verifies the mail server's certificate               |
 
 The stack has no Traefik route, so it needs no domain and no `traefik` stack.
 

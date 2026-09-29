@@ -42,6 +42,12 @@ export default {
       required: false,
     },
     {
+      key: "EMAIL_MCP_ACCOUNT_NAME",
+      question: "Name the assistant sees for the first account?",
+      default: "main",
+      required: true,
+    },
+    {
       key: "EMAIL_MCP_USER_2",
       question: "Login and address of a second mail account? Leave blank to skip",
       required: false,
@@ -51,6 +57,17 @@ export default {
       question: "Password of the second mail account?",
       required: false,
       secret: true,
+    },
+    {
+      key: "EMAIL_MCP_FULL_NAME_2",
+      question: "Display name for the second account? Leave blank to use its address",
+      required: false,
+    },
+    {
+      key: "EMAIL_MCP_ACCOUNT_NAME_2",
+      question: "Name the assistant sees for the second account?",
+      default: "second",
+      required: true,
     },
     {
       key: "EMAIL_MCP_VERIFY_SSL",

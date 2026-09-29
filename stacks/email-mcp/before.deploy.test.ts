@@ -59,3 +59,30 @@ Deno.test("email-mcp config: names every missing required key", () => {
   )
   assertStringIncludes(err2.message, "EMAIL_MCP_PASSWORD_2")
 })
+
+Deno.test("email-mcp config: account names and display names reach the output", () => {
+  const lines = linesOf({
+    ...base,
+    EMAIL_MCP_USER_2: "you@example.org",
+    EMAIL_MCP_PASSWORD_2: "pw2",
+    EMAIL_MCP_FULL_NAME: "First Person",
+    EMAIL_MCP_FULL_NAME_2: "Second Person",
+    EMAIL_MCP_ACCOUNT_NAME: "personal",
+    EMAIL_MCP_ACCOUNT_NAME_2: "work",
+  })
+  for (
+    const want of [
+      `full_name = "First Person"`,
+      `full_name = "Second Person"`,
+      `account_name = "personal"`,
+      `account_name = "work"`,
+    ]
+  ) assert(lines.includes(want), `missing ${want}`)
+})
+
+Deno.test("email-mcp config: names default to main/second and to the address", () => {
+  const lines = linesOf({ ...base, EMAIL_MCP_USER_2: "you@example.org", EMAIL_MCP_PASSWORD_2: "x" })
+  assert(lines.includes(`account_name = "main"`))
+  assert(lines.includes(`account_name = "second"`))
+  assert(lines.includes(`full_name = "you@example.org"`))
+})

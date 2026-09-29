@@ -65,15 +65,15 @@ export function renderConfig(env: Record<string, string | undefined>): string {
   const host = get("EMAIL_MCP_HOST")
   const verifySsl = get("EMAIL_MCP_VERIFY_SSL") === "true"
   const accounts: Account[] = [{
-    name: "main",
+    name: get("EMAIL_MCP_ACCOUNT_NAME") || "main",
     fullName: get("EMAIL_MCP_FULL_NAME") || get("EMAIL_MCP_USER"),
     user: get("EMAIL_MCP_USER"),
     password: get("EMAIL_MCP_PASSWORD"),
   }]
   if (get("EMAIL_MCP_USER_2")) {
     accounts.push({
-      name: "second",
-      fullName: get("EMAIL_MCP_USER_2"),
+      name: get("EMAIL_MCP_ACCOUNT_NAME_2") || "second",
+      fullName: get("EMAIL_MCP_FULL_NAME_2") || get("EMAIL_MCP_USER_2"),
       user: get("EMAIL_MCP_USER_2"),
       password: get("EMAIL_MCP_PASSWORD_2"),
     })
