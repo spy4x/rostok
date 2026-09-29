@@ -258,6 +258,7 @@ Deno.test("stale-container cleanup never removes another stack's container that 
   const run = await runWithFakeDocker({ name: "nginx", deployAs: "blog" }, config, [
     "hl-traefik id-traefik traefik /srv/apps/stacks/traefik/compose.yml",
     "hl-traefik id-mynginx traefik /srv/apps/stacks/mynginx/compose.yml",
+    "hl-traefik id-mystacks traefik /srv/apps/mystacks/nginx/compose.yml",
   ])
   assertEquals(run.removed, [])
   assertStringIncludes(run.stdout, "keeping container hl-traefik")

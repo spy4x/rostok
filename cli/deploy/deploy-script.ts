@@ -104,9 +104,7 @@ docker ps -a --format '{{.Names}}|{{.ID}}|{{.Label "com.docker.compose.project"}
   printf '%s\\n' "\$${STALE_NAMES_VAR}" | grep -qxF -- "\$cname" || continue
   [ "\$proj" != ${shQuote(deployAs)} ] && [ -n "\$id" ] || continue
   case ",\$files," in
-    *${shQuote(`/stacks/${stackName}/compose.yml,`)}*|*${
-      shQuote(`,stacks/${stackName}/compose.yml,`)
-    }*) own=1 ;;
+    *${shQuote(`/stacks/${stackName}/compose.yml,`)}*) own=1 ;;
     *) own= ;;
   esac
   if [ -n "\$proj" ] && [ -n "\$own" ]; then
