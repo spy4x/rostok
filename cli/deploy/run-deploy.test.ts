@@ -955,3 +955,23 @@ Deno.test("runDeploy: a local server reached through a symlinked project folder 
     await teardownRunDeployFixture(f)
   }
 })
+
+Deno.test("runDeploy: a not-yet-created local PATH_APPS under a symlink into the project is refused", async () => {
+  const f = await setupRunDeployFixture()
+  const linkParent = await Deno.makeTempDir({ prefix: "rostok-rundeploy-link-" })
+  try {
+    const link = join(linkParent, "to-project")
+    await Deno.symlink(await Deno.realPath(f.projectDir), link)
+    await writeLocalServer(f.projectDir, `${link}/apps`)
+    const io: RunDeployIO = { ...f.io, checkLocalDockerEndpoint: async () => {} }
+    await assertRejects(
+      () => runDeploy({ cwd: f.projectDir, server: "test" }, io),
+      UserError,
+      "overlaps the project folder",
+    )
+    assertEquals(f.remote.calls, [])
+  } finally {
+    await Deno.remove(linkParent, { recursive: true })
+    await teardownRunDeployFixture(f)
+  }
+})

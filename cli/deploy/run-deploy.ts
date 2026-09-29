@@ -75,7 +75,7 @@
 // shipped and must not depend on staging's shape — a server-specific
 // hook is never shipped, so it has no such constraint.
 
-import { dirname, join, resolve, toFileUrl } from "@std/path"
+import { basename, dirname, join, resolve, toFileUrl } from "@std/path"
 import { parseEnv, readEnvFile } from "../env-files.ts"
 import { isLocalSshAddress, serverDirFor } from "../server-keys.ts"
 import { serverNotFoundMessage, UserError } from "../errors.ts"
@@ -777,13 +777,20 @@ function removeStagingDirSync(dir: string): void {
   }
 }
 
-/** `path` with symlinks resolved, or `path` itself when it doesn't exist (yet). */
+/**
+ * `path` with symlinks resolved. A path that doesn't exist yet resolves
+ * its deepest existing ancestor and keeps the rest as written, so a
+ * not-yet-created PATH_APPS under a symlink is still compared by where
+ * it will really land.
+ */
 async function realPathOr(path: string): Promise<string> {
   try {
     return await Deno.realPath(path)
   } catch (err) {
-    if (err instanceof Deno.errors.NotFound) return path
-    throw err
+    if (!(err instanceof Deno.errors.NotFound)) throw err
+    const parent = dirname(path)
+    if (parent === path) return path
+    return join(await realPathOr(parent), basename(path))
   }
 }
 
