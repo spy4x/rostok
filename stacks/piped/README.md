@@ -31,13 +31,7 @@ Consists of three services:
 
 Add to `servers/{server}/.env`:
 
-```bash
-#region Piped
-PIPED_POSTGRES_USER=spy4x
-PIPED_POSTGRES_PASSWORD=<generate-secure-password>
-PIPED_POSTGRES_DB=piped
-#endregion Piped
-```
+`rostok stack add piped` writes the database settings to the server's `.env` (see Variables below).
 
 ### Config File
 
@@ -77,3 +71,13 @@ Videos and thumbnails are not stored locally (proxied from YouTube).
 - Check [Piped instances status](https://piped-instances.kavin.rocks/) for updates
 - Consider using official instances during outages
 - Database stores only user preferences, not video content
+
+## Variables
+
+Declared in `+meta.ts`; `rostok stack add piped` writes them to the server's `.env`. Requires the `traefik` stack. Server-level keys (`DOMAIN`, `VOLUMES_PATH`) are shared by every stack. The three hosts `piped.`, `pipedapi.` and `pipedproxy.` under `${DOMAIN}` need DNS records.
+
+| Key                 | Default           | Meaning           |
+| ------------------- | ----------------- | ----------------- |
+| `PIPED_DB_NAME`     | `piped`           | Postgres database |
+| `PIPED_DB_USER`     | `piped`           | Postgres user     |
+| `PIPED_DB_PASSWORD` | generated, secret | Postgres password |
