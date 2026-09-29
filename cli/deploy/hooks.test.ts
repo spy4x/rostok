@@ -122,6 +122,17 @@ Deno.test("buildHookEnv: an ambient SSH_PORT in the parent process can't leak th
   assertEquals(env.SSH_PORT, undefined)
 })
 
+Deno.test("buildHookEnv: a local server gets no SSH_HOST or SSH_PORT, not even ambient ones (#282)", () => {
+  // Unset, never "local": a hook that runs commands locally when
+  // SSH_HOST is unset (syncthing) does so, and one that needs SSH_HOST
+  // fails with its own message instead of ssh-ing to a host named local.
+  const ctx: HookContext = { ...BASE_CTX, sshAddress: "local" }
+  const { env } = buildHookEnv(ctx, STACK_NAME, { SSH_HOST: "stale-host", SSH_PORT: "9999" })
+  assertEquals(env.SSH_ADDRESS, "local")
+  assertEquals(env.SSH_HOST, undefined)
+  assertEquals(env.SSH_PORT, undefined)
+})
+
 Deno.test("buildHookEnv: an ssh_config alias parses as SSH_HOST with no port", () => {
   const ctx: HookContext = { ...BASE_CTX, sshAddress: "homelab" }
   const { env } = buildHookEnv(ctx, STACK_NAME, {})

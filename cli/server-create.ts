@@ -45,8 +45,8 @@ import {
   DEFAULT_PATH_APPS,
   parseSshAddress,
   serverDirFor,
+  serverShellArgv,
   SSH_USER_PATTERN,
-  sshArgs,
   validateRemotePath,
   validateServerName,
   validateSshAddress,
@@ -294,7 +294,7 @@ async function collectInput(
   // be rejected outright.
   const sshTarget = await ask(
     FIELDS.sshTarget,
-    "SSH target: an ssh_config alias or user@host[:port]",
+    'SSH target: an ssh_config alias, user@host[:port], or "local" for this machine',
     existingByKey.get("SSH_ADDRESS"),
     toValidator(validateSshAddress),
   )
@@ -519,14 +519,15 @@ export async function probeServer(
     // `StrictHostKeyChecking=accept-new` isn't part of `sshArgs`'s own
     // option set (it's specific to this first-contact probe), so it's
     // prepended here.
-    const sshTarget = parseSshAddress(target)
-    const args = [
-      "-o",
-      "StrictHostKeyChecking=accept-new",
-      ...sshArgs(sshTarget, [remoteCmd], { batchMode: true }),
-    ]
-    child = new Deno.Command("ssh", {
-      args,
+    // #282: SSH_ADDRESS=local probes this machine with `sh -c` instead.
+    const argv = serverShellArgv(
+      target,
+      remoteCmd,
+      ["-o", "StrictHostKeyChecking=accept-new"],
+      { batchMode: true },
+    )
+    child = new Deno.Command(argv[0], {
+      args: argv.slice(1),
       stdout: "piped",
       stderr: "piped",
     }).spawn()

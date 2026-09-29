@@ -964,3 +964,37 @@ Deno.test("server create writes .env.age when a key is present", async () => {
       }
     }))
 })
+
+// #282 — a local server (SSH_ADDRESS=local) is probed on this machine.
+
+Deno.test("server create writes a local server from --var SSH_ADDRESS=local without spawning ssh", async () => {
+  // Resolved before the fake ssh goes on PATH: the probe's own `id -un`
+  // must name the user running this test.
+  const whoami = await new Deno.Command("id", { args: ["-un"] }).output()
+  const localUser = new TextDecoder().decode(whoami.stdout).trim()
+  await withTmpDir(async (dir) => {
+    const marker = join(dir, "ssh-ran")
+    const trapSsh = `#!/bin/sh
+[ -n "$ROSTOK_FAKE_BIN_DEPTH" ] && exit 98
+: > '${marker}'
+exit 255
+`
+    await withFakeSsh(trapSsh, async () => {
+      const result = await serverCreate({
+        cwd: dir,
+        failFast: true,
+        providedVars: {
+          SERVER_NAME: "laptop",
+          SSH_ADDRESS: "local",
+          DOMAIN: "example.com",
+          CONTACT_EMAIL: "a@example.com",
+        },
+      })
+      const env = await readEnvFile(result.envPath)
+      const get = (k: string) => env.find((e) => e.key === k)?.value
+      assertEquals(get("SSH_ADDRESS"), "local")
+      assertEquals(get("SSH_USER"), localUser)
+    })
+    await assertRejects(() => Deno.stat(marker), Deno.errors.NotFound)
+  })
+})

@@ -75,11 +75,12 @@
 // shipped and must not depend on staging's shape — a server-specific
 // hook is never shipped, so it has no such constraint.
 
-import { dirname, join, toFileUrl } from "@std/path"
+import { basename, dirname, join, resolve, toFileUrl } from "@std/path"
 import { parseEnv, readEnvFile } from "../env-files.ts"
-import { serverDirFor } from "../server-keys.ts"
+import { isLocalSshAddress, serverDirFor } from "../server-keys.ts"
 import { serverNotFoundMessage, UserError } from "../errors.ts"
 import { resolveDeployEnv } from "./env.ts"
+import { checkLocalDeployPaths, checkLocalDockerEndpoint } from "./local-server.ts"
 import { checkDockerGroup, checkRemotePathsNotNested, needsRemoteSudo } from "./docker-preflight.ts"
 import { type ResolvedStackFiles, resolveStackFiles } from "./stack-files.ts"
 import { validateStackConfigs } from "./validate-stack-config.ts"
@@ -124,6 +125,8 @@ export interface RunDeployIO {
   runRemoteSync: typeof runRemoteSync
   runRemoteSyncEntry: typeof runRemoteSyncEntry
   getRemoteChecksums: typeof getRemoteChecksums
+  /** Local servers only (#282); the real check runs when a fake IO leaves it out. */
+  checkLocalDockerEndpoint?: typeof checkLocalDockerEndpoint
 }
 
 const defaultRunDeployIO: RunDeployIO = {
@@ -191,6 +194,29 @@ export async function runDeploy(
   const PUID = resolvedEnv.PUID
   const PGID = resolvedEnv.PGID
   const DOCKER_GROUP_ID = resolvedEnv.DOCKER_GROUP_ID
+  // #282: every io call below still gets SSH_ADDRESS; exec.ts runs each
+  // step as a local process when it is the reserved value "local".
+  if (isLocalSshAddress(SSH_ADDRESS)) {
+    console.log('SSH_ADDRESS is "local": deploying to this machine, without ssh.')
+    // Before any other step: nothing is synced, deleted or started until
+    // both local-only guards pass (local-server.ts). Each path is checked
+    // as written and, when it exists, with symlinks resolved.
+    const projectRoot = resolve(cwd)
+    const home = Deno.env.get("HOME")
+    checkLocalDeployPaths({
+      projectRoots: [projectRoot],
+      pathApps: PATH_APPS,
+      volumesPath: VOLUMES_PATH,
+      home,
+    })
+    checkLocalDeployPaths({
+      projectRoots: [await realPathOr(projectRoot)],
+      pathApps: await realPathOr(PATH_APPS),
+      volumesPath: await realPathOr(VOLUMES_PATH),
+      home: home === undefined ? undefined : await realPathOr(home),
+    })
+    await (io.checkLocalDockerEndpoint ?? checkLocalDockerEndpoint)(SSH_ADDRESS)
+  }
 
   // #207: preflight before any file is synced. Docker group GID, and
   // whether privileged commands need `sudo -n` — decided from the
@@ -748,6 +774,23 @@ function removeStagingDirSync(dir: string): void {
       const until = Date.now() + 50
       while (Date.now() < until) { /* brief synchronous pause before retrying */ }
     }
+  }
+}
+
+/**
+ * `path` with symlinks resolved. A path that doesn't exist yet resolves
+ * its deepest existing ancestor and keeps the rest as written, so a
+ * not-yet-created PATH_APPS under a symlink is still compared by where
+ * it will really land.
+ */
+async function realPathOr(path: string): Promise<string> {
+  try {
+    return await Deno.realPath(path)
+  } catch (err) {
+    if (!(err instanceof Deno.errors.NotFound)) throw err
+    const parent = dirname(path)
+    if (parent === path) return path
+    return join(await realPathOr(parent), basename(path))
   }
 }
 

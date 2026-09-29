@@ -124,7 +124,7 @@
 
 import { loadCatalog } from "../catalog.ts"
 import { UserError } from "../errors.ts"
-import { isServerKey, parseSshAddress, stackKeyPrefix } from "../server-keys.ts"
+import { isLocalSshAddress, isServerKey, parseSshAddress, stackKeyPrefix } from "../server-keys.ts"
 import { setsidAvailable, supportsProcessGroupKill, trackChild } from "./process-registry.ts"
 
 export interface HookContext {
@@ -356,14 +356,23 @@ export function buildHookEnv(
     )
   }
 
-  const target = parseSshAddress(ctx.sshAddress)
   resolved.SSH_ADDRESS = ctx.sshAddress
-  resolved.SSH_HOST = target.host
+  // #282: a local server (SSH_ADDRESS=local) has no ssh host. SSH_HOST
+  // and SSH_PORT are deleted, never set to "local": a hook that runs
+  // commands "locally if SSH_HOST is unset" (syncthing) then runs them
+  // on this machine, and a hook that requires SSH_HOST fails with its own
+  // "SSH_HOST not set" error instead of ssh-ing to a host named "local".
+  const target = isLocalSshAddress(ctx.sshAddress) ? undefined : parseSshAddress(ctx.sshAddress)
+  if (target === undefined) {
+    delete resolved.SSH_HOST
+  } else {
+    resolved.SSH_HOST = target.host
+  }
   // Set only for an explicit port — never a default. Deleted rather than
   // left unset so an ambient SSH_PORT in the deploying process's own
   // shell can't leak through as if it were authoritative (see the
   // module comment's Decision above).
-  if (target.port !== undefined) {
+  if (target?.port !== undefined) {
     resolved.SSH_PORT = String(target.port)
   } else {
     delete resolved.SSH_PORT

@@ -10,7 +10,7 @@
 import { join } from "@std/path"
 import { readEnvFile } from "./env-files.ts"
 import { readServerConfig } from "./stack-add.ts"
-import { parseSshAddress as parseSshTarget } from "./server-keys.ts"
+import { isLocalSshAddress, parseSshAddress as parseSshTarget } from "./server-keys.ts"
 
 /**
  * Strip ASCII control characters before echoing an untrusted
@@ -142,6 +142,13 @@ export async function buildNextSteps(input: NextStepsInput): Promise<string[]> {
       lines.push(
         "  (SSH_ADDRESS isn't set yet — look up the server's public IP and use it for both " +
           "records above.)",
+      )
+    } else if (isLocalSshAddress(sshAddress)) {
+      lines.push(`  A ${domain} → <this machine's public IP>`)
+      lines.push(`  A *.${domain} → <this machine's public IP>`)
+      lines.push(
+        '  (SSH_ADDRESS is "local": the server is this machine — use the public IP it is ' +
+          "reached at, or a local DNS entry if it is only used on your own network.)",
       )
     } else {
       const { host, family } = parseSshAddress(sshAddress)

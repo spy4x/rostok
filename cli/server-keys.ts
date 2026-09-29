@@ -370,6 +370,45 @@ export function validateSshAddress(value: string): void {
 }
 
 /**
+ * The reserved `SSH_ADDRESS` value for a server that IS the machine
+ * rostok runs on (#282): every deploy step runs as a local process
+ * (`sh -c`, plain local `rsync`) and ssh is never spawned. It lives in
+ * `.env` like any other address, so every redeploy keeps it without a
+ * flag, and `server create --var SSH_ADDRESS=local` writes it.
+ *
+ * Matched exactly and case-sensitively: `Local`, `local:22`,
+ * `root@local`, `localhost` and `127.0.0.1` all stay ordinary ssh
+ * targets, so an existing remote server can only become local by
+ * having its address set to exactly this word. The one cost: an
+ * ssh_config alias named exactly `local` can no longer be reached over
+ * ssh; rename the alias.
+ */
+export const LOCAL_SSH_ADDRESS = "local"
+
+/** True only for the exact reserved value {@link LOCAL_SSH_ADDRESS}. */
+export function isLocalSshAddress(value: string): boolean {
+  return value === LOCAL_SSH_ADDRESS
+}
+
+/**
+ * The argv that runs `script` on the server `address` names: `sh -c
+ * <script>` on this machine for {@link LOCAL_SSH_ADDRESS}, otherwise
+ * `ssh <sshOptions> <sshArgs(...)> <script>` (the address parsed, and
+ * so validated, by `parseSshAddress` first). `sshOptions` go ahead of
+ * the standard options, e.g. a first-contact probe's
+ * `-o StrictHostKeyChecking=accept-new`.
+ */
+export function serverShellArgv(
+  address: string,
+  script: string,
+  sshOptions: string[] = [],
+  opts: SshCallOptions = {},
+): string[] {
+  if (isLocalSshAddress(address)) return ["sh", "-c", script]
+  return ["ssh", ...sshOptions, ...sshArgs(parseSshAddress(address), [script], opts)]
+}
+
+/**
  * `user@host`, or just `host`/the ssh_config alias with no user. Never
  * brackets an IPv6 host: ssh gets the target and `-p <port>` as separate
  * argv slots (sshArgs below), so there's no single "host:port" string

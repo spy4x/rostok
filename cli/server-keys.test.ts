@@ -4,7 +4,9 @@ import { UserError } from "./errors.ts"
 import {
   DEPLOY_REQUIRED_KEYS,
   hasReservedStackKeyPrefix,
+  isLocalSshAddress,
   isServerKey,
+  LOCAL_SSH_ADDRESS,
   normalizeRemotePath,
   parseSshAddress,
   pathComponents,
@@ -13,6 +15,7 @@ import {
   rsyncSshOption,
   SERVER_KEYS,
   serverDirFor,
+  serverShellArgv,
   sshArgs,
   stackKeyPrefix,
   validateRemotePath,
@@ -426,4 +429,67 @@ Deno.test("pathsNestedOrEqual: normalises trailing slashes, doubled slashes and 
   assert(pathsNestedOrEqual("/srv/apps/", "/srv//apps"))
   assert(pathsNestedOrEqual("/srv/./apps", "/srv/apps"))
   assert(pathsNestedOrEqual("/srv/apps/", "/srv/apps/.volumes"))
+})
+
+// #282 — SSH_ADDRESS=local: the server is the machine rostok runs on.
+
+Deno.test("isLocalSshAddress: only the exact word local marks this machine", () => {
+  assertEquals(LOCAL_SSH_ADDRESS, "local")
+  assert(isLocalSshAddress("local"))
+  for (
+    const remote of [
+      "Local",
+      "LOCAL",
+      "local ",
+      " local",
+      "local:22",
+      "root@local",
+      "local.example.com",
+      "localhost",
+      "127.0.0.1",
+      "[::1]",
+      "-oProxyCommand=local",
+    ]
+  ) {
+    assertFalse(isLocalSshAddress(remote), `"${remote}" must stay an ssh target`)
+  }
+})
+
+Deno.test("serverShellArgv: a local server runs the script with sh -c, never ssh", () => {
+  assertEquals(
+    serverShellArgv("local", "id -u", ["-o", "StrictHostKeyChecking=accept-new"], {
+      batchMode: true,
+    }),
+    ["sh", "-c", "id -u"],
+  )
+})
+
+Deno.test("serverShellArgv: an address that merely contains local still goes through ssh", () => {
+  assertEquals(
+    serverShellArgv("root@local:2222", "id -u", ["-o", "StrictHostKeyChecking=accept-new"], {
+      batchMode: true,
+    }),
+    [
+      "ssh",
+      "-o",
+      "StrictHostKeyChecking=accept-new",
+      "-o",
+      "ConnectTimeout=10",
+      "-o",
+      "BatchMode=yes",
+      "-p",
+      "2222",
+      "--",
+      "root@local",
+      "id -u",
+    ],
+  )
+})
+
+Deno.test("serverShellArgv: an address starting with - is refused before any argv is built", () => {
+  assertThrows(
+    () => serverShellArgv("-oProxyCommand=local", "id -u"),
+    UserError,
+    "invalid SSH_ADDRESS",
+  )
 })
