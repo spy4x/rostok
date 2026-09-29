@@ -25,3 +25,8 @@ docker push registry.${DOMAIN}/my-image:tag
 
 - [Docker Registry Docs](https://docs.docker.com/registry/)
 - [docker-registry-ui](https://github.com/Joxit/docker-registry-ui)
+
+## Variables
+
+Declared in `+meta.ts`. Requires the `traefik` stack. The stack has no variables of its own;
+it reads only server-level keys (`DOMAIN`, `VOLUMES_PATH`).
