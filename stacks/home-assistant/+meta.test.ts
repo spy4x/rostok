@@ -24,10 +24,10 @@ Deno.test("home-assistant +meta.ts: passes the StackMeta schema", () => {
   validateStackMeta(meta)
 })
 
-Deno.test("home-assistant +meta.ts: declares every compose variable that has no default", () => {
+Deno.test("home-assistant +meta.ts: declares every compose variable that is not server-level", () => {
   const declared = new Set(meta.variables.map((v) => v.key))
-  for (const [key, def] of composeRefs()) {
-    if (def !== undefined || isServerKey(key)) continue
+  for (const key of composeRefs().keys()) {
+    if (isServerKey(key)) continue
     assert(declared.has(key), `compose.yml reads \${${key}} but +meta.ts does not declare it`)
   }
 })
@@ -46,4 +46,8 @@ Deno.test("home-assistant +meta.ts: string defaults equal compose's own fallback
     if (fallback === undefined || typeof v.default !== "string") continue
     assertEquals(v.default, fallback, v.key)
   }
+})
+
+Deno.test("home-assistant compose.yml: runs on the host network for LAN discovery", () => {
+  assert(/^\s+network_mode:\s*host\s*$/m.test(composeCode))
 })

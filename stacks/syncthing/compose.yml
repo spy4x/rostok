@@ -10,15 +10,14 @@
 #   SYNCTHING_DOMAIN      — full host for the Traefik rule (e.g. sync.${DOMAIN})
 #
 # ── First deploy ────────────────────────────────────────────────────
-# Generate the API key yourself before the first deploy. Do NOT leave the
-# placeholder in .env: Syncthing uses STGUIAPIKEY verbatim, so the container
-# would come up with an API key that is committed to this repo, on a GUI
-# Traefik publishes. before.deploy.ts refuses to deploy in that case.
-#
-#   head -c 24 /dev/urandom | base64        # generate
-#   # put it in servers/<server>/.env as SYNCTHING_API_KEY=...
-#   deno task env:encrypt                   # then commit the .env.age
-#   deno task deploy <server> syncthing
+# `rostok stack add syncthing` generates SYNCTHING_API_KEY and writes it to
+# the server's .env. Syncthing uses STGUIAPIKEY verbatim, so a placeholder
+# would be a publicly known key on a GUI Traefik publishes;
+# before.deploy.ts refuses to deploy with a missing, placeholder or short
+# key. To set one by hand instead:
+#   head -c 24 /dev/urandom | base64
+#   # put it in servers/<server>/.env as SYNCTHING_API_KEY=..., then
+#   deno task env:encrypt                   # and commit the .env.age
 #
 # STGUIAPIKEY overrides whatever is in config.xml on every start, so the key
 # stays stable across restarts and re-creations.

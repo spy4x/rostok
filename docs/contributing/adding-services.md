@@ -142,7 +142,9 @@ either is a no-op for that hook. Self-contained: no import out of the
 stack's own directory (a JSR install runs a hook from an `https://` URL,
 where a relative parent import can't resolve — see `stacks/traefik/`
 and `stacks/gatus/` for the pattern of inlining a small shared helper
-instead of importing it).
+instead of importing it). Imports must be relative or fully qualified
+(`npm:pkg@1.2.3`, `jsr:`, `node:`), never import-map names like `"yaml"`:
+the import map does not apply to a hook run from its URL.
 
 **Environment.** A hook receives a filtered view of `.env`/`.env.root`:
 only server-level keys (`DOMAIN`, `PROJECT`, ...) and keys carrying the

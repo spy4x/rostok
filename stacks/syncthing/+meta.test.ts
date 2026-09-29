@@ -24,10 +24,10 @@ Deno.test("syncthing +meta.ts: passes the StackMeta schema", () => {
   validateStackMeta(meta)
 })
 
-Deno.test("syncthing +meta.ts: declares every compose variable that has no default", () => {
+Deno.test("syncthing +meta.ts: declares every compose variable that is not server-level", () => {
   const declared = new Set(meta.variables.map((v) => v.key))
-  for (const [key, def] of composeRefs()) {
-    if (def !== undefined || isServerKey(key)) continue
+  for (const key of composeRefs().keys()) {
+    if (isServerKey(key)) continue
     assert(declared.has(key), `compose.yml reads \${${key}} but +meta.ts does not declare it`)
   }
 })
