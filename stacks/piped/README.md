@@ -74,10 +74,13 @@ Videos and thumbnails are not stored locally (proxied from YouTube).
 
 ## Variables
 
-Declared in `+meta.ts`; `rostok stack add piped` writes them to the server's `.env`. Requires the `traefik` stack. Server-level keys (`DOMAIN`, `VOLUMES_PATH`) are shared by every stack. The three hosts `piped.`, `pipedapi.` and `pipedproxy.` under `${DOMAIN}` need DNS records.
+Declared in `+meta.ts`; `rostok stack add piped` writes them to the server's `.env`. Requires the `traefik` stack. Server-level keys (`DOMAIN`, `VOLUMES_PATH`) are shared by every stack. The three hosts need DNS records.
 
-| Key                 | Default           | Meaning           |
-| ------------------- | ----------------- | ----------------- |
-| `PIPED_DB_NAME`     | `piped`           | Postgres database |
-| `PIPED_DB_USER`     | `piped`           | Postgres user     |
-| `PIPED_DB_PASSWORD` | generated, secret | Postgres password |
+| Key                  | Default                | Meaning                        |
+| -------------------- | ---------------------- | ------------------------------ |
+| `PIPED_DOMAIN`       | `piped.${DOMAIN}`      | Public host of the frontend    |
+| `PIPED_API_DOMAIN`   | `pipedapi.${DOMAIN}`   | Public host of the API         |
+| `PIPED_PROXY_DOMAIN` | `pipedproxy.${DOMAIN}` | Public host of the video proxy |
+| `PIPED_DB_NAME`      | `piped`                | Postgres database              |
+| `PIPED_DB_USER`      | `piped`                | Postgres user                  |
+| `PIPED_DB_PASSWORD`  | generated, secret      | Postgres password              |

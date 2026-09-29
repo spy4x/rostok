@@ -5,7 +5,7 @@ PORT: 8080
 HTTP_WORKERS: 2
 
 # Proxy
-PROXY_PART: https://pipedproxy.${DOMAIN}
+PROXY_PART: https://${PIPED_PROXY_DOMAIN}
 
 # Outgoing HTTP Proxy - eg: 127.0.0.1:8118
 #HTTP_PROXY: 127.0.0.1:8118
@@ -15,10 +15,10 @@ CAPTCHA_BASE_URL: https://api.capmonster.cloud/
 CAPTCHA_API_KEY: INSERT_HERE
 
 # Public API URL
-API_URL: https://pipedapi.${DOMAIN}
+API_URL: https://${PIPED_API_DOMAIN}
 
 # Public Frontend URL
-FRONTEND_URL: https://piped.${DOMAIN}
+FRONTEND_URL: https://${PIPED_DOMAIN}
 
 # Enable haveibeenpwned compromised password API
 COMPROMISED_PASSWORD_CHECK: true

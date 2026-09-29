@@ -22,6 +22,24 @@ export default {
   requires: ["traefik"],
   variables: [
     {
+      key: "PIPED_DOMAIN",
+      question: "Public domain for the Piped frontend?",
+      default: "piped.${DOMAIN}",
+      required: true,
+    },
+    {
+      key: "PIPED_API_DOMAIN",
+      question: "Public domain for the Piped API?",
+      default: "pipedapi.${DOMAIN}",
+      required: true,
+    },
+    {
+      key: "PIPED_PROXY_DOMAIN",
+      question: "Public domain for the Piped video proxy?",
+      default: "pipedproxy.${DOMAIN}",
+      required: true,
+    },
+    {
       key: "PIPED_DB_NAME",
       question: "Postgres database name?",
       default: "piped",
