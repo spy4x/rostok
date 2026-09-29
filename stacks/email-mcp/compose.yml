@@ -5,7 +5,7 @@ networks:
 services:
   # Email MCP — IMAP + SMTP for AI assistants (OpenWebUI).
   # Source: https://github.com/ai-zerolab/mcp-email-server (BSD-3-Clause)
-  # Multi-account via TOML config (see config.toml.template + before.deploy.ts).
+  # Multi-account via TOML config (rendered by before.deploy.ts).
   # Speaks Streamable HTTP on port 9557. Open WebUI connects via TOOL_SERVER_CONNECTIONS.
   email-mcp:
     container_name: hl-email-mcp
@@ -16,15 +16,13 @@ services:
       # --- HTTP transport ---
       - MCP_HOST=0.0.0.0
       - MCP_PORT=9557
-      # DOMAIN used in config.toml.template to build mail.${...} hostnames
-      - EMAIL_MCP_DOMAIN=${DOMAIN}
       # Allow connections from OpenWebUI container on the proxy network.
       # DNS rebinding protection enabled (default). Bare host entries allow any port.
       - MCP_ALLOWED_HOSTS=hl-email-mcp:*,hl-open-webui:*,localhost:*,127.0.0.1:*
       - MCP_ALLOWED_ORIGINS=http://hl-email-mcp:*,http://hl-open-webui:*,http://localhost:*,http://127.0.0.1:*
       - MCP_ENABLE_DNS_REBINDING_PROTECTION=true
 
-      # --- Multi-account config (rendered by before.deploy.ts from EMAIL_MCP_* env) ---
+      # --- Multi-account config (rendered by before.deploy.ts from the EMAIL_MCP_* keys) ---
       - MCP_EMAIL_SERVER_CONFIG_PATH=/config.toml
     volumes:
       # Rendered by before.deploy.ts; mode 0600 on disk.
