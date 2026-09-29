@@ -31,7 +31,7 @@
 // On failure: exit non-zero so deploy fails loudly. Provider sync is
 // not optional — without it, the service is functionally broken.
 
-import { error, log, runCommand, success } from "../../scripts/+lib.ts"
+import { error, log, runCommand, success } from "./hook-lib.ts"
 
 /** Digits only, 1-65535 — the same range cli/server-keys.ts's parseSshAddress enforces. */
 function isValidPort(port: string): boolean {

@@ -1,4 +1,4 @@
-import { substituteEnvVars } from "../../scripts/+lib.ts"
+import { substituteEnvVars } from "./substitute-env.ts"
 
 const templateFile = new URL("config.properties.template", import.meta.url).pathname
 const outputFile = new URL("config.properties", import.meta.url).pathname
