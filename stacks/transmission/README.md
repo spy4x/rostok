@@ -26,10 +26,15 @@ for the full setup.
 
 ## Variables
 
-No stack-owned variables. Requires the `traefik` stack, and Authelia for the forward-auth middleware on the router. Downloads go to the server-level `PATH_MOVIES`, `PATH_SERIES`, `PATH_MUSIC`, `PATH_BOOKS` and `PATH_OTHER`.
+Declared in `+meta.ts`; `rostok stack add transmission` writes them to the server's `.env`. Requires the `traefik` stack, and Authelia for the forward-auth middleware on the router. `PATH_*` keys are shared by name with other stacks (jellyfin and filebrowser use `PATH_MUSIC`): one value per key.
 
-| Key | Default | Meaning |
-| --- | ------- | ------- |
+| Key           | Default                  | Meaning                                    |
+| ------------- | ------------------------ | ------------------------------------------ |
+| `PATH_MOVIES` | `${VOLUMES_PATH}/movies` | Host folder mounted at `/downloads/movies` |
+| `PATH_SERIES` | `${VOLUMES_PATH}/series` | Host folder mounted at `/downloads/series` |
+| `PATH_MUSIC`  | `${VOLUMES_PATH}/music`  | Host folder mounted at `/downloads/music`  |
+| `PATH_BOOKS`  | `${VOLUMES_PATH}/books`  | Host folder mounted at `/downloads/books`  |
+| `PATH_OTHER`  | `${VOLUMES_PATH}/other`  | Host folder mounted at `/downloads/other`  |
 
 ## Resources
 
