@@ -5,8 +5,7 @@
 # by stacks/syncthing/after.deploy.ts.
 #
 # Required env (in server .env):
-#   SYNCTHING_API_KEY     — STGUIAPIKEY; same value persisted in
-#                           /var/syncthing/config/config.xml
+#   SYNCTHING_API_KEY     — STGUIAPIKEY, the API key the deploy hooks use
 #   SYNCTHING_DOMAIN      — full host for the Traefik rule (e.g. sync.${DOMAIN})
 #
 # ── First deploy ────────────────────────────────────────────────────
@@ -19,8 +18,9 @@
 #   # put it in servers/<server>/.env as SYNCTHING_API_KEY=..., then
 #   deno task env:encrypt                   # and commit the .env.age
 #
-# STGUIAPIKEY overrides whatever is in config.xml on every start, so the key
-# stays stable across restarts and re-creations.
+# STGUIAPIKEY is accepted next to the key stored in config.xml, which is left
+# unchanged (both answer the API), so the hooks' key is stable across restarts
+# and re-creations. Change the stored key in the GUI to retire an old one.
 
 name: ${PROJECT}
 

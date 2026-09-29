@@ -44,6 +44,31 @@ import deepseekHarness from "../stacks/deepseek-harness/+meta.ts"
 import watchtower from "../stacks/watchtower/+meta.ts"
 import syncthing from "../stacks/syncthing/+meta.ts"
 import homeAssistant from "../stacks/home-assistant/+meta.ts"
+import wireguard from "../stacks/wireguard/+meta.ts"
+import ntfy from "../stacks/ntfy/+meta.ts"
+import oko from "../stacks/oko/+meta.ts"
+import immich from "../stacks/immich/+meta.ts"
+import piped from "../stacks/piped/+meta.ts"
+import transmission from "../stacks/transmission/+meta.ts"
+import playwright from "../stacks/playwright/+meta.ts"
+import searxng from "../stacks/searxng/+meta.ts"
+import openWebui from "../stacks/open-webui/+meta.ts"
+import audiobookshelf from "../stacks/audiobookshelf/+meta.ts"
+import metube from "../stacks/metube/+meta.ts"
+import woodpecker from "../stacks/woodpecker/+meta.ts"
+import usememos from "../stacks/usememos/+meta.ts"
+import victoriaMetrics from "../stacks/victoria-metrics/+meta.ts"
+import akaunting from "../stacks/akaunting/+meta.ts"
+import gitea from "../stacks/gitea/+meta.ts"
+import traggo from "../stacks/traggo/+meta.ts"
+import dockerRegistry from "../stacks/docker-registry/+meta.ts"
+import dockerSockProxy from "../stacks/docker-sock-proxy/+meta.ts"
+import caldavMcp from "../stacks/caldav-mcp/+meta.ts"
+import emailMcp from "../stacks/email-mcp/+meta.ts"
+import googleMapsMcp from "../stacks/google-maps-mcp/+meta.ts"
+import githubMcp from "../stacks/github-mcp/+meta.ts"
+import zond from "../stacks/zond/+meta.ts"
+import omniTools from "../stacks/omni-tools/+meta.ts"
 
 // Stacks without a +meta.ts are not in the catalog yet; issue #283 adds the rest.
 
@@ -58,6 +83,31 @@ const STACK_META: Record<string, StackMeta> = {
   watchtower,
   syncthing,
   "home-assistant": homeAssistant,
+  wireguard,
+  ntfy,
+  oko,
+  immich,
+  piped,
+  transmission,
+  playwright,
+  searxng,
+  "open-webui": openWebui,
+  audiobookshelf,
+  metube,
+  woodpecker,
+  usememos,
+  "victoria-metrics": victoriaMetrics,
+  akaunting,
+  gitea,
+  traggo,
+  "docker-registry": dockerRegistry,
+  "docker-sock-proxy": dockerSockProxy,
+  "caldav-mcp": caldavMcp,
+  "email-mcp": emailMcp,
+  "google-maps-mcp": googleMapsMcp,
+  "github-mcp": githubMcp,
+  zond,
+  "omni-tools": omniTools,
 }
 
 const ENTRIES: CatalogEntry[] = Object.entries(STACK_META)

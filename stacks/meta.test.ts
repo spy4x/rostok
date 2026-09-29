@@ -6,7 +6,7 @@
 
 import { assert, assertEquals } from "@std/assert"
 import { validateStackMeta } from "../cli/stack-meta.ts"
-import { isServerKey } from "../cli/server-keys.ts"
+import { SERVER_KEYS } from "../cli/server-keys.ts"
 import type { StackMeta } from "../cli/stack-meta.ts"
 
 const stacksDir = new URL("./", import.meta.url)
@@ -87,6 +87,13 @@ const MISSING_COMPOSE_VARS = new Set(["mirotalk", "stalwart"])
 
 const names = await stacksWithMeta()
 
+/**
+ * Keys `server create` writes. Unlike `isServerKey`, this leaves out the other `PATH_*` keys:
+ * library folders such as PATH_BOOKS are shared between stacks but nothing writes them on a fresh
+ * server, so a stack that mounts one must declare it.
+ */
+const WRITTEN_BY_SERVER = new Set<string>(SERVER_KEYS)
+
 Deno.test("stacks: at least one stack has a +meta.ts", () => {
   assert(names.length > 0, "found no stacks/*/+meta.ts — the glob or the directory moved")
 })
@@ -105,7 +112,7 @@ for (const name of names) {
   }, () => {
     const declared = new Set(meta.variables.map((v) => v.key))
     for (const key of composeRefs.keys()) {
-      if (isServerKey(key)) continue
+      if (WRITTEN_BY_SERVER.has(key)) continue
       assert(declared.has(key), `compose.yml reads \${${key}} but +meta.ts does not declare it`)
     }
   })
