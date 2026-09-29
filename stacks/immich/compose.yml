@@ -50,14 +50,14 @@ services:
     labels:
       - "traefik.enable=true"
       - "traefik.docker.network=proxy"
-      - "traefik.http.routers.hl-immich.rule=Host(`photos.${DOMAIN}`)"
+      - "traefik.http.routers.hl-immich.rule=Host(`${IMMICH_DOMAIN}`)"
       - "traefik.http.routers.hl-immich.middlewares=robots-deny@file"
       - "traefik.http.routers.hl-immich.entrypoints=websecure"
       - "traefik.http.routers.hl-immich.tls=true"
       - "traefik.http.routers.hl-immich.tls.certresolver=myresolver"
       - "traefik.http.services.hl-immich.loadbalancer.server.port=2283"
       # Thumbnail-only proxy: adds API key so browsers can load inline images
-      - "traefik.http.routers.hl-immich-thumb.rule=Host(`photos.${DOMAIN}`) && PathRegexp(`/api/assets/[^/]+/thumbnail`)"
+      - "traefik.http.routers.hl-immich-thumb.rule=Host(`${IMMICH_DOMAIN}`) && PathRegexp(`/api/assets/[^/]+/thumbnail`)"
       - "traefik.http.routers.hl-immich-thumb.priority=100"
       - "traefik.http.routers.hl-immich-thumb.entrypoints=websecure"
       - "traefik.http.routers.hl-immich-thumb.tls=true"
@@ -136,7 +136,7 @@ services:
     image: ghcr.io/damongolding/immich-kiosk:latest
     environment:
       - KIOSK_IMMICH_URL=http://server:2283
-      - KIOSK_IMMICH_EXTERNAL_URL=https://photos.${DOMAIN}
+      - KIOSK_IMMICH_EXTERNAL_URL=https://${IMMICH_DOMAIN}
       - KIOSK_BEHIND_PROXY=true
       - TZ=${TIMEZONE:-UTC}
       - KIOSK_IMMICH_API_KEY=${IMMICH_KIOSK_API_KEY}
@@ -176,7 +176,7 @@ services:
     labels:
       - "traefik.enable=true"
       - "traefik.docker.network=proxy"
-      - "traefik.http.routers.hl-immich-kiosk.rule=Host(`kiosk.${DOMAIN}`)"
+      - "traefik.http.routers.hl-immich-kiosk.rule=Host(`${IMMICH_KIOSK_DOMAIN}`)"
       - "traefik.http.routers.hl-immich-kiosk.middlewares=robots-deny@file"
       - "traefik.http.routers.hl-immich-kiosk.entrypoints=websecure"
       - "traefik.http.routers.hl-immich-kiosk.tls=true"

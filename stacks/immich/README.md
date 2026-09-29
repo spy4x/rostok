@@ -34,6 +34,8 @@ The two API keys can only be created in Immich (Account settings, API keys) afte
 
 | Key                            | Default                  | Meaning                                                    |
 | ------------------------------ | ------------------------ | ---------------------------------------------------------- |
+| `IMMICH_DOMAIN`                | `photos.${DOMAIN}`       | Public host of the web UI                                  |
+| `IMMICH_KIOSK_DOMAIN`          | `kiosk.${DOMAIN}`        | Public host of the kiosk slideshow                         |
 | `IMMICH_VERSION`               | `release`                | Image tag                                                  |
 | `IMMICH_DB_PASSWORD`           | generated, secret        | Postgres password                                          |
 | `IMMICH_KIOSK_PASSWORD`        | generated, secret        | Password of the kiosk page                                 |
