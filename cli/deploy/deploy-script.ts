@@ -22,6 +22,20 @@ export interface DeployResult {
   error?: string
 }
 
+/** Shell variable holding the stack's container names, one per line. */
+const STALE_NAMES_VAR = "rostok_container_names"
+
+/**
+ * Prints each service's `container_name` from `docker compose config` YAML,
+ * one per line, with the double quotes compose adds to a numeric-looking
+ * value stripped (a container name can never contain a quote). Only keys
+ * directly under a service in the top-level `services:` block count.
+ */
+const CONTAINER_NAMES_AWK = [
+  `/^[^ ]/ { svc = ($0 == "services:") }`,
+  `svc && /^    container_name: / { v = $2; gsub(/"/, "", v); print v }`,
+].join(" ")
+
 /**
  * Generate a bash script that deploys all stacks in one SSH session and
  * prints structured `DEPLOY_START`/`DEPLOY_SUCCESS`/`DEPLOY_FAILED`
@@ -48,22 +62,6 @@ export function generateDeployScript(
 
     stackCommands.push(`
 echo ${startMarker}
-# Belt-and-braces: drop any existing container with the stack's container_name
-# that doesn't belong to the current compose project. Happens when a stack
-# was previously deployed with a different project name (e.g. manual
-# \`docker compose up\` that picked up \`name: \${PROJECT}\` from compose.yml,
-# producing project=hl, vs the deploy script's -p ${deployAs} producing
-# project=${deployAs}). Same container_name under two different projects
-# → "name already in use" conflict on every redeploy.
-# Data lives in volumes, not in the container, so this is safe.
-cd ${quotedPathApps} && docker ps -a --filter ${
-      shQuote(`name=hl-${stackName}`)
-    } --format '{{.ID}} {{.Label "com.docker.compose.project"}}' 2>/dev/null | while read id proj; do
-  if [ "\$proj" != ${shQuote(deployAs)} ] && [ -n "\$id" ]; then
-    echo "  removing stale container $id (project=$proj, expected="${shQuote(deployAs)}")"
-    docker rm -f "\$id" >/dev/null 2>&1 || true
-  fi
-done
 # Per-server compose override (if present). The deploy rsyncs
 # servers/<server>/compose-override/ to <pathApps>/compose-override/, so that
 # is the path to test here — not servers/<server>/, which does not exist on
@@ -77,6 +75,31 @@ set -- -f ${shQuote(`stacks/${stackName}/compose.yml`)}
 [ -f ${shQuote(`${pathApps}/compose-override/${stackName}.yml`)} ] && set -- "\$@" -f ${
       shQuote(`compose-override/${stackName}.yml`)
     }
+# Belt-and-braces: drop any existing container with one of the stack's
+# container_names that doesn't belong to the current compose project. Happens
+# when a stack was previously deployed with a different project name (e.g.
+# manual \`docker compose up\` that picked up \`name: \${PROJECT}\` from
+# compose.yml, producing project=hl, vs the deploy script's -p ${deployAs}
+# producing project=${deployAs}). Same container_name under two different
+# projects → "name already in use" conflict on every redeploy.
+# Data lives in volumes, not in the container, so this is safe.
+#
+# The names come from \`docker compose config\` with the same env files, -p
+# and -f as \`up\` below, so a container_name set from a variable (nginx
+# deployed as another project with NGINX_CONTAINER_NAME) resolves to exactly
+# the name \`up\` would create. Only an exact name match is removed: Docker's
+# \`--filter name=\` matches substrings, so deploying foo used to remove
+# hl-foo-bar of another project too (#304).
+${STALE_NAMES_VAR}=\$(cd ${quotedPathApps} && docker compose ${projectFlag} --env-file=.env.root --env-file=.env "\$@" config 2>/dev/null | awk ${
+      shQuote(CONTAINER_NAMES_AWK)
+    })
+docker ps -a --format '{{.Names}} {{.ID}} {{.Label "com.docker.compose.project"}}' 2>/dev/null | while read -r cname id proj; do
+  printf '%s\\n' "\$${STALE_NAMES_VAR}" | grep -qxF -- "\$cname" || continue
+  if [ "\$proj" != ${shQuote(deployAs)} ] && [ -n "\$id" ]; then
+    echo "  removing stale container \$cname (project=\$proj, expected="${shQuote(deployAs)}")"
+    docker rm -f "\$id" >/dev/null 2>&1 || true
+  fi
+done
 cd ${quotedPathApps} && docker compose ${projectFlag} --env-file=.env.root --env-file=.env "\$@" up -d --build 2>&1
 if [ $? -eq 0 ]; then
   echo ${successMarker}

@@ -6,6 +6,7 @@ import {
   printDeploySummary,
   type StackConfig,
 } from "./deploy-script.ts"
+import { shQuote } from "./exec.ts"
 
 Deno.test("parseDeployResults extracts success from markers", () => {
   const stacks: StackConfig[] = [{ name: "traefik" }, { name: "gatus" }]
@@ -54,17 +55,162 @@ Deno.test("generateDeployScript produces docker compose commands", () => {
   assertStringIncludes(script, "f 'stacks/test-stack/compose.yml'")
 })
 
-Deno.test("generateDeployScript includes stale-container cleanup before up -d", () => {
-  // Prevents "name already in use" when a previous deployment used a
-  // different compose project name (e.g. manual `docker compose up` that
-  // picked up `name: ${PROJECT}` from compose.yml, producing project=hl,
-  // vs deploy's -p ${stack} producing project=${stack}).
-  const stacks: StackConfig[] = [{ name: "healthchecks" }]
-  const script = generateDeployScript(stacks, "/apps", new Set())
-  assertStringIncludes(script, "docker ps -a --filter 'name=hl-healthchecks'")
-  assertStringIncludes(script, "com.docker.compose.project")
-  assertStringIncludes(script, "docker rm -f")
-  assertStringIncludes(script, "\"$proj\" != 'healthchecks'")
+/** What a fake `docker` saw and did while a generated deploy script ran. */
+interface FakeDockerRun {
+  stdout: string
+  /** Every `docker` argv, one line each. */
+  calls: string[]
+  /** IDs passed to `docker rm -f`. */
+  removed: string[]
+}
+
+/**
+ * Run the deploy script generated for `stack` through `sh` with a fake
+ * `docker` on PATH. `docker compose ... config` prints `composeConfig`,
+ * `docker ps` prints `psLines` (`<name> <id> <project>`), `docker rm -f`
+ * records the ID, and everything else succeeds silently.
+ */
+async function runWithFakeDocker(
+  stack: StackConfig,
+  composeConfig: string,
+  psLines: string[],
+): Promise<FakeDockerRun> {
+  const dir = await Deno.makeTempDir({ prefix: "rostok-stale-cleanup-" })
+  try {
+    const pathApps = join(dir, "apps")
+    const binDir = join(dir, "bin")
+    await Deno.mkdir(pathApps)
+    await Deno.mkdir(binDir)
+    const log = join(dir, "docker.log")
+    const removedLog = join(dir, "removed.log")
+    await Deno.writeTextFile(join(dir, "config.yml"), composeConfig)
+    await Deno.writeTextFile(join(dir, "ps.txt"), psLines.map((l) => `${l}\n`).join(""))
+    await Deno.writeTextFile(log, "")
+    await Deno.writeTextFile(removedLog, "")
+    await Deno.writeTextFile(
+      join(binDir, "docker"),
+      [
+        "#!/bin/sh",
+        `printf '%s\\n' "$*" >> ${shQuote(log)}`,
+        'case " $* " in',
+        `  *" config "*) cat ${shQuote(join(dir, "config.yml"))} ;;`,
+        `  " ps -a "*) cat ${shQuote(join(dir, "ps.txt"))} ;;`,
+        `  " rm -f "*) printf '%s\\n' "$3" >> ${shQuote(removedLog)} ;;`,
+        "esac",
+        "exit 0",
+        "",
+      ].join("\n"),
+      { mode: 0o755 },
+    )
+    const script = generateDeployScript([stack], pathApps, new Set())
+    const result = await new Deno.Command("sh", {
+      args: ["-c", script],
+      env: { PATH: `${binDir}:${Deno.env.get("PATH") ?? ""}` },
+      stdout: "piped",
+      stderr: "piped",
+    }).output()
+    const stdout = new TextDecoder().decode(result.stdout)
+    assertEquals(result.success, true, new TextDecoder().decode(result.stderr))
+    const lines = async (path: string) =>
+      (await Deno.readTextFile(path)).split("\n").filter((l) => l !== "")
+    return { stdout, calls: await lines(log), removed: await lines(removedLog) }
+  } finally {
+    await Deno.remove(dir, { recursive: true })
+  }
+}
+
+const FOO_CONFIG = [
+  "name: foo",
+  "services:",
+  "  foo:",
+  "    container_name: hl-foo",
+  "    image: example/foo",
+  "  worker:",
+  "    image: example/foo",
+  "networks:",
+  "  default:",
+  "    name: foo_default",
+  "",
+].join("\n")
+
+Deno.test("stale-container cleanup never removes another project's container whose name only overlaps foo's (#304)", async () => {
+  // Docker's `--filter name=hl-foo` matches substrings, so the old cleanup
+  // removed hl-foo-bar and hl-foobar of other projects too. hl-fo guards the
+  // other direction: a name that is a prefix of this stack's container_name.
+  const run = await runWithFakeDocker({ name: "foo" }, FOO_CONFIG, [
+    "hl-foo-bar id-foo-bar other",
+    "hl-foobar id-foobar other",
+    "my-hl-foo id-my-hl-foo other",
+    "hl-foo-db id-foo-db hl",
+    "hl-fo id-fo other",
+  ])
+  assertEquals(run.removed, [])
+  assertStringIncludes(run.stdout, "DEPLOY_SUCCESS:foo:foo")
+})
+
+Deno.test("stale-container cleanup removes this stack's exact container_name under an old project", async () => {
+  // Same container_name under two different projects → "name already in
+  // use" on `up`, so the old project's container must still go.
+  const run = await runWithFakeDocker({ name: "foo" }, FOO_CONFIG, [
+    "hl-foo-bar id-foo-bar other",
+    "hl-foo id-old-foo hl",
+    "unlabelled id-unlabelled ",
+  ])
+  assertEquals(run.removed, ["id-old-foo"])
+  assertStringIncludes(run.stdout, "removing stale container hl-foo (project=hl, expected=foo)")
+})
+
+Deno.test("stale-container cleanup keeps this stack's container in the deployed project", async () => {
+  const run = await runWithFakeDocker({ name: "foo" }, FOO_CONFIG, ["hl-foo id-foo foo"])
+  assertEquals(run.removed, [])
+})
+
+Deno.test("stale-container cleanup reads names from the resolved config of a deployAs stack", async () => {
+  // nginx deployed as neatsoft-landing sets container_name from
+  // NGINX_CONTAINER_NAME, so the name exists only after compose resolves it
+  // with the same env files, project and compose files as `up`.
+  const config = [
+    "name: neatsoft-landing",
+    "services:",
+    "  nginx:",
+    "    container_name: neatsoft-landing",
+    "    image: nginx:alpine",
+    "",
+  ].join("\n")
+  const run = await runWithFakeDocker({ name: "nginx", deployAs: "neatsoft-landing" }, config, [
+    "neatsoft-landing id-old hl",
+    "neatsoft-landing-preview id-preview other",
+    "hl-nginx id-hl-nginx other",
+  ])
+  assertEquals(run.removed, ["id-old"])
+  const configCall = run.calls.find((c) => c.endsWith(" config"))
+  assertEquals(
+    configCall,
+    "compose -p neatsoft-landing --env-file=.env.root --env-file=.env " +
+      "-f stacks/nginx/compose.yml config",
+  )
+})
+
+Deno.test("stale-container cleanup ignores container_name keys outside services", async () => {
+  // A top-level `x-` extension block can hold a container_name template; it
+  // is not a container `up` creates.
+  const config = [
+    "name: foo",
+    "services:",
+    "  foo:",
+    "    image: example/foo",
+    "x-template:",
+    "    container_name: hl-shared",
+    "",
+  ].join("\n")
+  const run = await runWithFakeDocker({ name: "foo" }, config, ["hl-shared id-shared other"])
+  assertEquals(run.removed, [])
+})
+
+Deno.test("stale-container cleanup strips the quotes compose adds to a numeric name", async () => {
+  const config = ["services:", "  foo:", '    container_name: "0123"', ""].join("\n")
+  const run = await runWithFakeDocker({ name: "foo" }, config, ["0123 id-num hl"])
+  assertEquals(run.removed, ["id-num"])
 })
 
 Deno.test("generateDeployScript adds restart when stack needs restart", () => {
@@ -162,7 +308,7 @@ Deno.test(
       assertEquals(await Deno.stat(join(tmp, "INJECTED-STACK")).catch(() => null), null)
 
       // The fake docker received the stack name literally, un-mangled
-      // (via --filter name=hl-<stack> and -f stacks/<stack>/compose.yml).
+      // (via -f stacks/<stack>/compose.yml).
       const dockerCalls = await Deno.readTextFile(dockerLog)
       assertStringIncludes(dockerCalls, stackName)
     } finally {
