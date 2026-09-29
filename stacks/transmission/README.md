@@ -12,7 +12,7 @@ BitTorrent client for downloading torrents.
 
 ## Access
 
-Web UI: `https://torrents.${DOMAIN}`
+Web UI: `https://${TRANSMISSION_DOMAIN}`
 
 **Auth**: Authentik SSO (forward auth via Traefik). Login at
 [auth.${DOMAIN}](https://auth.${DOMAIN}) grants access. See

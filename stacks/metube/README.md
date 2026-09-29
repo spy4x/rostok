@@ -12,7 +12,7 @@ YouTube downloader web interface.
 
 ## Access
 
-Web UI: `https://metube.${DOMAIN}`
+Web UI: `https://${METUBE_DOMAIN}`
 
 ## Usage
 

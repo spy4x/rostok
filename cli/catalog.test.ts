@@ -648,6 +648,14 @@ Deno.test("checkStack: a Host() rule may read any <PREFIX>…DOMAIN of its own s
     )
     const bad = await checkStack(dir, "acme", meta, new Map())
     assertEquals(bad.filter((v) => v.includes("Host(")).length, 1)
+
+    // The variable must be the whole host, not a part of it.
+    await Deno.writeTextFile(
+      `${dir}/compose.yml`,
+      "labels:\n" + '  - "traefik.http.routers.a.rule=Host(`api.${ACME_DOMAIN}`)"\n',
+    )
+    const partial = await checkStack(dir, "acme", meta, new Map())
+    assertEquals(partial.filter((v) => v.includes("Host(")).length, 1)
   } finally {
     await Deno.remove(dir, { recursive: true })
   }

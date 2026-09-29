@@ -13,12 +13,12 @@ Self-hosted Git service with CI/CD (Woodpecker integration).
 
 ## Access
 
-Web UI: `https://git.${DOMAIN}`
+Web UI: `https://${GITEA_DOMAIN}`
 
 ## Configuration
 
 ```bash
-GITEA__server__ROOT_URL=https://git.${DOMAIN}
+GITEA__server__ROOT_URL=https://${GITEA_DOMAIN}
 GITEA__database__DB_TYPE=postgres
 GITEA__mailer__ENABLED=true
 GITEA__service__DISABLE_REGISTRATION=true

@@ -25,7 +25,7 @@ HOME_WOODPECKER_ADMIN=your-username
 
 ## Access
 
-Web UI: `https://ci.${DOMAIN}`
+Web UI: `https://${WOODPECKER_DOMAIN}`
 
 ## Pipeline Config
 

@@ -12,7 +12,7 @@ Audiobook and podcast server with mobile apps.
 
 ## Access
 
-Web UI: `https://books.${DOMAIN}`
+Web UI: `https://${AUDIOBOOKSHELF_DOMAIN}`
 
 ## Mobile Apps
 

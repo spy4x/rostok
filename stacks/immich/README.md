@@ -13,14 +13,14 @@ Self-hosted photo and video management with mobile backup.
 
 ## Access
 
-Web UI: `https://photos.${DOMAIN}`
+Web UI: `https://${IMMICH_DOMAIN}`
 
 ## Mobile Apps
 
 - [iOS App](https://apps.apple.com/app/immich/id1613945652)
 - [Android App](https://play.google.com/store/apps/details?id=app.alextran.immich)
 
-Configure server URL: `https://photos.${DOMAIN}`
+Configure server URL: `https://${IMMICH_DOMAIN}`
 
 ## Configuration
 
@@ -28,7 +28,7 @@ See [localStacks/immich/](../localStacks/immich/) for hardware acceleration conf
 
 ## Variables
 
-Declared in `+meta.ts`; `rostok stack add immich` writes them to the server's `.env`. Requires the `traefik` stack and a host with an NVIDIA GPU and the NVIDIA container toolkit: the compose file uses NVENC transcoding and the CUDA machine-learning image. Photos go to `PATH_PHOTOS`. The kiosk is served at `kiosk.${DOMAIN}`.
+Declared in `+meta.ts`; `rostok stack add immich` writes them to the server's `.env`. Requires the `traefik` stack and a host with an NVIDIA GPU and the NVIDIA container toolkit: the compose file uses NVENC transcoding and the CUDA machine-learning image. Photos go to `PATH_PHOTOS`. The kiosk is served at `${IMMICH_KIOSK_DOMAIN}`.
 
 The two API keys can only be created in Immich (Account settings, API keys) after the first deploy: leave them empty, deploy, create the keys, add them to `.env`, deploy again.
 

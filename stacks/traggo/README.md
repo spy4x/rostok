@@ -12,7 +12,7 @@ Self-hosted time tracking tool.
 
 ## Access
 
-Web UI: `https://time.${DOMAIN}` (protected by Authelia SSO)
+Web UI: `https://${TRAGGO_DOMAIN}` (protected by Authelia SSO)
 
 ## Backup
 

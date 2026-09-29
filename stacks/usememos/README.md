@@ -13,7 +13,7 @@ Lightweight note-taking app — like a self-hosted Twitter for personal notes.
 
 ## Access
 
-Web UI: `https://notes.${DOMAIN}`
+Web UI: `https://${USEMEMOS_DOMAIN}`
 
 ## Mobile
 

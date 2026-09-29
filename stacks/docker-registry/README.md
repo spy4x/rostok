@@ -11,8 +11,8 @@ Private Docker image registry with web UI.
 
 ## Access
 
-- Registry: `https://registry.${DOMAIN}/v2/`
-- Web UI: `https://registry.${DOMAIN}`
+- Registry: `https://${DOCKER_REGISTRY_DOMAIN}/v2/`
+- Web UI: `https://${DOCKER_REGISTRY_DOMAIN}`
 
 ## Usage
 

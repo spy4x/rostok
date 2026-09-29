@@ -1,6 +1,6 @@
 # Oko
 
-Server-side-rendered dashboard at `dash.${DOMAIN}`. Replaces the previous
+Server-side-rendered dashboard at `${OKO_DOMAIN}`. Replaces the previous
 nginx-static dash. Fetches gatus badge SVGs at request time (60s
 in-memory cache, single-flight). No client-side JS beyond a ~30-line
 filter for the search box.
@@ -56,7 +56,7 @@ The compose file passes them through. Defaults baked into the binary:
 
 ## Refresh
 
-`https://dash.${DOMAIN}/?refresh=1` bypasses the cache for that single
+`https://${OKO_DOMAIN}/?refresh=1` bypasses the cache for that single
 request (next request still hits the warm cache, but the forced refetch
 happens immediately, blocking the caller until done). A small "refresh"
 link in the footer calls this.
@@ -82,7 +82,7 @@ on every server) picks up the new image and restarts the container.
 
 ## Variables
 
-Declared in `+meta.ts`; `rostok stack add oko` writes them to the server's `.env`. Requires the `traefik` stack. The dashboard is served at `dash.${DOMAIN}`; the service list is the file `${PATH_APPS}/configs/oko/config.json` on the server, which you provide (see "Adding services").
+Declared in `+meta.ts`; `rostok stack add oko` writes them to the server's `.env`. Requires the `traefik` stack. The dashboard is served at `${OKO_DOMAIN}`; the service list is the file `${PATH_APPS}/configs/oko/config.json` on the server, which you provide (see "Adding services").
 
 | Key                | Default                           | Meaning                                         |
 | ------------------ | --------------------------------- | ----------------------------------------------- |

@@ -39,13 +39,13 @@ Before deployment, a `config.properties` file is generated from the template wit
 
 ## Access
 
-- **Frontend**: `https://piped.${DOMAIN}`
-- **API**: `https://pipedapi.${DOMAIN}`
-- **Proxy**: `https://pipedproxy.${DOMAIN}`
+- **Frontend**: `https://${PIPED_DOMAIN}`
+- **API**: `https://${PIPED_API_DOMAIN}`
+- **Proxy**: `https://${PIPED_PROXY_DOMAIN}`
 
 ## First-Time Setup
 
-1. Open `https://piped.${DOMAIN}`
+1. Open `https://${PIPED_DOMAIN}`
 2. Create an account (stored locally in your database)
 3. Import subscriptions from YouTube (via OPML or CSV)
 4. Configure preferences (quality, autoplay, etc.)
