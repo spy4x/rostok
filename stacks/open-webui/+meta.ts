@@ -10,7 +10,8 @@
 //   - OPEN_WEBUI_OPENAI_API_KEYS / OPEN_WEBUI_OPENAI_API_BASE_URLS: semicolon-separated lists,
 //     one entry per OpenAI-compatible provider, matched by position. Required: the deploy hook
 //     refuses to run without them. Keys come from the provider, so there is no default.
-//   - OPEN_WEBUI_WEBUI_SECRET_KEY: secret, generated at `stack add`.
+//   - OPEN_WEBUI_WEBUI_SECRET_KEY: secret, generated at `stack add`. Compose passes it as
+//     WEBUI_SECRET_KEY, which signs sessions.
 //   - OPEN_WEBUI_HF_TOKEN: optional Hugging Face token.
 //   - the rest: same defaults as compose.
 //
@@ -117,7 +118,7 @@ export default {
     },
     {
       key: "OPEN_WEBUI_CONTENT_EXTRACTION_ENGINE",
-      question: "Document extraction engine (tika, or empty for the built-in one)?",
+      question: "Document extraction engine?",
       default: "tika",
       required: true,
     },
