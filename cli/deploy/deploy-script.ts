@@ -27,13 +27,15 @@ const STALE_NAMES_VAR = "rostok_container_names"
 
 /**
  * Prints each service's `container_name` from `docker compose config` YAML,
- * one per line, with the double quotes compose adds to a numeric-looking
- * value stripped (a container name can never contain a quote). Only keys
+ * one per line, with the quotes compose adds to a numeric- or boolean-looking
+ * value stripped: double quotes up to Compose 5.0, single quotes for
+ * boolean-looking names on 5.5 (a container name can never contain a
+ * quote). Only keys
  * directly under a service in the top-level `services:` block count.
  */
 const CONTAINER_NAMES_AWK = [
   `/^[^ ]/ { svc = ($0 == "services:") }`,
-  `svc && /^    container_name: / { v = $2; gsub(/"/, "", v); print v }`,
+  `svc && /^    container_name: / { v = $2; gsub(/["']/, "", v); print v }`,
 ].join(" ")
 
 /**

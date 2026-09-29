@@ -213,6 +213,34 @@ Deno.test("stale-container cleanup strips the quotes compose adds to a numeric n
   assertEquals(run.removed, ["id-num"])
 })
 
+Deno.test("stale-container cleanup strips the single quotes Compose 5.5 adds to a boolean-looking name", async () => {
+  const config = ["services:", "  foo:", "    container_name: 'yes'", ""].join("\n")
+  const run = await runWithFakeDocker({ name: "foo" }, config, ["yes id-yes hl"])
+  assertEquals(run.removed, ["id-yes"])
+})
+
+Deno.test("stale-container cleanup ignores container_name text inside a service's block values", async () => {
+  // `command` and `environment` values are indented deeper than the
+  // service's own keys, so only the key at exactly 4 spaces is a name.
+  const config = [
+    "services:",
+    "  foo:",
+    "    command:",
+    "      - echo",
+    "      - container_name: hl-evil",
+    "    environment:",
+    "      NOTE: |",
+    "        container_name: hl-evil2",
+    "    image: example/foo",
+    "",
+  ].join("\n")
+  const run = await runWithFakeDocker({ name: "foo" }, config, [
+    "hl-evil id-evil other",
+    "hl-evil2 id-evil2 other",
+  ])
+  assertEquals(run.removed, [])
+})
+
 Deno.test("generateDeployScript adds restart when stack needs restart", () => {
   const stacks: StackConfig[] = [{ name: "traefik" }]
   const script = generateDeployScript(stacks, "/apps", new Set(["traefik"]))
