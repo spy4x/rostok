@@ -10,5 +10,12 @@ export default {
   description: "Private Docker registry with a web UI (registry:2 + joxit/docker-registry-ui)",
   category: "infra",
   requires: ["traefik"],
-  variables: [],
+  variables: [
+    {
+      key: "DOCKER_REGISTRY_DOMAIN",
+      question: "Public domain for the registry web UI?",
+      default: "registry.${DOMAIN}",
+      required: true,
+    },
+  ],
 } satisfies StackMeta

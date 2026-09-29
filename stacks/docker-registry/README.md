@@ -17,8 +17,8 @@ Private Docker image registry with web UI.
 ## Usage
 
 ```bash
-docker pull registry.${DOMAIN}/my-image:tag
-docker push registry.${DOMAIN}/my-image:tag
+docker pull ${DOCKER_REGISTRY_DOMAIN}/my-image:tag
+docker push ${DOCKER_REGISTRY_DOMAIN}/my-image:tag
 ```
 
 ## Resources
@@ -28,5 +28,8 @@ docker push registry.${DOMAIN}/my-image:tag
 
 ## Variables
 
-Declared in `+meta.ts`. Requires the `traefik` stack. The stack has no variables of its own;
-it reads only server-level keys (`DOMAIN`, `VOLUMES_PATH`).
+Declared in `+meta.ts`. Requires the `traefik` stack. Server-level keys (`DOMAIN`, `VOLUMES_PATH`) are shared by every stack.
+
+| Key                      | Default              | Meaning                                     |
+| ------------------------ | -------------------- | ------------------------------------------- |
+| `DOCKER_REGISTRY_DOMAIN` | `registry.${DOMAIN}` | Public host of the web UI and registry name |
