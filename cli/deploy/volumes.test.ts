@@ -24,6 +24,23 @@ services:
   assertEquals(paths, ["/volumes/myapp/data"])
 })
 
+Deno.test("extractVolumePaths ignores VOLUMES_PATH mentioned in comments", () => {
+  // stacks/home-assistant/compose.yml once created a folder named
+  // "home-assistant (gitignored).\n\nservices" on every deploy.
+  const compose = [
+    `# Local data lives at \${VOLUMES_PATH}/home-assistant (gitignored).
+
+services:
+  app:
+    volumes:
+      # the old \${VOLUMES_PATH}/mig to PUID: see README
+      # - \${VOLUMES_PATH}/disabled/cache:/cache
+      - \${VOLUMES_PATH}/app/config:/config # was \${VOLUMES_PATH}/old app: gone
+`,
+  ]
+  assertEquals(extractVolumePaths(compose, { VOLUMES_PATH: "/vol" }), ["/vol/app/config"])
+})
+
 Deno.test("extractVolumePaths handles multiple compose files", () => {
   const composeContents = [
     `- \${VOLUMES_PATH}/app1/data:/data:z`,

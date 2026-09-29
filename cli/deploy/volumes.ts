@@ -95,7 +95,11 @@ export function extractVolumePaths(
   const volumePaths: Set<string> = new Set()
 
   for (const content of composeContents) {
-    const volumeMatches = content.matchAll(/\$\{VOLUMES_PATH\}\/([^:]+):/g)
+    // Comments only describe paths, and a path never holds whitespace: without
+    // both rules a comment such as "at ${VOLUMES_PATH}/app (gitignored)" ran on
+    // to the next line's colon and became a volume folder.
+    const code = content.split("\n").filter((line) => !/^\s*#/.test(line)).join("\n")
+    const volumeMatches = code.matchAll(/\$\{VOLUMES_PATH\}\/([^:\s]+):/g)
 
     for (const match of volumeMatches) {
       const volumeSubPath = match[1].split(":")[0]
