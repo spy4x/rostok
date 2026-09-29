@@ -41,3 +41,10 @@ Declared in `+meta.ts`. Requires the `traefik` stack.
 | ---------------------------- | ----------------- | ----------------------------------- |
 | `AKAUNTING_DB_ROOT_PASSWORD` | generated, secret | MariaDB root password               |
 | `AKAUNTING_DB_PASSWORD`      | generated, secret | Password of the `akaunting` DB user |
+
+## Authelia middleware
+
+The router uses the Traefik middleware `authelia@file`. The stack therefore needs a Traefik
+file-provider middleware named `authelia` (forward-auth to Authelia). No catalog stack provides
+it yet, see https://github.com/spy4x/rostok/issues/301. Without it Traefik disables the router
+and the site answers 404.
