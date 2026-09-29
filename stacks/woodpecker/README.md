@@ -50,9 +50,10 @@ pipeline:
 Declared in `+meta.ts`. Requires the `traefik` stack. Server-level keys `DOCKER_GROUP_ID`,
 `PUID` and `PGID` are shared by every stack.
 
-| Key                        | Default           | Meaning                                  |
-| -------------------------- | ----------------- | ---------------------------------------- |
-| `WOODPECKER_AGENT_SECRET`  | generated, secret | Shared secret between server and agent   |
-| `WOODPECKER_GITHUB_CLIENT` | asked             | Client ID of the GitHub OAuth app        |
-| `WOODPECKER_GITHUB_SECRET` | asked, secret     | Client secret of the GitHub OAuth app    |
-| `WOODPECKER_ADMIN`         | asked             | GitHub login that administers Woodpecker |
+| Key                        | Default           | Meaning                                      |
+| -------------------------- | ----------------- | -------------------------------------------- |
+| `WOODPECKER_DOMAIN`        | `ci.${DOMAIN}`    | Public host of the web UI and OAuth callback |
+| `WOODPECKER_AGENT_SECRET`  | generated, secret | Shared secret between server and agent       |
+| `WOODPECKER_GITHUB_CLIENT` | asked             | Client ID of the GitHub OAuth app            |
+| `WOODPECKER_GITHUB_SECRET` | asked, secret     | Client secret of the GitHub OAuth app        |
+| `WOODPECKER_ADMIN`         | asked             | GitHub login that administers Woodpecker     |
