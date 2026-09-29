@@ -872,3 +872,63 @@ Deno.test("STAGING_CLEANUP_SIGNALS: exit codes follow the shell's 128 + signal n
   assertEquals(codes, { SIGHUP: 129, SIGINT: 130, SIGQUIT: 131, SIGTERM: 143 })
   assert(STAGING_CLEANUP_SIGNALS.length === 4)
 })
+
+// #282 — a local server (SSH_ADDRESS=local) runs two guards before any step.
+
+async function writeLocalServer(projectDir: string, pathApps: string): Promise<void> {
+  const serverDir = join(projectDir, "servers", "test")
+  await Deno.mkdir(serverDir, { recursive: true })
+  const envLines = [
+    "SSH_ADDRESS=local",
+    "SSH_USER=deploy",
+    `PATH_APPS=${pathApps}`,
+    "VOLUMES_PATH=/srv/volumes",
+    "PUID=1000",
+    "PGID=1000",
+    "DOCKER_GROUP_ID=988",
+  ]
+  await Deno.writeTextFile(join(serverDir, ".env"), envLines.join("\n") + "\n")
+  await Deno.writeTextFile(join(serverDir, "config.json"), JSON.stringify({ stacks: [] }))
+}
+
+Deno.test("runDeploy: a local server whose PATH_APPS is the project folder is refused before any step", async () => {
+  const f = await setupRunDeployFixture()
+  try {
+    await writeLocalServer(f.projectDir, f.projectDir)
+    const endpointChecks: string[] = []
+    const io: RunDeployIO = {
+      ...f.io,
+      checkLocalDockerEndpoint: async (address) => {
+        endpointChecks.push(address)
+      },
+    }
+    await assertRejects(
+      () => runDeploy({ cwd: f.projectDir, server: "test" }, io),
+      UserError,
+      "overlaps the project folder",
+    )
+    assertEquals(f.remote.calls, [])
+    assertEquals(endpointChecks, [])
+  } finally {
+    await teardownRunDeployFixture(f)
+  }
+})
+
+Deno.test("runDeploy: a local server with a non-local Docker endpoint is refused before any step", async () => {
+  const f = await setupRunDeployFixture()
+  try {
+    await writeLocalServer(f.projectDir, "/srv/apps")
+    const io: RunDeployIO = {
+      ...f.io,
+      checkLocalDockerEndpoint: () => Promise.reject(new UserError("endpoint is tcp://192.0.2.1")),
+    }
+    await assertRejects(
+      () => runDeploy({ cwd: f.projectDir, server: "test" }, io),
+      UserError,
+      "tcp://192.0.2.1",
+    )
+    assertEquals(f.remote.calls, [])
+  } finally {
+    await teardownRunDeployFixture(f)
+  }
+})
