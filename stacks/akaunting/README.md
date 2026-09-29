@@ -32,3 +32,12 @@ PostgreSQL dump + storage data backed up nightly via Restic.
 
 - [Akaunting Documentation](https://akaunting.com/docs)
 - [Akaunting GitHub](https://github.com/akaunting/akaunting)
+
+## Variables
+
+Declared in `+meta.ts`. Requires the `traefik` stack.
+
+| Key                          | Default           | Meaning                             |
+| ---------------------------- | ----------------- | ----------------------------------- |
+| `AKAUNTING_DB_ROOT_PASSWORD` | generated, secret | MariaDB root password               |
+| `AKAUNTING_DB_PASSWORD`      | generated, secret | Password of the `akaunting` DB user |
