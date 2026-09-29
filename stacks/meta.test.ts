@@ -45,31 +45,47 @@ function refsOf(text: string): Map<string, string | undefined> {
   return refs
 }
 
-/** All text files of a stack except tests and +meta.ts, joined. The README counts: a
- * systemd stack such as deepseek-harness reads its variables only in the install steps. */
-async function otherFilesOf(name: string): Promise<string> {
-  const parts: string[] = []
+/** Text files of a stack except tests and +meta.ts, by path relative to the stack. */
+async function otherFilesOf(name: string): Promise<Map<string, string>> {
+  const files = new Map<string, string>()
   const walk = async (rel: string) => {
     for await (const e of Deno.readDir(new URL(`./${name}/${rel}`, stacksDir))) {
       const path = rel ? `${rel}/${e.name}` : e.name
       if (e.isDirectory) await walk(path)
       else if (!/(\.test\.ts|\+meta\.ts)$/.test(e.name)) {
-        parts.push(await Deno.readTextFile(new URL(`./${name}/${path}`, stacksDir)))
+        files.set(path, await Deno.readTextFile(new URL(`./${name}/${path}`, stacksDir)))
       }
     }
   }
   await walk("")
-  return parts.join("\n")
+  return files
 }
 
 /**
- * Stacks whose +meta.ts predates this test and misses compose variables. Neither ships in the
- * catalog; the cloud batch of https://github.com/spy4x/rostok/issues/283 completes them and
- * removes them from this list.
+ * Whether any stack file really uses `key`, not merely names it: a `${KEY` or `$KEY` expansion
+ * on a line that is not a comment, or the whole word in a `.ts` file (deploy hooks read
+ * `env.KEY`). The README counts for expansions only, because a systemd stack such as
+ * deepseek-harness uses its variables in the install steps; its variables table does not.
  */
-const INCOMPLETE = new Set(["mirotalk", "stalwart"])
+function isRead(key: string, files: Map<string, string>): boolean {
+  const expansion = new RegExp(`\\$\\{?${key}(?![A-Z0-9_])`)
+  const word = new RegExp(`(?<![A-Za-z0-9_])${key}(?![A-Za-z0-9_])`)
+  for (const [path, text] of files) {
+    const code = text.split("\n").filter((l) => !/^\s*(#|\/\/)/.test(l)).join("\n")
+    if (expansion.test(code)) return true
+    if (path.endsWith(".ts") && word.test(code)) return true
+  }
+  return false
+}
 
-const names = (await stacksWithMeta()).filter((n) => !INCOMPLETE.has(n))
+/**
+ * Stacks whose +meta.ts predates this test and misses compose variables, so they skip only the
+ * "declares every compose variable" check. Neither ships in the catalog; the cloud batch of
+ * https://github.com/spy4x/rostok/issues/283 completes them and removes them from this list.
+ */
+const MISSING_COMPOSE_VARS = new Set(["mirotalk", "stalwart"])
+
+const names = await stacksWithMeta()
 
 Deno.test("stacks: at least one stack has a +meta.ts", () => {
   assert(names.length > 0, "found no stacks/*/+meta.ts — the glob or the directory moved")
@@ -83,7 +99,10 @@ for (const name of names) {
     validateStackMeta(meta)
   })
 
-  Deno.test(`${name} +meta.ts: declares every compose variable that is not server-level`, () => {
+  Deno.test({
+    name: `${name} +meta.ts: declares every compose variable that is not server-level`,
+    ignore: MISSING_COMPOSE_VARS.has(name),
+  }, () => {
     const declared = new Set(meta.variables.map((v) => v.key))
     for (const key of composeRefs.keys()) {
       if (isServerKey(key)) continue
@@ -92,9 +111,9 @@ for (const name of names) {
   })
 
   Deno.test(`${name} +meta.ts: every declared key is read by a stack file`, async () => {
-    const others = await otherFilesOf(name)
+    const files = await otherFilesOf(name)
     for (const v of meta.variables) {
-      assert(others.includes(v.key), `+meta.ts declares ${v.key} but no stack file reads it`)
+      assert(isRead(v.key, files), `+meta.ts declares ${v.key} but no stack file reads it`)
     }
   })
 
