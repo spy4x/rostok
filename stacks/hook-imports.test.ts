@@ -61,6 +61,10 @@ Deno.test("findEscapingImports: flags a relative import that leaves the stack fo
     "../../x.ts",
   ])
   assertEquals(
+    findEscapingImports(`import "../piped-x/a.ts"`, "/repo/stacks/piped", "/repo/stacks/piped"),
+    ["../piped-x/a.ts"],
+  )
+  assertEquals(
     findEscapingImports(`import "../a.ts"`, "/repo/stacks/piped/sub", "/repo/stacks/piped"),
     [],
   )
