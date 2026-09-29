@@ -27,3 +27,8 @@ SQLite database backed up nightly via Restic.
 
 - [usememos GitHub](https://github.com/usememos/memos)
 - [usememos Website](https://usememos.com/)
+
+## Variables
+
+Declared in `+meta.ts`. Requires the `traefik` stack. The stack has no variables of its own;
+it reads only server-level keys (`PROJECT`, `DOMAIN`, `VOLUMES_PATH`).
