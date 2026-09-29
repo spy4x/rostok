@@ -34,5 +34,9 @@ Web UI: `https://books.${DOMAIN}`
 
 ## Variables
 
-Declared in `+meta.ts`. Requires the `traefik` stack. The stack has no variables of its own;
-it reads only server-level keys (`DOMAIN`, `TIMEZONE`, `PUID`, `PGID`, `VOLUMES_PATH`, and `PATH_BOOKS` for the library folder).
+Declared in `+meta.ts`. Requires the `traefik` stack. Server-level keys (`DOMAIN`, `TIMEZONE`,
+`PUID`, `PGID`, `VOLUMES_PATH`) are shared by every stack.
+
+| Key          | Default                 | Meaning                                  |
+| ------------ | ----------------------- | ---------------------------------------- |
+| `PATH_BOOKS` | `${VOLUMES_PATH}/books` | Host folder mounted as the books library |

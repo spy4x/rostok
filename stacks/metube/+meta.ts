@@ -1,7 +1,8 @@
 // Stack metadata for `metube`.
 //
 // Routes through Traefik at `metube.${DOMAIN}` behind the `authelia@file` middleware. Downloads go to PATH_VIDEOS and PATH_MUSIC.
-// Server-level keys are not declared here (see cli/server-keys.ts).
+// PATH_VIDEOS and PATH_MUSIC are shared server-level keys that compose mounts; declared here like
+// jellyfin does so a fresh server gets a value.
 
 import type { StackMeta } from "@rostok/cli"
 
@@ -10,5 +11,18 @@ export default {
   description: "Web front end for yt-dlp downloads (alexta69/metube)",
   category: "media",
   requires: ["traefik"],
-  variables: [],
+  variables: [
+    {
+      key: "PATH_VIDEOS",
+      question: "Host path for the videos library?",
+      default: "${VOLUMES_PATH}/videos",
+      required: true,
+    },
+    {
+      key: "PATH_MUSIC",
+      question: "Host path for the music library?",
+      default: "${VOLUMES_PATH}/music",
+      required: true,
+    },
+  ],
 } satisfies StackMeta

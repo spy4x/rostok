@@ -25,5 +25,17 @@ Paste YouTube URL and click download. Files saved to configured output directory
 
 ## Variables
 
-Declared in `+meta.ts`. Requires the `traefik` stack. The stack has no variables of its own;
-it reads only server-level keys (`DOMAIN`, `TIMEZONE`, `PUID`, `PGID`, `PATH_VIDEOS`, `PATH_MUSIC`).
+Declared in `+meta.ts`. Requires the `traefik` stack. Server-level keys (`DOMAIN`, `TIMEZONE`,
+`PUID`, `PGID`) are shared by every stack.
+
+| Key           | Default                  | Meaning                              |
+| ------------- | ------------------------ | ------------------------------------ |
+| `PATH_VIDEOS` | `${VOLUMES_PATH}/videos` | Host folder for video downloads      |
+| `PATH_MUSIC`  | `${VOLUMES_PATH}/music`  | Host folder for audio-only downloads |
+
+## Authelia middleware
+
+The router uses the Traefik middleware `authelia@file`. The stack therefore needs a Traefik
+file-provider middleware named `authelia` (forward-auth to Authelia). No catalog stack provides
+it yet, see https://github.com/spy4x/rostok/issues/301. Without it Traefik disables the router
+and the site answers 404.
