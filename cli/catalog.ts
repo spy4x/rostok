@@ -41,11 +41,11 @@ import jellyfin from "../stacks/jellyfin/+meta.ts"
 import filebrowser from "../stacks/filebrowser/+meta.ts"
 import librespeed from "../stacks/librespeed/+meta.ts"
 import deepseekHarness from "../stacks/deepseek-harness/+meta.ts"
+import watchtower from "../stacks/watchtower/+meta.ts"
+import syncthing from "../stacks/syncthing/+meta.ts"
+import homeAssistant from "../stacks/home-assistant/+meta.ts"
 
-// A second batch is already shipping in stacks/ but their +meta.ts isn't
-// written yet — Phase 4 shipped the first 6. The remaining ~40 stacks
-// will add +meta.ts + an entry here in follow-up PRs. Until then the
-// catalog only contains the 6 first-batch stacks.
+// Stacks without a +meta.ts are not in the catalog yet; issue #283 adds the rest.
 
 const STACK_META: Record<string, StackMeta> = {
   traefik,
@@ -55,6 +55,9 @@ const STACK_META: Record<string, StackMeta> = {
   filebrowser,
   librespeed,
   "deepseek-harness": deepseekHarness,
+  watchtower,
+  syncthing,
+  "home-assistant": homeAssistant,
 }
 
 const ENTRIES: CatalogEntry[] = Object.entries(STACK_META)

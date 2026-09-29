@@ -4,7 +4,7 @@
 # Adds Traefik labels + proxy network for public HTTPS at home.${DOMAIN}.
 # Requires a Traefik container running on the `proxy` network. Drops the
 # host networking of compose.yml (`!reset`), so LAN device discovery stops
-# working. Not shipped in the catalog: copy to
+# working. Shipped with the catalog, but deploy never applies it: copy it to
 # servers/<server>/compose-override/home-assistant.yml to use it.
 
 networks:
