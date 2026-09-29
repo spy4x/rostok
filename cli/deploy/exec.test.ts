@@ -169,7 +169,8 @@ async function withFakeSshAndRsync<T>(
     })
     await Deno.writeTextFile(
       join(binDir, "rsync"),
-      `#!/bin/sh\n${guard}for a in "$@"; do printf '%s\\n' "$a"; done\n`,
+      `#!/bin/sh\n${guard}for a in "$@"; do printf '%s\\n' "$a"; done\n` +
+        `printf 'DOMAIN=%s' "\${DOMAIN-unset}" >&2\n`,
       { mode: 0o755 },
     )
     const previousPath = Deno.env.get("PATH") ?? ""
@@ -197,6 +198,24 @@ Deno.test("runRemoteShell: a local server runs the script on this machine and ne
     assertEquals(result, { success: true, code: 0, output: "42", error: "" })
     assertEquals(await sshRan(), false)
   })
+})
+
+Deno.test("runRemoteShell: a local step doesn't see the parent shell's DOMAIN, keeps PATH and HOME", async () => {
+  // docker compose ranks shell variables above --env-file, so a DOMAIN
+  // exported where rostok runs would otherwise beat the server's .env.
+  const previous = Deno.env.get("DOMAIN")
+  Deno.env.set("DOMAIN", "leaked.example.com")
+  try {
+    await withFakeSshAndRsync(async () => {
+      const result = await runRemoteShell("local", `printf '%s|%s' "\${DOMAIN-unset}" "$HOME"`)
+      assertEquals(result.output, `unset|${Deno.env.get("HOME")}`)
+      const sync = await runRemoteSync("local", "/tmp/staging", "/srv/apps", [])
+      assertEquals(sync.error, "DOMAIN=unset")
+    })
+  } finally {
+    if (previous === undefined) Deno.env.delete("DOMAIN")
+    else Deno.env.set("DOMAIN", previous)
+  }
 })
 
 Deno.test("runRemoteCommand: a local server runs argv as is, never through ssh", async () => {

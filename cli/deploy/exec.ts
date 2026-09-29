@@ -16,7 +16,8 @@
 // server as this machine. Each runRemote* function below checks for it
 // before parsing the address and runs the same step as a local process
 // instead: the argv directly, the script through `sh -c`, and rsync with
-// the same flags but no `-e` and a plain local destination path. This
+// the same flags but no `-e` and a plain local destination path, each
+// with only the environment `localStepEnv` keeps. This
 // file is the one seam: run-deploy.ts, docker-preflight.ts and
 // deploy-script.ts keep calling runRemote* and never ask which kind of
 // server they talk to. Every other address takes exactly the ssh path it
@@ -56,11 +57,14 @@ export interface CommandResult {
 /** Run a local command (argv form) and capture its output. Tracked so a SIGINT/SIGTERM handler can kill it (process-registry.ts). */
 export async function runCommand(
   cmd: string[],
-  opts?: { cwd?: string },
+  opts?: { cwd?: string; env?: Record<string, string> },
 ): Promise<CommandResult> {
   const proc = new Deno.Command(cmd[0], {
     args: cmd.slice(1),
     cwd: opts?.cwd,
+    // An explicit env replaces the inherited one entirely (clearEnv), so
+    // nothing outside it reaches the child.
+    ...(opts?.env ? { env: opts.env, clearEnv: true } : {}),
     stdin: "null",
     stdout: "piped",
     stderr: "piped",
@@ -77,6 +81,45 @@ export async function runCommand(
 }
 
 /**
+ * The parent-environment variables a local server's deploy steps keep
+ * (#282 review). Over ssh a step starts from the server's own login
+ * environment; a local step would otherwise inherit the whole shell
+ * rostok runs in, and `docker compose` ranks shell variables above
+ * `--env-file`, so a `DOMAIN` exported in that shell silently beat the
+ * server's `.env`. Only what a login shell needs to find programs and
+ * reach the local Docker daemon survives (the DOCKER_* names keep
+ * rootless Docker working; checkLocalDockerEndpoint refuses a
+ * non-local endpoint). `LC_*` is matched by prefix.
+ */
+export const LOCAL_STEP_ENV_ALLOWLIST = [
+  "PATH",
+  "HOME",
+  "USER",
+  "LOGNAME",
+  "LANG",
+  "XDG_RUNTIME_DIR",
+  "DOCKER_CONFIG",
+  "DOCKER_HOST",
+  "DOCKER_CONTEXT",
+] as const
+
+/** `parent` reduced to LOCAL_STEP_ENV_ALLOWLIST plus every `LC_*` variable. */
+export function localStepEnv(parent: Record<string, string>): Record<string, string> {
+  const env: Record<string, string> = {}
+  for (const [key, value] of Object.entries(parent)) {
+    if ((LOCAL_STEP_ENV_ALLOWLIST as readonly string[]).includes(key) || key.startsWith("LC_")) {
+      env[key] = value
+    }
+  }
+  return env
+}
+
+/** Run one local-server step with the reduced environment of `localStepEnv`. */
+async function runLocalStep(cmd: string[]): Promise<CommandResult> {
+  return await runCommand(cmd, { env: localStepEnv(Deno.env.toObject()) })
+}
+
+/**
  * Run `argv` on the remote host over ssh (each element its own argv
  * slot). `sshAddress` is parsed with `parseSshAddress` (throws a
  * UserError for anything unsafe before ssh is ever spawned) and turned
@@ -90,7 +133,7 @@ export async function runRemoteCommand(
   sshAddress: string,
   argv: string[],
 ): Promise<CommandResult> {
-  if (isLocalSshAddress(sshAddress)) return await runCommand(argv)
+  if (isLocalSshAddress(sshAddress)) return await runLocalStep(argv)
   const target = parseSshAddress(sshAddress)
   return await runCommand(["ssh", ...sshArgs(target, argv, defaultSshCallOptions())])
 }
@@ -100,7 +143,7 @@ export async function runRemoteShell(
   sshAddress: string,
   script: string,
 ): Promise<CommandResult> {
-  if (isLocalSshAddress(sshAddress)) return await runCommand(["sh", "-c", script])
+  if (isLocalSshAddress(sshAddress)) return await runLocalStep(["sh", "-c", script])
   const target = parseSshAddress(sshAddress)
   return await runCommand(["ssh", ...sshArgs(target, [script], defaultSshCallOptions())])
 }
@@ -144,7 +187,7 @@ export async function runRemoteSync(
   extraArgs: string[] = [],
 ): Promise<CommandResult> {
   if (isLocalSshAddress(sshAddress)) {
-    return await runCommand(["rsync", ...localRsyncSyncArgs(localDir, remotePath, extraArgs)])
+    return await runLocalStep(["rsync", ...localRsyncSyncArgs(localDir, remotePath, extraArgs)])
   }
   const target = parseSshAddress(sshAddress)
   return await runCommand([
@@ -218,7 +261,7 @@ export async function runRemoteSyncEntry(
   extraArgs: string[] = [],
 ): Promise<CommandResult> {
   if (isLocalSshAddress(sshAddress)) {
-    return await runCommand([
+    return await runLocalStep([
       "rsync",
       ...localRsyncEntrySyncArgs(localEntryDir, remoteParentPath, extraArgs),
     ])
