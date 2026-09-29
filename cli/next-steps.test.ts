@@ -251,3 +251,15 @@ Deno.test("buildNextSteps: a missing .env and config.json (server not created ye
     await Deno.remove(dir, { recursive: true }).catch(() => {})
   }
 })
+
+Deno.test("buildNextSteps: SSH_ADDRESS=local says the server is this machine (#282)", async () => {
+  await withServerDir(
+    { env: { DOMAIN: "example.com", SSH_ADDRESS: "local" }, stacks: ["traefik"] },
+    async (serverDir) => {
+      const lines = await buildNextSteps({ serverName: "laptop", serverDir, written: [] })
+      assertEquals(lines.includes("  A example.com → <this machine's public IP>"), true)
+      assertEquals(lines.some((l) => l.includes("the server is this machine")), true)
+      assertEquals(lines.some((l) => l.includes("isn't a plain IP")), false)
+    },
+  )
+})
