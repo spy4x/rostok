@@ -65,8 +65,21 @@ laptop` deploys locally without a flag. What changes:
   ssh is never started.
 - Stack hooks get `SSH_ADDRESS=local` and no `SSH_HOST` or `SSH_PORT`.
   syncthing's hook then runs its commands locally. The after-deploy
-  hooks of traefik, gatus, caldiy and open-webui still need `SSH_HOST`
-  and fail with "SSH_HOST not set" on a local server for now.
+  hooks of traefik, gatus, caldiy, open-webui and stalwart still need
+  `SSH_HOST` and fail on a local server for now
+  ([#287](https://github.com/spy4x/rostok/issues/287)).
+- Each local step runs with a reduced environment: `PATH`, `HOME`,
+  `USER`, `LOGNAME`, `LANG`, `LC_*`, `XDG_RUNTIME_DIR` and the
+  `DOCKER_CONFIG` / `DOCKER_HOST` / `DOCKER_CONTEXT` variables. Anything
+  else exported in your shell (a `DOMAIN`, say) never overrides the
+  server's `.env`.
+- Deploy refuses to start when Docker points anywhere but a local unix
+  socket: `DOCKER_HOST=tcp://…` or `ssh://…`, or a context chosen with
+  `docker context use`. Run `docker context use default` first.
+- Deploy refuses a `PATH_APPS` or `VOLUMES_PATH` that is, contains or
+  sits inside the project folder, and a `PATH_APPS` that is your home
+  folder or one of its parents: the sync's `rsync --delete` would erase
+  them.
 
 Only the exact, lower-case word `local` does this. `localhost`,
 `127.0.0.1`, `root@local` or `local:22` stay ordinary ssh targets, so a
