@@ -7,6 +7,8 @@ import {
   rsyncSyncArgs,
   runRemoteCommand,
   runRemoteShell,
+  runRemoteSync,
+  runRemoteSyncEntry,
   shQuote,
   stripControlChars,
 } from "./exec.ts"
@@ -143,6 +145,122 @@ Deno.test("rsyncEntrySyncArgs: never trails the source with a slash, for any sta
     assertEquals(source.endsWith("/"), false, `source must not end with "/": ${source}`)
     assertEquals(source, `/staging/stacks/${name}`)
   }
+})
+
+// #282 — SSH_ADDRESS=local runs every step on this machine.
+
+/**
+ * Put a fake `ssh` and a fake `rsync` first on PATH for `fn`. The fake
+ * ssh only records that it ran (a marker file) and exits 97, so a local
+ * step that wrongly reached ssh either fails or leaves the marker. The
+ * fake rsync prints its argv, one per line, and copies nothing. Neither
+ * calls any other program (the marker is written by a shell
+ * redirection), and both refuse to run inside one another (depth guard).
+ */
+async function withFakeSshAndRsync<T>(
+  fn: (sshRan: () => Promise<boolean>) => Promise<T>,
+): Promise<T> {
+  const binDir = await Deno.makeTempDir({ prefix: "rostok-fake-local-" })
+  const marker = join(binDir, "ssh-ran")
+  const guard = `[ -n "$ROSTOK_FAKE_BIN_DEPTH" ] && exit 98\nexport ROSTOK_FAKE_BIN_DEPTH=1\n`
+  try {
+    await Deno.writeTextFile(join(binDir, "ssh"), `#!/bin/sh\n${guard}: > '${marker}'\nexit 97\n`, {
+      mode: 0o755,
+    })
+    await Deno.writeTextFile(
+      join(binDir, "rsync"),
+      `#!/bin/sh\n${guard}for a in "$@"; do printf '%s\\n' "$a"; done\n`,
+      { mode: 0o755 },
+    )
+    const previousPath = Deno.env.get("PATH") ?? ""
+    Deno.env.set("PATH", `${binDir}:${previousPath}`)
+    try {
+      return await fn(async () => {
+        try {
+          await Deno.stat(marker)
+          return true
+        } catch {
+          return false
+        }
+      })
+    } finally {
+      Deno.env.set("PATH", previousPath)
+    }
+  } finally {
+    await Deno.remove(binDir, { recursive: true })
+  }
+}
+
+Deno.test("runRemoteShell: a local server runs the script on this machine and never spawns ssh", async () => {
+  await withFakeSshAndRsync(async (sshRan) => {
+    const result = await runRemoteShell("local", `printf '%s' "$((40 + 2))"`)
+    assertEquals(result, { success: true, code: 0, output: "42", error: "" })
+    assertEquals(await sshRan(), false)
+  })
+})
+
+Deno.test("runRemoteCommand: a local server runs argv as is, never through ssh", async () => {
+  // Each element stays its own argument ("a b" is not split in two).
+  await withFakeSshAndRsync(async (sshRan) => {
+    const result = await runRemoteCommand("local", ["printf", "%s|", "a b", "c"])
+    assertEquals(result.output, "a b|c|")
+    assertEquals(await sshRan(), false)
+  })
+})
+
+Deno.test("runRemoteSync: a local server runs rsync with the same flags, no -e, plain destination", async () => {
+  await withFakeSshAndRsync(async (sshRan) => {
+    const result = await runRemoteSync("local", "/tmp/staging", "/srv/apps", [
+      "-avhz",
+      "--exclude=/stacks",
+      "--delete",
+    ])
+    const argv = result.output.split("\n").filter((l) => l.length > 0)
+    assertEquals(argv, [
+      "-avhz",
+      "--exclude=/stacks",
+      "--delete",
+      "--",
+      "/tmp/staging/",
+      "/srv/apps/",
+    ])
+    assertEquals(await sshRan(), false)
+  })
+})
+
+Deno.test("runRemoteSyncEntry: a local server syncs the entry into the plain parent path, no -e", async () => {
+  await withFakeSshAndRsync(async (sshRan) => {
+    const result = await runRemoteSyncEntry(
+      "local",
+      "/tmp/staging/stacks/traefik",
+      "/srv/apps/stacks",
+      ["-avhz", "--delete"],
+    )
+    const argv = result.output.split("\n").filter((l) => l.length > 0)
+    assertEquals(argv, [
+      "-avhz",
+      "--delete",
+      "--",
+      "/tmp/staging/stacks/traefik",
+      "/srv/apps/stacks/",
+    ])
+    assertEquals(await sshRan(), false)
+  })
+})
+
+Deno.test("runRemoteSync: a remote server still syncs over ssh with -e and host:path", async () => {
+  await withFakeSshAndRsync(async () => {
+    const result = await runRemoteSync("root@192.0.2.1", "/tmp/staging", "/srv/apps", ["-avhz"])
+    const argv = result.output.split("\n").filter((l) => l.length > 0)
+    assertEquals(argv, [
+      "-avhz",
+      "-e",
+      ["ssh", ...expectedOptions()].join(" "),
+      "--",
+      "/tmp/staging/",
+      "root@192.0.2.1:/srv/apps/",
+    ])
+  })
 })
 
 Deno.test("shQuote: wraps a value in single quotes", () => {

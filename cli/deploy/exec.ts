@@ -11,8 +11,19 @@
 // when stdin isn't a TTY (`Deno.stdin.isTerminal()`) — an interactive
 // deploy can still answer a host-key prompt, but a CI run or a piped
 // invocation fails fast instead of hanging on one.
+//
+// #282: `SSH_ADDRESS=local` (server-keys.ts's LOCAL_SSH_ADDRESS) marks the
+// server as this machine. Each runRemote* function below checks for it
+// before parsing the address and runs the same step as a local process
+// instead: the argv directly, the script through `sh -c`, and rsync with
+// the same flags but no `-e` and a plain local destination path. This
+// file is the one seam: run-deploy.ts, docker-preflight.ts and
+// deploy-script.ts keep calling runRemote* and never ask which kind of
+// server they talk to. Every other address takes exactly the ssh path it
+// took before.
 
 import {
+  isLocalSshAddress,
   parseSshAddress,
   rsyncDestination,
   rsyncSshOption,
@@ -79,6 +90,7 @@ export async function runRemoteCommand(
   sshAddress: string,
   argv: string[],
 ): Promise<CommandResult> {
+  if (isLocalSshAddress(sshAddress)) return await runCommand(argv)
   const target = parseSshAddress(sshAddress)
   return await runCommand(["ssh", ...sshArgs(target, argv, defaultSshCallOptions())])
 }
@@ -88,6 +100,7 @@ export async function runRemoteShell(
   sshAddress: string,
   script: string,
 ): Promise<CommandResult> {
+  if (isLocalSshAddress(sshAddress)) return await runCommand(["sh", "-c", script])
   const target = parseSshAddress(sshAddress)
   return await runCommand(["ssh", ...sshArgs(target, [script], defaultSshCallOptions())])
 }
@@ -130,11 +143,29 @@ export async function runRemoteSync(
   remotePath: string,
   extraArgs: string[] = [],
 ): Promise<CommandResult> {
+  if (isLocalSshAddress(sshAddress)) {
+    return await runCommand(["rsync", ...localRsyncSyncArgs(localDir, remotePath, extraArgs)])
+  }
   const target = parseSshAddress(sshAddress)
   return await runCommand([
     "rsync",
     ...rsyncSyncArgs(target, localDir, remotePath, extraArgs, defaultSshCallOptions()),
   ])
+}
+
+/**
+ * The argv `runRemoteSync` passes to `rsync` for a local server (#282):
+ * `rsyncSyncArgs`'s shape (trailing slash on both sides, `--` ahead of
+ * them) without `-e` and with a plain path as the destination. The path
+ * is always absolute and colon-free (validateRemotePath), so rsync can't
+ * read it as a `host:path` remote.
+ */
+export function localRsyncSyncArgs(
+  localDir: string,
+  destPath: string,
+  extraArgs: string[],
+): string[] {
+  return [...extraArgs, "--", `${localDir}/`, `${destPath}/`]
 }
 
 /** The argv `runRemoteSyncEntry` passes to `rsync` — see `rsyncSyncArgs`'s own comment; same pure-testability reason. */
@@ -186,6 +217,12 @@ export async function runRemoteSyncEntry(
   remoteParentPath: string,
   extraArgs: string[] = [],
 ): Promise<CommandResult> {
+  if (isLocalSshAddress(sshAddress)) {
+    return await runCommand([
+      "rsync",
+      ...localRsyncEntrySyncArgs(localEntryDir, remoteParentPath, extraArgs),
+    ])
+  }
   const target = parseSshAddress(sshAddress)
   return await runCommand([
     "rsync",
@@ -197,6 +234,15 @@ export async function runRemoteSyncEntry(
       defaultSshCallOptions(),
     ),
   ])
+}
+
+/** The argv `runRemoteSyncEntry` passes to `rsync` for a local server: `rsyncEntrySyncArgs`'s shape without `-e` (#282). */
+export function localRsyncEntrySyncArgs(
+  localEntryDir: string,
+  destParentPath: string,
+  extraArgs: string[],
+): string[] {
+  return [...extraArgs, "--", localEntryDir, `${destParentPath}/`]
 }
 
 /**

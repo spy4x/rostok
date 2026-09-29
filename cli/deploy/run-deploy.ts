@@ -77,7 +77,7 @@
 
 import { dirname, join, toFileUrl } from "@std/path"
 import { parseEnv, readEnvFile } from "../env-files.ts"
-import { serverDirFor } from "../server-keys.ts"
+import { isLocalSshAddress, serverDirFor } from "../server-keys.ts"
 import { serverNotFoundMessage, UserError } from "../errors.ts"
 import { resolveDeployEnv } from "./env.ts"
 import { checkDockerGroup, checkRemotePathsNotNested, needsRemoteSudo } from "./docker-preflight.ts"
@@ -191,6 +191,11 @@ export async function runDeploy(
   const PUID = resolvedEnv.PUID
   const PGID = resolvedEnv.PGID
   const DOCKER_GROUP_ID = resolvedEnv.DOCKER_GROUP_ID
+  // #282: every io call below still gets SSH_ADDRESS; exec.ts runs each
+  // step as a local process when it is the reserved value "local".
+  if (isLocalSshAddress(SSH_ADDRESS)) {
+    console.log('SSH_ADDRESS is "local": deploying to this machine, without ssh.')
+  }
 
   // #207: preflight before any file is synced. Docker group GID, and
   // whether privileged commands need `sudo -n` — decided from the
