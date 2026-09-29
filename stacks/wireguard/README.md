@@ -48,6 +48,16 @@ docker exec -it wireguard /app/show-peer peer1
 
 Config files: `${VOLUMES_PATH}/wireguard/config/`
 
+## Variables
+
+Declared in `+meta.ts`; `rostok stack add wireguard` writes them to the server's `.env`. Server-level keys (`TIMEZONE`, `PUID`, `PGID`) are shared by every stack. Point the DNS record of `WIREGUARD_DOMAIN` straight at the server: UDP 51820 cannot pass through a CDN proxy.
+
+| Key                | Default                   | Meaning                                  |
+| ------------------ | ------------------------- | ---------------------------------------- |
+| `WIREGUARD_DOMAIN` | `vpn.${DOMAIN}`           | Host clients connect to (`SERVERURL`)    |
+| `WIREGUARD_PEERS`  | `phone,laptop`            | Peer count or comma-separated peer names |
+| `WIREGUARD_DNS`    | `1.1.1.1,8.8.8.8,9.9.9.9` | Resolvers handed to clients              |
+
 ## Resources
 
 - [WireGuard Documentation](https://www.wireguard.com/)
