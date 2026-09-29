@@ -12,6 +12,12 @@ export default {
   requires: ["traefik"],
   variables: [
     {
+      key: "TRAGGO_DOMAIN",
+      question: "Public domain for Traggo?",
+      default: "time.${DOMAIN}",
+      required: true,
+    },
+    {
       key: "TRAGGO_MEM_LIMIT",
       question: "Memory limit for the Traggo container?",
       default: "128M",
