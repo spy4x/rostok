@@ -86,6 +86,7 @@ Declared in `+meta.ts`; `rostok stack add oko` writes them to the server's `.env
 
 | Key                | Default                           | Meaning                                         |
 | ------------------ | --------------------------------- | ----------------------------------------------- |
+| `OKO_DOMAIN`       | `dash.${DOMAIN}`                  | Public host of the dashboard                    |
 | `OKO_UPTIME_HOSTS` | `uptime-${SERVER_NAME}.${DOMAIN}` | Comma-separated Gatus hosts to read badges from |
 
 ## Resources

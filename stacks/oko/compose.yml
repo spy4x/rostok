@@ -57,7 +57,7 @@ services:
       - "traefik.enable=true"
       - "traefik.docker.network=proxy"
       - "traefik.http.services.hl-oko.loadbalancer.server.port=8080"
-      - "traefik.http.routers.hl-oko.rule=Host(`dash.${DOMAIN}`)"
+      - "traefik.http.routers.hl-oko.rule=Host(`${OKO_DOMAIN}`)"
       - "traefik.http.routers.hl-oko.entrypoints=websecure"
       - "traefik.http.routers.hl-oko.tls=true"
       - "traefik.http.routers.hl-oko.tls.certresolver=myresolver"
