@@ -10,5 +10,12 @@ export default {
   description: "Self-hosted notes (usememos/memos)",
   category: "productivity",
   requires: ["traefik"],
-  variables: [],
+  variables: [
+    {
+      key: "USEMEMOS_DOMAIN",
+      question: "Public domain for Memos?",
+      default: "notes.${DOMAIN}",
+      required: true,
+    },
+  ],
 } satisfies StackMeta

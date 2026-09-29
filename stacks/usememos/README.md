@@ -30,5 +30,8 @@ SQLite database backed up nightly via Restic.
 
 ## Variables
 
-Declared in `+meta.ts`. Requires the `traefik` stack. The stack has no variables of its own;
-it reads only server-level keys (`PROJECT`, `DOMAIN`, `VOLUMES_PATH`).
+Declared in `+meta.ts`. Requires the `traefik` stack. Server-level keys (`PROJECT`, `DOMAIN`, `VOLUMES_PATH`) are shared by every stack.
+
+| Key               | Default           | Meaning                   |
+| ----------------- | ----------------- | ------------------------- |
+| `USEMEMOS_DOMAIN` | `notes.${DOMAIN}` | Public host of the web UI |

@@ -28,7 +28,7 @@ services:
       - "traefik.enable=true"
       - "traefik.docker.network=proxy"
       - "traefik.http.services.hl-memos.loadbalancer.server.port=5230"
-      - "traefik.http.routers.hl-memos.rule=Host(`notes.${DOMAIN}`)"
+      - "traefik.http.routers.hl-memos.rule=Host(`${USEMEMOS_DOMAIN}`)"
       - "traefik.http.routers.hl-memos.middlewares=robots-deny@file"
       - "traefik.http.routers.hl-memos.entrypoints=websecure"
       - "traefik.http.routers.hl-memos.tls=true"
