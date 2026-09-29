@@ -20,6 +20,12 @@ export default {
   requires: ["traefik"],
   variables: [
     {
+      key: "TRANSMISSION_DOMAIN",
+      question: "Public domain for Transmission?",
+      default: "torrents.${DOMAIN}",
+      required: true,
+    },
+    {
       key: "PATH_MOVIES",
       question: "Host path for downloaded movies?",
       default: "${VOLUMES_PATH}/movies",
