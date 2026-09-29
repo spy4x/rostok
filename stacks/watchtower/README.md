@@ -11,12 +11,19 @@ Automatic Docker container updates.
 - Configurable schedules
 - Notification support
 
-## Configuration
+## Variables
 
-```bash
-WATCHTOWER_SCHEDULE=0 0 4 * * *  # Daily at 4 AM (cron format)
-WATCHTOWER_CLEANUP=true           # Remove old images
-```
+Declared in `+meta.ts`; `rostok stack add watchtower` writes them to the
+server's `.env`. Server-level keys (`PUID`, `PGID`, `DOCKER_GROUP_ID`) are
+shared by every stack.
+
+| Key                    | Default | Meaning                    |
+| ---------------------- | ------- | -------------------------- |
+| `WATCHTOWER_CPU_LIMIT` | `0.5`   | CPU limit of the container |
+| `WATCHTOWER_MEM_LIMIT` | `256M`  | Memory limit               |
+
+The check runs every 24 hours and removes old images (`command:` in
+`compose.yml`).
 
 ## Exclude Containers
 
