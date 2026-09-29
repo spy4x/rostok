@@ -15,13 +15,11 @@ services:
     # The previous wget-based check broke after the Deno→Go rewrite — the
     # distroless-static image has no shell, no wget.
     restart: unless-stopped
-    # Config lives in servers/home/configs/zond.yaml, deployed to
-    # <PATH_APPS>/configs/zond.yaml and bind-mounted into the container at
-    # /app/zond.yaml. The Go binary's default config lookup is zond.yml (no
-    # a), so we set ZOND_CONFIG_PATH to the in-container path explicitly
-    # rather than relying on a pathlib guess.
+    # ./config.yml is the shipped starter (one target: Traefik). before.deploy.ts replaces it
+    # with servers/<server>/configs/zond.yaml when the operator wrote one. The Go binary's
+    # default config lookup is zond.yml, so ZOND_CONFIG_PATH names the in-container path.
     volumes:
-      - ${PATH_APPS}/configs/zond.yaml:/app/zond.yaml:ro
+      - ./config.yml:/app/zond.yaml:ro,z
     environment:
       - ZOND_CONFIG_PATH=/app/zond.yaml
     deploy:
@@ -29,8 +27,8 @@ services:
         limits:
           # Headroom for in-flight HTTP probes. The Go binary itself is ~5MB
           # RSS; the limit is probe fan-out, not the runtime.
-          memory: 64M
-          cpus: "0.25"
+          memory: ${ZOND_MEM_LIMIT:-64M}
+          cpus: ${ZOND_CPU_LIMIT:-0.25}
     security_opt:
       - no-new-privileges:true
     networks:
@@ -39,7 +37,7 @@ services:
       - "traefik.enable=true"
       - "traefik.docker.network=proxy"
       - "traefik.http.services.hl-zond.loadbalancer.server.port=8080"
-      - "traefik.http.routers.hl-zond.rule=Host(`probe-${SERVER_NAME}.${DOMAIN}`)"
+      - "traefik.http.routers.hl-zond.rule=Host(`${ZOND_DOMAIN}`)"
       - "traefik.http.routers.hl-zond.entrypoints=websecure"
       - "traefik.http.routers.hl-zond.tls=true"
       - "traefik.http.routers.hl-zond.tls.certresolver=myresolver"
