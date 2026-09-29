@@ -67,8 +67,10 @@ interface FakeDockerRun {
 /**
  * Run the deploy script generated for `stack` through `sh` with a fake
  * `docker` on PATH. `docker compose ... config` prints `composeConfig`,
- * `docker ps` prints `psLines` (`<name> <id> <project>`), `docker rm -f`
- * records the ID, and everything else succeeds silently.
+ * `docker ps` prints `psLines` (`<name> <id> <project> [<config files>]`,
+ * `-` for an empty label; the config files default to the stack's own
+ * compose file), `docker rm -f` records the ID, and everything else
+ * succeeds silently.
  */
 async function runWithFakeDocker(
   stack: StackConfig,
@@ -84,13 +86,20 @@ async function runWithFakeDocker(
     const log = join(dir, "docker.log")
     const removedLog = join(dir, "removed.log")
     await Deno.writeTextFile(join(dir, "config.yml"), composeConfig)
-    await Deno.writeTextFile(join(dir, "ps.txt"), psLines.map((l) => `${l}\n`).join(""))
+    const ownFile = `/srv/apps/stacks/${stack.name}/compose.yml`
+    const ps = psLines.map((l) => {
+      const [name, id, project = "", files = ownFile] = l.split(" ")
+      return [name, id, project, files].map((f) => (f === "-" ? "" : f)).join("|") + "\n"
+    })
+    await Deno.writeTextFile(join(dir, "ps.txt"), ps.join(""))
     await Deno.writeTextFile(log, "")
     await Deno.writeTextFile(removedLog, "")
     await Deno.writeTextFile(
       join(binDir, "docker"),
       [
         "#!/bin/sh",
+        '[ -n "$FAKE_DOCKER_DEPTH" ] && exit 97',
+        "export FAKE_DOCKER_DEPTH=1",
         `printf '%s\\n' "$*" >> ${shQuote(log)}`,
         'case " $* " in',
         `  *" config "*) cat ${shQuote(join(dir, "config.yml"))} ;;`,
@@ -239,6 +248,31 @@ Deno.test("stale-container cleanup ignores container_name text inside a service'
     "hl-evil2 id-evil2 other",
   ])
   assertEquals(run.removed, [])
+})
+
+Deno.test("stale-container cleanup never removes another stack's container that a wrong container_name points at", async () => {
+  // NGINX_CONTAINER_NAME=hl-traefik by mistake: the name matches, but the
+  // container was created from stacks/traefik/compose.yml, so it stays and
+  // `up` fails on the conflict instead.
+  const config = ["services:", "  nginx:", "    container_name: hl-traefik", ""].join("\n")
+  const run = await runWithFakeDocker({ name: "nginx", deployAs: "blog" }, config, [
+    "hl-traefik id-traefik traefik /srv/apps/stacks/traefik/compose.yml",
+    "hl-traefik id-mynginx traefik /srv/apps/stacks/mynginx/compose.yml",
+  ])
+  assertEquals(run.removed, [])
+  assertStringIncludes(run.stdout, "keeping container hl-traefik")
+})
+
+Deno.test("stale-container cleanup never removes a container without a compose project label", async () => {
+  const run = await runWithFakeDocker({ name: "foo" }, FOO_CONFIG, ["hl-foo id-plain -"])
+  assertEquals(run.removed, [])
+})
+
+Deno.test("stale-container cleanup removes an old-project container created from this stack's file plus an override", async () => {
+  const run = await runWithFakeDocker({ name: "foo" }, FOO_CONFIG, [
+    "hl-foo id-old hl /srv/old/stacks/foo/compose.yml,/srv/old/compose-override/foo.yml",
+  ])
+  assertEquals(run.removed, ["id-old"])
 })
 
 Deno.test("generateDeployScript adds restart when stack needs restart", () => {
