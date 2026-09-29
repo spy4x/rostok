@@ -54,20 +54,26 @@ Open WebUI agents can now ask: "Find a coffee shop near Shibuya station with rat
 
 Free tier: $200/mo credit covers ~30k place searches. Personal use is essentially free.
 
-### 2. Add env vars to `servers/home/.env`
+### 2. Add the variables
 
-```bash
-#region Google Maps MCP
-GOOGLE_MAPS_MCP_API_KEY=AIzaSy_YOUR_KEY_HERE
-# Optional: restrict to the most common tools
-GOOGLE_MAPS_MCP_ENABLED_TOOLS=maps_search_places,maps_place_details,maps_geocode,maps_search_nearby
-#endregion Google Maps MCP
-```
+`rostok stack add google-maps-mcp` asks for the key and writes it to the
+server's `.env`. The stack builds its image from the `Dockerfile` next to
+`compose.yml` and has no Traefik route, so it needs no domain and no
+`traefik` stack.
+
+| Key                             | Default          | Meaning                                               |
+| ------------------------------- | ---------------- | ----------------------------------------------------- |
+| `GOOGLE_MAPS_MCP_API_KEY`       | required, secret | Google Maps API key (Places API (New) and Routes API) |
+| `GOOGLE_MAPS_MCP_ENABLED_TOOLS` | `*`              | Comma-separated tool names, or `*` for all 18         |
+| `GOOGLE_MAPS_MCP_VERSION`       | `v0.0.52`        | `mcp-google-map` release tag the image is built from  |
+
+Restrict the tool list to shrink the LLM context, e.g.
+`maps_search_places,maps_place_details,maps_geocode,maps_search_nearby`.
 
 ### 3. Deploy
 
 ```bash
-deno task deploy home google-maps-mcp
+rostok deploy <server>
 ```
 
 The first deploy builds the image from source (pin via `GOOGLE_MAPS_MCP_VERSION` in .env, defaulted in compose.yml's `MCP_GOOGLE_MAP_VERSION` build arg).
@@ -135,7 +141,7 @@ For personal/agentic use (a few hundred queries/month), expect **$0/month**.
 
 ## Security
 
-- API key stored only in `servers/home/.env` (encrypted via age64 to `.env.age`)
+- API key stored only in the server's `.env` (encrypted via age64 to `.env.age`)
 - No Traefik labels — MCP only reachable from `proxy` Docker network
 - Container has `no-new-privileges:true` and 192M memory limit
 - Restrict the key in Google Cloud Console to only the APIs we use
