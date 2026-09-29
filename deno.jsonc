@@ -199,7 +199,16 @@
       "!stacks/librespeed/+meta.ts",
       "!stacks/librespeed/compose.yml",
       "!stacks/deepseek-harness/+meta.ts",
-      "!stacks/deepseek-harness/systemd/dsh.service"
+      "!stacks/deepseek-harness/systemd/dsh.service",
+      "!stacks/watchtower/+meta.ts",
+      "!stacks/watchtower/compose.yml",
+      "!stacks/syncthing/+meta.ts",
+      "!stacks/syncthing/compose.yml",
+      "!stacks/syncthing/before.deploy.ts",
+      "!stacks/syncthing/after.deploy.ts",
+      "!stacks/home-assistant/+meta.ts",
+      "!stacks/home-assistant/compose.yml",
+      "!stacks/home-assistant/compose.traefik.yml"
     ]
   },
   "exclude": [

@@ -45,4 +45,16 @@ export const SHIPPED_STACK_FILES: Record<string, readonly string[]> = {
   "deepseek-harness": [
     "systemd/dsh.service",
   ],
+  watchtower: [
+    "compose.yml",
+  ],
+  syncthing: [
+    "compose.yml",
+    "before.deploy.ts",
+    "after.deploy.ts",
+  ],
+  "home-assistant": [
+    "compose.yml",
+    "compose.traefik.yml",
+  ],
 }
