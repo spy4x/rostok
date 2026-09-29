@@ -11,6 +11,7 @@ import { UserError } from "./errors.ts"
 import { stripControlChars } from "./deploy/exec.ts"
 import { SERVER_VAR_ALIASES, SERVER_VAR_KEYS, serverCreate } from "./server-create.ts"
 import { parseStackFlags, parseVarFlags } from "./cli-flags.ts"
+import { LOCAL_SSH_ADDRESS } from "./server-keys.ts"
 import { deployCommand } from "./commands/deploy.ts"
 import { envCommand } from "./commands/env.ts"
 import { stackListCommand } from "./commands/list.ts"
@@ -24,7 +25,8 @@ import "./+lib.ts"
 // #209: --help lists the --var keys server-create/the wizard accept, so
 // non-interactive mode is discoverable without reading the source.
 const SERVER_VAR_HELP = `Server --var keys: ${SERVER_VAR_KEYS.join(", ")}
-  (legacy aliases: ${SERVER_VAR_ALIASES.join(", ")})`
+  (legacy aliases: ${SERVER_VAR_ALIASES.join(", ")})
+  SSH_ADDRESS=${LOCAL_SSH_ADDRESS} marks the machine rostok runs on: deploy runs locally, no ssh.`
 
 const ROOT_DESCRIPTION = `${DESCRIPTION}
 
@@ -112,7 +114,10 @@ Examples:
     rostok server create home             # name as positional arg
     rostok server create home -n \\
         --var SSH_ADDRESS=root@192.0.2.1 --var DOMAIN=example.com \\
-        --var CONTACT_EMAIL=a@example.com # non-interactive, defaults for the rest`,
+        --var CONTACT_EMAIL=a@example.com # non-interactive, defaults for the rest
+    rostok server create laptop -n \\
+        --var SSH_ADDRESS=local --var DOMAIN=example.com \\
+        --var CONTACT_EMAIL=a@example.com # this machine, deployed without ssh`,
           )
           .action(async (options, name?: string) => {
             const providedVars = parseVarFlags(options.var)
