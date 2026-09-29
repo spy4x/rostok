@@ -52,3 +52,9 @@ Replaces the previous Prometheus + Loki stack with ~35% less memory and ~80% les
 - [VictoriaMetrics](https://docs.victoriametrics.com/)
 - [VictoriaLogs](https://docs.victoriametrics.com/victorialogs/)
 - [VMAgent](https://docs.victoriametrics.com/vmagent.html)
+
+## Variables
+
+Declared in `+meta.ts`. The stack has no variables of its own and no Traefik route; it reads only
+server-level keys (`DOCKER_GROUP_ID`, `VOLUMES_PATH`, `PATH_APPS`). The scrape and promtail
+configs live in the server's `configs/victoria-metrics/` folder.
