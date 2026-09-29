@@ -4,7 +4,7 @@
 // default compose falls back to, so a fresh `stack add` keeps today's behaviour.
 
 import { assert, assertEquals } from "@std/assert"
-import { validateStackMeta } from "../../cli/stack-meta.ts"
+import { type StackMeta, validateStackMeta } from "../../cli/stack-meta.ts"
 import { isServerKey } from "../../cli/server-keys.ts"
 import meta from "./+meta.ts"
 
@@ -59,5 +59,5 @@ Deno.test("syncthing +meta.ts: the API key default is secret and passes the depl
 
 Deno.test("syncthing +meta.ts: requires traefik because compose routes through it", () => {
   assert(compose.includes("traefik.http.routers"))
-  assertEquals(meta.requires, ["traefik"])
+  assertEquals((meta as StackMeta).requires, ["traefik"])
 })
