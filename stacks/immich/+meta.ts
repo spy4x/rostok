@@ -13,7 +13,11 @@
 //     create the keys, put them in `.env` and deploy again.
 //   - IMMICH_KIOSK_EXCLUDED_PEOPLE: comma-separated Immich person IDs the kiosk never shows.
 //
-// Server-level vars (TIMEZONE, VOLUMES_PATH, PATH_PHOTOS) intentionally NOT declared here.
+//   - PATH_PHOTOS: host folder of the photo library. Shared by name with other stacks, so it
+//     stays one value per key in the server's .env. `server create` does not write it (only
+//     the keys in SERVER_KEYS, cli/server-keys.ts), so this stack declares it.
+//
+// Server-level vars (TIMEZONE, VOLUMES_PATH) intentionally NOT declared here.
 
 import type { StackMeta } from "@rostok/cli"
 import { generatePassword } from "@rostok/cli"
@@ -61,6 +65,12 @@ export default {
       key: "IMMICH_KIOSK_EXCLUDED_PEOPLE",
       question: "Immich person IDs the kiosk must never show (comma-separated, may be empty)?",
       required: false,
+    },
+    {
+      key: "PATH_PHOTOS",
+      question: "Host path for the photo library?",
+      default: "${VOLUMES_PATH}/photos",
+      required: true,
     },
   ],
 } satisfies StackMeta
