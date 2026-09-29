@@ -102,7 +102,7 @@ export function extractVolumePaths(
     const volumeMatches = code.matchAll(/\$\{VOLUMES_PATH\}\/([^:\s]+):/g)
 
     for (const match of volumeMatches) {
-      const volumeSubPath = match[1].split(":")[0]
+      const volumeSubPath = match[1]
       const expandedPath = volumeSubPath.replace(/\$\{([^}]+)\}/g, (_m, varName) => {
         return env[varName.trim()] || `\${${varName}}`
       })
