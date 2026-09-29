@@ -38,7 +38,7 @@ services:
       - "traefik.enable=true"
       - "traefik.docker.network=proxy"
       - "traefik.http.services.hl-audiobookshelf.loadbalancer.server.port=80"
-      - "traefik.http.routers.hl-audiobookshelf.rule=Host(`books.${DOMAIN}`)"
+      - "traefik.http.routers.hl-audiobookshelf.rule=Host(`${AUDIOBOOKSHELF_DOMAIN}`)"
       - "traefik.http.routers.hl-audiobookshelf.middlewares=robots-deny@file"
       - "traefik.http.routers.hl-audiobookshelf.entrypoints=websecure"
       - "traefik.http.routers.hl-audiobookshelf.tls=true"
