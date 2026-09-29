@@ -13,6 +13,12 @@ export default {
   requires: ["traefik"],
   variables: [
     {
+      key: "METUBE_DOMAIN",
+      question: "Public domain for MeTube?",
+      default: "metube.${DOMAIN}",
+      required: true,
+    },
+    {
       key: "PATH_VIDEOS",
       question: "Host path for the videos library?",
       default: "${VOLUMES_PATH}/videos",
