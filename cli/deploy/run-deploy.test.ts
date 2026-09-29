@@ -932,3 +932,26 @@ Deno.test("runDeploy: a local server with a non-local Docker endpoint is refused
     await teardownRunDeployFixture(f)
   }
 })
+
+Deno.test("runDeploy: a local server reached through a symlinked project folder is still refused", async () => {
+  // cwd is a symlink to the project; PATH_APPS names the real folder, so
+  // only the symlink-resolved comparison can see they are the same.
+  const f = await setupRunDeployFixture()
+  const linkParent = await Deno.makeTempDir({ prefix: "rostok-rundeploy-link-" })
+  try {
+    const realProject = await Deno.realPath(f.projectDir)
+    await writeLocalServer(f.projectDir, realProject)
+    const link = join(linkParent, "project")
+    await Deno.symlink(realProject, link)
+    const io: RunDeployIO = { ...f.io, checkLocalDockerEndpoint: async () => {} }
+    await assertRejects(
+      () => runDeploy({ cwd: link, server: "test" }, io),
+      UserError,
+      "overlaps the project folder",
+    )
+    assertEquals(f.remote.calls, [])
+  } finally {
+    await Deno.remove(linkParent, { recursive: true })
+    await teardownRunDeployFixture(f)
+  }
+})
