@@ -76,3 +76,13 @@ Deno.test("shipped-stacks manifest matches deno.jsonc's publish.exclude re-inclu
       "cli/deploy/shipped-stacks.ts's SHIPPED_STACK_FILES exactly (each stack's +meta.ts is separate — it's excluded from this manifest and this check on purpose)",
   )
 })
+
+Deno.test("deno.jsonc publish.exclude re-includes the +meta.ts of every catalog stack", async () => {
+  // Without the re-include, `deno publish` fails at release time with excluded-module, and no
+  // other test notices: catalog.ts imports the file locally either way.
+  const denoJsoncText = await Deno.readTextFile(new URL("../../deno.jsonc", import.meta.url))
+  const missing = loadCatalog()
+    .map((e) => e.name)
+    .filter((name) => !denoJsoncText.includes(`"!stacks/${name}/+meta.ts"`))
+  assertEquals(missing, [], "add a `!stacks/<name>/+meta.ts` line to deno.jsonc publish.exclude")
+})
