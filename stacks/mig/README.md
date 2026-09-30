@@ -167,6 +167,19 @@ snapshot.
 - **Rotate `CANCEL_SECRET`**: edit `mig.env`, `deno task env:encrypt`,
   redeploy. ⚠️ WARNING: rotating `CANCEL_SECRET` invalidates every
   existing cancel link. Do this only if tokens have leaked.
+- **Rotate the SMTP password**: in production mig sends from the
+  `noreply@antonshubin.com` mailbox, and three other senders log in to the same
+  mailbox with the same password. Change it in all four places together, or the
+  ones left behind stop mailing without warning:
+  - mig: `servers/cloud/configs/mig.env`, `SMTP_PASSWORD`;
+  - antonshubin.com: its production env, `SMTP_PASSWORD` (that repository's
+    `docs/deploy.md`, "Shared mail password");
+  - Healthchecks: `servers/cloud/.env`, `HEALTHCHECKS_SMTP_PASSWORD`;
+  - Vaultwarden: `servers/cloud/.env`, `VAULTWARDEN_SMTP_PASSWORD`.
+
+  Gitea on the home server logs in to the same mailbox with a different
+  `GITEA_SMTP_PASSWORD` (`servers/home/.env`), so its mail may already be
+  failing; bring it in line when you rotate.
 
 ## Upgrading / rollback
 
