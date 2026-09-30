@@ -167,6 +167,11 @@ snapshot.
 - **Rotate `CANCEL_SECRET`**: edit `mig.env`, `deno task env:encrypt`,
   redeploy. ⚠️ WARNING: rotating `CANCEL_SECRET` invalidates every
   existing cancel link. Do this only if tokens have leaked.
+- **Rotate the SMTP password**: in production mig sends from the
+  `noreply@antonshubin.com` mailbox, and antonshubin.com sends from the same
+  mailbox with the same password (its `SMTP_PASSWORD`; see that repository's
+  `docs/deploy.md`, "Shared mail password"). Change it in both places together,
+  or one of the two stops mailing.
 
 ## Upgrading / rollback
 
