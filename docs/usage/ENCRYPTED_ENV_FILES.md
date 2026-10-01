@@ -94,11 +94,19 @@ of the password, on every deploy.
 - A single-quoted value cannot contain `'`. For a value with both `$` and
   `'`, write it in double quotes with each `$` doubled:
   `KEY="it's$$secret"`.
-- `rostok deploy` refuses a `.env` that still holds a bare `$` compose
-  would read as a variable. The error names the keys, never the values.
-  Fix the values as above, run `rostok env encrypt`, and deploy again.
-  A reference to another key of the same files, such as
-  `MAIL_HOST=mail.${DOMAIN}`, is not refused.
+- `rostok deploy` refuses a `.env` or `.env.root` that still holds a bare
+  `$` compose would read as a variable. It checks each file on its own,
+  because compose reads both, even a `.env.root` value the server `.env`
+  overrides. The error names the keys and the file, never the values. Fix
+  the values as above, run `rostok env encrypt`, and deploy again.
+- A reference to another key is allowed where compose can resolve it: a
+  server `.env` value may name a key of either file
+  (`MAIL_HOST=mail.${DOMAIN}`), a `.env.root` value only a key of
+  `.env.root`. A reference to a name defined in neither file, such as
+  `$HOME`, is refused on purpose: compose would read it from the shell of
+  whoever deploys, so the result would differ from machine to machine.
+- `rostok stack add --var KEY='${DOMAIN}'` now writes the value literally,
+  in single quotes. To refer to another key, edit `.env` by hand.
 
 ## File Structure
 
