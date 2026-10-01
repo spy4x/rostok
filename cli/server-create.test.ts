@@ -137,6 +137,26 @@ Deno.test("server create single-quotes a value that contains $ (#313)", async ()
     }))
 })
 
+Deno.test("server create re-run leaves a $$-escaped or double-quoted value byte-identical (#313)", async () => {
+  for (const line of [`CONTACT_EMAIL=a$$b@example.com`, `CONTACT_EMAIL="it's$$x@example.com"`]) {
+    await withFakeSsh(OK_SSH, () =>
+      withTmpDir(async (dir) => {
+        const vars = { SERVER_NAME: "home", SSH_ADDRESS: "root@192.0.2.1", DOMAIN: "example.com" }
+        const first = await serverCreate({
+          cwd: dir,
+          failFast: true,
+          providedVars: { ...vars, CONTACT_EMAIL: "a@example.com" },
+        })
+        const seeded = (await Deno.readTextFile(first.envPath))
+          .replace("CONTACT_EMAIL=a@example.com", () => line)
+        assertStringIncludes(seeded, `${line}\n`)
+        await Deno.writeTextFile(first.envPath, seeded)
+        await serverCreate({ cwd: dir, failFast: true, providedVars: vars })
+        assertEquals(await Deno.readTextFile(first.envPath), seeded)
+      }))
+  }
+})
+
 Deno.test("server create accepts legacy camelCase --var aliases", async () => {
   await withFakeSsh(OK_SSH, () =>
     withTmpDir(async (dir) => {
