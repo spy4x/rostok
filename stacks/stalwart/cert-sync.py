@@ -25,10 +25,10 @@ STALWART_URL = os.environ.get("STALWART_URL", "http://stalwart:8080/jmap/")
 STALWART_USER = os.environ.get("STALWART_USER", "admin")
 STATE_DIR = os.environ.get("STATE_DIR", os.path.expanduser("~/.cache/stalwart-cert-sync"))
 
-DOMAINS = [
-    "mail.antonshubin.com",
-    "mail.neatsoft.dev",
-]
+# Comma-separated mail hostnames whose certificates are synced (set by compose).
+DOMAINS = [d.strip() for d in os.environ.get("CERT_SYNC_DOMAINS", "").split(",") if d.strip()]
+if not DOMAINS:
+    raise SystemExit("CERT_SYNC_DOMAINS is empty: set it to the mail hostnames to sync")
 
 
 def get_password():

@@ -306,17 +306,13 @@
       "!stacks/mig/compose.yml",
       "!stacks/stalwart/+meta.ts",
       "!stacks/stalwart/after.deploy.ts",
-      "!stacks/stalwart/apply-sieve-filters.ts",
       "!stacks/stalwart/before.deploy.ts",
       "!stacks/stalwart/cert-sync.py",
       "!stacks/stalwart/compose.yml",
       "!stacks/stalwart/config.json",
-      "!stacks/stalwart/dkim-verify.ts",
       "!stacks/stalwart/dkim.ts",
-      "!stacks/stalwart/example.sieve",
       "!stacks/stalwart/mta-sts/html/.well-known/mta-sts.txt.template",
-      "!stacks/stalwart/mta-sts/nginx.conf",
-      "!stacks/stalwart/sieve.md"
+      "!stacks/stalwart/mta-sts/nginx.conf"
     ]
   },
   "exclude": [

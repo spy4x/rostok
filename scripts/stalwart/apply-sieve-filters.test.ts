@@ -332,7 +332,7 @@ Deno.test("apply ensures the three target folders exist", async () => {
     await Deno.writeTextFile(path, SIEVE_BODY)
     await apply({ ...baseOpts, sievePath: path })
     const names = store.mailboxes.map((m) => m.name).sort()
-    assertEquals(names, ["Digests", "Inbox", "Reports", "VCB"])
+    assertEquals(names, ["BANK", "Digests", "Inbox", "Reports"])
   } finally {
     restore()
   }
@@ -345,9 +345,9 @@ Deno.test("apply bulk-moves existing matching messages", async () => {
     // Seed messages with various senders + subjects
     store.addEmail({ from: "noreply-dmarc-support@google.com", subject: "report" })
     store.addEmail({ from: "noreply-dmarc-support@google.com", subject: "another" })
-    store.addEmail({ from: "info@info.vietcombank.com.vn", subject: "thong bao" })
+    store.addEmail({ from: "info@bank.example.com", subject: "statement" })
     store.addEmail({ from: "noreply@mail.selfh.st", subject: "Self-Host Weekly 24" })
-    store.addEmail({ from: "billing@ic.vrn.ru", subject: "invoice" })
+    store.addEmail({ from: "billing@invoices.example.com", subject: "invoice" })
     store.addEmail({ from: "alex@gmail.com", subject: "Hi" }) // should stay in INBOX
     store.addEmail({ from: "noreply@wise.com", subject: "Transfer received" }) // wise is intentionally absent
 
@@ -360,8 +360,8 @@ Deno.test("apply bulk-moves existing matching messages", async () => {
         store.mailboxes.find((m) => m.name === "Reports")!.id
       ]
     ).length
-    const inVcb = store.emails.filter((e) =>
-      e.mailboxIds[store.mailboxes.find((m) => m.name === "VCB")!.id]
+    const inBank = store.emails.filter((e) =>
+      e.mailboxIds[store.mailboxes.find((m) => m.name === "BANK")!.id]
     ).length
     const inDigests = store.emails.filter((e) =>
       e.mailboxIds[
@@ -371,8 +371,8 @@ Deno.test("apply bulk-moves existing matching messages", async () => {
     const inInbox = store.emails.filter((e) => e.mailboxIds["a"]).length
 
     assertEquals(inReports, 2)
-    assertEquals(inVcb, 1)
-    assertEquals(inDigests, 2) // selfh.st + billing@ic.vrn.ru (both via digests)
+    assertEquals(inBank, 1)
+    assertEquals(inDigests, 2) // selfh.st + billing@invoices.example.com (both via digests)
     assertEquals(inInbox, 2) // personal + wise stays in INBOX
   } finally {
     restore()

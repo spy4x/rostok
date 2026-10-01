@@ -189,16 +189,12 @@ export const SHIPPED_STACK_FILES: Record<string, readonly string[]> = {
   ],
   stalwart: [
     "after.deploy.ts",
-    "apply-sieve-filters.ts",
     "before.deploy.ts",
     "cert-sync.py",
     "compose.yml",
     "config.json",
-    "dkim-verify.ts",
     "dkim.ts",
-    "example.sieve",
     "mta-sts/html/.well-known/mta-sts.txt.template",
     "mta-sts/nginx.conf",
-    "sieve.md",
   ],
 }

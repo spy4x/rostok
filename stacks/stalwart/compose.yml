@@ -111,6 +111,7 @@ services:
       - ${VOLUMES_PATH}/stalwart/cert-sync-state:/root/.cache/stalwart-cert-sync:z
     environment:
       - ACME_PATH=/acme.json
+      - CERT_SYNC_DOMAINS=mail.${DOMAIN},mail.${STALWART_NEATSOFT_DOMAIN}
       - STALWART_PASSWORD=${STALWART_ADMIN_PASSWORD}
     restart: unless-stopped
     security_opt:

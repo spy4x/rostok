@@ -12,8 +12,8 @@
 //
 // Usage:
 //   deno run -A ./stacks/stalwart/apply-sieve-filters.ts \
-//     --api-url https://mail.antonshubin.com/jmap/ \
-//     --user "anton@antonshubin.com" \
+//     --api-url https://mail.example.com/jmap/ \
+//     --user "user@example.com" \
 //     --password "$EMAIL_MCP_PERSONAL_PASSWORD" \
 //     --account-id b
 //
@@ -58,9 +58,9 @@ export function parseArgs(args: string[]): Options {
   if (!password) {
     const user = opts["user"] as string
     if (user) {
-      if (user.startsWith("anton@antonshubin")) {
+      if (user.startsWith("user@example.com")) {
         password = Deno.env.get("EMAIL_MCP_PERSONAL_PASSWORD")
-      } else if (user.startsWith("anton@neatsoft")) {
+      } else if (user.startsWith("user@example.org")) {
         password = Deno.env.get("EMAIL_MCP_NEATSOFT_PASSWORD")
       }
     }
@@ -69,7 +69,7 @@ export function parseArgs(args: string[]): Options {
 
   return {
     apiUrl: (opts["api-url"] as string) ?? Deno.env.get("STALWART_API_URL") ??
-      "https://mail.antonshubin.com/jmap/",
+      "https://mail.example.com/jmap/",
     user: (opts["user"] as string) ?? "",
     password: password ?? "",
     accountId: (opts["account-id"] as string) ?? "",
@@ -208,8 +208,8 @@ export async function apply(opts: Options): Promise<void> {
   }
 
   // Phase 3 — bulk-move existing matching messages. Uses sender-based
-  // filters for Reports/VCB and subject-keyword filters for Digests.
-  // For Digests we also match the explicit billing@ic.vrn.ru address.
+  // filters for Reports/BANK and subject-keyword filters for Digests.
+  // For Digests we also match the explicit billing@invoices.example.com address.
   if (!opts.skipMove || !opts.skipDeleteBounces) {
     console.log("\n=== Moving existing messages ===")
     await runMove(opts)
@@ -228,9 +228,9 @@ const REPORT_SENDERS = [
   "dmarc_support@corp.mail.ru",
 ]
 
-const VCB_SENDERS = [
-  "info@info.vietcombank.com.vn",
-  "VCBDigibank@info.vietcombank.com.vn",
+const BANK_SENDERS = [
+  "info@bank.example.com",
+  "digibank@bank.example.com",
 ]
 
 const DIGEST_SENDERS = [
@@ -240,16 +240,16 @@ const DIGEST_SENDERS = [
   "node@cooperpress.com",
   "postgres@cooperpress.com",
   "newsletter@nodeweekly.com",
-  "do-not-reply@singlife.com",
-  "no-reply@agoda.com",
-  "noreply@simba.sg",
-  "no_reply@immigration.gov.vn",
-  "no-reply@grab.com",
-  "dvc_bca@noreply.vnpay.vn",
+  "do-not-reply@insurer.example.com",
+  "no-reply@travel.example.com",
+  "noreply@telecom.example.com",
+  "no_reply@immigration.example.gov",
+  "no-reply@rides.example.com",
+  "notify@payments.example.com",
 ]
 
 const DIGEST_EXPLICIT_FROM = [
-  "billing@ic.vrn.ru",
+  "billing@invoices.example.com",
 ]
 
 const DIGEST_SUBJECT_KEYWORDS = [
@@ -266,7 +266,7 @@ const DIGEST_SUBJECT_KEYWORDS = [
  */
 async function ensureMailboxes(
   opts: Options,
-): Promise<{ reports: string; vcb: string; digests: string }> {
+): Promise<{ reports: string; bank: string; digests: string }> {
   // Reuse if all three exist; create the rest idempotently.
   const query = async (name: string) => {
     const r = (await jmap(opts, {
@@ -282,12 +282,12 @@ async function ensureMailboxes(
     return r.methodResponses[0][1].ids[0]
   }
   const reportsId = await query("Reports")
-  const vcbId = await query("VCB")
+  const bankId = await query("BANK")
   const digestsId = await query("Digests")
 
   const create: Record<string, { name: string }> = {}
   if (!reportsId) create.r1 = { name: "Reports" }
-  if (!vcbId) create.v1 = { name: "VCB" }
+  if (!bankId) create.v1 = { name: "BANK" }
   if (!digestsId) create.d1 = { name: "Digests" }
   if (Object.keys(create).length > 0) {
     await jmap(opts, {
@@ -299,7 +299,7 @@ async function ensureMailboxes(
   }
   return {
     reports: reportsId ?? (await query("Reports")),
-    vcb: vcbId ?? (await query("VCB")),
+    bank: bankId ?? (await query("BANK")),
     digests: digestsId ?? (await query("Digests")),
   }
 }
@@ -322,9 +322,9 @@ async function runMove(opts: Options): Promise<void> {
       moves.push({ id, mailbox: ids.reports })
     }
   }
-  for (const from of VCB_SENDERS) {
+  for (const from of BANK_SENDERS) {
     for (const id of await queryIds(opts, { from })) {
-      moves.push({ id, mailbox: ids.vcb })
+      moves.push({ id, mailbox: ids.bank })
     }
   }
   for (const from of DIGEST_SENDERS) {

@@ -849,6 +849,7 @@ Deno.test("loadStackKeepOwner: the bundled catalog keeps the owner of every data
     searxng: ["searxng/redis"],
     usememos: ["memos"],
     umami: ["umami/db"],
+    bulwark: ["bulwark/settings", "bulwark/admin", "bulwark/admin-state", "bulwark/telemetry"],
     caldiy: ["caldiy/db", "caldiy/redis"],
     healthchecks: ["healthchecks"],
     stalwart: ["stalwart/data", "stalwart/config", "stalwart/lib"],

@@ -85,7 +85,7 @@ its old private key able to sign mail that still passes DKIM.
 
 ## DKIM verification (`dkim-verify.ts`)
 
-`stacks/stalwart/dkim-verify.ts` is a pure-Deno RFC 6376 DKIM signature
+`scripts/stalwart/dkim-verify.ts` is a pure-Deno RFC 6376 DKIM signature
 verifier — both `rsa-sha256` and `ed25519-sha256`. Pure functions, no
 Stalwart dependency, usable from any Deno script or `deno repl`.
 
@@ -104,7 +104,7 @@ the ongoing Ed25519-at-Google noise.
 ### API
 
 ```ts
-import { parseDkimPublicKey, verifyDkim } from "./stacks/stalwart/dkim-verify.ts"
+import { parseDkimPublicKey, verifyDkim } from "./scripts/stalwart/dkim-verify.ts"
 
 // Fetch the public key from DNS (or wherever) and verify
 const pubKey = parseDkimPublicKey(
