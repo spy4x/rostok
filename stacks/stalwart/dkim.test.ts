@@ -2,8 +2,10 @@ import { assertEquals, assertRejects } from "@std/assert"
 import {
   callStalwartJmap,
   DkimInvariantError,
+  ensureDkimSignedHeaders,
   ensureManualDkimManagement,
   normalizeTxtRecord,
+  REQUIRED_SIGNED_HEADERS,
   verifyActiveDkimDns,
 } from "./dkim.ts"
 
@@ -172,6 +174,87 @@ Deno.test("verifyActiveDkimDns rejects public key mismatch", async () => {
       DkimInvariantError,
       "public DKIM record mismatch",
     )
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+})
+
+/** A fake Stalwart holding `signatures`; records the update it is sent. */
+function fakeSignatures(
+  signatures: Array<{ id: string; headers: Record<string, boolean> }>,
+  setResult: Record<string, unknown> = { updated: {} },
+) {
+  const state: { update?: Record<string, { headers: Record<string, boolean> }> } = {}
+  const fetch = (_input: unknown, init?: RequestInit) => {
+    const body = JSON.parse(String(init?.body)) as {
+      methodCalls: [string, Record<string, unknown>, string][]
+    }
+    const [method, args] = body.methodCalls[0]
+    if (method === "x:DkimSignature/set") {
+      state.update = args.update as typeof state.update
+      return Promise.resolve(jmapResponse([["x:DkimSignature/set", setResult, "0"]]))
+    }
+    return Promise.resolve(jmapResponse([
+      ["x:DkimSignature/query", { ids: signatures.map((s) => s.id) }, "0"],
+      ["x:DkimSignature/get", { list: signatures }, "1"],
+    ]))
+  }
+  return { fetch, state }
+}
+
+const DEFAULT_SIGNED = { From: true, To: true, Date: true, Subject: true, "Message-ID": true }
+
+Deno.test("ensureDkimSignedHeaders signs the unsubscribe headers and keeps existing ones", async () => {
+  const originalFetch = globalThis.fetch
+  const fake = fakeSignatures([
+    { id: "s1", headers: { ...DEFAULT_SIGNED, "X-Custom": true } },
+    { id: "s2", headers: DEFAULT_SIGNED },
+  ])
+  globalThis.fetch = fake.fetch as typeof fetch
+  try {
+    assertEquals(await ensureDkimSignedHeaders("example.com", "password"), 2)
+    const s1 = fake.state.update?.s1.headers ?? {}
+    assertEquals(s1["List-Unsubscribe"], true)
+    assertEquals(s1["List-Unsubscribe-Post"], true)
+    assertEquals(s1["X-Custom"], true)
+    for (const name of REQUIRED_SIGNED_HEADERS) assertEquals(s1[name], true, name)
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+})
+
+Deno.test("ensureDkimSignedHeaders changes nothing when every signature is complete", async () => {
+  const originalFetch = globalThis.fetch
+  const complete = Object.fromEntries(REQUIRED_SIGNED_HEADERS.map((name) => [name, true]))
+  const fake = fakeSignatures([{ id: "s1", headers: complete }])
+  globalThis.fetch = fake.fetch as typeof fetch
+  try {
+    assertEquals(await ensureDkimSignedHeaders("example.com", "password"), 0)
+    assertEquals(fake.state.update, undefined)
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+})
+
+Deno.test("ensureDkimSignedHeaders fails when the server refuses the update", async () => {
+  const originalFetch = globalThis.fetch
+  const fake = fakeSignatures([{ id: "s1", headers: DEFAULT_SIGNED }], {
+    notUpdated: { s1: { type: "invalidProperties" } },
+  })
+  globalThis.fetch = fake.fetch as typeof fetch
+  try {
+    await assertRejects(() => ensureDkimSignedHeaders("example.com", "password"), Error, "signed")
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+})
+
+Deno.test("ensureDkimSignedHeaders fails when it finds no signatures", async () => {
+  const originalFetch = globalThis.fetch
+  const fake = fakeSignatures([])
+  globalThis.fetch = fake.fetch as typeof fetch
+  try {
+    await assertRejects(() => ensureDkimSignedHeaders("example.com", "password"), Error, "no DKIM")
   } finally {
     globalThis.fetch = originalFetch
   }
