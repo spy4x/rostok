@@ -112,6 +112,16 @@ function psLine(project: string, files: string, wd: string): string {
   return `${project}\t${files}\t${wd}\n`
 }
 
+/** Runs `fn` with an existing temp dir as the apps root, removed afterwards. */
+async function withAppsRoot(fn: (root: string) => Promise<void>): Promise<void> {
+  const root = await Deno.makeTempDir()
+  try {
+    await fn(root)
+  } finally {
+    await Deno.remove(root, { recursive: true })
+  }
+}
+
 Deno.test("stops, starts and rebuilds with the running container's own compose files", async () => {
   const root = await Deno.makeTempDir()
   try {
@@ -224,14 +234,19 @@ Deno.test("uses the deployed project name even when it differs from the stack di
   }
 })
 
-Deno.test("refuses to stop a stack that runs from two different compose projects", async () => {
-  await withHarness({
-    ps: psLine(`a`, `/x/stacks/app/compose.yml`, `/x`) +
-      psLine(`b`, `/y/stacks/app/compose.yml`, `/y`),
-  }, async (h) => {
-    const c = await h.run("stop")
-    assertEquals(c.status, BackupStatus.ERROR)
-    assertEquals(h.log().filter((l) => l.includes(`|compose `)), [])
+Deno.test("refuses to stop a stack that runs from two compose projects and names both", async () => {
+  await withAppsRoot(async (root) => {
+    // Both apps roots exist, so stopping either one would succeed.
+    for (const dir of [`one`, `two`]) await Deno.mkdir(`${root}/${dir}`)
+    await withHarness({
+      ps: psLine(`a`, `${root}/one/stacks/app/compose.yml`, `${root}/one/stacks/app`) +
+        psLine(`b`, `${root}/two/stacks/app/compose.yml`, `${root}/two/stacks/app`),
+    }, async (h) => {
+      const c = await h.run("stop")
+      assertEquals(c.status, BackupStatus.ERROR)
+      assertStringIncludes(c.error ?? ``, `(a in ${root}/one, b in ${root}/two)`)
+      assertEquals(h.log().filter((l) => l.includes(`|compose `)), [])
+    })
   })
 })
 
@@ -245,16 +260,6 @@ Deno.test("fails the backup instead of copying live when a running stack matches
     assertEquals(h.log().filter((l) => l.includes(`|compose `)), [])
   })
 })
-
-/** Runs `fn` with an existing temp dir as the apps root, removed afterwards. */
-async function withAppsRoot(fn: (root: string) => Promise<void>): Promise<void> {
-  const root = await Deno.makeTempDir()
-  try {
-    await fn(root)
-  } finally {
-    await Deno.remove(root, { recursive: true })
-  }
-}
 
 Deno.test("stops a project whose services carry different compose file lists with the longest list", async () => {
   await withAppsRoot(async (root) => {
@@ -303,7 +308,7 @@ Deno.test("stops a running stack whose containers have no working_dir label", as
 
 Deno.test("fails the stack's backup instead of throwing when its apps root is gone", async () => {
   await withHarness({
-    ps: psLine(`app`, `/nonexistent/apps/stacks/app/compose.yml`, ``),
+    ps: psLine(`app`, `/nonexistent/apps/stacks/app/compose.yml`, `/nonexistent/apps/stacks/app`),
   }, async (h) => {
     const stopped = await h.run("stop")
     assertEquals(stopped.status, BackupStatus.ERROR)
