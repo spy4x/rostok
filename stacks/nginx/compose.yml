@@ -36,7 +36,7 @@ services:
       - "traefik.enable=true"
       - "traefik.docker.network=proxy"
       - "traefik.http.services.${NGINX_CONTAINER_NAME}.loadbalancer.server.port=80"
-      - "traefik.http.routers.${NGINX_CONTAINER_NAME}.rule=Host(`${NGINX_DOMAIN}`)"
+      - "traefik.http.routers.${NGINX_CONTAINER_NAME}.rule=Host(`${NGINX_DOMAIN:-${NGINX_CONTAINER_NAME}.${DOMAIN}}`)"
       - "traefik.http.routers.${NGINX_CONTAINER_NAME}.entrypoints=websecure"
       - "traefik.http.routers.${NGINX_CONTAINER_NAME}.tls=true"
       - "traefik.http.routers.${NGINX_CONTAINER_NAME}.tls.certresolver=myresolver"

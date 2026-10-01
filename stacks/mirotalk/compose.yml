@@ -20,7 +20,7 @@ services:
     environment:
       - TZ=${TIMEZONE:-UTC}
       - TURN_SERVER_ENABLED=true
-      - TURN_SERVER_URL=turns:${MIROTALK_DOMAIN}:5349
+      - TURN_SERVER_URL=turns:${MIROTALK_DOMAIN:-talk.${DOMAIN}}:5349
       - TURN_SERVER_USERNAME=${MIROTALK_TURN_SERVER_USERNAME}
       - TURN_SERVER_CREDENTIAL=${MIROTALK_TURN_SERVER_CREDENTIAL}
     restart: unless-stopped
@@ -37,7 +37,7 @@ services:
       - "traefik.enable=true"
       - "traefik.docker.network=proxy"
       - "traefik.http.services.hl-mirotalk.loadbalancer.server.port=3000"
-      - "traefik.http.routers.hl-mirotalk.rule=Host(`${MIROTALK_DOMAIN}`)"
+      - "traefik.http.routers.hl-mirotalk.rule=Host(`${MIROTALK_DOMAIN:-talk.${DOMAIN}}`)"
       - "traefik.http.routers.hl-mirotalk.middlewares=robots-deny@file"
       - "traefik.http.routers.hl-mirotalk.entrypoints=websecure"
       - "traefik.http.routers.hl-mirotalk.tls=true"
@@ -63,8 +63,8 @@ services:
       - --tls-listening-port=5349
       - --min-port=10000
       - --max-port=20000
-      - --realm=${MIROTALK_DOMAIN}
-      - --server-name=${MIROTALK_DOMAIN}
+      - --realm=${MIROTALK_DOMAIN:-talk.${DOMAIN}}
+      - --server-name=${MIROTALK_DOMAIN:-talk.${DOMAIN}}
       - --external-ip=${MIROTALK_PUBLIC_IP}/${MIROTALK_PUBLIC_IP}
       - --relay-ip=${MIROTALK_PUBLIC_IP}
       - --fingerprint
@@ -72,8 +72,8 @@ services:
       - --user=${MIROTALK_TURN_SERVER_USERNAME}:${MIROTALK_TURN_SERVER_CREDENTIAL}
       - --total-quota=500
       - --stale-nonce=600
-      - --cert=/certs/${MIROTALK_DOMAIN}.crt
-      - --pkey=/certs/${MIROTALK_DOMAIN}.key
+      - --cert=/certs/${MIROTALK_DOMAIN:-talk.${DOMAIN}}.crt
+      - --pkey=/certs/${MIROTALK_DOMAIN:-talk.${DOMAIN}}.key
     volumes:
       - coturn-certs:/certs:ro
     restart: unless-stopped
@@ -106,7 +106,7 @@ services:
     environment:
       - ACME_PATH=/acme.json
       - CERTS_DIR=/certs
-      - MIROTALK_DOMAIN=${MIROTALK_DOMAIN}
+      - MIROTALK_DOMAIN=${MIROTALK_DOMAIN:-talk.${DOMAIN}}
       - POLL_INTERVAL=300
       - TZ=${TIMEZONE:-UTC}
     restart: unless-stopped

@@ -49,11 +49,11 @@ This script runs before deployment and can generate HTML from templates, fetch d
 
 ## Environment Variables
 
-| Variable               | Default         | Meaning                           |
-| ---------------------- | --------------- | --------------------------------- |
-| `NGINX_IMAGE_TAG`      | `alpine`        | Image tag                         |
-| `NGINX_CONTAINER_NAME` | `hl-nginx`      | Container and Traefik router name |
-| `NGINX_DOMAIN`         | `www.${DOMAIN}` | Public host of the site           |
+| Variable               | Default                            | Meaning                           |
+| ---------------------- | ---------------------------------- | --------------------------------- |
+| `NGINX_IMAGE_TAG`      | `alpine`                           | Image tag                         |
+| `NGINX_CONTAINER_NAME` | `hl-nginx`                         | Container and Traefik router name |
+| `NGINX_DOMAIN`         | `<NGINX_CONTAINER_NAME>.${DOMAIN}` | Public host of the site           |
 
 The site serves `${PATH_APPS}/configs/nginx/src`, which deploy fills from
 `servers/<server>/configs/nginx/src/` in your project. Put an `index.html` there before the first
@@ -61,7 +61,7 @@ deploy: an empty folder answers 403.
 
 ## Access
 
-Service is available at `https://<NGINX_DOMAIN>`, for example `https://www.example.com`.
+Service is available at `https://<NGINX_DOMAIN>`, for example `https://hl-nginx.example.com` with the default container name.
 
 ## Notes
 

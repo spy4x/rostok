@@ -41,7 +41,7 @@ services:
       - "traefik.enable=true"
       - "traefik.docker.network=proxy"
       - "traefik.http.services.hl-adguard.loadbalancer.server.port=80"
-      - "traefik.http.routers.hl-adguard.rule=Host(`${ADGUARD_DOMAIN}`)"
+      - "traefik.http.routers.hl-adguard.rule=Host(`${ADGUARD_DOMAIN:-dns.${DOMAIN}}`)"
       - "traefik.http.routers.hl-adguard.middlewares=robots-deny@file"
       - "traefik.http.routers.hl-adguard.entrypoints=websecure"
       - "traefik.http.routers.hl-adguard.tls=true"

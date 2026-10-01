@@ -24,7 +24,7 @@ services:
     healthcheck:
       test: [
         "CMD-SHELL",
-        "python3 -c \"import http.client; c=http.client.HTTPConnection('localhost',8000,timeout=5); c.request('GET','/docs/',headers={'Host':'${HEALTHCHECKS_DOMAIN}'}); r=c.getresponse(); exit(0 if r.status==200 else 1)\"",
+        "python3 -c \"import http.client; c=http.client.HTTPConnection('localhost',8000,timeout=5); c.request('GET','/docs/',headers={'Host':'${HEALTHCHECKS_DOMAIN:-healthchecks.${DOMAIN}}'}); r=c.getresponse(); exit(0 if r.status==200 else 1)\"",
       ]
       interval: 30s
       timeout: 10s
@@ -35,9 +35,9 @@ services:
       - TZ=${TIMEZONE}
       - SECRET_KEY=${HEALTHCHECKS_SECRET_KEY}
       - DEBUG=False
-      - SITE_ROOT=https://${HEALTHCHECKS_DOMAIN}
+      - SITE_ROOT=https://${HEALTHCHECKS_DOMAIN:-healthchecks.${DOMAIN}}
       - SITE_NAME=Healthchecks
-      - ALLOWED_HOSTS=localhost,hl-healthchecks,${HEALTHCHECKS_DOMAIN}
+      - ALLOWED_HOSTS=localhost,hl-healthchecks,${HEALTHCHECKS_DOMAIN:-healthchecks.${DOMAIN}}
       - DEFAULT_FROM_EMAIL=${HEALTHCHECKS_SMTP_FROM}
       - EMAIL_HOST=${HEALTHCHECKS_SMTP_HOST}
       - EMAIL_PORT=${HEALTHCHECKS_SMTP_PORT}
@@ -66,7 +66,7 @@ services:
       - "traefik.enable=true"
       - "traefik.docker.network=proxy"
       - "traefik.http.services.hl-healthchecks.loadbalancer.server.port=8000"
-      - "traefik.http.routers.hl-healthchecks.rule=Host(`${HEALTHCHECKS_DOMAIN}`)"
+      - "traefik.http.routers.hl-healthchecks.rule=Host(`${HEALTHCHECKS_DOMAIN:-healthchecks.${DOMAIN}}`)"
       - "traefik.http.routers.hl-healthchecks.middlewares=robots-deny@file"
       - "traefik.http.routers.hl-healthchecks.entrypoints=websecure"
       - "traefik.http.routers.hl-healthchecks.tls=true"

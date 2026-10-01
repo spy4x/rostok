@@ -26,9 +26,10 @@ export default {
     },
     {
       key: "NGINX_DOMAIN",
-      question: "Public domain for the site?",
-      default: "www.${DOMAIN}",
-      required: true,
+      question: "Public domain for the site? Leave blank for <container name>.<domain>",
+      // No default: compose's fallback is `${NGINX_CONTAINER_NAME}.${DOMAIN}`, which a meta default
+      // cannot express. Blank keeps the pre-meta host of an existing deployment.
+      required: false,
     },
   ],
 } satisfies StackMeta
