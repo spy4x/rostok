@@ -67,6 +67,7 @@ import {
   validateSshUser,
 } from "../server-keys.ts"
 import { UserError } from "../errors.ts"
+import { keysWithUnsafeDollar } from "../env-files.ts"
 
 /**
  * Build the UserError message for a nested/equal PATH_APPS/VOLUMES_PATH
@@ -197,6 +198,45 @@ export function resolvePathApps(env: Record<string, string>): ResolvedValue {
     value: DEFAULT_PATH_APPS,
     notice: `PATH_APPS not set — using the default ${DEFAULT_PATH_APPS}.`,
   }
+}
+
+/**
+ * #313: refuse a deploy before compose reads the env files when a value
+ * holds a bare `$`. compose reads `$name` as a variable and prints the
+ * "name", a fragment of the value, in a warning on every stack (or the
+ * whole value, for a broken `${`). Each file is checked on its own, the
+ * way compose reads them: `--env-file=.env.root` first, so a root value
+ * can only refer to root keys, then the server `.env`, whose values can
+ * refer to keys of both. A root value the server `.env` overrides is
+ * still read, and still leaks, so it is checked too. A reference to a
+ * name in neither file (`$HOME`) is refused on purpose: compose would
+ * fill it from the server's shell, which rostok cannot see.
+ *
+ * @throws UserError naming each refused key and its file, never a value.
+ */
+export function assertNoBareDollar(
+  rootEnv: Record<string, string>,
+  serverEnv: Record<string, string>,
+  rootEnvPath: string,
+  envPath: string,
+): void {
+  // deno-lint-ignore no-control-regex
+  const names = (keys: string[]) => keys.map((k) => k.replace(/[\x00-\x1f\x7f]/g, "")).join(", ")
+  const found = [
+    { path: rootEnvPath, keys: keysWithUnsafeDollar(rootEnv) },
+    { path: envPath, keys: keysWithUnsafeDollar(serverEnv, rootEnv) },
+  ].filter((f) => f.keys.length > 0)
+  if (found.length === 0) return
+  throw new UserError(
+    `a value contains a "$" that docker compose would read as a variable, printing part of ` +
+      `the value in deploy output: ${
+        found.map((f) => `${names(f.keys)} in ${f.path}`).join("; ")
+      }. ` +
+      `Put each value in single quotes (KEY='value'). Writing each literal "$" as "$$" also ` +
+      `works for compose, but Deno's --env-file (used by backup scripts) reads "$$" wrongly. ` +
+      `A reference to a name defined in neither file (such as $HOME) is refused too. Then ` +
+      `re-encrypt (\`rostok env encrypt\`) and deploy again.`,
+  )
 }
 
 /** The PUID/PGID default `server create` itself prompts with. */

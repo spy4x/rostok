@@ -1,8 +1,12 @@
 // Tests for cli/env-files.ts — parse / serialize / mergeEnv.
 
-import { assertEquals, assertRejects } from "@std/assert"
+import { assertEquals, assertRejects, assertThrows } from "@std/assert"
 import { join } from "@std/path"
+import { UserError } from "./errors.ts"
 import {
+  decodeEnvValue,
+  encodeEnvValue,
+  keysWithUnsafeDollar,
   mergeEnv,
   mergeEnvPreservingFormat,
   parseEnv,
@@ -241,4 +245,95 @@ Deno.test("serverContextFromRoot: produces a usable ServerContext shape", () => 
   assertEquals(ctx.PATH_MEDIA, "/srv/media")
   // EXTRA_NOISE is on the type but ignored by resolveReferences — the
   // ServerContext indexer signature accepts arbitrary keys.
+})
+
+// ─────────────────────────────────────────────────────────────────────
+// #313 — a `$` in a value must reach compose and hooks literally.
+// ─────────────────────────────────────────────────────────────────────
+
+Deno.test("encodeEnvValue: single-quotes a new value that contains $", () => {
+  assertEquals(encodeEnvValue("PW", "p$ssw0rd"), "'p$ssw0rd'")
+  assertEquals(encodeEnvValue("PW", "a$${b}$"), "'a$${b}$'")
+})
+
+Deno.test("encodeEnvValue: leaves a value without $ untouched, quotes included", () => {
+  assertEquals(encodeEnvValue("PW", "plain"), "plain")
+  assertEquals(encodeEnvValue("PW", '"has a space"'), '"has a space"')
+  assertEquals(encodeEnvValue("PW", "it's"), "it's")
+})
+
+Deno.test("encodeEnvValue: keeps an already single-quoted $ value as it is", () => {
+  assertEquals(encodeEnvValue("PW", "'p$ss'"), "'p$ss'")
+})
+
+Deno.test("encodeEnvValue: re-quotes a plain double-quoted $ value with single quotes", () => {
+  assertEquals(encodeEnvValue("PW", '"p$ss"'), "'p$ss'")
+})
+
+Deno.test("encodeEnvValue: refuses a value with both $ and ', naming the key but not the value", () => {
+  const error = assertThrows(() => encodeEnvValue("MY_PW", "it's$ecret"), UserError)
+  assertEquals(error.message.startsWith("MY_PW:"), true)
+  assertEquals(error.message.includes("ecret"), false)
+})
+
+Deno.test("decodeEnvValue: reads a value the way docker compose does", () => {
+  assertEquals(decodeEnvValue("'p$ssw0rd'"), "p$ssw0rd")
+  assertEquals(decodeEnvValue("'p$$ssw0rd'"), "p$$ssw0rd")
+  assertEquals(decodeEnvValue("p$$ssw0rd"), "p$ssw0rd")
+  assertEquals(decodeEnvValue('"p$$ssw0rd"'), "p$ssw0rd")
+  assertEquals(decodeEnvValue("plain"), "plain")
+})
+
+Deno.test("decodeEnvValue: undoes encodeEnvValue for any value it accepts", () => {
+  for (const value of ["p$ssw0rd", "$", "a$$b", "${X}", "no-dollar", '"quoted"']) {
+    const expected = value.includes("$") ? value : decodeEnvValue(value)
+    assertEquals(decodeEnvValue(encodeEnvValue("K", value)), expected)
+  }
+})
+
+Deno.test("keysWithUnsafeDollar: reports a bare $name compose would warn about", () => {
+  assertEquals(keysWithUnsafeDollar({ A: "p$ssw0rd", B: "fine", C: '"x$y"' }), ["A", "C"])
+})
+
+Deno.test("keysWithUnsafeDollar: a reference to a key of an earlier file is known", () => {
+  assertEquals(keysWithUnsafeDollar({ HOST: "mail.${DOMAIN}" }, { DOMAIN: "example.com" }), [])
+  assertEquals(keysWithUnsafeDollar({ HOST: "mail.${DOMAIN}" }), ["HOST"])
+})
+
+Deno.test("keysWithUnsafeDollar: reports an unknown or broken ${...} template", () => {
+  assertEquals(
+    keysWithUnsafeDollar({
+      A: "a${b",
+      B: "a${X:-q}",
+      C: "a${UNKNOWN}",
+      D: "a${}",
+      // Unclosed, though `A` is a key: compose prints the whole value.
+      E: "x${A",
+      // Malformed single quotes: compose's error quotes the rest.
+      F: "'ab'c$def",
+      // Malformed double quotes: the same, compose quotes the rest.
+      G: '"ab"$cd',
+      H: '"ab"c$d',
+    }),
+    ["A", "B", "C", "D", "E", "F", "G", "H"],
+  )
+})
+
+Deno.test("keysWithUnsafeDollar: accepts single quotes, $$ escapes, literal $, comments and known references", () => {
+  assertEquals(
+    keysWithUnsafeDollar({
+      PATH_APPS: "/srv/apps",
+      VOLUMES_PATH: "${PATH_APPS}/../volumes",
+      OTHER: "$PATH_APPS",
+      QUOTED: "'p$ssw0rd'",
+      QUOTED_COMMENT_SQ: "'p$ss' # note",
+      ESCAPED: "p$$ssw0rd",
+      ESCAPED_QUOTED: '"p$$ssw0rd"',
+      QUOTED_COMMENT_DQ: '"ab" # c$d',
+      LITERAL: "a$ b$1 c$! d$",
+      COMMENT: "value # see $ZZZ_X",
+      QUOTED_COMMENT: '"q$$x" # $YYY',
+    }),
+    [],
+  )
 })

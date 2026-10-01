@@ -33,7 +33,12 @@
 
 import { join } from "@std/path"
 import { reencryptAfterWrite } from "./reencrypt.ts"
-import { type EnvEntry, readEnvFile, writeEnvFilePreservingFormat } from "./env-files.ts"
+import {
+  encodeEnvValue,
+  type EnvEntry,
+  readEnvFile,
+  writeEnvFilePreservingFormat,
+} from "./env-files.ts"
 import { type PromptFn, promptValue, withKeyLabel } from "./prompts.ts"
 import { tryCaptureStdout } from "./shell.ts"
 import { stripControlChars } from "./deploy/exec.ts"
@@ -192,7 +197,18 @@ export async function serverCreate(opts: ServerCreateOptions = {}): Promise<Serv
   // updating its value — a re-run with unchanged values leaves the file
   // untouched, a changed value doesn't jump to the bottom, and any
   // comments/blank lines the user added by hand survive too.
-  await writeEnvFilePreservingFormat(envPath, incoming)
+  // #313: a value with `$` (a TIMEZONE or CONTACT_EMAIL typed by hand,
+  // say) is single-quoted so docker compose reads it literally. A value
+  // read back unchanged from the existing .env is already in the file's
+  // own encoding (`$$`, double quotes), so it is written as it is.
+  const existingByKey = new Map((await readEnvFile(envPath)).map((e) => [e.key, e.value]))
+  await writeEnvFilePreservingFormat(
+    envPath,
+    incoming.map(({ key, value }) => ({
+      key,
+      value: existingByKey.get(key) === value ? value : encodeEnvValue(key, value),
+    })),
+  )
 
   // Re-encrypt (non-fatal — e.g. no `.age/key.txt` yet).
   await reencryptAfterWrite(cwd)

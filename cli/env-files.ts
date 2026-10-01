@@ -17,15 +17,16 @@
 // still, turning `\n` inside double quotes into a real newline and
 // dropping a trailing ` # comment` from an unquoted value. A hook
 // process launched by `cli/deploy/hooks.ts` only gets the one-quote-
-// layer strip (`stripOneQuoteLayer` — see `buildHookEnv`'s own
-// comment), not the escape/comment handling, so a hook can see a
-// different value than its container for those two forms. This file's
+// layer strip and compose's `$$` escape (`decodeEnvValue`, below), not
+// the escape/comment handling, so a hook can see a different value than
+// its container for those two forms. This file's
 // job is only to keep the FILE ROUND TRIP (read a `.env`, write it
 // back, or re-encrypt it) byte-identical; it is not the place that
 // mimics compose's or a hook's runtime stripping.
 //
-// The CLI never adds quotes; it writes a value verbatim as supplied by
-// stack defaults, --var flags, or interactive prompts — a value that
+// The CLI adds quotes only around a new value that contains `$` (#313,
+// `encodeEnvValue` below); otherwise it writes a value verbatim as
+// supplied by stack defaults, --var flags, or interactive prompts — a value that
 // needs quoting to survive some other consumer's parser must be typed
 // with the quotes already included. Stacks that need multi-line values
 // compose them in shell, not in .env.
@@ -41,6 +42,7 @@
 // README).
 
 import { dirname, join } from "@std/path"
+import { UserError } from "./errors.ts"
 
 export interface EnvEntry {
   key: string
@@ -261,6 +263,124 @@ export function serverContextFromRoot(entries: EnvEntry[]) {
     VOLUMES_PATH: string
     [key: `PATH_${string}`]: string
   }
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// #313 — a `$` in a value. Deploy hands the server `.env` to docker
+// compose with `--env-file`, and compose reads `$name` or `${name}` in an
+// unquoted or double-quoted value as a variable reference. A password
+// such as `p$ssw0rd` made every compose call warn that the variable
+// "ssw0rd" is not set, printing part of the secret into deploy output,
+// and gave the container `p` instead of the password.
+//
+// The CLI therefore writes a new value that contains `$` inside single
+// quotes (`KEY='p$ssw0rd'`). Checked against docker compose 5.5 and Deno
+// 2.9: compose reads a single-quoted value literally, with no warning;
+// Deno's `--env-file` does too (it does NOT read `$$` as an escaped
+// dollar: `p$$ssw0rd` loads as `p`); and a hook gets the quotes stripped
+// by `decodeEnvValue`. compose's other escape, `$$`, still works for a
+// value someone writes by hand, and `decodeEnvValue` turns it back into
+// one `$` for hooks. A single-quoted compose value cannot contain a `'`
+// at all, so a value with both characters is refused.
+// ─────────────────────────────────────────────────────────────────────
+
+/** A value wrapped in one layer of single quotes with none inside: compose reads it literally. */
+const SINGLE_QUOTED = /^'[^']*'$/
+/** A value wrapped in one layer of double quotes, with no escapes or quotes inside. */
+const PLAIN_DOUBLE_QUOTED = /^"[^"\\]*"$/
+
+/**
+ * Turn a value a person or a stack default supplied into the text the
+ * CLI writes after `KEY=`, so docker compose reads exactly that value. A
+ * value without `$`, or one already in single quotes, is written as is.
+ * Any other value with `$` is wrapped in single quotes; a plain
+ * double-quoted one is re-quoted with single quotes (compose strips
+ * either layer, so the container value stays the same). Only call this on
+ * NEW input, never on a value read back from a `.env`: there `$$` may
+ * already be compose's escape for one `$`.
+ *
+ * @throws UserError naming `key`, never the value, when the value holds
+ *   both `$` and `'`.
+ */
+export function encodeEnvValue(key: string, value: string): string {
+  if (!value.includes("$") || SINGLE_QUOTED.test(value)) return value
+  const literal = PLAIN_DOUBLE_QUOTED.test(value) ? value.slice(1, -1) : value
+  if (literal.includes("'")) {
+    throw new UserError(
+      `${key}: the value contains both "$" and "'". docker compose reads "$" as the start of ` +
+        `a variable unless the value is in single quotes, and a single-quoted value cannot ` +
+        `contain "'". Choose a value without one of them, or write it into the .env by hand ` +
+        `in double quotes with every "$" doubled ("$$").`,
+    )
+  }
+  return `'${literal}'`
+}
+
+/**
+ * The value a hook should see for the raw `.env` text after `KEY=`, the
+ * way docker compose reads it: one layer of matching quotes stripped; a
+ * single-quoted value kept literally; in an unquoted or double-quoted
+ * value, compose's `$$` escape turned back into one `$`. Like compose's
+ * own escape handling elsewhere, nothing else is decoded: no `\n` inside
+ * double quotes, no trailing ` # comment` (see the module comment).
+ */
+export function decodeEnvValue(value: string): string {
+  if (value.length >= 2) {
+    const first = value[0]
+    const last = value[value.length - 1]
+    if (first === "'" && last === "'") return value.slice(1, -1)
+    if (first === '"' && last === '"') return value.slice(1, -1).replaceAll("$$", "$")
+  }
+  return value.replaceAll("$$", "$")
+}
+
+/**
+ * True when docker compose would read part of `raw` (the text after
+ * `KEY=`) as a reference to a variable not in `known`, or as a broken
+ * `${...}` template. compose then prints the name it looked for (a
+ * warning) or the whole value (an error), and either is part of the
+ * value. A `$` followed by anything but a letter, `_` or `{` stays
+ * literal in compose, so it is fine.
+ */
+function hasUnsafeDollar(raw: string, known: ReadonlySet<string>): boolean {
+  const value = raw.trim()
+  // A well-formed single-quoted value, optionally followed by a comment,
+  // is literal. A malformed one (`'ab'c$d`) makes compose fail with an
+  // error that quotes the rest of the line, so a `$` in it is unsafe.
+  if (value.startsWith("'")) return !/^'[^']*'(\s+#.*)?$/.test(value) && value.includes("$")
+  // The same for double quotes: text after the closing quote (`"ab"c$d`).
+  if (value.startsWith('"') && !/^"(?:[^"\\]|\\.)*"(\s+#.*)?$/.test(value)) {
+    if (value.includes("$")) return true
+  }
+  const closing = value.lastIndexOf('"')
+  const body = value.startsWith('"')
+    ? value.slice(1, closing > 0 ? closing : undefined)
+    : value.replace(/\s#.*$/, "")
+  const unescaped = body.replaceAll("$$", "")
+  for (const match of unescaped.matchAll(/\$(?:\{([^}]*)(\}?)|([A-Za-z_][A-Za-z0-9_]*))/g)) {
+    const [, braced, closed, bare] = match
+    if (bare !== undefined) {
+      if (!known.has(bare)) return true
+      continue
+    }
+    if (!closed || !known.has(braced)) return true
+  }
+  return false
+}
+
+/**
+ * Keys of `env` whose raw value has a `$` docker compose would expand
+ * into a warning or an error that prints part of the value (see
+ * `hasUnsafeDollar`). A reference to a key of `env` or of `earlier` (an
+ * env file compose reads before this one), such as
+ * `MAIL_HOST=mail.${DOMAIN}`, is intended and not reported.
+ */
+export function keysWithUnsafeDollar(
+  env: Record<string, string>,
+  earlier: Record<string, string> = {},
+): string[] {
+  const known = new Set([...Object.keys(earlier), ...Object.keys(env)])
+  return Object.keys(env).filter((key) => hasUnsafeDollar(env[key], known))
 }
 
 export { dirname, join }

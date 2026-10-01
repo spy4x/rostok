@@ -77,6 +77,37 @@ deno task env:decrypt
 deno task deploy home caldav-mcp
 ```
 
+## Values that contain `$`
+
+`rostok deploy` hands the server `.env` and `.env.root` to docker compose
+with `--env-file`. Compose reads `$name` or `${name}` in a value as a
+variable, so a password such as `p$ssw0rd` would reach the container as
+`p`, and compose would print a warning naming the variable `ssw0rd`, part
+of the password, on every deploy.
+
+- `rostok server create` and `rostok stack add` write a new value that
+  contains `$` in single quotes: `KEY='p$ssw0rd'`. Compose, Deno's
+  `--env-file` and deploy hooks all read that literally.
+- When you edit `.env` by hand, do the same. Writing each `$` as `$$`
+  (`KEY=p$$ssw0rd`) also works for compose and hooks, but not for Deno's
+  `--env-file`, so prefer single quotes.
+- A single-quoted value cannot contain `'`. For a value with both `$` and
+  `'`, write it in double quotes with each `$` doubled:
+  `KEY="it's$$secret"`.
+- `rostok deploy` refuses a `.env` or `.env.root` that still holds a bare
+  `$` compose would read as a variable. It checks each file on its own,
+  because compose reads both, even a `.env.root` value the server `.env`
+  overrides. The error names the keys and the file, never the values. Fix
+  the values as above, run `rostok env encrypt`, and deploy again.
+- A reference to another key is allowed where compose can resolve it: a
+  server `.env` value may name a key of either file
+  (`MAIL_HOST=mail.${DOMAIN}`), a `.env.root` value only a key of
+  `.env.root`. A reference to a name defined in neither file, such as
+  `$HOME`, is refused on purpose: compose would read it from the shell of
+  whoever deploys, so the result would differ from machine to machine.
+- `rostok stack add --var KEY='${DOMAIN}'` now writes the value literally,
+  in single quotes. To refer to another key, edit `.env` by hand.
+
 ## File Structure
 
 ```

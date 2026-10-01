@@ -273,6 +273,23 @@ Deno.test("stack add: the interactive variable prompt's label carries (KEY)", as
   })
 })
 
+Deno.test("stack add: a typed value with ${...} is written literally, not reported (#313)", async () => {
+  await withTmpDir(async (dir) => {
+    const catalogDir = join(dir, "catalog")
+    await writeCatalog(catalogDir, { quiz: QUESTION_STACK_META })
+    await seedServer(dir, "test", { DOMAIN: "example.com" })
+    await stackAdd("quiz", "test", {
+      cwd: dir,
+      catalogDir,
+      promptFn: () => Promise.resolve("ab${cd}ef"),
+    })
+    const text = await Deno.readTextFile(join(dir, "servers", "test", ".env"))
+    assertEquals(text.split("\n").filter((l) => l.startsWith("QUIZ_TOKEN=")), [
+      "QUIZ_TOKEN='ab${cd}ef'",
+    ])
+  })
+})
+
 Deno.test("stack add on an unknown stack name fails as a UserError naming the catalog", async () => {
   await withTmpDir(async (dir) => {
     const catalogDir = join(dir, "catalog")
@@ -393,6 +410,34 @@ Deno.test("an explicit --var still overrides an existing value", async () => {
 
     const env = await readEnvFile(join(dir, "servers", "test", ".env"))
     assertEquals(env.find((e) => e.key === "SECRETSTACK_PASSWORD")?.value, "chosen-by-user")
+  })
+})
+
+Deno.test("a --var value with $ is written single-quoted, and a re-run keeps it (#313)", async () => {
+  await withTmpDir(async (dir) => {
+    const catalogDir = join(dir, "catalog")
+    await writeCatalog(catalogDir, { secretstack: SECRET_STACK_META })
+    await seedServer(dir, "test", { PROJECT: "hl", DOMAIN: "example.com" })
+    const providedVars = { SECRETSTACK_PASSWORD: "p$ssw0rd" }
+
+    await stackAdd("secretstack", "test", {
+      cwd: dir,
+      catalogDir,
+      nonInteractive: true,
+      providedVars,
+    })
+    const second = await stackAdd("secretstack", "test", {
+      cwd: dir,
+      catalogDir,
+      nonInteractive: true,
+      providedVars,
+    })
+
+    const text = await Deno.readTextFile(join(dir, "servers", "test", ".env"))
+    assertEquals(text.split("\n").filter((l) => l.startsWith("SECRETSTACK_PASSWORD=")), [
+      "SECRETSTACK_PASSWORD='p$ssw0rd'",
+    ])
+    assertEquals(second.keptCount, 1)
   })
 })
 

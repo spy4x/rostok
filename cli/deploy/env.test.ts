@@ -1,6 +1,7 @@
 import { assertEquals, assertStringIncludes, assertThrows } from "@std/assert"
 import { UserError } from "../errors.ts"
 import {
+  assertNoBareDollar,
   expandEnvRefs,
   resolveDeployEnv,
   resolvePathApps,
@@ -143,6 +144,66 @@ const VALID_BASE = {
   PGID: "1000",
   DOCKER_GROUP_ID: "988",
 }
+
+const SERVER_ENV_PATH = "servers/home/.env"
+
+Deno.test("assertNoBareDollar: refuses a bare $ in the server .env, naming the key but no part of the value (#313)", () => {
+  const err = assertThrows(
+    () =>
+      assertNoBareDollar(
+        {},
+        { EMAIL_MCP_PASSWORD_2: "p$ssw0rd", OTHER_PW: "x${y" },
+        ROOT_ENV_PATH,
+        SERVER_ENV_PATH,
+      ),
+    UserError,
+  )
+  assertStringIncludes(err.message, `EMAIL_MCP_PASSWORD_2, OTHER_PW in ${SERVER_ENV_PATH}`)
+  assertEquals(err.message.includes("ssw0rd"), false)
+  assertEquals(err.message.includes("{y"), false)
+})
+
+Deno.test("assertNoBareDollar: refuses a bare $ in a .env.root value the server .env overrides (#313)", () => {
+  const err = assertThrows(
+    () => assertNoBareDollar({ PW: "p$ssroot" }, { PW: "'ok'" }, ROOT_ENV_PATH, SERVER_ENV_PATH),
+    UserError,
+  )
+  assertStringIncludes(err.message, `PW in ${ROOT_ENV_PATH}`)
+  assertEquals(err.message.includes(SERVER_ENV_PATH), false)
+  assertEquals(err.message.includes("ssroot"), false)
+})
+
+Deno.test("assertNoBareDollar: a .env.root value may not refer to a key only the server .env defines (#313)", () => {
+  const err = assertThrows(
+    () =>
+      assertNoBareDollar(
+        { MAIL_HOST: "mail.${DOMAIN}" },
+        { DOMAIN: "example.com" },
+        ROOT_ENV_PATH,
+        SERVER_ENV_PATH,
+      ),
+    UserError,
+  )
+  assertStringIncludes(err.message, `MAIL_HOST in ${ROOT_ENV_PATH}`)
+})
+
+Deno.test("assertNoBareDollar: accepts single quotes, $$ and a server value that refers to a root key (#313)", () => {
+  assertNoBareDollar(
+    { DOMAIN: "example.com", ROOT_PW: "'r$ot'" },
+    { A_PW: "'p$ssw0rd'", B_PW: "p$$ssw0rd", MAIL_HOST: "mail.${DOMAIN}" },
+    ROOT_ENV_PATH,
+    SERVER_ENV_PATH,
+  )
+})
+
+Deno.test("assertNoBareDollar: recommends single quotes and warns that $$ breaks Deno --env-file (#313)", () => {
+  const err = assertThrows(
+    () => assertNoBareDollar({}, { PW: "a$b" }, ROOT_ENV_PATH, SERVER_ENV_PATH),
+    UserError,
+  )
+  assertStringIncludes(err.message, "Put each value in single quotes")
+  assertStringIncludes(err.message, `Deno's --env-file`)
+})
 
 Deno.test("resolveDeployEnv: rejects an SSH_ADDRESS starting with -", () => {
   // -oProxyCommand=<cmd> runs <cmd> locally the moment ssh (or rsync,

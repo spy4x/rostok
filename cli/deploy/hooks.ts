@@ -7,7 +7,8 @@
 //   file inside the installed package — never from a staging copy, with
 //   cwd = the local staging directory. The hook receives every KEY IT'S
 //   ENTITLED TO from `.env.root` and the server `.env` (parsed by
-//   rostok, no `$` expansion) — see the allowlist below — plus
+//   rostok, no `$` expansion; compose's `$$` escape and one quote layer
+//   are decoded, #313) — see the allowlist below — plus
 //   SSH_ADDRESS, SSH_HOST, SSH_PORT, SSH_USER, PATH_APPS and DEPLOY_AS
 //   (SSH_HOST/SSH_PORT: #229, see the module comment further down).
 //
@@ -123,6 +124,7 @@
 // deploy makes.
 
 import { loadCatalog } from "../catalog.ts"
+import { decodeEnvValue } from "../env-files.ts"
 import { UserError } from "../errors.ts"
 import { isLocalSshAddress, isServerKey, parseSshAddress, stackKeyPrefix } from "../server-keys.ts"
 import { setsidAvailable, supportsProcessGroupKill, trackChild } from "./process-registry.ts"
@@ -248,30 +250,6 @@ function sanitizeForLog(s: string): string {
 }
 
 /**
- * Strips one matching quote layer (`'...'` or `"..."` around the whole
- * value), and nothing else: no backslash escapes, no `#` comment
- * stripping. docker compose's `env_file` and Deno's `--env-file` do more
- * than this: both turn `\n` inside double quotes into a real newline and
- * drop a trailing ` # comment` from an unquoted value. For those forms a
- * hook can see a different value than its container, so a key a hook
- * reads should not rely on escapes or trailing comments. The common case,
- * a quoted value with spaces, matches. `@spy4x/server/env-age64`'s
- * `parseEnvFile` keeps a value's quotes for the file round trip (#226),
- * so the stripping happens here, once, on the way into the hook's
- * environment.
- */
-function stripOneQuoteLayer(value: string): string {
-  if (value.length >= 2) {
-    const first = value[0]
-    const last = value[value.length - 1]
-    if ((first === '"' && last === '"') || (first === "'" && last === "'")) {
-      return value.slice(1, -1)
-    }
-  }
-  return value
-}
-
-/**
  * Build the environment a hook subprocess runs with.
  *
  * Starts from the deploying process's own real environment (a hook's
@@ -289,8 +267,9 @@ function stripOneQuoteLayer(value: string): string {
  *   `.env`/`.env.root` VALUE WINS, even over a same-named parent
  *   variable — a shell that happens to export `DOMAIN` or `PROJECT`
  *   must not silently steer what stack-owned keys a hook sees; the
- *   deploy-time value is authoritative there. Its quotes are stripped
- *   once (`stripOneQuoteLayer`) before it reaches the hook's env — a
+ *   deploy-time value is authoritative there. It is decoded once
+ *   (`decodeEnvValue`: one quote layer, compose's `$$` escape) before it
+ *   reaches the hook's env — a
  *   `.env` value keeps its quotes on disk (#226), but docker compose's
  *   `env_file` and Deno's `--env-file` both strip them when they
  *   actually load the file, so a hook (which reads the same values a
@@ -342,10 +321,11 @@ export function buildHookEnv(
       }
       continue
     }
-    // Allowed: the .env/.env.root value wins outright — quotes stripped
-    // once here, so the hook sees exactly what its own container would
-    // (docker compose's env_file/Deno's --env-file both strip them too).
-    resolved[key] = stripOneQuoteLayer(value)
+    // Allowed: the .env/.env.root value wins outright — decoded once
+    // here, so the hook sees exactly what its own container would: one
+    // quote layer stripped, and compose's `$$` read as one `$` (#313).
+    // The email-mcp hook writes a password from here into its config.
+    resolved[key] = decodeEnvValue(value)
   }
 
   const warnings: string[] = [...deniedWarnings]
