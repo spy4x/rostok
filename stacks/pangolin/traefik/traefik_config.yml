@@ -5,8 +5,11 @@ providers:
   http:
     endpoint: "http://pangolin:3001/api/v1/traefik-config"
     pollInterval: "5s"
+  # A directory, so the server can add its own files next to the catalog's
+  # 00-pangolin.yml (before.deploy.ts copies configs/pangolin/dynamic/*.yml in).
   file:
-    filename: "/etc/traefik/dynamic_config.yml"
+    directory: "/etc/traefik/dynamic"
+    watch: true
 experimental:
   plugins:
     badger:
