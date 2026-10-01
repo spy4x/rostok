@@ -40,6 +40,10 @@ class JmapStore {
   calls: Array<{ name: string; args: Record<string, unknown> }> = []
   /** When set, SieveScript/set refuses every create, as a server rejecting a script would. */
   refuseCreate = false
+  /** When set, SieveScript/set refuses every destroy. */
+  refuseDestroy = false
+  /** When set, a successful SieveScript/set carries empty not* maps instead of none. */
+  emptyNotMaps = false
 
   constructor() {
     // Seed standard personal-account mailboxes (matches Stalwart v0.16.11
@@ -99,7 +103,13 @@ class JmapStore {
         for (const id of destroy) {
           this.mailboxes = this.mailboxes.filter((x) => x.id !== id)
         }
-        return { accountId: args.accountId, oldState: "s1", newState: "s2", created }
+        return {
+          accountId: args.accountId,
+          oldState: "s1",
+          newState: "s2",
+          created,
+          ...(this.emptyNotMaps ? { notCreated: {}, notUpdated: {}, notDestroyed: {} } : {}),
+        }
       }
       case "Email/query": {
         const filter = args.filter as { from?: string; subject?: string }
@@ -166,6 +176,11 @@ class JmapStore {
         const update = (args.update ?? {}) as Record<string, Partial<SieveScript>>
         const destroy = (args.destroy ?? []) as string[]
         const created: Record<string, SieveScript> = {}
+        if (this.refuseDestroy && destroy.length > 0) {
+          return {
+            notDestroyed: Object.fromEntries(destroy.map((id) => [id, { type: "forbidden" }])),
+          }
+        }
         if (this.refuseCreate && Object.keys(create).length > 0) {
           return {
             notCreated: Object.fromEntries(
@@ -195,7 +210,13 @@ class JmapStore {
         for (const id of destroy) {
           this.scripts = this.scripts.filter((s) => s.id !== id)
         }
-        return { accountId: args.accountId, oldState: "s1", newState: "s2", created }
+        return {
+          accountId: args.accountId,
+          oldState: "s1",
+          newState: "s2",
+          created,
+          ...(this.emptyNotMaps ? { notCreated: {}, notUpdated: {}, notDestroyed: {} } : {}),
+        }
       }
       default:
         throw new Error(`mock: unknown method ${name}`)
@@ -477,6 +498,38 @@ Deno.test("apply fails when the server refuses the new script", async () => {
       Error,
       "refused",
     )
+  } finally {
+    restore()
+  }
+})
+
+Deno.test("apply fails when the server refuses to destroy the old script", async () => {
+  const store = new JmapStore()
+  const restore = withMockedFetch(store)
+  try {
+    const path = await Deno.makeTempFile({ suffix: ".sieve" })
+    await Deno.writeTextFile(path, SIEVE_BODY)
+    await apply({ ...baseOpts, sievePath: path, skipMove: true, skipDeleteBounces: true })
+    store.refuseDestroy = true
+    await assertRejects(
+      () => apply({ ...baseOpts, sievePath: path, skipMove: true, skipDeleteBounces: true }),
+      Error,
+      "refused",
+    )
+  } finally {
+    restore()
+  }
+})
+
+Deno.test("apply succeeds when a successful set carries empty not* maps", async () => {
+  const store = new JmapStore()
+  store.emptyNotMaps = true
+  const restore = withMockedFetch(store)
+  try {
+    const path = await Deno.makeTempFile({ suffix: ".sieve" })
+    await Deno.writeTextFile(path, SIEVE_BODY)
+    await apply({ ...baseOpts, sievePath: path, skipMove: true, skipDeleteBounces: true })
+    assertEquals(store.scripts.filter((s) => s.isActive).length, 1)
   } finally {
     restore()
   }

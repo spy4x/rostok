@@ -209,9 +209,13 @@ export async function apply(opts: Options): Promise<void> {
   // A refused deactivate, destroy or create must stop the run: the old script
   // may already be gone, and reporting success would leave the account with no
   // filter at all.
+  // JMAP says these maps are null when nothing failed; an empty object is
+  // treated the same, as stacks/stalwart/dkim.ts does.
+  const nonEmpty = (v: unknown) => typeof v === "object" && v !== null && Object.keys(v).length > 0
   const refused = setResp.methodResponses.filter(([name, result]) => {
     const r = result as Record<string, unknown>
-    return name === "error" || r.notCreated || r.notUpdated || r.notDestroyed
+    return name === "error" || nonEmpty(r.notCreated) || nonEmpty(r.notUpdated) ||
+      nonEmpty(r.notDestroyed)
   })
   if (refused.length > 0) {
     throw new Error(`SieveScript/set refused: ${JSON.stringify(refused.map(([, r]) => r))}`)
