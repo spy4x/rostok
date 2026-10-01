@@ -4,28 +4,11 @@
 // interpolate each compose file with only the server-level `DOMAIN` set and check every host.
 
 import { assertEquals } from "@std/assert"
-
-/** Compose interpolation of `${KEY}` and `${KEY:-default}`, innermost first, against `env`. */
-function interpolate(text: string, env: Record<string, string>): string {
-  const re = /\$\{([A-Z0-9_]+)(?::-([^${}]*))?\}/g
-  let out = text
-  for (let i = 0; i < 10 && re.test(out); i++) {
-    re.lastIndex = 0
-    out = out.replace(re, (_, key: string, fallback?: string) => {
-      const value = env[key]
-      return value !== undefined && value !== "" ? value : (fallback ?? "")
-    })
-  }
-  return out
-}
+import { hostsIn, renderCompose } from "./compose-interpolate.ts"
 
 /** Every host a compose file's Traefik routers match, after interpolation, sorted. */
 async function hostsOf(stack: string, env: Record<string, string>): Promise<string[]> {
-  const text = await Deno.readTextFile(new URL(`./${stack}/compose.yml`, import.meta.url))
-  const code = text.split("\n").filter((l) => !l.trim().startsWith("#")).join("\n")
-  const hosts = new Set<string>()
-  for (const m of interpolate(code, env).matchAll(/Host\(`([^`]*)`\)/g)) hosts.add(m[1])
-  return [...hosts].sort()
+  return [...new Set(hostsIn(await renderCompose(stack, env)))].sort()
 }
 
 const env = { DOMAIN: "example.com", STALWART_NEATSOFT_DOMAIN: "example.org" }
@@ -57,9 +40,9 @@ Deno.test("compose.yml: a set domain variable overrides the fallback", async () 
 })
 
 Deno.test("caldiy compose.yml: the app URL falls back to the same host as the router", async () => {
-  const text = await Deno.readTextFile(new URL("./caldiy/compose.yml", import.meta.url))
+  const text = await renderCompose("caldiy", env)
   assertEquals(
-    interpolate(text, env).includes("NEXT_PUBLIC_WEBAPP_URL=https://schedule.example.com\n"),
+    text.includes("NEXT_PUBLIC_WEBAPP_URL=https://schedule.example.com\n"),
     true,
   )
 })

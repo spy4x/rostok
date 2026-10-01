@@ -11,7 +11,7 @@ services:
   # Access the web interface to configure DNS settings, filters, and view statistics.
   adguard:
     container_name: hl-adguard
-    image: adguard/adguardhome:latest
+    image: adguard/adguardhome:${ADGUARD_IMAGE_TAG:-latest}
     healthcheck:
       test: ["CMD", "wget", "--spider", "http://localhost:80/"]
       interval: 30s
@@ -25,7 +25,8 @@ services:
       - 53:53/tcp # DNS
       - 53:53/udp # DNS
       - 853:853/tcp # DNS-over-TLS
-    # - 3000:3000/tcp  # Initial setup web interface (can be disabled after setup)
+      # First-run setup wizard. Loopback only: reach it through an SSH tunnel, see the README.
+      - 127.0.0.1:3000:3000/tcp
     restart: unless-stopped
     deploy:
       resources:
@@ -40,7 +41,7 @@ services:
       - "traefik.enable=true"
       - "traefik.docker.network=proxy"
       - "traefik.http.services.hl-adguard.loadbalancer.server.port=80"
-      - "traefik.http.routers.hl-adguard.rule=Host(`dns.${DOMAIN}`)"
+      - "traefik.http.routers.hl-adguard.rule=Host(`${ADGUARD_DOMAIN:-dns.${DOMAIN}}`)"
       - "traefik.http.routers.hl-adguard.middlewares=robots-deny@file"
       - "traefik.http.routers.hl-adguard.entrypoints=websecure"
       - "traefik.http.routers.hl-adguard.tls=true"

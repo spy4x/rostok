@@ -10,7 +10,7 @@ networks:
 services:
   ollama:
     container_name: hl-ollama
-    image: ollama/ollama:latest
+    image: ollama/ollama:${OLLAMA_IMAGE_TAG:-latest}
     environment:
       - TZ=${TIMEZONE:-UTC}
     volumes:
@@ -36,7 +36,7 @@ services:
       - "traefik.enable=true"
       - "traefik.docker.network=proxy"
       - "traefik.http.services.hl-ollama.loadbalancer.server.port=11434"
-      - "traefik.http.routers.hl-ollama.rule=Host(`ollama.${DOMAIN}`)"
+      - "traefik.http.routers.hl-ollama.rule=Host(`${OLLAMA_DOMAIN:-ollama.${DOMAIN}}`)"
       - "traefik.http.routers.hl-ollama.entrypoints=websecure"
       - "traefik.http.routers.hl-ollama.tls=true"
       - "traefik.http.routers.hl-ollama.middlewares=authelia@file,robots-deny@file"

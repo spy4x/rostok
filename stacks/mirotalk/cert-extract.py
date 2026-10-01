@@ -3,7 +3,7 @@
 for coturn TURN-TLS.
 
 Watches /acme.json, writes /certs/<domain>.crt and /certs/<domain>.key whenever
-the cert for ${DOMAIN} changes (LE renewal or initial issue). Designed to run
+the cert for $MIROTALK_DOMAIN changes (LE renewal or initial issue). Designed to run
 in a sidecar container with /acme.json mounted read-only and /certs as a
 shared volume with coturn.
 
@@ -20,7 +20,7 @@ from pathlib import Path
 
 ACME_PATH = Path(os.environ.get("ACME_PATH", "/acme.json"))
 CERTS_DIR = Path(os.environ.get("CERTS_DIR", "/certs"))
-DOMAIN = os.environ.get("DOMAIN", "antonshubin.com")
+MIROTALK_DOMAIN = os.environ["MIROTALK_DOMAIN"]
 POLL_INTERVAL = int(os.environ.get("POLL_INTERVAL", "300"))  # 5 min
 
 
@@ -31,7 +31,7 @@ def extract():
         print(f"[{time.strftime('%H:%M:%S')}] skip: {e}", file=sys.stderr)
         return False
 
-    target = f"talk.{DOMAIN}"
+    target = MIROTALK_DOMAIN
     for resolver in data.values():
         for cert in resolver.get("Certificates") or []:
             if cert.get("domain", {}).get("main") == target:
@@ -70,7 +70,7 @@ signal.signal(signal.SIGINT, handle_stop)
 
 
 if __name__ == "__main__":
-    print(f"[{time.strftime('%H:%M:%S')}] starting; ACME_PATH={ACME_PATH} DOMAIN={DOMAIN}")
+    print(f"[{time.strftime('%H:%M:%S')}] starting; ACME_PATH={ACME_PATH} MIROTALK_DOMAIN={MIROTALK_DOMAIN}")
     while not _stop:
         extract()
         # Sleep in small chunks so SIGTERM is responsive
