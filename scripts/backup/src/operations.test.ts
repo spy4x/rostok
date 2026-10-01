@@ -110,15 +110,15 @@ Deno.test("stops, starts and rebuilds with the running container's own compose f
     }
     const files = `${wd}/stacks/app/compose.yml`
     await withHarness({
-      FAKE_PS_OUTPUT: psLine(`app`, files, wd),
+      FAKE_PS_OUTPUT: psLine(`app`, files, `${wd}/stacks/app`),
       FAKE_START_STDERR: MISSING,
     }, async (h) => {
       await h.run("stop")
       const c = await h.run("start")
       assertEquals(c.status, BackupStatus.IN_PROGRESS)
       assertEquals(h.log().slice(1), [
-        `${wd}|compose -p app -f ${files} stop`,
-        `${wd}|compose -p app -f ${files} start`,
+        `${wd}|compose -p app -f ${files} --env-file=.env.root --env-file=.env stop`,
+        `${wd}|compose -p app -f ${files} --env-file=.env.root --env-file=.env start`,
         `${wd}|compose -p app -f ${files} --env-file=.env.root --env-file=.env up -d`,
       ])
       // None of the compose commands touched the runner's own PATH_APPS.
@@ -138,7 +138,7 @@ Deno.test("leaves the stack stopped and reports failure when up -d cannot reprod
     // no .env.root and no .env
     const files = `${wd}/stacks/app/compose.yml`
     await withHarness({
-      FAKE_PS_OUTPUT: psLine(`app`, files, wd),
+      FAKE_PS_OUTPUT: psLine(`app`, files, `${wd}/stacks/app`),
       FAKE_START_STDERR: MISSING,
     }, async (h) => {
       await h.run("stop")
@@ -168,13 +168,16 @@ Deno.test("uses the deployed project name even when it differs from the stack di
   const root = await Deno.makeTempDir()
   try {
     const files = `${root}/stacks/app/compose.yml,${root}/compose-override/app.yml`
-    await withHarness({ FAKE_PS_OUTPUT: psLine(`nginx-b`, files, root) }, async (h) => {
-      await h.run("stop")
-      assertEquals(
-        h.log()[1],
-        `${root}|compose -p nginx-b -f ${root}/stacks/app/compose.yml -f ${root}/compose-override/app.yml stop`,
-      )
-    })
+    await withHarness(
+      { FAKE_PS_OUTPUT: psLine(`nginx-b`, files, `${root}/stacks/app`) },
+      async (h) => {
+        await h.run("stop")
+        assertEquals(
+          h.log()[1],
+          `${root}|compose -p nginx-b -f ${root}/stacks/app/compose.yml -f ${root}/compose-override/app.yml stop`,
+        )
+      },
+    )
   } finally {
     await Deno.remove(root, { recursive: true })
   }
@@ -187,6 +190,17 @@ Deno.test("refuses to stop a stack that runs from two different compose projects
   }, async (h) => {
     const c = await h.run("stop")
     assertEquals(c.status, BackupStatus.ERROR)
+    assertEquals(h.log().filter((l) => l.includes(`|compose `)), [])
+  })
+})
+
+Deno.test("fails the backup instead of copying live when a running stack matches no compose file", async () => {
+  await withHarness({
+    FAKE_PS_OUTPUT: psLine(`app`, `/srv/elsewhere/app.yml`, `/srv/elsewhere`),
+  }, async (h) => {
+    const c = await h.run("stop")
+    assertEquals(c.status, BackupStatus.ERROR)
+    assertStringIncludes(c.error ?? ``, `copied live`)
     assertEquals(h.log().filter((l) => l.includes(`|compose `)), [])
   })
 })

@@ -5,7 +5,9 @@ import {
   composeFileArgs,
   ComposeTarget,
   DEPLOY_ENV_FILE_ARGS,
+  hasDeployEnvFiles,
   parseComposeTargets,
+  parseUnmatchedStackContainers,
   whyCannotRebuild,
 } from "./compose-target.ts"
 import { hasNonEmptyResticSubdir } from "./repo-guard.ts"
@@ -73,7 +75,7 @@ export class BackupOperations {
    * Manages a Docker Compose stack (stop/start all services).
    *
    * Stop: finds the stack's running containers and reads their compose labels
-   * (project, config files, working dir). Those values, not a path built from
+   * (project, config files). Those values, not a path built from
    * this runner's `PATH_APPS`, drive stop, start and the `up -d` fallback,
    * because the stack may have been deployed from another directory (#297).
    * With no running container there is nothing to stop and nothing to start
@@ -114,12 +116,15 @@ export class BackupOperations {
       target = remembered
     }
 
-    log(`${action}ing compose stack ${target.project} from ${target.workingDir}`)
+    log(`${action}ing compose stack ${target.project} from ${target.appsRoot}`)
     const baseArgs = ["compose", "-p", target.project, ...composeFileArgs(target)]
+    // Compose interpolates the files even for stop/start, and stacks use required
+    // variables (`${X:?}`), so pass the deploy env files whenever they exist.
+    const envArgs = await hasDeployEnvFiles(target) ? DEPLOY_ENV_FILE_ARGS : []
 
     const { code, stderr } = await new Deno.Command("docker", {
-      args: [...baseArgs, action],
-      cwd: target.workingDir,
+      args: [...baseArgs, ...envArgs, action],
+      cwd: target.appsRoot,
       stdout: "piped",
       stderr: "piped",
     }).output()
@@ -148,7 +153,7 @@ export class BackupOperations {
       }
       const fallback = new Deno.Command("docker", {
         args: [...baseArgs, ...DEPLOY_ENV_FILE_ARGS, "up", "-d"],
-        cwd: target.workingDir,
+        cwd: target.appsRoot,
         env: {
           ...Deno.env.toObject(),
           HOME: `/home/${USER}`,
@@ -204,7 +209,19 @@ export class BackupOperations {
       )
       return null
     }
-    const targets = parseComposeTargets(new TextDecoder().decode(stdout), stackDir)
+    const out = new TextDecoder().decode(stdout)
+    const targets = parseComposeTargets(out, stackDir)
+    const unmatched = parseUnmatchedStackContainers(out, stackDir)
+    if (targets.length === 0 && unmatched.length > 0) {
+      this.markBackupFailed(
+        config,
+        `Running containers of compose project ${unmatched.join(", ")} look like stack ` +
+          `${stackDir}, but none was created from .../stacks/${stackDir}/compose.yml, so the ` +
+          `stack was not stopped and would be copied live. Fix the deploy layout or the backup config.`,
+        "compose_stop",
+      )
+      return null
+    }
     if (targets.length === 0) {
       log(`No running containers for stack ${stackDir}, skipping container management`)
       return null
