@@ -281,15 +281,17 @@ Deno.test("stops a project whose services carry different compose file lists wit
 })
 
 Deno.test("fails with the real cause when one project's compose file lists do not fit together", async () => {
-  const base = `/srv/apps/stacks/app/compose.yml`
-  await withHarness({
-    ps: psLine(`app`, `${base},/srv/apps/one.yml`, `/srv/apps/stacks/app`) +
-      psLine(`app`, `${base},/srv/apps/two.yml`, `/srv/apps/stacks/app`),
-  }, async (h) => {
-    const c = await h.run("stop")
-    assertEquals(c.status, BackupStatus.ERROR)
-    assertStringIncludes(c.error ?? ``, `do not fit together`)
-    assertEquals(h.log().filter((l) => l.includes(`|compose `)), [])
+  await withAppsRoot(async (root) => {
+    const base = `${root}/stacks/app/compose.yml`
+    await withHarness({
+      ps: psLine(`app`, `${base},${root}/one.yml`, `${root}/stacks/app`) +
+        psLine(`app`, `${base},${root}/two.yml`, `${root}/stacks/app`),
+    }, async (h) => {
+      const c = await h.run("stop")
+      assertEquals(c.status, BackupStatus.ERROR)
+      assertStringIncludes(c.error ?? ``, `do not fit together`)
+      assertEquals(h.log().filter((l) => l.includes(`|compose `)), [])
+    })
   })
 })
 
