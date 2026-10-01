@@ -311,8 +311,11 @@ Deno.test("keysWithUnsafeDollar: reports an unknown or broken ${...} template", 
       E: "x${A",
       // Malformed single quotes: compose's error quotes the rest.
       F: "'ab'c$def",
+      // Malformed double quotes: the same, compose quotes the rest.
+      G: '"ab"$cd',
+      H: '"ab"c$d',
     }),
-    ["A", "B", "C", "D", "E", "F"],
+    ["A", "B", "C", "D", "E", "F", "G", "H"],
   )
 })
 
@@ -326,6 +329,7 @@ Deno.test("keysWithUnsafeDollar: accepts single quotes, $$ escapes, literal $, c
       QUOTED_COMMENT_SQ: "'p$ss' # note",
       ESCAPED: "p$$ssw0rd",
       ESCAPED_QUOTED: '"p$$ssw0rd"',
+      QUOTED_COMMENT_DQ: '"ab" # c$d',
       LITERAL: "a$ b$1 c$! d$",
       COMMENT: "value # see $ZZZ_X",
       QUOTED_COMMENT: '"q$$x" # $YYY',

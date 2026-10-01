@@ -348,6 +348,10 @@ function hasUnsafeDollar(raw: string, known: ReadonlySet<string>): boolean {
   // is literal. A malformed one (`'ab'c$d`) makes compose fail with an
   // error that quotes the rest of the line, so a `$` in it is unsafe.
   if (value.startsWith("'")) return !/^'[^']*'(\s+#.*)?$/.test(value) && value.includes("$")
+  // The same for double quotes: text after the closing quote (`"ab"c$d`).
+  if (value.startsWith('"') && !/^"(?:[^"\\]|\\.)*"(\s+#.*)?$/.test(value)) {
+    if (value.includes("$")) return true
+  }
   const closing = value.lastIndexOf('"')
   const body = value.startsWith('"')
     ? value.slice(1, closing > 0 ? closing : undefined)
