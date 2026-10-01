@@ -42,9 +42,12 @@ Add the tunnel token to your server's `.env` file:
 ```bash
 # Cloudflared - Cloudflare Tunnel
 CLOUDFLARED_TUNNEL_TOKEN=your_tunnel_token_here
+CLOUDFLARED_IMAGE_TAG=latest
 CLOUDFLARED_CPU_LIMIT=0.5
 CLOUDFLARED_MEM_LIMIT=256M
 ```
+
+`rostok stack add cloudflared` asks for the token and writes these.
 
 ### 3. Configure Tunnel Routes
 
