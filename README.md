@@ -111,4 +111,4 @@ Licensed under [MIT](LICENSE).
 
 ---
 
-Made by Anton Shubin · [antonshubin.com/tools](https://antonshubin.com/tools)
+Made by Anton Shubin · [antonshubin.com/tools/rostok](https://antonshubin.com/tools/rostok)
