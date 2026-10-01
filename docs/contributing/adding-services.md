@@ -312,6 +312,32 @@ rostok CLI imports a project's own `+meta.ts` without the project's
 `import type`; import values such as `generatePassword` from
 `"jsr:@rostok/cli/lib"`.
 
+### Keeping a folder's owner (`keepOwner`)
+
+Deploy chowns every volume folder that is not owned by `PUID:PGID` to
+`PUID:PGID`, on every deploy, even when the container is not recreated.
+A database or service that runs as its own user (postgres, mariadb,
+redis, memos) breaks under that: after a `chown -R` every new connection
+to a running Postgres fails with "Permission denied" while the container
+still shows "Up". List such folders in `keepOwner`, relative to
+`VOLUMES_PATH`:
+
+```ts
+export default {
+  // ...
+  keepOwner: ["gitea/db"],
+} satisfies StackMeta
+```
+
+Deploy creates a missing keep-owner folder (owned by the deploy user, or
+root through `sudo -n`) but never chowns it, so the image sets the owner
+on first start. It still refuses a path that leaves `VOLUMES_PATH`
+through a symlink. Each entry must match the path after `${VOLUMES_PATH}/`
+in `compose.yml`; a test in `stacks/meta.test.ts` checks it. A stack
+whose data folder the container writes as `PUID:PGID` (it takes `PUID`
+and `PGID` or `user:`) needs nothing here. Deploy reads `keepOwner` from
+the same `+meta.ts` as `fileMounts`.
+
 ---
 
 ## Verify before opening a PR

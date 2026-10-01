@@ -27,6 +27,8 @@ export default {
   description: "Photo library with machine learning and kiosk slideshow (immich-app/immich)",
   category: "media",
   requires: ["traefik"],
+  // Postgres runs as its own user: deploy must not chown its folder to PUID:PGID (#312).
+  keepOwner: ["immich/postgres"],
   variables: [
     {
       key: "IMMICH_DOMAIN",

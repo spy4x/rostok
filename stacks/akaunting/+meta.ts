@@ -12,6 +12,8 @@ export default {
   description: "Self-hosted accounting and invoicing (Akaunting + MariaDB)",
   category: "productivity",
   requires: ["traefik"],
+  // MariaDB runs as its own user: deploy must not chown its folder to PUID:PGID (#312).
+  keepOwner: ["akaunting/db"],
   variables: [
     {
       key: "AKAUNTING_DOMAIN",

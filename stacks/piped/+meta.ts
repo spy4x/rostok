@@ -20,6 +20,8 @@ export default {
   description: "Privacy-friendly YouTube front end (TeamPiped/Piped)",
   category: "media",
   requires: ["traefik"],
+  // Postgres runs as its own user: deploy must not chown its folder to PUID:PGID (#312).
+  keepOwner: ["piped/postgres"],
   variables: [
     {
       key: "PIPED_DOMAIN",
