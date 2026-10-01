@@ -13,7 +13,33 @@ http:
     redirect-to-https:
       redirectScheme:
         scheme: https
+    # Authelia (on the home server) as the login for resources that Pangolin's own
+    # SSO would otherwise guard. The resource's Pangolin router stays, at a lower
+    # priority, as the fallback if this file is lost.
+    authelia:
+      forwardAuth:
+        address: "https://auth.antonshubin.com/api/authz/forward-auth"
+        trustForwardHeader: false
+        authResponseHeaders:
+          - Remote-User
+          - Remote-Groups
+          - Remote-Email
+          - Remote-Name
   routers:
+    # OpenCode on portable: Authelia instead of Pangolin SSO. Pangolin generates
+    # `1-OpenCode-router` (priority 100, badger); this one wins at priority 200
+    # and reuses Pangolin's generated service. Authelia needs a matching rule
+    # for the host (docs in the homelab repo, docs/servers/portable.md).
+    code2-authelia-router:
+      rule: "Host(`code2.antonshubin.com`)"
+      service: "1-OpenCode-service@http"
+      priority: 200
+      entryPoints:
+        - websecure
+      middlewares:
+        - authelia
+      tls:
+        certResolver: letsencrypt
     main-app-router-redirect:
       rule: "Host(`tunnel-cloud.antonshubin.com`)"
       service: next-service
