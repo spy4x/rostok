@@ -47,9 +47,7 @@ Service on the remote site
 The server key `CONTACT_EMAIL` becomes the ACME account address in
 `traefik/traefik_config.yml`. `before.deploy.ts` writes both values into the
 deployed copies of the two files and fails the deploy when either is missing or
-is not a plain host name or address. Keep `PANGOLIN_TRAEFIK_CONTAINER_NAME` from
-starting with `hl-traefik`: the main traefik deploy matches containers by that
-prefix.
+is not a plain host name or address.
 
 Pangolin's own settings (`dashboard_url`, `base_domain`, the gerbil endpoint)
 live in `config.yml` inside the `pangolin-config` volume, written by the
@@ -179,7 +177,11 @@ Losing it means re-enrolling every site.
   provider's `badger` instance does NOT share Pangolin session state with the
   HTTP provider's `badger`, so file-defined routers referencing `badger` will
   not actually gate traffic. Keep Pangolin-login routers in the HTTP provider
-  (Pangolin UI Resources); a file router either uses another login (for
-  example a `forwardAuth` middleware) or adds non-auth middlewares only.
+  (Pangolin UI Resources).
+- **A file router that takes over a Pangolin host replaces Pangolin's login.**
+  At a higher priority it answers instead of Pangolin's router, badger
+  included, so it must carry its own auth middleware (for example
+  `forwardAuth` to Authelia). A router with header-only middlewares makes the
+  resource public, with no login at all.
 - **volumes**: `pangolin-config` is shared — pangolin uses `/app/config`,
   gerbil writes its key to `/var/config`.

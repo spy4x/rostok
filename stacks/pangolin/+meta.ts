@@ -12,7 +12,7 @@
 //     into the routers of `traefik/dynamic/00-pangolin.yml`; it must match `dashboard_url` in
 //     Pangolin's own `config.yml`, which lives in the `pangolin-config` volume.
 //   - PANGOLIN_*_CONTAINER_NAME: container names, defaulting to hl-pangolin, hl-gerbil and
-//     hl-pangolin-traefik. The Traefik one must not start with `hl-traefik` (see compose.yml).
+//     hl-pangolin-traefik.
 //   - PANGOLIN_*_MEM_LIMIT / PANGOLIN_*_CPU_LIMIT: limits for each of the three containers.
 //
 // Server-level vars (PROJECT, DOMAIN, CONTACT_EMAIL) intentionally NOT declared here;
