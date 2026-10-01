@@ -1,6 +1,7 @@
 import { assert, assertEquals, assertRejects, assertStringIncludes } from "@std/assert"
 import { join, toFileUrl } from "@std/path"
 import { loadCatalog } from "../catalog.ts"
+import { encodeEnvValue, parseEnv } from "../env-files.ts"
 import { UserError } from "../errors.ts"
 import { buildHookEnv, type HookContext, isDeniedEnvKey, runHook } from "./hooks.ts"
 import {
@@ -741,6 +742,49 @@ Deno.test("buildHookEnv: strips one matching layer of quotes from an allowed val
   const { env } = buildHookEnv(ctx, STACK_NAME, {})
   assertEquals(env.DOMAIN, "example.com")
   assertEquals(env.TEST_STACK_TOKEN, "single-quoted")
+})
+
+Deno.test("buildHookEnv: a hook reads a $ value exactly, single-quoted or $$-escaped (#313)", () => {
+  const ctx: HookContext = {
+    ...BASE_CTX,
+    serverEnv: {
+      TEST_STACK_QUOTED: "'p$ssw0rd'",
+      TEST_STACK_ESCAPED: "p$$ssw0rd",
+      TEST_STACK_ESCAPED_DQ: '"p$$ssw0rd"',
+      TEST_STACK_QUOTED_PAIR: "'a$$b'",
+    },
+  }
+  const { env } = buildHookEnv(ctx, STACK_NAME, {})
+  assertEquals(env.TEST_STACK_QUOTED, "p$ssw0rd")
+  assertEquals(env.TEST_STACK_ESCAPED, "p$ssw0rd")
+  assertEquals(env.TEST_STACK_ESCAPED_DQ, "p$ssw0rd")
+  // Single quotes are literal in compose: `$$` stays two dollars.
+  assertEquals(env.TEST_STACK_QUOTED_PAIR, "a$$b")
+})
+
+Deno.test("runHook: the email-mcp hook writes the exact password when it contains $ (#313)", async () => {
+  await withDirs(async (stagingDir) => {
+    await Deno.mkdir(join(stagingDir, "stacks", "email-mcp"), { recursive: true })
+    const password = "p$ssw0rd$"
+    const envText = [
+      "EMAIL_MCP_HOST=mail.example.com",
+      "EMAIL_MCP_USER=me@example.com",
+      `EMAIL_MCP_PASSWORD=${encodeEnvValue("EMAIL_MCP_PASSWORD", password)}`,
+      "EMAIL_MCP_USER_2=you@example.org",
+      "EMAIL_MCP_PASSWORD_2=s3$$cret",
+    ].join("\n")
+    const serverEnv = Object.fromEntries(parseEnv(envText).map((e) => [e.key, e.value]))
+    const hook = new URL("../../stacks/email-mcp/before.deploy.ts", import.meta.url).href
+    await runHook("before", "email-mcp", hook, stagingDir, {
+      ...BASE_CTX,
+      serverEnv,
+      installedStackNames: ["email-mcp"],
+    })
+    const config = await Deno.readTextFile(join(stagingDir, "stacks", "email-mcp", "config.toml"))
+    const lines = config.split("\n")
+    assertEquals(lines.filter((l) => l === `password = "p$ssw0rd$"`).length, 2)
+    assertEquals(lines.filter((l) => l === `password = "s3$cret"`).length, 2)
+  })
 })
 
 Deno.test("buildHookEnv: only one layer of quotes is stripped, and mismatched quotes are left alone", () => {

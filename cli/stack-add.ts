@@ -21,6 +21,7 @@
 import { join } from "@std/path"
 import { reencryptAfterWrite } from "./reencrypt.ts"
 import {
+  encodeEnvValue,
   type EnvEntry,
   readEnvFile,
   serverContextFromRoot,
@@ -204,9 +205,12 @@ export async function stackAdd(
     // 1. --var always wins, even over an existing value. A --var that
     //    happens to match what's already there is "kept", not "new" —
     //    it's not adding a value, just confirming one.
+    // #313: a new value with `$` is single-quoted (encodeEnvValue);
+    // an existing one (step 2) is never re-encoded.
     if (providedValue !== undefined) {
-      writtenEntries.push({ key, value: providedValue })
-      if (providedValue === existingValue) keptCount++
+      const encoded = encodeEnvValue(key, providedValue)
+      writtenEntries.push({ key, value: encoded })
+      if (encoded === existingValue) keptCount++
       else newCount++
       continue
     }
@@ -231,11 +235,12 @@ export async function stackAdd(
 
     const decision = decidePrompt(normalized, resolved?.value)
     let value: string | undefined
+    let fallback: string | undefined
 
     if (decision === "use-resolved" && resolved) {
       value = resolved.value
     } else if (decision === "prompt") {
-      const fallback = typeof normalized.default === "function" ? undefined : normalized.default
+      fallback = typeof normalized.default === "function" ? undefined : normalized.default
       // #212: every prompt carries its --var key in parentheses. A
       // stack's own `question` (when set) is the human label; with no
       // question, the key alone is the label, so it's never shown twice
@@ -256,13 +261,16 @@ export async function stackAdd(
     // #210 + review: an unresolved `${...}` left after default
     // resolution is an error naming the key — checked only for a value
     // this run just resolved from a default, not for whatever was
-    // already sitting in .env (step 2 above never reaches here).
-    const bad = value.match(/\$\{[^}]*\}/)
+    // already sitting in .env (step 2 above never reaches here). #313:
+    // never for a value a person typed either: it is written literally
+    // (encodeEnvValue), and this error would print part of it.
+    const fromDefault = value === resolved?.value || value === fallback
+    const bad = fromDefault ? value.match(/\$\{[^}]*\}/) : null
     if (bad) {
       throw new UserError(`unresolved reference in ${key}: ${bad[0]}`)
     }
 
-    writtenEntries.push({ key, value })
+    writtenEntries.push({ key, value: encodeEnvValue(key, value) })
     newCount++
   }
 

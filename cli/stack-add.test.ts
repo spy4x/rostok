@@ -396,6 +396,34 @@ Deno.test("an explicit --var still overrides an existing value", async () => {
   })
 })
 
+Deno.test("a --var value with $ is written single-quoted, and a re-run keeps it (#313)", async () => {
+  await withTmpDir(async (dir) => {
+    const catalogDir = join(dir, "catalog")
+    await writeCatalog(catalogDir, { secretstack: SECRET_STACK_META })
+    await seedServer(dir, "test", { PROJECT: "hl", DOMAIN: "example.com" })
+    const providedVars = { SECRETSTACK_PASSWORD: "p$ssw0rd" }
+
+    await stackAdd("secretstack", "test", {
+      cwd: dir,
+      catalogDir,
+      nonInteractive: true,
+      providedVars,
+    })
+    const second = await stackAdd("secretstack", "test", {
+      cwd: dir,
+      catalogDir,
+      nonInteractive: true,
+      providedVars,
+    })
+
+    const text = await Deno.readTextFile(join(dir, "servers", "test", ".env"))
+    assertEquals(text.split("\n").filter((l) => l.startsWith("SECRETSTACK_PASSWORD=")), [
+      "SECRETSTACK_PASSWORD='p$ssw0rd'",
+    ])
+    assertEquals(second.keptCount, 1)
+  })
+})
+
 // ─────────────────────────────────────────────────────────────────────
 // #210 point 4 — an unresolved ${...} reference after default
 // resolution is an error naming the key, and writes nothing.

@@ -144,6 +144,31 @@ const VALID_BASE = {
   DOCKER_GROUP_ID: "988",
 }
 
+Deno.test("resolveDeployEnv: refuses a bare $ in a value, naming the key but no part of the value (#313)", () => {
+  const err = assertThrows(
+    () =>
+      resolveDeployEnv(
+        { ...VALID_BASE, EMAIL_MCP_PASSWORD_2: "p$ssw0rd", OTHER_PW: "x${y" },
+        "servers/home/.env",
+        ROOT_ENV_PATH,
+      ),
+    UserError,
+  )
+  assertStringIncludes(err.message, "EMAIL_MCP_PASSWORD_2, OTHER_PW")
+  assertStringIncludes(err.message, "servers/home/.env")
+  assertEquals(err.message.includes("ssw0rd"), false)
+  assertEquals(err.message.includes("{y"), false)
+})
+
+Deno.test("resolveDeployEnv: accepts a $ value in single quotes or written as $$ (#313)", () => {
+  const { env } = resolveDeployEnv(
+    { ...VALID_BASE, A_PW: "'p$ssw0rd'", B_PW: "p$$ssw0rd" },
+    "servers/home/.env",
+    ROOT_ENV_PATH,
+  )
+  assertEquals(env.A_PW, "'p$ssw0rd'")
+})
+
 Deno.test("resolveDeployEnv: rejects an SSH_ADDRESS starting with -", () => {
   // -oProxyCommand=<cmd> runs <cmd> locally the moment ssh (or rsync,
   // which re-spawns ssh with the same target) parses it as an option.

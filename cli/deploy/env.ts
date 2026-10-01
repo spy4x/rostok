@@ -67,6 +67,7 @@ import {
   validateSshUser,
 } from "../server-keys.ts"
 import { UserError } from "../errors.ts"
+import { keysWithUnsafeDollar } from "../env-files.ts"
 
 /**
  * Build the UserError message for a nested/equal PATH_APPS/VOLUMES_PATH
@@ -314,6 +315,23 @@ export function resolveDeployEnv(
       `SSH_ADDRESS's user "${addressUser}" disagrees with SSH_USER "${resolved.SSH_USER}" ` +
         `(${envPath}) — a hook logs in as SSH_USER, deploy's own ssh/rsync calls log in as ` +
         `SSH_ADDRESS's user; they must be the same account.`,
+    )
+  }
+
+  // #313: refuse before compose ever reads the files. compose would read
+  // a bare `$` in a value as a variable reference and print the "name"
+  // after it, a fragment of the value, in a warning on every stack. The
+  // error names keys only, never a value. Checked last, so the path and
+  // user checks above keep their own messages.
+  const unsafeKeys = keysWithUnsafeDollar(env)
+  if (unsafeKeys.length > 0) {
+    throw new UserError(
+      `a value in ${envPath} or ${rootEnvPath} contains a "$" that docker compose would read ` +
+        `as a variable, printing part of the value in deploy output. Key(s): ` +
+        // deno-lint-ignore no-control-regex
+        `${unsafeKeys.map((k) => k.replace(/[\x00-\x1f\x7f]/g, "")).join(", ")}. Put each ` +
+        `value in single quotes (KEY='value'), or write each literal "$" as "$$", then ` +
+        `re-encrypt (\`rostok env encrypt\`) and deploy again.`,
     )
   }
 

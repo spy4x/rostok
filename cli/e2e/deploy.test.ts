@@ -833,6 +833,8 @@ Deno.test("e2e: a hook receives $-heavy env values byte-for-byte (no --env-file 
     // it for this reason (see hooks.ts). The key is prefixed with the
     // stack's own name (#217's allowlist, second pass) — an unprefixed
     // SECRET_HASH would now be dropped before it ever reached the hook.
+    // The value is single-quoted, as `stack add` writes it (#313): bare,
+    // compose would read `$abc` as a variable and deploy refuses it.
     const stackDir = join(f.projectDir, "stacks", "hash-stack")
     await Deno.mkdir(stackDir, { recursive: true })
     await Deno.writeTextFile(
@@ -847,7 +849,9 @@ await Deno.writeTextFile("stacks/hash-stack/hash-output.txt", value)
     )
 
     const bcryptStyleValue = `$2y$05$abc$HOME$def`
-    await writeServer(f.projectDir, [`HASH_STACK_SECRET_HASH=${bcryptStyleValue}`], ["hash-stack"])
+    await writeServer(f.projectDir, [`HASH_STACK_SECRET_HASH='${bcryptStyleValue}'`], [
+      "hash-stack",
+    ])
 
     const { result } = await runDeployInProcess(f)
     assertEquals(result.deployedStacks, ["hash-stack"])
@@ -856,6 +860,18 @@ await Deno.writeTextFile("stacks/hash-stack/hash-output.txt", value)
       join(f.remoteDir, "srv", "apps", "stacks", "hash-stack", "hash-output.txt"),
     )
     assertEquals(shipped, bcryptStyleValue)
+  } finally {
+    await teardownFixture(f)
+  }
+})
+
+Deno.test("e2e: deploy refuses a bare $ in .env before compose runs, naming only the key (#313)", async () => {
+  const f = await setupFixture()
+  try {
+    await writeServer(f.projectDir, ["LIBRESPEED_PASSWORD=p$ssw0rd"], ["librespeed"])
+    const error = await assertRejects(() => runDeployInProcess(f), UserError)
+    assertStringIncludes(error.message, "LIBRESPEED_PASSWORD")
+    assertEquals(error.message.includes("ssw0rd"), false)
   } finally {
     await teardownFixture(f)
   }
