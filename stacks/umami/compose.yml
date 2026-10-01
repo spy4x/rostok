@@ -35,7 +35,7 @@ services:
   # https://umami.is
   umami:
     container_name: hl-umami
-    image: ghcr.io/umami-software/umami:latest
+    image: ghcr.io/umami-software/umami:${UMAMI_IMAGE_TAG:-latest}
     environment:
       - DATABASE_TYPE=postgresql
       - DATABASE_URL=postgresql://umami:${UMAMI_DB_PASSWORD}@umami-db:5432/umami
@@ -64,22 +64,16 @@ services:
       - "traefik.enable=true"
       - "traefik.docker.network=proxy"
       - "traefik.http.services.hl-umami.loadbalancer.server.port=3000"
-      - "traefik.http.routers.hl-umami.rule=Host(`stats.${DOMAIN}`)"
+      - "traefik.http.routers.hl-umami.rule=Host(`${UMAMI_DOMAIN}`)"
       - "traefik.http.routers.hl-umami.middlewares=robots-deny@file"
       - "traefik.http.routers.hl-umami.entrypoints=websecure"
       - "traefik.http.routers.hl-umami.tls=true"
       - "traefik.http.routers.hl-umami.tls.certresolver=myresolver"
-      # Proxy /umami/ through the main domain (ad-blocker + Safari ITP evasion).
-      # Active on the cloud server, which terminates antonshubin.com alongside
-      # Umami, so this router does see apex traffic and is what actually serves
-      # antonshubin.com/umami/* there.
-      #
-      # antonshubin.com used to be served from the home server too, which runs no
-      # Umami container and so needed a file-provider route forwarding to
-      # stats.${DOMAIN}. The site is now consolidated onto cloud, so these labels
-      # are the only leg and that file is gone.
+      # Proxy /umami/ through the main site's domain (ad-blocker and Safari ITP evasion).
+      # The site must be served by this server's Traefik: UMAMI_PROXY_DOMAIN (and its www host)
+      # then reach Umami at /umami/*. The prefix is stripped before Umami sees the request.
       - "traefik.http.middlewares.umami-stripprefix.stripprefix.prefixes=/umami"
-      - "traefik.http.routers.hl-umami-proxy.rule=(Host(`${DOMAIN}`) || Host(`www.${DOMAIN}`)) && PathPrefix(`/umami/`)"
+      - "traefik.http.routers.hl-umami-proxy.rule=(Host(`${UMAMI_PROXY_DOMAIN}`) || Host(`${UMAMI_PROXY_WWW_DOMAIN}`)) && PathPrefix(`/umami/`)"
       - "traefik.http.routers.hl-umami-proxy.middlewares=umami-stripprefix,robots-deny@file"
       - "traefik.http.routers.hl-umami-proxy.entrypoints=websecure"
       - "traefik.http.routers.hl-umami-proxy.tls=true"
