@@ -216,3 +216,18 @@ Deno.test("arktype smoke: narrow() with arktype 2.x API used in production", () 
   assertEquals(typeof bad.summary, "string")
   assertStringIncludes(bad.summary, "string or function")
 })
+
+Deno.test("validateStackMeta: accepts keepOwner relative to VOLUMES_PATH", () => {
+  const meta = validateStackMeta({ ...validStack, keepOwner: ["gitea/db"] })
+  assertEquals(meta.keepOwner, ["gitea/db"])
+})
+
+Deno.test("validateStackMeta: rejects an absolute or .. keepOwner entry", () => {
+  for (const bad of ["/gitea/db", "../db", "a/../../db", "", "."]) {
+    assertThrows(
+      () => validateStackMeta({ ...validStack, keepOwner: [bad] }),
+      Error,
+      `keepOwner entry "${bad}" must be a path relative to VOLUMES_PATH`,
+    )
+  }
+})

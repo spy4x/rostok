@@ -63,6 +63,17 @@ export interface StackMeta {
    * entry must match the path after `${VOLUMES_PATH}/` in `compose.yml`.
    */
   fileMounts?: string[]
+  /**
+   * Volume folders, relative to VOLUMES_PATH, whose owner deploy must not
+   * change (#312): a database or service that runs as its own user, such
+   * as postgres (uid 70 or 999) or redis. A `chown -R` to PUID:PGID makes
+   * every new connection to a running database fail while the container
+   * still shows "Up". Deploy still creates a missing folder (with the
+   * deploy user's own rights, never chowned: the image sets the owner on
+   * first start) and still refuses a symlink out of VOLUMES_PATH. Each
+   * entry must match the path after `${VOLUMES_PATH}/` in `compose.yml`.
+   */
+  keepOwner?: string[]
 }
 
 // Runtime schemas — defense-in-depth beyond TypeScript's `satisfies` check.
@@ -95,6 +106,7 @@ export const StackMetaSchema: type.Any = type({
   variables: VariableSpec.array(),
   "requires?": "string[]",
   "fileMounts?": "string[]",
+  "keepOwner?": "string[]",
 })
 
 /**
@@ -129,6 +141,17 @@ export function validateStackMeta(input: unknown): StackMeta {
       throw new Error(
         `Invalid +meta.ts: fileMounts entry "${mount}" must be a path relative to VOLUMES_PATH, ` +
           `with no ".." component (e.g. "traefik/letsencrypt/acme.json").`,
+      )
+    }
+  }
+  for (const dir of result.keepOwner ?? []) {
+    const parts = dir.split("/")
+    if (
+      dir.startsWith("/") || parts.includes("..") || !parts.some((p: string) => p && p !== ".")
+    ) {
+      throw new Error(
+        `Invalid +meta.ts: keepOwner entry "${dir}" must be a path relative to VOLUMES_PATH, ` +
+          `with no ".." component (e.g. "immich/postgres").`,
       )
     }
   }

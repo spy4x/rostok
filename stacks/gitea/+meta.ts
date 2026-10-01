@@ -12,6 +12,8 @@ export default {
   description: "Self-hosted Git service (gitea/gitea + Postgres)",
   category: "devtools",
   requires: ["traefik"],
+  // Postgres runs as its own user: deploy must not chown its folder to PUID:PGID (#312).
+  keepOwner: ["gitea/db"],
   variables: [
     {
       key: "GITEA_DOMAIN",

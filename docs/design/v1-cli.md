@@ -234,6 +234,22 @@ reference is `${SERVER_NAME}`. v1 keeps this minimal.
 - `default: () => generatePassword(N)` — `crypto.getRandomValues`, base64
 - Routed through age64 encryption automatically (see §6)
 
+### Volume ownership (`keepOwner`, `fileMounts`)
+
+Deploy creates every `${VOLUMES_PATH}/...` folder of a stack's
+`compose.yml` and chowns it to `PUID:PGID`. Two optional fields change
+that, both lists of paths relative to `VOLUMES_PATH`:
+
+- `fileMounts`: a volume that is a single file (Traefik's `acme.json`).
+  Never created or chowned; deploy checks it is a regular file.
+- `keepOwner` (#312): a folder owned by a database or service that runs
+  as its own user (postgres, mariadb, redis, memos). Deploy creates it
+  when missing, but never chowns it, because a `chown -R` to `PUID:PGID`
+  on a running database makes every new connection fail while the
+  container still shows "Up". A folder it creates is owned by the deploy
+  user (root, or root through `sudo -n`); the image sets the owner on its
+  first start. Deploy still refuses a symlink out of `VOLUMES_PATH`.
+
 ### Validation library
 
 `npm:arktype@^2` (chosen after verifying the "faster + leaner than

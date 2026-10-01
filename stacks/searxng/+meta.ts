@@ -16,6 +16,8 @@ export default {
   description: "Meta search engine (searxng/searxng)",
   category: "tools",
   requires: ["traefik"],
+  // Redis runs as its own user: deploy must not chown its folder to PUID:PGID (#312).
+  keepOwner: ["searxng/redis"],
   variables: [
     {
       key: "SEARXNG_DOMAIN",

@@ -137,29 +137,51 @@ const META_IMPORT_HINT = `A project's own +meta.ts is imported without the proje
  * UserError for a stack the catalog doesn't know: guessing "no file
  * mounts" there could turn a file mount into a folder.
  */
-export async function loadStackFileMounts(
+export function loadStackFileMounts(
   stackName: string,
   files: Map<string, string>,
 ): Promise<string[]> {
+  return loadMetaList(stackName, files, "fileMounts")
+}
+
+/**
+ * The `keepOwner` folders a stack declares in its `+meta.ts`, relative
+ * to VOLUMES_PATH (#312). Loaded like `loadStackFileMounts`; a local
+ * `+meta.ts` that fails to load falls back to the catalog's, or throws
+ * for a stack the catalog doesn't know: guessing "none" there could
+ * chown a running database's folder.
+ */
+export function loadStackKeepOwner(
+  stackName: string,
+  files: Map<string, string>,
+): Promise<string[]> {
+  return loadMetaList(stackName, files, "keepOwner")
+}
+
+async function loadMetaList(
+  stackName: string,
+  files: Map<string, string>,
+  field: "fileMounts" | "keepOwner",
+): Promise<string[]> {
   const bundled = loadCatalog().find((e) => e.name === stackName)?.meta
   const metaUrl = files.get("+meta.ts")
-  if (!metaUrl) return bundled?.fileMounts ?? []
+  if (!metaUrl) return bundled?.[field] ?? []
   try {
     const mod = await import(metaUrl)
-    return validateStackMeta(mod.default).fileMounts ?? []
+    return validateStackMeta(mod.default)[field] ?? []
   } catch (err) {
     const reason = err instanceof Error ? err.message : String(err)
     if (!bundled) {
       throw new UserError(
-        `could not load stacks/${stackName}/+meta.ts to read its fileMounts: ${reason}. ` +
+        `could not load stacks/${stackName}/+meta.ts to read its ${field}: ${reason}. ` +
           META_IMPORT_HINT,
       )
     }
     console.warn(
       `Warning: could not load stacks/${stackName}/+meta.ts (${reason}); ` +
-        `using the bundled catalog's fileMounts for ${stackName} instead. ${META_IMPORT_HINT}`,
+        `using the bundled catalog's ${field} for ${stackName} instead. ${META_IMPORT_HINT}`,
     )
-    return bundled.fileMounts ?? []
+    return bundled[field] ?? []
   }
 }
 
@@ -171,6 +193,11 @@ export interface VolumeScriptOptions {
   volumePaths: string[]
   /** Absolute paths of volumes that are files (from `fileMounts`), not folders. */
   fileMounts: string[]
+  /**
+   * Absolute paths of volume folders whose owner is kept (`keepOwner`, #312):
+   * created when missing, never chowned. Optional: omitted means none.
+   */
+  keepOwner?: string[]
   puid: string
   pgid: string
   /** True when the remote user isn't root, so mkdir/chown go through `sudo -n`. */
@@ -224,6 +251,11 @@ const SUDO_FOLDER_SCRIPT = `${RESOLVE_FUNCTIONS}
 rostok_base_init "$3" && rostok_resolve "$1" && mkdir -p -- "$rostok_real" &&
 rostok_resolve "$1" && chown -R "$2" -- "$rostok_real"`
 
+/** Like `SUDO_FOLDER_SCRIPT` but never chowns: for a `keepOwner` folder (`$1`, `$3`). */
+const SUDO_KEEP_SCRIPT = `${RESOLVE_FUNCTIONS}
+rostok_base_init "$3" && rostok_resolve "$1" && mkdir -p -- "$rostok_real" &&
+rostok_resolve "$1"`
+
 /** Prints why and fails unless `$1` is a regular file. */
 const FILE_FUNCTION = `rostok_file() {
   [ -f "$1" ] && return 0
@@ -272,7 +304,9 @@ export function generateFileMountCheckScript(
 
 /**
  * Build the remote script that creates and chowns every volume folder
- * (every volume path except the file mounts) to `puid:pgid`. Any failure
+ * (every volume path except the file mounts) to `puid:pgid`. A folder in
+ * `keepOwner` (#312) is created when missing and resolved like the rest,
+ * but never chowned: a running database would lose access to its files. Any failure
  * fails the whole script and its stderr reaches the caller: nothing is
  * hidden behind `|| true` or `2>/dev/null`.
  *
@@ -295,24 +329,35 @@ export function generateVolumeCreationScript(opts: VolumeScriptOptions): string 
   const owner = `${shQuote(opts.puid)}:${shQuote(opts.pgid)}`
   const base = shQuote(opts.volumesPath)
   const files = new Set(fileMountsInUse(opts.volumePaths, opts.fileMounts))
+  const keep = new Set((opts.keepOwner ?? []).map(pathKey))
   const folders = opts.volumePaths.filter((p) => !files.has(p))
   if (!opts.needsSudo) {
     const steps = [`rostok_base_init ${base}`]
     for (const path of folders) {
       const p = shQuote(path)
       const r = `"$rostok_real"`
-      steps.push(
-        `rostok_resolve ${p} && mkdir -p -- ${r} && rostok_resolve ${p} && chown -R ${owner} -- ${r}`,
-      )
+      const chown = keep.has(pathKey(path)) ? "" : ` && chown -R ${owner} -- ${r}`
+      steps.push(`rostok_resolve ${p} && mkdir -p -- ${r} && rostok_resolve ${p}${chown}`)
     }
     return `${RESOLVE_FUNCTIONS}\n${steps.join(" &&\n")}\n`
   }
   const sudoScript = shQuote(SUDO_FOLDER_SCRIPT)
-  return folders.map((path) => {
+  const sudoKeepScript = shQuote(SUDO_KEEP_SCRIPT)
+  const hasKeep = folders.some((p) => keep.has(pathKey(p)))
+  const body = folders.map((path) => {
     const p = shQuote(path)
+    if (keep.has(pathKey(path))) {
+      // Never chowned, so an existing folder needs nothing privileged. The
+      // resolve check still runs with the user's own rights: a symlinked
+      // parent out of VOLUMES_PATH, or a folder the user cannot enter, falls
+      // through to the sudo script, which refuses the first and handles the second.
+      return `( [ -d ${p} ] && [ ! -L ${p} ] && rostok_base_init ${base} && ` +
+        `rostok_resolve ${p} || sudo -n sh -c ${sudoKeepScript} sh ${p} ${owner} ${base} )`
+    }
     // `[ ! -L ]`: `stat` without -L reads a symlink's own owner, so a
     // PUID-owned link to `/etc` would otherwise skip the sudo check.
     return `( [ -d ${p} ] && [ ! -L ${p} ] && [ "$(stat -c %u:%g -- ${p})" = ${owner} ] || ` +
       `sudo -n sh -c ${sudoScript} sh ${p} ${owner} ${base} )`
   }).join(" &&\n") + "\n"
+  return hasKeep ? `${RESOLVE_FUNCTIONS}\n${body}` : body
 }

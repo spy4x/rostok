@@ -90,6 +90,7 @@ import {
   generateFileMountCheckScript,
   generateVolumeCreationScript,
   loadStackFileMounts,
+  loadStackKeepOwner,
 } from "./volumes.ts"
 import {
   type DeployResult,
@@ -364,6 +365,13 @@ export async function runDeploy(
         fileMounts.push(`${VOLUMES_PATH}/${rel}`)
       }
     }
+    // #312: folders a stack's +meta.ts declares keepOwner are created, never chowned.
+    const keepOwner: string[] = []
+    for (const [stackName, resolved] of stackFiles) {
+      for (const rel of await loadStackKeepOwner(stackName, resolved.files)) {
+        keepOwner.push(`${VOLUMES_PATH}/${rel}`)
+      }
+    }
     // Checked now, in a read-only call, before any hook, stale cleanup,
     // file sync or container change: a missing file mount stops the
     // deploy while every stack is still as it was.
@@ -628,13 +636,14 @@ export async function runDeploy(
       // volumePaths was extracted and checked right after staging, above.
       if (volumePaths.length > 0 && VOLUMES_PATH) {
         console.log(
-          `Preparing ${volumePaths.length} volume path(s) (declared file mounts are left ` +
+          `Preparing ${volumePaths.length} volume path(s) (declared file mounts and keep-owner folders are left ` +
             `alone)...`,
         )
         const script = generateVolumeCreationScript({
           volumesPath: VOLUMES_PATH,
           volumePaths,
           fileMounts,
+          keepOwner,
           puid: PUID,
           pgid: PGID,
           needsSudo,
