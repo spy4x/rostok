@@ -853,3 +853,40 @@ Deno.test("loadStackKeepOwner: the bundled catalog keeps the owner of every data
     assertEquals(await loadStackKeepOwner(stack, new Map()), [folder], stack)
   }
 })
+
+for (const shell of SHELLS) {
+  Deno.test(`generateVolumeCreationScript (${shell}): as non-root, an existing keepOwner folder behind a symlinked parent out of VOLUMES_PATH is refused`, async () => {
+    const root = await tempRoot("rostok-volumes-keep-parent-")
+    try {
+      await Deno.mkdir(`${root}/v`)
+      await Deno.mkdir(`${root}/outside/db`, { recursive: true })
+      await Deno.symlink(`${root}/outside`, `${root}/v/gitea`)
+      const db = `${root}/v/gitea/db`
+      const script = generateVolumeCreationScript(
+        opts(`${root}/v`, [db], { keepOwner: [db], needsSudo: true }),
+      )
+      const result = await runScript(script, shell)
+      assertEquals(result.success, false)
+      assertStringIncludes(result.stderr, "outside VOLUMES_PATH")
+      assertEquals(result.chownCalls, [])
+    } finally {
+      await Deno.remove(root, { recursive: true })
+    }
+  })
+
+  Deno.test(`generateVolumeCreationScript (${shell}): as non-root, an existing keepOwner folder inside VOLUMES_PATH needs no sudo`, async () => {
+    const root = await tempRoot("rostok-volumes-keep-nosudo-")
+    try {
+      const db = `${root}/v/gitea/db`
+      await Deno.mkdir(db, { recursive: true })
+      const script = generateVolumeCreationScript(
+        opts(`${root}/v`, [db], { keepOwner: [db], needsSudo: true }),
+      )
+      const result = await runScript(script, shell)
+      assertEquals(result.success, true, result.stderr)
+      assertEquals(result.sudoCalls, [])
+    } finally {
+      await Deno.remove(root, { recursive: true })
+    }
+  })
+}

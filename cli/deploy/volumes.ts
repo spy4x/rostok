@@ -343,16 +343,21 @@ export function generateVolumeCreationScript(opts: VolumeScriptOptions): string 
   }
   const sudoScript = shQuote(SUDO_FOLDER_SCRIPT)
   const sudoKeepScript = shQuote(SUDO_KEEP_SCRIPT)
-  return folders.map((path) => {
+  const hasKeep = folders.some((p) => keep.has(pathKey(p)))
+  const body = folders.map((path) => {
     const p = shQuote(path)
     if (keep.has(pathKey(path))) {
-      // Never chowned, so an existing folder needs nothing privileged.
-      return `( [ -d ${p} ] && [ ! -L ${p} ] || ` +
-        `sudo -n sh -c ${sudoKeepScript} sh ${p} ${owner} ${base} )`
+      // Never chowned, so an existing folder needs nothing privileged. The
+      // resolve check still runs with the user's own rights: a symlinked
+      // parent out of VOLUMES_PATH, or a folder the user cannot enter, falls
+      // through to the sudo script, which refuses the first and handles the second.
+      return `( [ -d ${p} ] && [ ! -L ${p} ] && rostok_base_init ${base} && ` +
+        `rostok_resolve ${p} || sudo -n sh -c ${sudoKeepScript} sh ${p} ${owner} ${base} )`
     }
     // `[ ! -L ]`: `stat` without -L reads a symlink's own owner, so a
     // PUID-owned link to `/etc` would otherwise skip the sudo check.
     return `( [ -d ${p} ] && [ ! -L ${p} ] && [ "$(stat -c %u:%g -- ${p})" = ${owner} ] || ` +
       `sudo -n sh -c ${sudoScript} sh ${p} ${owner} ${base} )`
   }).join(" &&\n") + "\n"
+  return hasKeep ? `${RESOLVE_FUNCTIONS}\n${body}` : body
 }
