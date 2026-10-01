@@ -171,3 +171,23 @@ On a new server, deploy Traefik first and let it start once, so it
 writes `acme.json`. If this stack is already in `config.json`, run
 `rostok deploy <server> traefik` for that first deploy, then deploy the
 whole server.
+
+## A sending account for an app
+
+An app that mails people (a site's newsletter, a contact form) should log in
+to SMTP with an account of its own, never with the owner's personal password.
+`scripts/stalwart/ensure-account.ts` creates such an account and, with
+`--redirect`, installs a Sieve script on it that forwards every reply to the
+owner's own address, so replies reach a mailbox someone reads:
+
+```bash
+STALWART_ADMIN_PASSWORD=… APP_PW=… deno run -A scripts/stalwart/ensure-account.ts \
+  --server mail.example.com --address hello@example.com \
+  --description "Jane Doe" --password-env APP_PW --redirect jane@example.com
+```
+
+Keep the password in the server's `.env` (then `deno task env:encrypt`) and in
+the app's own env. The script is idempotent: an existing account and its
+password are left alone, and the redirect script is replaced on every run.
+Stalwart only lets an account send from its own addresses, so the app's `From`
+is the new address; a display name (`Jane Doe <hello@example.com>`) is fine.
