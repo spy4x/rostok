@@ -1013,6 +1013,46 @@ Deno.test("e2e: a declared file mount is checked before any write, and the volum
   }
 })
 
+Deno.test("e2e: a keepOwner folder from the stack's +meta.ts is created but never chowned", async () => {
+  // #312: chowning a running Postgres folder to PUID:PGID broke every new connection.
+  const f = await setupFixture()
+  try {
+    const stackDir = join(f.projectDir, "stacks", "keep-db")
+    await Deno.mkdir(stackDir, { recursive: true })
+    await Deno.writeTextFile(
+      join(stackDir, "compose.yml"),
+      [
+        "name: ${PROJECT}",
+        "services:",
+        "  db:",
+        "    image: busybox",
+        "    volumes:",
+        "      - ${VOLUMES_PATH}/keep-db/db:/var/lib/postgresql/data:z",
+        "      - ${VOLUMES_PATH}/keep-db/data:/data:z",
+      ].join("\n") + "\n",
+    )
+    await Deno.writeTextFile(
+      join(stackDir, "+meta.ts"),
+      `export default { name: "keep-db", description: "d", variables: [], ` +
+        `keepOwner: ["keep-db/db"] }\n`,
+    )
+    await writeServer(f.projectDir, [], ["keep-db"])
+
+    const { remote } = await runDeployInProcess(f)
+    const volumeScript = remote.shellScripts.find((s) => s.includes("rostok_resolve '"))
+    assert(volumeScript, `expected a volume script, got:\n${remote.shellScripts.join("\n---\n")}`)
+    const lineOf = (path: string) =>
+      volumeScript!.split("\n").find((l) => l.startsWith(`rostok_resolve '${path}'`))
+    const db = lineOf("/srv/volumes/keep-db/db")
+    const data = lineOf("/srv/volumes/keep-db/data")
+    assert(db && data, `missing a folder line in:\n${volumeScript}`)
+    assertEquals(db!.includes("chown"), false, db)
+    assertStringIncludes(data!, "chown -R")
+  } finally {
+    await teardownFixture(f)
+  }
+})
+
 Deno.test("e2e: a missing declared file mount stops the deploy before stale cleanup or file sync", async () => {
   const f = await setupFixture()
   try {
