@@ -21,6 +21,12 @@ export interface ComposeTarget {
    * stack directory (`<apps>/stacks/<name>`), so it is not used.
    */
   appsRoot: string
+  /**
+   * Services that had a running container when the target was read
+   * (`com.docker.compose.service`), sorted. Empty when the `docker ps` output
+   * carried no service column.
+   */
+  services: string[]
 }
 
 /** The `docker ps --format` template that `parseComposeTargets` reads. */
@@ -28,6 +34,7 @@ export const COMPOSE_LABELS_FORMAT = [
   `{{.Label "com.docker.compose.project"}}`,
   `{{.Label "com.docker.compose.project.config_files"}}`,
   `{{.Label "com.docker.compose.project.working_dir"}}`,
+  `{{.Label "com.docker.compose.service"}}`,
 ].join("\t")
 
 /** What `parseComposeTargets` found in `docker ps` output. */
@@ -54,25 +61,29 @@ export interface ParsedComposeTargets {
  */
 export function parseComposeTargets(psOutput: string, stackDir: string): ParsedComposeTargets {
   const suffix = `/stacks/${stackDir}/compose.yml`
-  const groups = new Map<string, { project: string; appsRoot: string; lists: string[][] }>()
+  const groups = new Map<
+    string,
+    { project: string; appsRoot: string; lists: string[][]; services: Set<string> }
+  >()
   for (const line of psOutput.split("\n")) {
-    const [project, files] = line.split("\t").map((part) => part.trim())
+    const [project, files, , service] = line.split("\t").map((part) => part.trim())
     if (!project || !files) continue
     const configFiles = files.split(",").map((file) => file.trim()).filter(Boolean)
     const own = configFiles.find((file) => file.endsWith(suffix))
     if (!own) continue
     const appsRoot = own.slice(0, -suffix.length)
     const key = JSON.stringify([project, appsRoot])
-    const group = groups.get(key) ?? { project, appsRoot, lists: [] }
+    const group = groups.get(key) ?? { project, appsRoot, lists: [], services: new Set() }
     group.lists.push(configFiles)
+    if (service) group.services.add(service)
     groups.set(key, group)
   }
   const targets: ComposeTarget[] = []
   const conflicts: string[] = []
-  for (const { project, appsRoot, lists } of groups.values()) {
+  for (const { project, appsRoot, lists, services } of groups.values()) {
     const longest = lists.reduce((a, b) => b.length > a.length ? b : a)
     if (lists.every((list) => isOrderedSubsequence(list, longest))) {
-      targets.push({ project, configFiles: longest, appsRoot })
+      targets.push({ project, configFiles: longest, appsRoot, services: [...services].sort() })
       continue
     }
     const distinct = [...new Set(lists.map((list) => list.join(",")))]

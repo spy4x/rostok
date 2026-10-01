@@ -121,6 +121,11 @@ then be stopped even where the apps root has no env files.
   or one of those env files no longer exists, `up -d` does not run: the stack stays stopped and
   the backup is reported as failed, rather than rebuilding the stack from wrong config. An old
   layout with only `.env` at the apps root therefore never gets an automatic rebuild.
+- `start` exits 0 but a service that ran before the stop has no container now (Watchtower removed
+  only that one, and `start` skips what does not exist): the runner lists the running services with
+  `docker compose ps --services --status running`, runs the same `up -d` fallback for the missing
+  ones, and checks again. If any service is still missing, the stack's backup is reported as
+  failed, so the report and ntfy show it.
 - The containers of one project carry different compose file lists (a deploy override changed
   only some services, so only those were recreated with it): the runner uses the longest list,
   as long as every other list fits inside it in the same order. Lists that do not fit together
