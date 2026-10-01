@@ -80,11 +80,10 @@ The shape (placeholders — replace `<...>` with your own values):
   `node_modules/@deepseek-ai/dsh-client-connection/lib/index.js`
   `PRIVILEGED_METHODS`). The fix is a Traefik middleware that rewrites
   those headers to `127.0.0.1:3080` for `<dsh>.<your-domain>`
-  requests. Lives at `servers/cloud/configs/pangolin/traefik/dynamic_config.yml`
+  requests. Lives at `servers/cloud/configs/pangolin/dynamic/<nn>-<name>.yml`
   in the deploy tree, not in the Pangolin catalog stack (per-host
-  config). After editing, `ssh <cloud> touch
-  ~/apps/rostok/configs/pangolin/traefik/dynamic_config.yml` triggers
-  a reload.
+  config); `stacks/pangolin/before.deploy.ts` copies it next to the
+  catalog's Traefik file on deploy.
 
 ## First-run setup
 

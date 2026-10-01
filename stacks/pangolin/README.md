@@ -122,7 +122,14 @@ Then follow the dashboard from step 3.
   hl-traefik first.
 - **traefik configs**: `./traefik` is bind-mounted into `hl-pangolin-traefik`,
   repo edits apply on next deploy. Pangolin-managed routes come from the HTTP
-  provider (`http://pangolin:3001/api/v1/traefik-config`).
+  provider (`http://pangolin:3001/api/v1/traefik-config`). The file provider
+  reads the `traefik/dynamic/` directory: the catalog's `00-pangolin.yml` plus
+  any `configs/pangolin/dynamic/*.yml` of the server, which
+  `before.deploy.ts` copies in (a missing folder is fine). Use it for
+  per-server routers, for example a different login in front of one Pangolin
+  host: a router at a higher `priority` than Pangolin's own, using the service
+  Pangolin generated (`<id>-<name>-service@http`). Pangolin's router stays as
+  the fallback.
 - **badger middleware is per-provider in traefik**: middleware names are scoped
   to the provider that defines them (`badger@file` vs `badger@http`). The file
   provider's `badger` instance does NOT share Pangolin session state with the

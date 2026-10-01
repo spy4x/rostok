@@ -51,6 +51,15 @@ export default {
       secret: true,
     },
     {
+      // Opt-in. A client that sends X-Forwarded-Method and the rest to this Traefik (for example
+      // another server's Traefik asking Authelia here for a login) is only believed when its
+      // address is listed. Leave empty to trust nobody, today's behaviour.
+      key: "TRAEFIK_FORWARDED_TRUSTED_IPS",
+      question: "Addresses (CIDR, comma-separated) whose forwarded headers Traefik trusts?",
+      default: "",
+      required: false,
+    },
+    {
       key: "TRAEFIK_CPU_LIMIT",
       question: "CPU limit for the Traefik container?",
       default: "1",
