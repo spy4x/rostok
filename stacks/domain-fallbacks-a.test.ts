@@ -5,35 +5,9 @@
 // the new keys, and check the hosts that come out.
 
 import { assert, assertEquals } from "@std/assert"
+import { hostsIn, renderCompose } from "./compose-interpolate.ts"
 
 const stacksDir = new URL("./", import.meta.url)
-
-/**
- * Interpolate `${KEY}`, `${KEY:-fallback}` and `${KEY-fallback}` like docker compose, innermost
- * reference first so a fallback may hold another reference. A key missing from `env` is empty.
- */
-function interpolate(text: string, env: Record<string, string>): string {
-  const ref = /\$\{([A-Z0-9_]+)(?:(:?)-([^${}]*))?\}/g
-  let out = text
-  for (let i = 0; i < 10 && out.includes("${"); i++) {
-    out = out.replace(ref, (_m, key: string, colon: string | undefined, fallback?: string) => {
-      const value = env[key]
-      if (fallback === undefined) return value ?? ""
-      return value === undefined || (colon === ":" && value === "") ? fallback : value
-    })
-  }
-  assert(!out.includes("${"), `unresolved reference left in: ${out.match(/\$\{[^}]*/)}`)
-  return out
-}
-
-/** A stack's compose.yml, comment lines removed, rendered with `env`. */
-async function render(stack: string, env: Record<string, string>): Promise<string> {
-  const raw = await Deno.readTextFile(new URL(`./${stack}/compose.yml`, stacksDir))
-  const code = raw.split("\n").filter((l) => !l.trim().startsWith("#")).join("\n")
-  return interpolate(code, env)
-}
-
-const hostsOf = (rendered: string) => [...rendered.matchAll(/Host\(`([^`]*)`\)/g)].map((m) => m[1])
 
 // What a server's .env holds without any key this wave introduced.
 const OLD_ENV = { DOMAIN: "example.com", NGINX_CONTAINER_NAME: "hl-nginx" }
@@ -53,32 +27,32 @@ const CASES: { stack: string; hosts: string[]; override: string }[] = [
 
 for (const { stack, hosts, override } of CASES) {
   Deno.test(`${stack} compose: an .env without the new domain keys keeps the old host`, async () => {
-    assertEquals(hostsOf(await render(stack, OLD_ENV)), hosts)
+    assertEquals(hostsIn(await renderCompose(stack, OLD_ENV)), hosts)
   })
 
   Deno.test(`${stack} compose: ${override} in the .env replaces the host`, async () => {
-    const rendered = await render(stack, { ...OLD_ENV, [override]: "custom.test" })
-    assertEquals(hostsOf(rendered)[0], "custom.test")
+    const rendered = await renderCompose(stack, { ...OLD_ENV, [override]: "custom.test" })
+    assertEquals(hostsIn(rendered)[0], "custom.test")
   })
 }
 
 Deno.test("umami compose: the proxy hosts come from UMAMI_PROXY_DOMAIN and UMAMI_PROXY_WWW_DOMAIN", async () => {
-  const rendered = await render("umami", {
+  const rendered = await renderCompose("umami", {
     ...OLD_ENV,
     UMAMI_PROXY_DOMAIN: "site.test",
     UMAMI_PROXY_WWW_DOMAIN: "www.site.test",
   })
-  assertEquals(hostsOf(rendered), ["stats.example.com", "site.test", "www.site.test"])
+  assertEquals(hostsIn(rendered), ["stats.example.com", "site.test", "www.site.test"])
 })
 
 Deno.test("healthchecks compose: the site URL and allowed hosts follow the old host too", async () => {
-  const rendered = await render("healthchecks", OLD_ENV)
+  const rendered = await renderCompose("healthchecks", OLD_ENV)
   assert(rendered.includes("SITE_ROOT=https://healthchecks.example.com"))
   assert(rendered.includes("ALLOWED_HOSTS=localhost,hl-healthchecks,healthchecks.example.com"))
 })
 
 Deno.test("mirotalk compose: the TURN host and certificate follow the old host without MIROTALK_DOMAIN", async () => {
-  const rendered = await render("mirotalk", OLD_ENV)
+  const rendered = await renderCompose("mirotalk", OLD_ENV)
   assert(rendered.includes("TURN_SERVER_URL=turns:talk.example.com:5349"))
   assert(rendered.includes("--realm=talk.example.com"))
   assert(rendered.includes("--server-name=talk.example.com"))
@@ -87,7 +61,7 @@ Deno.test("mirotalk compose: the TURN host and certificate follow the old host w
 
 Deno.test("mirotalk: coturn reads the certificate file the sidecar writes", async () => {
   for (const env of [OLD_ENV, { ...OLD_ENV, MIROTALK_DOMAIN: "call.test" }]) {
-    const rendered = await render("mirotalk", env)
+    const rendered = await renderCompose("mirotalk", env)
     const domain = rendered.match(/- MIROTALK_DOMAIN=(\S+)/)?.[1]
     assert(domain, "the sidecar gets no MIROTALK_DOMAIN")
     assertEquals(rendered.match(/--cert=(\S+)/)?.[1], `/certs/${domain}.crt`)
