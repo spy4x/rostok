@@ -127,6 +127,9 @@ export class BackupOperations {
     )
 
     if (code === 0) {
+      // `start` exits 0 even when some services had no container to start, so
+      // compare what runs now with what ran before the stop.
+      if (action === "start") await this.ensureServicesRunning(target, config, baseArgs, envArgs)
       return
     }
 
@@ -136,25 +139,11 @@ export class BackupOperations {
       log(
         `start failed (missing container), falling back to up -d:\n${errStr.trim()}`,
       )
-      const reason = await whyCannotRebuild(target)
-      if (reason) {
+      const failure = await this.runUpFallback(target, baseArgs)
+      if (failure) {
         this.markBackupFailed(
           config,
-          `Stack ${target.project} is left stopped: start failed (${errStr.trim()}) and up -d ` +
-            `cannot reproduce the deployed config (${reason})`,
-          `compose_${action}`,
-        )
-        return
-      }
-      const { code: upCode, stderr: upErrStr } = await this.docker(
-        [...baseArgs, ...DEPLOY_ENV_FILE_ARGS, "up", "-d"],
-        target.appsRoot,
-        true,
-      )
-      if (upCode !== 0) {
-        this.markBackupFailed(
-          config,
-          `Error ${action}ing compose stack (start failed: ${errStr}; up -d also failed: ${upErrStr})`,
+          `Stack ${target.project} is left stopped: start failed (${errStr.trim()}) and ${failure}`,
           `compose_${action}`,
         )
         return
@@ -167,6 +156,78 @@ export class BackupOperations {
       config,
       `Error ${action}ing compose stack:\n${errStr}`,
       `compose_${action}`,
+    )
+  }
+
+  /**
+   * Runs the `up -d` fallback. Returns why it could not run or failed, or
+   * `null` when it succeeded. It does not run when the compose files or env
+   * files are gone (see `whyCannotRebuild`).
+   */
+  private async runUpFallback(target: ComposeTarget, baseArgs: string[]): Promise<string | null> {
+    const reason = await whyCannotRebuild(target)
+    if (reason) return `up -d cannot reproduce the deployed config (${reason})`
+    const { code, stderr } = await this.docker(
+      [...baseArgs, ...DEPLOY_ENV_FILE_ARGS, "up", "-d"],
+      target.appsRoot,
+      true,
+    )
+    return code === 0 ? null : `up -d also failed: ${stderr}`
+  }
+
+  /** Services with a running container now, or the reason they could not be listed. */
+  private async runningServices(
+    baseArgs: string[],
+    envArgs: string[],
+    cwd: string,
+  ): Promise<{ services: string[] } | { error: string }> {
+    const { code, stdout, stderr } = await this.docker(
+      [...baseArgs, ...envArgs, "ps", "--services", "--status", "running"],
+      cwd,
+    )
+    if (code !== 0) return { error: stderr.trim() }
+    return { services: stdout.split("\n").map((l) => l.trim()).filter(Boolean) }
+  }
+
+  /**
+   * After a `start` that exited 0, checks that every service that ran before
+   * the stop runs again. A service whose container vanished mid-backup
+   * (Watchtower, say) is skipped by `start` without an error. Missing services
+   * trigger the `up -d` fallback; if any is still missing after it, the stack's
+   * backup is marked failed so the report and ntfy show it.
+   */
+  private async ensureServicesRunning(
+    target: ComposeTarget,
+    config: BackupConfigState,
+    baseArgs: string[],
+    envArgs: string[],
+  ): Promise<void> {
+    if (target.services.length === 0) return // no record of what ran before the stop
+    const now = await this.runningServices(baseArgs, envArgs, target.appsRoot)
+    if ("error" in now) {
+      this.markBackupFailed(
+        config,
+        `Started stack ${target.project} but could not list its running services: ${now.error}`,
+        "compose_start",
+      )
+      return
+    }
+    const missing = (running: string[]) => target.services.filter((s) => !running.includes(s))
+    let lost = missing(now.services)
+    if (lost.length === 0) return
+    log(`start left services down (${lost.join(", ")}), falling back to up -d`)
+    const failure = await this.runUpFallback(target, baseArgs)
+    const after = await this.runningServices(baseArgs, envArgs, target.appsRoot)
+    lost = "services" in after ? missing(after.services) : lost
+    if (failure === null && "services" in after && lost.length === 0) {
+      log("up -d fallback succeeded")
+      return
+    }
+    this.markBackupFailed(
+      config,
+      `Stack ${target.project} is missing services after start (${lost.join(", ")})` +
+        (failure ? `; ${failure}` : ``),
+      "compose_start",
     )
   }
 

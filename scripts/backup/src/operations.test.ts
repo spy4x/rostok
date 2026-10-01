@@ -21,6 +21,11 @@ case "$1" in
   compose)
     case "$*" in
       *" start") [ -s '${dir}/start-stderr' ] && { cat '${dir}/start-stderr' >&2; exit 1; } ;;
+      *" up -d") touch '${dir}/up-done' ;;
+      *" ps --services --status running")
+        [ -e '${dir}/ps-fails' ] && { echo "ps broke" >&2; exit 1; }
+        if [ -e '${dir}/up-done' ]; then cat '${dir}/running-after-up'
+        else cat '${dir}/running-after-start'; fi ;;
     esac
     exit 0 ;;
 esac
@@ -36,6 +41,10 @@ interface FakeAnswers {
   ps?: string
   /** stderr of a failing `docker compose ... start`; empty means start succeeds */
   startStderr?: string
+  /** services `docker compose ps --services --status running` lists after start, one per line */
+  runningAfterStart?: string
+  /** the same after `up -d` ran */
+  runningAfterUp?: string
 }
 
 interface Harness {
@@ -76,6 +85,8 @@ async function withHarness(
     await Deno.writeTextFile(`${dir}/env.log`, ``)
     await Deno.writeTextFile(`${dir}/ps-output`, answers.ps ?? ``)
     await Deno.writeTextFile(`${dir}/start-stderr`, answers.startStderr ?? ``)
+    await Deno.writeTextFile(`${dir}/running-after-start`, answers.runningAfterStart ?? ``)
+    await Deno.writeTextFile(`${dir}/running-after-up`, answers.runningAfterUp ?? ``)
     const env = { ...RUNNER_ENV, PATH: `${bin}:${Deno.env.get("PATH")}` }
     for (const [k, v] of Object.entries(env)) {
       saved.set(k, Deno.env.get(k))
@@ -110,9 +121,9 @@ async function withHarness(
   }
 }
 
-/** A `docker ps` line: project, config files, working dir. */
-function psLine(project: string, files: string, wd: string): string {
-  return `${project}\t${files}\t${wd}\n`
+/** A `docker ps` line: project, config files, working dir, service. */
+function psLine(project: string, files: string, wd: string, service = ``): string {
+  return `${project}\t${files}\t${wd}\t${service}\n`
 }
 
 /** Runs `fn` with an existing temp dir as the apps root, removed afterwards. */
@@ -334,5 +345,76 @@ Deno.test("fails the stack's backup instead of throwing when its apps root is go
     // The runner restarts in a `finally`; a throw there would end the whole run.
     const started = await h.run("start")
     assertEquals(started.errorAtStep, `compose_start`)
+  })
+})
+
+/** A two-service stack ("web", "db") that ran before the stop, in a real temp apps root. */
+async function withTwoServiceStack(
+  answers: FakeAnswers,
+  fn: (h: Harness, wd: string, files: string) => Promise<void>,
+): Promise<void> {
+  await withAppsRoot(async (wd) => {
+    await Deno.mkdir(`${wd}/stacks/app`, { recursive: true })
+    for (const f of [`.env.root`, `.env`, `stacks/app/compose.yml`]) {
+      await Deno.writeTextFile(`${wd}/${f}`, ``)
+    }
+    const files = `${wd}/stacks/app/compose.yml`
+    const ps = psLine(`app`, files, `${wd}/stacks/app`, `web`) +
+      psLine(`app`, files, `${wd}/stacks/app`, `db`)
+    await withHarness({ ps, ...answers }, (h) => fn(h, wd, files))
+  })
+}
+
+Deno.test("runs up -d when start exits 0 but a service that ran before the stop is down", async () => {
+  await withTwoServiceStack(
+    { runningAfterStart: `db\n`, runningAfterUp: `db\nweb\n` },
+    async (h, wd, files) => {
+      await h.run("stop")
+      const c = await h.run("start")
+      assertEquals(c.status, BackupStatus.IN_PROGRESS)
+      const base = `${wd}|compose -p app -f ${files}`
+      const env = `--env-file=.env.root --env-file=.env`
+      assertEquals(h.log().slice(1), [
+        `${base} ${env} stop`,
+        `${base} ${env} start`,
+        `${base} ${env} ps --services --status running`,
+        `${base} ${env} up -d`,
+        `${base} ${env} ps --services --status running`,
+      ])
+    },
+  )
+})
+
+Deno.test("fails the stack's backup when a service is still down after up -d", async () => {
+  await withTwoServiceStack(
+    { runningAfterStart: `db\n`, runningAfterUp: `db\n` },
+    async (h) => {
+      await h.run("stop")
+      const c = await h.run("start")
+      assertEquals(c.status, BackupStatus.ERROR)
+      assertEquals(c.errorAtStep, `compose_start`)
+      assertStringIncludes(c.error ?? ``, `missing services after start (web)`)
+      assertEquals(h.log().filter((l) => l.endsWith(` up -d`)).length, 1)
+    },
+  )
+})
+
+Deno.test("does not run up -d when every service that ran before the stop runs again", async () => {
+  await withTwoServiceStack({ runningAfterStart: `web\ndb\n` }, async (h) => {
+    await h.run("stop")
+    const c = await h.run("start")
+    assertEquals(c.status, BackupStatus.IN_PROGRESS)
+    assertEquals(h.log().some((l) => l.endsWith(` up -d`)), false)
+  })
+})
+
+Deno.test("fails the stack's backup when it cannot list running services after start", async () => {
+  await withTwoServiceStack({ runningAfterStart: `web\ndb\n` }, async (h) => {
+    await h.run("stop")
+    await Deno.writeTextFile(`${h.dir}/ps-fails`, ``)
+    const c = await h.run("start")
+    assertEquals(c.status, BackupStatus.ERROR)
+    assertEquals(c.errorAtStep, `compose_start`)
+    assertStringIncludes(c.error ?? ``, `could not list its running services`)
   })
 })
