@@ -4,7 +4,7 @@
 Reads the Traefik acme.json, extracts certs for configured domains, and imports
 them into Stalwart via JMAP API when they've changed.
 
-Designed to run as a daily cron job on the cloudlab VPS.
+Runs as the stack's cert-sync service (see compose.yml).
 
 Usage:
     STALWART_PASSWORD=xxx python3 stalwart-cert-sync.py
@@ -35,15 +35,6 @@ def get_password():
     env = os.environ.get("STALWART_PASSWORD")
     if env:
         return env
-    # Also try reading from cloud .env (fallback for cron)
-    env_file = "/home/spy4x/cloudlab/apps/env/cloud.env"
-    try:
-        with open(env_file) as f:
-            for line in f:
-                if line.startswith("STALWART_ADMIN_PASSWORD="):
-                    return line.strip().split("=", 1)[1]
-    except FileNotFoundError:
-        pass
     print("ERROR: STALWART_PASSWORD not set", file=sys.stderr)
     sys.exit(1)
 
