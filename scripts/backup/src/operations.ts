@@ -1,5 +1,13 @@
 import { absPath, error, log } from "../../+lib.ts"
 import { USER } from "./+lib.ts"
+import {
+  COMPOSE_LABELS_FORMAT,
+  composeFileArgs,
+  ComposeTarget,
+  DEPLOY_ENV_FILE_ARGS,
+  parseComposeTargets,
+  whyCannotRebuild,
+} from "./compose-target.ts"
 import { hasNonEmptyResticSubdir } from "./repo-guard.ts"
 import {
   BackupConfigState,
@@ -10,11 +18,11 @@ import {
 
 export class BackupOperations {
   private backupsPassword: string
-  private stacksPath: string
+  /** Compose target of each stack stopped by this run, keyed by config file name. */
+  private composeTargets = new Map<string, ComposeTarget>()
 
-  constructor(backupsPassword: string, stacksPath: string) {
+  constructor(backupsPassword: string) {
     this.backupsPassword = backupsPassword
-    this.stacksPath = stacksPath
   }
 
   /**
@@ -30,13 +38,13 @@ export class BackupOperations {
 
     // Check if using compose mode (resolved from "stop: default")
     if (config.containers.stop.length === 1 && config.containers.stop[0] === "__compose__") {
-      const composePath = this.getComposePath(config)
-      if (composePath) {
-        await this.manageComposeStack(composePath, config, action)
+      const stackDir = config.fileName?.match(/^(.+)\/backup\.ts$/)?.[1]
+      if (!stackDir) {
+        // Fall through if there is no stack directory (non-stack config)
+        log(`No compose stack found for ${config.name}, skipping container management`)
         return
       }
-      // Fall through to individual container handling if no compose file
-      log(`No compose file found for ${config.name}, skipping container management`)
+      await this.manageComposeStack(stackDir, config, action)
       return
     }
 
@@ -62,17 +70,26 @@ export class BackupOperations {
   }
 
   /**
-   * Manages a Docker Compose stack (stop/start all services)
+   * Manages a Docker Compose stack (stop/start all services).
    *
-   * Stop: plain `docker compose stop` is fine — it shuts down running
-   * containers in place.
+   * Stop: finds the stack's running containers and reads their compose labels
+   * (project, config files, working dir). Those values, not a path built from
+   * this runner's `PATH_APPS`, drive stop, start and the `up -d` fallback,
+   * because the stack may have been deployed from another directory (#297).
+   * With no running container there is nothing to stop and nothing to start
+   * afterwards, so no compose command runs and no path is invented.
    *
    * Start: prefer `docker compose start` (fast, no env re-eval, leaves
    * bind mounts alone). Fall back to `docker compose up -d` if `start`
    * fails because a container vanished during the backup window — a
    * common race when Watchtower updates a service mid-backup and
    * removes/recreates the old container. `up -d` is idempotent: it
-   * recreates only missing containers and leaves the rest running.
+   * recreates only missing containers and leaves the rest running. It runs
+   * from the recorded working dir with the same `--env-file`s as
+   * `rostok deploy`; when the compose files or env files are gone it does
+   * NOT run, and the backup is reported as failed with the stack stopped.
+   * A stopped stack and a red report beat a stack silently rebuilt from
+   * wrong config.
    *
    * HOME is forced to the user's real home before `up -d` so that any
    * `~` in bind-mount env vars resolves to /home/<USER>, not /root.
@@ -81,27 +98,31 @@ export class BackupOperations {
    * for the 2026-06-26 all-46-services-down incident.)
    */
   private async manageComposeStack(
-    composePath: string,
+    stackDir: string,
     config: BackupConfigState,
     action: "start" | "stop",
   ): Promise<void> {
-    log(`${action}ing compose stack at ${composePath}`)
+    let target: ComposeTarget
+    if (action === "stop") {
+      const found = await this.findRunningTarget(stackDir, config)
+      if (!found) return
+      this.composeTargets.set(config.fileName, found)
+      target = found
+    } else {
+      const remembered = this.composeTargets.get(config.fileName)
+      if (!remembered) return // nothing was stopped, so nothing to start
+      target = remembered
+    }
 
-    // Docker compose uses -p/--project-name to identify containers.
-    // Deploy script uses `docker compose -p ${stackName} ... up -d`,
-    // so we must match the same project name to find existing containers.
-    const projectName = this.getProjectName(composePath)
+    log(`${action}ing compose stack ${target.project} from ${target.workingDir}`)
+    const baseArgs = ["compose", "-p", target.project, ...composeFileArgs(target)]
 
-    const baseArgs = ["compose", "-p", projectName, "-f", composePath]
-    const args = [...baseArgs, action]
-
-    const cmd = new Deno.Command("docker", {
-      args,
+    const { code, stderr } = await new Deno.Command("docker", {
+      args: [...baseArgs, action],
+      cwd: target.workingDir,
       stdout: "piped",
       stderr: "piped",
-    })
-
-    const { code, stderr } = await cmd.output()
+    }).output()
 
     if (code === 0) {
       return
@@ -115,8 +136,19 @@ export class BackupOperations {
       log(
         `start failed (missing container), falling back to up -d:\n${errStr.trim()}`,
       )
+      const reason = await whyCannotRebuild(target)
+      if (reason) {
+        this.markBackupFailed(
+          config,
+          `Stack ${target.project} is left stopped: start failed (${errStr.trim()}) and up -d ` +
+            `cannot reproduce the deployed config (${reason})`,
+          `compose_${action}`,
+        )
+        return
+      }
       const fallback = new Deno.Command("docker", {
-        args: [...baseArgs, "up", "-d"],
+        args: [...baseArgs, ...DEPLOY_ENV_FILE_ARGS, "up", "-d"],
+        cwd: target.workingDir,
         env: {
           ...Deno.env.toObject(),
           HOME: `/home/${USER}`,
@@ -146,26 +178,47 @@ export class BackupOperations {
   }
 
   /**
-   * Derives docker compose project name from compose file path.
-   * Deploy uses the stack directory name as project name (-p flag).
+   * Reads the compose labels of the stack's running containers. Returns null
+   * (after logging, or marking the backup failed) when there is nothing to stop.
    */
-  private getProjectName(composePath: string): string {
-    // /path/to/stacks/gatus/compose.yml → gatus
-    const match = composePath.match(/\/stacks\/([^/]+)\/compose\.yml$/)
-    return match ? match[1] : ""
-  }
-
-  /**
-   * Derives compose.yml path from backup config file name
-   */
-  private getComposePath(config: BackupConfigState): string | null {
-    // fileName format for stacks: "dirname/backup.ts"
-    // For non-stack configs, there's no compose file
-    const match = config.fileName?.match(/^(.+)\/backup\.ts$/)
-    if (!match) return null
-
-    const stackDir = match[1]
-    return `${this.stacksPath}/${stackDir}/compose.yml`
+  private async findRunningTarget(
+    stackDir: string,
+    config: BackupConfigState,
+  ): Promise<ComposeTarget | null> {
+    const { code, stdout, stderr } = await new Deno.Command("docker", {
+      args: [
+        "ps",
+        "--filter",
+        "label=com.docker.compose.project",
+        "--format",
+        COMPOSE_LABELS_FORMAT,
+      ],
+      stdout: "piped",
+      stderr: "piped",
+    }).output()
+    if (code !== 0) {
+      this.markBackupFailed(
+        config,
+        `Error listing running containers:\n${new TextDecoder().decode(stderr)}`,
+        "compose_stop",
+      )
+      return null
+    }
+    const targets = parseComposeTargets(new TextDecoder().decode(stdout), stackDir)
+    if (targets.length === 0) {
+      log(`No running containers for stack ${stackDir}, skipping container management`)
+      return null
+    }
+    if (targets.length > 1) {
+      this.markBackupFailed(
+        config,
+        `Stack ${stackDir} runs from ${targets.length} different compose projects ` +
+          `(${targets.map((t) => t.project).join(", ")}); refusing to guess which to stop`,
+        "compose_stop",
+      )
+      return null
+    }
+    return targets[0]
   }
 
   /**

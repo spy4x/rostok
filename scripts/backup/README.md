@@ -62,19 +62,58 @@ It has to be installed for root via `sudo crontab -e` to allow changing ownershi
 30 2 * * * SSH_USER=$USER /path/to/deno run --env-file=/path/to/.env -A /path/to/+main.ts >> /path/to/backup.log 2>&1
 ```
 
+## Running a pinned release
+
+Run the runner from a git checkout of a release tag, not from a hand copy or a dev checkout:
+
+```bash
+git clone --branch v<version> --depth 1 https://github.com/spy4x/rostok <disk>/rostok/backup-runner
+deno run -A --env-file=<server env> <disk>/rostok/backup-runner/scripts/backup/+main.ts
+```
+
+To upgrade, clone the new tag next to the old one and point the cron job at it.
+
 ## Environment Variables
 
-Required environment variables:
+Read from the `--env-file` (or the shell) by `+main.ts` and `src/+lib.ts`:
 
-- `PATH_SYNC` - Base path for backup storage
-- `BACKUPS_PASSWORD` - Password for restic repositories
-- `PATH_APPS` - Path to applications directory
-- `SSH_USER` - Remote user name for ownership changes (read from the server `.env`, not the shell's own `$USER`)
+Required:
 
-Optional environment variables:
+- `SSH_USER` - user that owns the data; read from the server `.env`, not the shell's own `$USER`
+- `PATH_APPS` - the apps directory (`stacks/` and `configs/backup/` are read from it)
+- `VOLUMES_PATH` - where service data lives (default backup source `${VOLUMES_PATH}/<name>`)
+- `PATH_SYNC` - base path for synced data
+- `SERVER_NAME` - server name, used in reports and `destName` templates
+- `PATH_BACKUPS` - where the restic repositories are written
+- `BACKUPS_PASSWORD` - password of the restic repositories
+- `NTFY_URL_BACKUPS` - ntfy topic URL for the report
+- `NTFY_TOKEN_BACKUPS` - ntfy bearer token
 
-- `NTFY_URL` - ntfy topic URL for notifications (e.g., `https://ntfy.yourdomain.com/backups`)
-- `NTFY_AUTH_TOKEN` - ntfy authentication token (Bearer token from ntfy settings)
+Optional:
+
+- `PATH_MEDIA` - media path (home server only)
+- `HEALTHCHECKS_BACKUP_URL` - healthchecks.io-style ping URL
+
+## How stacks are stopped and restarted
+
+Before stopping a stack, the runner finds its running containers and reads their compose labels
+(`com.docker.compose.project`, `.project.config_files`, `.project.working_dir`). Stop, start and the
+`up -d` fallback all use exactly that project name, those compose files and that working dir, so a
+server deployed with `rostok deploy` (`<disk>/rostok/apps/stacks/<name>/compose.yml`) is handled
+correctly even though the runner lives elsewhere.
+
+- No container of the stack is running: nothing is stopped, and nothing is started afterwards. No
+  path is guessed.
+- `start` fails because a container vanished (Watchtower): `up -d` runs from the recorded working
+  dir with `--env-file=.env.root --env-file=.env`, the same as `rostok deploy`. If a recorded
+  compose file or one of those env files no longer exists, `up -d` does not run: the stack stays
+  stopped and the backup is reported as failed, rather than rebuilding the stack from wrong config.
+- The stack's containers come from more than one compose project: the backup fails without stopping
+  anything.
+
+A `rostok backup` command that replaces this runner is still planned in
+[#297](https://github.com/spy4x/rostok/issues/297). This fix is smaller and blocks moving the home
+server to the rostok layout, so it ships first.
 
 ## Configuration Structure
 
