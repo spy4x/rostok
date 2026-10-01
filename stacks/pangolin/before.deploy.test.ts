@@ -196,3 +196,33 @@ Deno.test("a missing catalog file fails the deploy and names the file", async ()
     await Deno.remove(root, { recursive: true })
   }
 })
+
+Deno.test("the hook fills the catalog files and copies the server's files in a deploy staging folder", async () => {
+  const staging = await Deno.makeTempDir()
+  try {
+    const traefik = join(staging, "stacks/pangolin/traefik")
+    await Deno.mkdir(join(traefik, "dynamic"), { recursive: true })
+    for (const rel of FILLED_FILES) {
+      await Deno.copyFile(new URL(`./traefik/${rel}`, import.meta.url), join(traefik, rel))
+    }
+    await Deno.mkdir(join(staging, "configs/pangolin/dynamic"), { recursive: true })
+    await Deno.writeTextFile(join(staging, "configs/pangolin/dynamic/10-a.yml"), "server\n")
+
+    const out = await new Deno.Command(Deno.execPath(), {
+      args: ["run", "-A", new URL("./before.deploy.ts", import.meta.url).href],
+      cwd: staging,
+      env: VALUES,
+      stdout: "piped",
+      stderr: "piped",
+    }).output()
+    assertEquals(out.code, 0, new TextDecoder().decode(out.stderr))
+
+    const base = await Deno.readTextFile(join(traefik, "dynamic/00-pangolin.yml"))
+    const config = await Deno.readTextFile(join(traefik, "traefik_config.yml"))
+    assertStringIncludes(base, "Host(`tunnel.example.com`)")
+    assertStringIncludes(config, 'email: "admin@example.com"')
+    assertEquals(await Deno.readTextFile(join(traefik, "dynamic/10-a.yml")), "server\n")
+  } finally {
+    await Deno.remove(staging, { recursive: true })
+  }
+})
