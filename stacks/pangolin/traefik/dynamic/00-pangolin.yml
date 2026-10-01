@@ -15,7 +15,7 @@ http:
         scheme: https
   routers:
     main-app-router-redirect:
-      rule: "Host(`tunnel-cloud.antonshubin.com`)"
+      rule: "Host(`${PANGOLIN_DOMAIN}`)"
       service: next-service
       entryPoints:
         - web
@@ -23,7 +23,7 @@ http:
         - redirect-to-https
         - badger
     next-router:
-      rule: "Host(`tunnel-cloud.antonshubin.com`) && !PathPrefix(`/api/v1`)"
+      rule: "Host(`${PANGOLIN_DOMAIN}`) && !PathPrefix(`/api/v1`)"
       service: next-service
       entryPoints:
         - websecure
@@ -32,7 +32,7 @@ http:
       tls:
         certResolver: letsencrypt
     api-router:
-      rule: "Host(`tunnel-cloud.antonshubin.com`) && PathPrefix(`/api/v1`)"
+      rule: "Host(`${PANGOLIN_DOMAIN}`) && PathPrefix(`/api/v1`)"
       service: api-service
       entryPoints:
         - websecure
@@ -41,7 +41,7 @@ http:
       tls:
         certResolver: letsencrypt
     ws-router:
-      rule: "Host(`tunnel-cloud.antonshubin.com`)"
+      rule: "Host(`${PANGOLIN_DOMAIN}`)"
       service: api-service
       entryPoints:
         - websecure

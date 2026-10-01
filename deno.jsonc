@@ -312,7 +312,12 @@
       "!stacks/stalwart/config.json",
       "!stacks/stalwart/dkim.ts",
       "!stacks/stalwart/mta-sts/html/.well-known/mta-sts.txt.template",
-      "!stacks/stalwart/mta-sts/nginx.conf"
+      "!stacks/stalwart/mta-sts/nginx.conf",
+      "!stacks/pangolin/+meta.ts",
+      "!stacks/pangolin/before.deploy.ts",
+      "!stacks/pangolin/compose.yml",
+      "!stacks/pangolin/traefik/dynamic/00-pangolin.yml",
+      "!stacks/pangolin/traefik/traefik_config.yml"
     ]
   },
   "exclude": [

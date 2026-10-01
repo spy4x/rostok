@@ -80,8 +80,9 @@ import bulwark from "../stacks/bulwark/+meta.ts"
 import caldiy from "../stacks/caldiy/+meta.ts"
 import mig from "../stacks/mig/+meta.ts"
 import stalwart from "../stacks/stalwart/+meta.ts"
+import pangolin from "../stacks/pangolin/+meta.ts"
 
-// Stacks without a +meta.ts (authelia, opencode-web, pangolin, plausible) are not in the catalog yet.
+// Stacks without a +meta.ts (authelia, opencode-web, plausible) are not in the catalog yet.
 
 const STACK_META: Record<string, StackMeta> = {
   traefik,
@@ -130,6 +131,7 @@ const STACK_META: Record<string, StackMeta> = {
   caldiy,
   mig,
   stalwart,
+  pangolin,
 }
 
 const ENTRIES: CatalogEntry[] = Object.entries(STACK_META)

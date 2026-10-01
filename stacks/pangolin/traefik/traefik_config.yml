@@ -27,7 +27,7 @@ certificatesResolvers:
     acme:
       # TLS-ALPN-01 challenge rides on port 443 with SNI — no port 80 plumbing needed.
       tlsChallenge: true
-      email: "2spy4x@gmail.com"
+      email: "${CONTACT_EMAIL}"
       storage: "/letsencrypt/acme.json"
       caServer: "https://acme-v02.api.letsencrypt.org/directory"
 entryPoints:

@@ -10,10 +10,9 @@ services:
     container_name: ${PANGOLIN_CONTAINER_NAME:-hl-pangolin}
     restart: unless-stopped
     user: "0:0"
+    # Pangolin reads its own settings, dashboard_url included, from config.yml in this volume.
     volumes:
       - pangolin-config:/app/config
-    environment:
-      - PANGOLIN_APP_URL=${PANGOLIN_APP_URL}
     deploy:
       resources:
         limits:
@@ -31,8 +30,9 @@ services:
       retries: 5
       start_period: 60s
     # Expose the Next.js UI on host loopback for SSH-tunnel access.
-    # SSH: `ssh -f -N -L 3002:172.18.0.18:3002 cloudlab` (or just use this 127.0.0.1:3002).
-    # Public reachability is via main hl-traefik TCP+SNI passthrough (stacks/traefik/dynamic/02-pangolin.yml).
+    # SSH: `ssh -f -N -L 3002:127.0.0.1:3002 <server>`, then open http://127.0.0.1:3002/.
+    # Public reachability is via the main hl-traefik's TCP+SNI passthrough, a server file in
+    # configs/traefik/dynamic/ (see README.md).
     ports:
       - "127.0.0.1:3002:3002"
     networks:
@@ -56,6 +56,11 @@ services:
       - pangolin-config:/var/config
     cap_add:
       - NET_ADMIN
+    deploy:
+      resources:
+        limits:
+          memory: ${PANGOLIN_GERBIL_MEM_LIMIT:-128M}
+          cpus: ${PANGOLIN_GERBIL_CPU_LIMIT:-0.5}
     # Expose WireGuard ports to host so remote sites (newt) can dial back.
     # 80/443 are NOT published here — hl-traefik (main) on the host already
     # owns 80/443, so it routes Pangolin hosts to gerbil via the proxy network.
@@ -83,6 +88,11 @@ services:
     volumes:
       - ./traefik:/etc/traefik:ro,z
       - pangolin-letsencrypt:/letsencrypt
+    deploy:
+      resources:
+        limits:
+          memory: ${PANGOLIN_TRAEFIK_MEM_LIMIT:-512M}
+          cpus: ${PANGOLIN_TRAEFIK_CPU_LIMIT:-0.5}
 
 volumes:
   pangolin-config:
@@ -91,4 +101,3 @@ volumes:
 networks:
   proxy:
     external: true
-    name: ${PANGOLIN_NETWORK:-proxy}
