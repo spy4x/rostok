@@ -2,6 +2,7 @@ import { assert, assertEquals, assertStringIncludes, assertThrows } from "@std/a
 import { join } from "@std/path"
 import { loadCatalog } from "../catalog.ts"
 import {
+  assertNoKeepOwnerParent,
   extractVolumePaths,
   generateFileMountCheckScript,
   generateVolumeCreationScript,
@@ -821,6 +822,47 @@ Deno.test("generateVolumeCreationScript: a keepOwner entry matches its path with
     const result = await runScript(script)
     assertEquals(result.success, true, result.stderr)
     assertEquals(result.chownCalls, [])
+  } finally {
+    await Deno.remove(root, { recursive: true })
+  }
+})
+
+Deno.test("generateVolumeCreationScript: a volume that contains a keepOwner folder is refused, naming both", () => {
+  const err = assertThrows(
+    () =>
+      generateVolumeCreationScript(
+        opts("/srv/v", ["/srv/v/gitea", "/srv/v/gitea/db"], { keepOwner: ["/srv/v/gitea/db"] }),
+      ),
+    UserError,
+  )
+  assertStringIncludes(err.message, `"/srv/v/gitea"`)
+  assertStringIncludes(err.message, `"/srv/v/gitea/db"`)
+})
+
+Deno.test("assertNoKeepOwnerParent: matches whole path segments, not string prefixes", () => {
+  // /srv/v/git is a string prefix of /srv/v/gitea/db, not a parent of it.
+  assertNoKeepOwnerParent(["/srv/v/git"], ["/srv/v/gitea/db"])
+  // Doubled slashes and dots do not hide a parent.
+  assertThrows(
+    () => assertNoKeepOwnerParent(["/srv//v/./gitea/"], ["/srv/v/gitea/db"]),
+    UserError,
+    "keep-owner",
+  )
+})
+
+Deno.test("generateVolumeCreationScript: a volume equal to its keepOwner folder is not a parent", async () => {
+  const root = await tempRoot("rostok-volumes-keep-eq-")
+  try {
+    const result = await runScript(
+      generateVolumeCreationScript(
+        opts(root, [`${root}/gitea/db`, `${root}/gitea/data`], {
+          keepOwner: [`${root}/gitea/db`],
+          puid: "4242",
+        }),
+      ),
+    )
+    assertEquals(result.success, true, result.stderr)
+    assertEquals(result.chownCalls.length, 1)
   } finally {
     await Deno.remove(root, { recursive: true })
   }

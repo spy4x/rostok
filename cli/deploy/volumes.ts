@@ -272,6 +272,30 @@ function pathKey(path: string): string {
   return pathComponents(path).join("/")
 }
 
+/**
+ * Throw a UserError when a volume folder is a strict parent of a `keepOwner`
+ * folder: the `chown -R` of the parent would reach the folder whose owner
+ * must stay (#324). A volume equal to the keep-owner folder is the normal
+ * case. Compared by path segments, so `/v/git` is no parent of `/v/gitea/db`.
+ * Deploy calls it before any remote command; the script generator calls it
+ * too, so no caller can build a script that chowns into a kept folder.
+ */
+export function assertNoKeepOwnerParent(volumePaths: string[], keepOwner: string[]): void {
+  for (const keep of keepOwner) {
+    const kept = pathComponents(keep)
+    for (const volume of volumePaths) {
+      const parts = pathComponents(volume)
+      if (parts.length < kept.length && parts.every((c, i) => kept[i] === c)) {
+        throw new UserError(
+          `volume "${volume}" contains the keep-owner folder "${keep}": chown -R on the volume ` +
+            `would change the owner of "${keep}". Mount the two as siblings, or drop the ` +
+            `parent volume, in the stack's compose.yml.`,
+        )
+      }
+    }
+  }
+}
+
 /** The declared file mounts that a compose file actually mounts. */
 function fileMountsInUse(volumePaths: string[], fileMounts: string[]): string[] {
   const declared = new Set(fileMounts.map(pathKey))
@@ -329,6 +353,7 @@ export function generateVolumeCreationScript(opts: VolumeScriptOptions): string 
   const owner = `${shQuote(opts.puid)}:${shQuote(opts.pgid)}`
   const base = shQuote(opts.volumesPath)
   const files = new Set(fileMountsInUse(opts.volumePaths, opts.fileMounts))
+  assertNoKeepOwnerParent(opts.volumePaths, opts.keepOwner ?? [])
   const keep = new Set((opts.keepOwner ?? []).map(pathKey))
   const folders = opts.volumePaths.filter((p) => !files.has(p))
   if (!opts.needsSudo) {
