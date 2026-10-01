@@ -15,6 +15,8 @@ export default {
   description: "Privacy-first web analytics with a PostgreSQL database (Umami)",
   category: "monitoring",
   requires: ["traefik"],
+  // Postgres runs as its own user: deploy must not chown the folder to PUID:PGID.
+  keepOwner: ["umami/db"],
   variables: [
     {
       key: "UMAMI_IMAGE_TAG",

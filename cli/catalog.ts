@@ -69,8 +69,19 @@ import googleMapsMcp from "../stacks/google-maps-mcp/+meta.ts"
 import githubMcp from "../stacks/github-mcp/+meta.ts"
 import zond from "../stacks/zond/+meta.ts"
 import omniTools from "../stacks/omni-tools/+meta.ts"
+import adguard from "../stacks/adguard/+meta.ts"
+import cloudflared from "../stacks/cloudflared/+meta.ts"
+import healthchecks from "../stacks/healthchecks/+meta.ts"
+import nginx from "../stacks/nginx/+meta.ts"
+import ollama from "../stacks/ollama/+meta.ts"
+import umami from "../stacks/umami/+meta.ts"
+import mirotalk from "../stacks/mirotalk/+meta.ts"
+import bulwark from "../stacks/bulwark/+meta.ts"
+import caldiy from "../stacks/caldiy/+meta.ts"
+import mig from "../stacks/mig/+meta.ts"
+import stalwart from "../stacks/stalwart/+meta.ts"
 
-// Stacks without a +meta.ts are not in the catalog yet; issue #283 adds the rest.
+// Stacks without a +meta.ts (authelia, opencode-web, pangolin, plausible) are not in the catalog yet.
 
 const STACK_META: Record<string, StackMeta> = {
   traefik,
@@ -108,6 +119,17 @@ const STACK_META: Record<string, StackMeta> = {
   "github-mcp": githubMcp,
   zond,
   "omni-tools": omniTools,
+  adguard,
+  cloudflared,
+  healthchecks,
+  nginx,
+  ollama,
+  umami,
+  mirotalk,
+  bulwark,
+  caldiy,
+  mig,
+  stalwart,
 }
 
 const ENTRIES: CatalogEntry[] = Object.entries(STACK_META)

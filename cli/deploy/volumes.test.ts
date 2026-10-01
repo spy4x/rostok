@@ -841,16 +841,20 @@ Deno.test("loadStackKeepOwner reads keepOwner from a local +meta.ts", async () =
 })
 
 Deno.test("loadStackKeepOwner: the bundled catalog keeps the owner of every database folder", async () => {
-  const expected: Record<string, string> = {
-    immich: "immich/postgres",
-    gitea: "gitea/db",
-    piped: "piped/postgres",
-    akaunting: "akaunting/db",
-    searxng: "searxng/redis",
-    usememos: "memos",
+  const expected: Record<string, string[]> = {
+    immich: ["immich/postgres"],
+    gitea: ["gitea/db"],
+    piped: ["piped/postgres"],
+    akaunting: ["akaunting/db"],
+    searxng: ["searxng/redis"],
+    usememos: ["memos"],
+    umami: ["umami/db"],
+    caldiy: ["caldiy/db", "caldiy/redis"],
+    healthchecks: ["healthchecks"],
+    stalwart: ["stalwart/data", "stalwart/config", "stalwart/lib"],
   }
-  for (const [stack, folder] of Object.entries(expected)) {
-    assertEquals(await loadStackKeepOwner(stack, new Map()), [folder], stack)
+  for (const [stack, folders] of Object.entries(expected)) {
+    assertEquals(await loadStackKeepOwner(stack, new Map()), folders, stack)
   }
 })
 

@@ -23,6 +23,8 @@ export default {
   description: "Cal.diy scheduling platform (community edition of Cal.com)",
   category: "productivity",
   requires: ["traefik"],
+  // Postgres and Redis run as their own users: deploy must not chown the folder to PUID:PGID.
+  keepOwner: ["caldiy/db", "caldiy/redis"],
   variables: [
     {
       key: "CALDIY_DOMAIN",

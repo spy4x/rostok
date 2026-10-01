@@ -33,6 +33,8 @@ export default {
     "Self-hosted mail server (Stalwart) with Let's Encrypt certificates synced from Traefik",
   category: "productivity",
   requires: ["traefik"],
+  // the mail server runs as its own user and owns its data folders: deploy must not chown the folder to PUID:PGID.
+  keepOwner: ["stalwart/data", "stalwart/config", "stalwart/lib"],
   variables: [
     {
       key: "STALWART_DOMAIN",

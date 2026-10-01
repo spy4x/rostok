@@ -154,4 +154,51 @@ export const SHIPPED_STACK_FILES: Record<string, readonly string[]> = {
   "omni-tools": [
     "compose.yml",
   ],
+  adguard: [
+    "compose.yml",
+  ],
+  cloudflared: [
+    "compose.yml",
+  ],
+  healthchecks: [
+    "compose.yml",
+    "entrypoint.sh",
+  ],
+  nginx: [
+    "compose.yml",
+  ],
+  ollama: [
+    "compose.yml",
+  ],
+  umami: [
+    "compose.yml",
+  ],
+  mirotalk: [
+    "cert-extract.py",
+    "compose.yml",
+  ],
+  bulwark: [
+    "compose.yml",
+  ],
+  caldiy: [
+    "after.deploy.ts",
+    "compose.yml",
+  ],
+  mig: [
+    "compose.yml",
+  ],
+  stalwart: [
+    "after.deploy.ts",
+    "apply-sieve-filters.ts",
+    "before.deploy.ts",
+    "cert-sync.py",
+    "compose.yml",
+    "config.json",
+    "dkim-verify.ts",
+    "dkim.ts",
+    "example.sieve",
+    "mta-sts/html/.well-known/mta-sts.txt.template",
+    "mta-sts/nginx.conf",
+    "sieve.md",
+  ],
 }
