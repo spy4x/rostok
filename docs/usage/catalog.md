@@ -4,7 +4,8 @@ The `stacks/` directory. Every entry is a generic, reusable
 self-hosted service.
 
 The catalog is what the `rostok` CLI bundles. Users browse it with
-`rostok stack list`.
+`rostok stack list`. Four stacks have no `+meta.ts` yet and are not
+bundled: authelia, opencode-web, pangolin and plausible.
 
 ## Categories
 

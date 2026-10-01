@@ -13,8 +13,8 @@ matches into them:
 - **`Reports/`** — DMARC / TLS aggregate reports (Google, mail.ru,
   amazonses forwarding). Kept for ongoing regression signal — never
   auto-delete. The failure counts in these match what `#141` watches.
-- **`VCB/`** — Vietnamese banking notifications
-  (`info.vietcombank.com.vn`, `VCBDigibank@info.vietcombank.com.vn`).
+- **`BANK/`** — Banking notifications
+  (`bank.example.com`, `digibank@bank.example.com`).
   Move out of INBOX so they don't bury real correspondence.
 - **`Digests/`** — recurring newsletters and digest emails. Subject
   keywords (`weekly`, `digest`, `newsletter`, `roundup`) catch the ones
@@ -26,14 +26,14 @@ fills up.
 
 ## Active setup (as of 2026-08-25)
 
-The script is currently uploaded for `anton@antonshubin.com`. Apply
+The script is currently uploaded for `user@example.com`. Apply
 the same pattern to other mailboxes with a tweaked sender list.
 
 ```sieve
 require ["fileinto", "mailbox", "envelope", "comparator-i;ascii-numeric"];
 
 # ============================================================
-# Auto-folder rules for anton@antonshubin.com
+# Auto-folder rules for user@example.com
 # Auto-generated via JMAP by homelab cleanup, 2026-08-25
 # ============================================================
 
@@ -50,13 +50,13 @@ if anyof (
     stop;
 }
 
-# --- VCB: Vietcombank banking notifications ---
+# --- BANK: Example Bank banking notifications ---
 # Transaction notifications, marketing — all noise.
 if anyof (
-    address :is "from" "info@info.vietcombank.com.vn",
-    address :is "from" "VCBDigibank@info.vietcombank.com.vn"
+    address :is "from" "info@bank.example.com",
+    address :is "from" "digibank@bank.example.com"
 ) {
-    fileinto "VCB";
+    fileinto "BANK";
     stop;
 }
 
@@ -75,17 +75,17 @@ if anyof (
     address :is "from" "node@cooperpress.com",
     address :is "from" "postgres@cooperpress.com",
     address :is "from" "newsletter@nodeweekly.com",
-    address :is "from" "do-not-reply@singlife.com",
-    address :is "from" "no-reply@agoda.com",
-    address :is "from" "noreply@simba.sg",
+    address :is "from" "do-not-reply@insurer.example.com",
+    address :is "from" "no-reply@travel.example.com",
+    address :is "from" "noreply@telecom.example.com",
     # other notifications digests
-    address :is "from" "no_reply@immigration.gov.vn",
-    address :is "from" "no-reply@grab.com",
-    address :is "from" "dvc_bca@noreply.vnpay.vn",
+    address :is "from" "no_reply@immigration.example.gov",
+    address :is "from" "no-reply@rides.example.com",
+    address :is "from" "notify@payments.example.com",
     # meetup.com newsletters (event digest emails — high volume)
     address :matches "from" "*@meetup.com",
     # Russian invoicing/billing digests
-    address :is "from" "billing@ic.vrn.ru",
+    address :is "from" "billing@invoices.example.com",
     # generic: subject keywords
     header :contains "subject" "weekly",
     header :contains "subject" "digest",
@@ -104,7 +104,7 @@ if anyof (
   Belongs in INBOX.
 - **meetup.com (`*@meetup.com`)** — Event digest emails, high volume.
   Folder: `Digests/`.
-- **billing@ic.vrn.ru** — Russian invoicing/billing. Folder: `Digests/`.
+- **billing@invoices.example.com** — Russian invoicing/billing. Folder: `Digests/`.
 
 ## Applying a Sieve script via JMAP
 
@@ -139,7 +139,7 @@ Minimal working sequence (Python, using `urllib.request`):
 import json, urllib.request, base64
 
 AUTH = "user:pass"  # mailbox credentials, base64 below
-API = "https://mail.antonshubin.com/jmap/"
+API = "https://mail.example.com/jmap/"
 auth = "Basic " + base64.b64encode(AUTH.encode()).decode()
 
 def call(name, args, cid):

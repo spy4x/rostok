@@ -78,13 +78,6 @@ function isRead(key: string, files: Map<string, string>): boolean {
   return false
 }
 
-/**
- * Stacks whose +meta.ts predates this test and misses compose variables, so they skip only the
- * "declares every compose variable" check. It does not ship in the catalog; the cloud batch of
- * https://github.com/spy4x/rostok/issues/283 completes it and removes it from this list.
- */
-const MISSING_COMPOSE_VARS = new Set(["mirotalk"])
-
 const names = await stacksWithMeta()
 
 /**
@@ -106,10 +99,7 @@ for (const name of names) {
     validateStackMeta(meta)
   })
 
-  Deno.test({
-    name: `${name} +meta.ts: declares every compose variable that is not server-level`,
-    ignore: MISSING_COMPOSE_VARS.has(name),
-  }, () => {
+  Deno.test(`${name} +meta.ts: declares every compose variable that is not server-level`, () => {
     const declared = new Set(meta.variables.map((v) => v.key))
     for (const key of composeRefs.keys()) {
       if (WRITTEN_BY_SERVER.has(key)) continue

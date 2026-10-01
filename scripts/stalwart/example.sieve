@@ -14,7 +14,7 @@
 #   Reports/  — DMARC / TLS aggregate reports (kept for regression
 #               signal; never auto-expire. Matches the failure counts
 #               watched in issue #141.)
-#   VCB/       — Vietnamese banking notifications.
+#   BANK/       — Banking notifications.
 #   Digests/   — recurring newsletters and digest emails.
 #
 # Anything that doesn't match any rule falls through to INBOX. In
@@ -35,12 +35,12 @@ if anyof (
     stop;
 }
 
-# --- VCB: Vietcombank banking notifications ---
+# --- BANK: Example Bank banking notifications ---
 if anyof (
-    address :is "from" "info@info.vietcombank.com.vn",
-    address :is "from" "VCBDigibank@info.vietcombank.com.vn"
+    address :is "from" "info@bank.example.com",
+    address :is "from" "digibank@bank.example.com"
 ) {
-    fileinto "VCB";
+    fileinto "BANK";
     stop;
 }
 
@@ -53,14 +53,14 @@ if anyof (
     address :is "from" "node@cooperpress.com",
     address :is "from" "postgres@cooperpress.com",
     address :is "from" "newsletter@nodeweekly.com",
-    address :is "from" "do-not-reply@singlife.com",
-    address :is "from" "no-reply@agoda.com",
-    address :is "from" "noreply@simba.sg",
-    address :is "from" "no_reply@immigration.gov.vn",
-    address :is "from" "no-reply@grab.com",
-    address :is "from" "dvc_bca@noreply.vnpay.vn",
+    address :is "from" "do-not-reply@insurer.example.com",
+    address :is "from" "no-reply@travel.example.com",
+    address :is "from" "noreply@telecom.example.com",
+    address :is "from" "no_reply@immigration.example.gov",
+    address :is "from" "no-reply@rides.example.com",
+    address :is "from" "notify@payments.example.com",
     address :matches "from" "*@meetup.com",
-    address :is "from" "billing@ic.vrn.ru",
+    address :is "from" "billing@invoices.example.com",
     header :contains "subject" "weekly",
     header :contains "subject" "digest",
     header :contains "subject" "newsletter",
