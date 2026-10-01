@@ -4,7 +4,7 @@ Generic Nginx web server for serving static content.
 
 ## Overview
 
-This stack provides a lightweight Nginx container that can be deployed multiple times on the same server using the `deployAs` feature in `config.json`. It's commonly used for:
+This stack provides a lightweight Nginx container for static content. It's commonly used for:
 
 - Static website hosting
 - Dashboard/homepage
@@ -22,36 +22,16 @@ This stack provides a lightweight Nginx container that can be deployed multiple 
 
 ### Basic Deployment
 
-Add to `servers/{server}/config.json`:
-
-```json
-{
-  "stacks": [
-    { "name": "nginx", "deployAs": "homepage" }
-  ]
-}
-```
-
-### Multiple Deployments
-
-Deploy the same nginx stack multiple times:
-
-```json
-{
-  "stacks": [
-    { "name": "nginx", "deployAs": "homepage" },
-    { "name": "nginx", "deployAs": "blog" },
-    { "name": "nginx", "deployAs": "docs" }
-  ]
-}
+```bash
+rostok stack add nginx -s <server>
 ```
 
 ### Content
 
-Place your HTML/CSS/JS files in `servers/{server}/configs/{deployAs}/src/`:
+Place your HTML/CSS/JS files in `servers/{server}/configs/nginx/src/`:
 
 ```
-servers/home/configs/homepage/src/
+servers/home/configs/nginx/src/
 ├── index.html
 ├── style.css
 └── assets/
@@ -62,24 +42,31 @@ servers/home/configs/homepage/src/
 For dynamic content generation (like the homepage), add a `before.deploy.ts` script:
 
 ```
-servers/{server}/configs/{deployAs}/before.deploy.ts
+servers/{server}/configs/nginx/before.deploy.ts
 ```
 
 This script runs before deployment and can generate HTML from templates, fetch data, etc.
 
 ## Environment Variables
 
-No environment variables required - fully configured via compose file and Traefik labels.
+| Variable               | Default         | Meaning                           |
+| ---------------------- | --------------- | --------------------------------- |
+| `NGINX_IMAGE_TAG`      | `alpine`        | Image tag                         |
+| `NGINX_CONTAINER_NAME` | `hl-nginx`      | Container and Traefik router name |
+| `NGINX_DOMAIN`         | `www.${DOMAIN}` | Public host of the site           |
+
+The site serves `${PATH_APPS}/configs/nginx/src`, which deploy fills from
+`servers/<server>/configs/nginx/src/` in your project. Put an `index.html` there before the first
+deploy: an empty folder answers 403.
 
 ## Access
 
-Service is available at: `https://{deployAs}.${DOMAIN}`
-
-Example: `https://homepage.example.com`
+Service is available at `https://<NGINX_DOMAIN>`, for example `https://www.example.com`.
 
 ## Notes
 
 - Content is mounted read-only for security
-- Container name becomes `{deployAs}` (e.g., `homepage`)
-- Each deployment needs unique subdomain configured in Traefik rules
+- One instance per server through `rostok stack add`: the container name comes from
+  `NGINX_CONTAINER_NAME`, and a server's `.env` holds one value for it. A second copy under another
+  `deployAs` name needs its own container name, which only a compose override can give it.
 - No persistent data beyond the mounted content directory
