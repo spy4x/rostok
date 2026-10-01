@@ -105,16 +105,28 @@ used). Env files are passed as `--env-file=.env.root --env-file=.env` when both 
 server deployed with `rostok deploy` (`<disk>/rostok/apps/stacks/<name>/compose.yml`) is handled
 correctly even though the runner lives elsewhere.
 
+Docker runs with a cleaned environment: only `PATH`, `XDG_RUNTIME_DIR`, the `DOCKER_*` variables
+and `HOME=/home/<SSH_USER>`. Compose gives its own environment priority over `--env-file`, and
+the runner's env file always sets `VOLUMES_PATH` and `PATH_APPS`, so without the cleanup a
+rebuilt stack would mount the runner's paths instead of the deployed ones.
+
 - No container of the stack is running: nothing is stopped, and nothing is started afterwards. No
-  path is guessed.
-- `start` fails because a container vanished (Watchtower): `up -d` runs from the apps root with `--env-file=.env.root --env-file=.env`, the same as `rostok deploy`. If a recorded
-  compose file or one of those env files no longer exists, `up -d` does not run: the stack stays
-  stopped and the backup is reported as failed, rather than rebuilding the stack from wrong config.
+  path is guessed. A stack whose containers all exist but are stopped stays stopped; earlier
+  versions of the runner started it.
+- `start` fails because a container vanished (Watchtower): `up -d` runs from the apps root with
+  `--env-file=.env.root --env-file=.env`, the same as `rostok deploy`. If a recorded compose file
+  or one of those env files no longer exists, `up -d` does not run: the stack stays stopped and
+  the backup is reported as failed, rather than rebuilding the stack from wrong config. An old
+  layout with only `.env` at the apps root therefore never gets an automatic rebuild.
+- The containers of one project carry different compose file lists (a deploy override changed
+  only some services, so only those were recreated with it): the runner uses the longest list,
+  as long as every other list fits inside it in the same order. Lists that do not fit together
+  fail the backup without stopping anything; recreate the stack from its current files.
 - A running container looks like it belongs to the stack (same project name or stack directory) but
   no compose file of it ends in `/stacks/<name>/compose.yml`: the backup fails instead of copying
   the data live.
-- The stack's containers come from more than one compose project: the backup fails without stopping
-  anything.
+- The stack's containers come from more than one compose project or apps root: the backup fails
+  without stopping anything.
 
 A `rostok backup` command that replaces this runner is still planned in
 [#297](https://github.com/spy4x/rostok/issues/297). This fix is smaller and blocks moving the home
