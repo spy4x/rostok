@@ -217,3 +217,66 @@ export async function verifyActiveDkimDns(
   }
   return signatures.length
 }
+
+/**
+ * Headers every DKIM signature must cover, besides Stalwart's default From, To, Date, Subject
+ * and Message-ID. RFC 8058 counts a one-click unsubscribe only when the signature covers
+ * List-Unsubscribe and List-Unsubscribe-Post, and Gmail and Yahoo require one-click unsubscribe
+ * from senders of list mail. Reply-To and the MIME headers are signed so a relay cannot swap
+ * where replies go or how the body is read.
+ */
+export const REQUIRED_SIGNED_HEADERS = [
+  "From",
+  "To",
+  "Cc",
+  "Date",
+  "Subject",
+  "Message-ID",
+  "Reply-To",
+  "In-Reply-To",
+  "References",
+  "MIME-Version",
+  "Content-Type",
+  "List-Unsubscribe",
+  "List-Unsubscribe-Post",
+] as const
+
+/**
+ * Adds every header in {@link REQUIRED_SIGNED_HEADERS} to each DKIM signature that lacks one,
+ * keeping any header a signature already signs. Returns how many signatures changed.
+ */
+export async function ensureDkimSignedHeaders(domain: string, password: string): Promise<number> {
+  const response = await callStalwartJmap(domain, password, {
+    using: ["urn:ietf:params:jmap:core"],
+    methodCalls: [[
+      "x:DkimSignature/get",
+      { accountId: STALWART_ACCOUNT, ids: null, properties: ["id", "headers"] },
+      "0",
+    ]],
+  })
+  const list = (getMethodResponse(response, "x:DkimSignature/get").list ?? []) as Array<
+    { id: string; headers?: Record<string, boolean> }
+  >
+  const update: Record<string, { headers: Record<string, boolean> }> = {}
+  for (const signature of list) {
+    const current = signature.headers ?? {}
+    const missing = REQUIRED_SIGNED_HEADERS.filter((name) => current[name] !== true)
+    if (missing.length === 0) continue
+    update[signature.id] = {
+      headers: { ...current, ...Object.fromEntries(missing.map((name) => [name, true])) },
+    }
+  }
+  if (Object.keys(update).length === 0) return 0
+
+  const set = await callStalwartJmap(domain, password, {
+    using: ["urn:ietf:params:jmap:core"],
+    methodCalls: [["x:DkimSignature/set", { accountId: STALWART_ACCOUNT, update }, "0"]],
+  })
+  const notUpdated = getMethodResponse(set, "x:DkimSignature/set").notUpdated as
+    | Record<string, unknown>
+    | undefined
+  if (notUpdated && Object.keys(notUpdated).length) {
+    throw new Error(`failed to update DKIM signed headers: ${JSON.stringify(notUpdated)}`)
+  }
+  return Object.keys(update).length
+}

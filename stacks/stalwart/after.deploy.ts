@@ -12,6 +12,7 @@
 import {
   callStalwartJmap,
   DkimInvariantError,
+  ensureDkimSignedHeaders,
   ensureManualDkimManagement,
   STALWART_ACCOUNT,
   verifyActiveDkimDns,
@@ -371,6 +372,10 @@ async function main() {
     if (hostname === "created") console.log(`✓ Set defaultHostname to ${DEFAULT_HOSTNAME}`)
     else if (hostname === "updated") console.log(`✓ Updated defaultHostname to ${DEFAULT_HOSTNAME}`)
     else console.log(`✓ defaultHostname already ${DEFAULT_HOSTNAME}`)
+
+    const signedHeaders = await ensureDkimSignedHeaders(DOMAIN, PASSWORD)
+    if (signedHeaders > 0) console.log(`✓ Extended signed headers on ${signedHeaders} DKIM key(s)`)
+    else console.log("✓ DKIM signatures already cover the required headers")
   } catch (err) {
     console.warn("Non-critical Stalwart setup failed:", err instanceof Error ? err.message : err)
   }
