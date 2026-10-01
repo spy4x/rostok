@@ -23,6 +23,7 @@ case "$1" in
       *" start") [ -s '${dir}/start-stderr' ] && { cat '${dir}/start-stderr' >&2; exit 1; } ;;
       *" up -d") touch '${dir}/up-done' ;;
       *" ps --services --status running")
+        [ -e '${dir}/ps-fails' ] && { echo "ps broke" >&2; exit 1; }
         if [ -e '${dir}/up-done' ]; then cat '${dir}/running-after-up'
         else cat '${dir}/running-after-start'; fi ;;
     esac
@@ -404,5 +405,16 @@ Deno.test("does not run up -d when every service that ran before the stop runs a
     const c = await h.run("start")
     assertEquals(c.status, BackupStatus.IN_PROGRESS)
     assertEquals(h.log().some((l) => l.endsWith(` up -d`)), false)
+  })
+})
+
+Deno.test("fails the stack's backup when it cannot list running services after start", async () => {
+  await withTwoServiceStack({ runningAfterStart: `web\ndb\n` }, async (h) => {
+    await h.run("stop")
+    await Deno.writeTextFile(`${h.dir}/ps-fails`, ``)
+    const c = await h.run("start")
+    assertEquals(c.status, BackupStatus.ERROR)
+    assertEquals(c.errorAtStep, `compose_start`)
+    assertStringIncludes(c.error ?? ``, `could not list its running services`)
   })
 })
