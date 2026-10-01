@@ -153,7 +153,9 @@ stack) reach it; everything else is dropped. A value's own quotes are
 stripped once on the way in (`KEY="has a space"` in `.env` arrives as
 `has a space`, no quotes) — the same thing docker compose's `env_file`
 and Deno's `--env-file` do when they load a `.env`, so a hook sees
-exactly what its container sees.
+exactly what its container sees. A `$` arrives the way compose reads it
+too: `KEY='p$ss'` arrives as `p$ss`, and so does `KEY=p$$ss`, since `$$`
+is compose's escape for one `$` outside single quotes.
 
 Plus the contract keys `SSH_ADDRESS`, `SSH_HOST`, `SSH_PORT`, `SSH_USER`,
 `PATH_APPS` and `DEPLOY_AS` — `SSH_HOST`/`SSH_PORT` are parsed once
