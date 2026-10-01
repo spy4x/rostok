@@ -105,10 +105,13 @@ used). Env files are passed as `--env-file=.env.root --env-file=.env` when both 
 server deployed with `rostok deploy` (`<disk>/rostok/apps/stacks/<name>/compose.yml`) is handled
 correctly even though the runner lives elsewhere.
 
-Docker runs with a cleaned environment: only `PATH`, `XDG_RUNTIME_DIR`, the `DOCKER_*` variables
-and `HOME=/home/<SSH_USER>`. Compose gives its own environment priority over `--env-file`, and
-the runner's env file always sets `VOLUMES_PATH` and `PATH_APPS`, so without the cleanup a
-rebuilt stack would mount the runner's paths instead of the deployed ones.
+Only the `up -d` fallback runs with a cleaned environment: `PATH`, `XDG_RUNTIME_DIR`, the
+`DOCKER_*` variables, `DOCKER_CONFIG` defaulting to the runner's own `~/.docker`, and
+`HOME=/home/<SSH_USER>`. Compose gives its own environment priority over `--env-file`, and the
+runner's env file always sets `VOLUMES_PATH` and `PATH_APPS`, so without the cleanup a rebuilt
+stack would mount the runner's paths instead of the deployed ones. `ps`, stop and start never
+create a container, so they keep the runner's environment; a stack with a required variable can
+then be stopped even where the apps root has no env files.
 
 - No container of the stack is running: nothing is stopped, and nothing is started afterwards. No
   path is guessed. A stack whose containers all exist but are stopped stays stopped; earlier
