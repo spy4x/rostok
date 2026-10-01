@@ -62,19 +62,78 @@ It has to be installed for root via `sudo crontab -e` to allow changing ownershi
 30 2 * * * SSH_USER=$USER /path/to/deno run --env-file=/path/to/.env -A /path/to/+main.ts >> /path/to/backup.log 2>&1
 ```
 
+## Running a pinned release
+
+Run the runner from a git checkout of a release tag, not from a hand copy or a dev checkout:
+
+```bash
+git clone --branch v<version> --depth 1 https://github.com/spy4x/rostok <disk>/rostok/backup-runner
+deno run -A --env-file=<server env> <disk>/rostok/backup-runner/scripts/backup/+main.ts
+```
+
+To upgrade, clone the new tag next to the old one and point the cron job at it.
+
 ## Environment Variables
 
-Required environment variables:
+Read from the `--env-file` (or the shell) by `+main.ts` and `src/+lib.ts`:
 
-- `PATH_SYNC` - Base path for backup storage
-- `BACKUPS_PASSWORD` - Password for restic repositories
-- `PATH_APPS` - Path to applications directory
-- `SSH_USER` - Remote user name for ownership changes (read from the server `.env`, not the shell's own `$USER`)
+Required:
 
-Optional environment variables:
+- `SSH_USER` - user that owns the data; read from the server `.env`, not the shell's own `$USER`
+- `PATH_APPS` - the apps directory (`stacks/` and `configs/backup/` are read from it)
+- `VOLUMES_PATH` - where service data lives (default backup source `${VOLUMES_PATH}/<name>`)
+- `PATH_SYNC` - base path for synced data
+- `SERVER_NAME` - server name, used in reports and `destName` templates
+- `PATH_BACKUPS` - where the restic repositories are written
+- `BACKUPS_PASSWORD` - password of the restic repositories
+- `NTFY_URL_BACKUPS` - ntfy topic URL for the report
+- `NTFY_TOKEN_BACKUPS` - ntfy bearer token
 
-- `NTFY_URL` - ntfy topic URL for notifications (e.g., `https://ntfy.yourdomain.com/backups`)
-- `NTFY_AUTH_TOKEN` - ntfy authentication token (Bearer token from ntfy settings)
+Optional:
+
+- `PATH_MEDIA` - media path (home server only)
+- `HEALTHCHECKS_BACKUP_URL` - healthchecks.io-style ping URL
+
+## How stacks are stopped and restarted
+
+Before stopping a stack, the runner finds its running containers and reads their compose labels
+(`com.docker.compose.project`, `.project.config_files`). Stop, start and the `up -d` fallback all
+use exactly that project name and those compose files, run from the apps root (the part of the
+compose path before `/stacks/<name>/compose.yml`, where `rostok deploy` runs compose and keeps
+`.env.root` and `.env`; compose's own `working_dir` label is the stack directory, so it is not
+used). Env files are passed as `--env-file=.env.root --env-file=.env` when both exist. So a
+server deployed with `rostok deploy` (`<disk>/rostok/apps/stacks/<name>/compose.yml`) is handled
+correctly even though the runner lives elsewhere.
+
+Only the `up -d` fallback runs with a cleaned environment: `PATH`, `XDG_RUNTIME_DIR`, the
+`DOCKER_*` variables, `DOCKER_CONFIG` defaulting to the runner's own `~/.docker`, and
+`HOME=/home/<SSH_USER>`. Compose gives its own environment priority over `--env-file`, and the
+runner's env file always sets `VOLUMES_PATH` and `PATH_APPS`, so without the cleanup a rebuilt
+stack would mount the runner's paths instead of the deployed ones. `ps`, stop and start never
+create a container, so they keep the runner's environment; a stack with a required variable can
+then be stopped even where the apps root has no env files.
+
+- No container of the stack is running: nothing is stopped, and nothing is started afterwards. No
+  path is guessed. A stack whose containers all exist but are stopped stays stopped; earlier
+  versions of the runner started it.
+- `start` fails because a container vanished (Watchtower): `up -d` runs from the apps root with
+  `--env-file=.env.root --env-file=.env`, the same as `rostok deploy`. If a recorded compose file
+  or one of those env files no longer exists, `up -d` does not run: the stack stays stopped and
+  the backup is reported as failed, rather than rebuilding the stack from wrong config. An old
+  layout with only `.env` at the apps root therefore never gets an automatic rebuild.
+- The containers of one project carry different compose file lists (a deploy override changed
+  only some services, so only those were recreated with it): the runner uses the longest list,
+  as long as every other list fits inside it in the same order. Lists that do not fit together
+  fail the backup without stopping anything; recreate the stack from its current files.
+- A running container looks like it belongs to the stack (same project name or stack directory) but
+  no compose file of it ends in `/stacks/<name>/compose.yml`: the backup fails instead of copying
+  the data live.
+- The stack's containers come from more than one compose project or apps root: the backup fails
+  without stopping anything.
+
+A `rostok backup` command that replaces this runner is still planned in
+[#297](https://github.com/spy4x/rostok/issues/297). This fix is smaller and blocks moving the home
+server to the rostok layout, so it ships first.
 
 ## Configuration Structure
 

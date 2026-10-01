@@ -15,7 +15,7 @@ class BackupRunner {
 
   constructor() {
     this.context = this.initializeContext()
-    this.operations = new BackupOperations(this.context.backupsPassword, this.context.stacksPath)
+    this.operations = new BackupOperations(this.context.backupsPassword)
     this.reporter = new BackupReporter(this.context)
   }
 
