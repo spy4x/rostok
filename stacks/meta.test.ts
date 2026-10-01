@@ -80,10 +80,10 @@ function isRead(key: string, files: Map<string, string>): boolean {
 
 /**
  * Stacks whose +meta.ts predates this test and misses compose variables, so they skip only the
- * "declares every compose variable" check. Neither ships in the catalog; the cloud batch of
- * https://github.com/spy4x/rostok/issues/283 completes them and removes them from this list.
+ * "declares every compose variable" check. It does not ship in the catalog; the cloud batch of
+ * https://github.com/spy4x/rostok/issues/283 completes it and removes it from this list.
  */
-const MISSING_COMPOSE_VARS = new Set(["mirotalk", "stalwart"])
+const MISSING_COMPOSE_VARS = new Set(["mirotalk"])
 
 const names = await stacksWithMeta()
 
