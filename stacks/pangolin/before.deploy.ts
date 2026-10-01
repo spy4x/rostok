@@ -23,18 +23,22 @@ export function isDynamicConfigName(name: string): boolean {
  */
 export async function copyServerConfigs(source: string, dest: string): Promise<string[]> {
   const copied: string[] = []
+  let entries: Deno.DirEntry[]
   try {
-    for await (const entry of Deno.readDir(source)) {
-      if (!entry.isFile || !isDynamicConfigName(entry.name)) continue
-      if (entry.name === "00-pangolin.yml") {
-        throw new Error(`${source}/${entry.name} would replace the catalog's base file; rename it`)
-      }
-      await Deno.copyFile(`${source}/${entry.name}`, `${dest}/${entry.name}`)
-      copied.push(entry.name)
-    }
+    entries = await Array.fromAsync(Deno.readDir(source))
   } catch (err) {
+    // Only a missing source is fine; a missing destination must fail the deploy below.
     if (err instanceof Deno.errors.NotFound) return []
     throw err
+  }
+  for (const entry of entries) {
+    // Plain files only: a symlink could point outside the server's folder.
+    if (!entry.isFile || entry.isSymlink || !isDynamicConfigName(entry.name)) continue
+    if (entry.name === "00-pangolin.yml") {
+      throw new Error(`${source}/${entry.name} would replace the catalog's base file; rename it`)
+    }
+    await Deno.copyFile(`${source}/${entry.name}`, `${dest}/${entry.name}`)
+    copied.push(entry.name)
   }
   return copied
 }

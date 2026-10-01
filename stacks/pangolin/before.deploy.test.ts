@@ -73,3 +73,22 @@ Deno.test("the Pangolin Traefik reads the dynamic directory the catalog file liv
   const base = await Deno.stat(new URL("./traefik/dynamic/00-pangolin.yml", import.meta.url))
   assertEquals(base.isFile, true)
 })
+
+Deno.test("never copies a symlink, so a link cannot pull in a file from outside", async () => {
+  await withDirs(async (source, dest) => {
+    const outside = join(source, "..", "outside.yml")
+    await Deno.writeTextFile(outside, "secret")
+    await Deno.symlink(outside, join(source, "10-link.yml"))
+    assertEquals(await copyServerConfigs(source, dest), [])
+    assertEquals([...Deno.readDirSync(dest)].length, 0)
+  })
+})
+
+Deno.test("a missing destination fails instead of dropping the server's files", async () => {
+  await withDirs(async (source, dest) => {
+    await assertRejects(
+      () => copyServerConfigs(source, join(dest, "missing")),
+      Deno.errors.NotFound,
+    )
+  }, { "10-a.yml": "a" })
+})

@@ -31,6 +31,10 @@ TRAEFIK_BASIC_AUTH_PASSWORD=...         # Dashboard auth (default: generated, 24
 TRAEFIK_FORWARDED_TRUSTED_IPS=            # Optional: CIDRs whose X-Forwarded-* headers are trusted (default: none)
 ```
 
+Only list a proxy you control in `TRAEFIK_FORWARDED_TRUSTED_IPS`: a trusted address may set
+`X-Forwarded-For`, `X-Forwarded-Host` and the other `X-Forwarded-*` headers for every router on
+the `websecure` entrypoint, not just the one it needs them for.
+
 `before.deploy.ts` bcrypt-hashes `TRAEFIK_BASIC_AUTH_PASSWORD` into
 `dynamic/.htpasswd` on every deploy — no manual `htpasswd` step.
 `TRAEFIK_BASIC_AUTH_USER`/`TRAEFIK_BASIC_AUTH_PASSWORD` are the only
