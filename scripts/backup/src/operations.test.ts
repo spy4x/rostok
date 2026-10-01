@@ -169,29 +169,30 @@ Deno.test("runs every docker command without the runner's VOLUMES_PATH and PATH_
   }
 })
 
-Deno.test("leaves the stack stopped and reports failure when up -d cannot reproduce the env", async () => {
-  const root = await Deno.makeTempDir()
-  try {
-    const wd = `${root}/apps`
-    await Deno.mkdir(`${wd}/stacks/app`, { recursive: true })
-    await Deno.writeTextFile(`${wd}/stacks/app/compose.yml`, ``)
-    // no .env.root and no .env
-    const files = `${wd}/stacks/app/compose.yml`
-    await withHarness({
-      ps: psLine(`app`, files, `${wd}/stacks/app`),
-      startStderr: MISSING,
-    }, async (h) => {
-      await h.run("stop")
-      const c = await h.run("start")
-      assertEquals(c.status, BackupStatus.ERROR)
-      assertStringIncludes(c.error ?? ``, `left stopped`)
-      assertStringIncludes(c.error ?? ``, `.env.root`)
-      assertEquals(h.log().some((l) => l.includes(` up `)), false)
-    })
-  } finally {
-    await Deno.remove(root, { recursive: true })
-  }
-})
+for (const missing of [`.env.root`, `.env`, `stacks/app/compose.yml`]) {
+  Deno.test(`leaves the stack stopped and reports failure when ${missing} is gone before up -d`, async () => {
+    const root = await Deno.makeTempDir()
+    try {
+      await Deno.mkdir(`${root}/stacks/app`, { recursive: true })
+      for (const f of [`.env.root`, `.env`, `stacks/app/compose.yml`]) {
+        if (f !== missing) await Deno.writeTextFile(`${root}/${f}`, ``)
+      }
+      await withHarness({
+        ps: psLine(`app`, `${root}/stacks/app/compose.yml`, `${root}/stacks/app`),
+        startStderr: MISSING,
+      }, async (h) => {
+        await h.run("stop")
+        const c = await h.run("start")
+        assertEquals(c.status, BackupStatus.ERROR)
+        assertStringIncludes(c.error ?? ``, `left stopped`)
+        assertStringIncludes(c.error ?? ``, `(missing: ${root}/${missing})`)
+        assertEquals(h.log().some((l) => l.includes(` up `)), false)
+      })
+    } finally {
+      await Deno.remove(root, { recursive: true })
+    }
+  })
+}
 
 Deno.test("runs no compose command when no container of the stack is running", async () => {
   await withHarness({
