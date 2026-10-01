@@ -28,6 +28,7 @@ TRAEFIK_DOMAIN=traefik.yourdomain.com   # Full dashboard host (default: traefik.
 CONTACT_EMAIL=you@email.com             # Let's Encrypt email — a server-level key, set by `server create`
 TRAEFIK_BASIC_AUTH_USER=admin           # Dashboard auth (default: admin)
 TRAEFIK_BASIC_AUTH_PASSWORD=...         # Dashboard auth (default: generated, 24 chars)
+TRAEFIK_FORWARDED_TRUSTED_IPS=            # Optional: CIDRs whose X-Forwarded-* headers are trusted (default: none)
 ```
 
 `before.deploy.ts` bcrypt-hashes `TRAEFIK_BASIC_AUTH_PASSWORD` into

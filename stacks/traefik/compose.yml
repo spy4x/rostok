@@ -50,6 +50,9 @@ services:
       - --entrypoints.websecure.transport.respondingTimeouts.idleTimeout=600s
       - --entrypoints.websecure.transport.respondingTimeouts.writeTimeout=600s
       - "--entrypoints.websecure.http.middlewares=security-headers@file,compression@file"
+      # Addresses (comma-separated CIDRs) whose X-Forwarded-* headers Traefik keeps. Empty, the
+      # default, is the same as not setting the flag: Traefik strips them from every client.
+      - "--entrypoints.websecure.forwardedHeaders.trustedIPs=${TRAEFIK_FORWARDED_TRUSTED_IPS:-}"
       # - "--certificatesresolvers.myresolver.acme.tlschallenge=true"
       - "--certificatesresolvers.myresolver.acme.httpchallenge=true" # Use HTTP-01 challenge
       - "--certificatesresolvers.myresolver.acme.httpchallenge.entrypoint=web" # Use 'web' entrypoint (port 80) for the challenge
