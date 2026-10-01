@@ -12,10 +12,22 @@ JMAP (RFC 8620) — no IMAP polling, real-time push via EventSource.
 ## Stack
 
 - **Image**: `ghcr.io/bulwarkmail/webmail:1.7.6`
-- **Domain**: `webmail.${DOMAIN}`
+- **Domain**: `BULWARK_DOMAIN`, default `webmail.${DOMAIN}`
 - **Auth**: Own login form (authenticates against Stalwart JMAP). No Authelia or
   basic auth middleware — Bulwark handles authentication natively.
 - **Backend**: Connects to `hl-stalwart:8080` (JMAP) on the proxy network.
+
+## Variables
+
+`rostok stack add bulwark` writes these to `.env`:
+
+| Variable                 | Default             | Description                                        |
+| ------------------------ | ------------------- | -------------------------------------------------- |
+| `BULWARK_DOMAIN`         | `webmail.${DOMAIN}` | Public host of the webmail.                        |
+| `BULWARK_ADMIN_PASSWORD` | generated           | Password for the setup wizard and admin dashboard. |
+| `BULWARK_SESSION_SECRET` | generated           | Signs admin session cookies.                       |
+
+The JMAP server is `https://mail.${DOMAIN}`, where the `stalwart` stack puts it.
 
 ## Initial Setup
 

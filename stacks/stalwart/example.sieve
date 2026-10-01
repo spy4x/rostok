@@ -2,8 +2,8 @@
 #
 # This is the exact script that runs on each mailbox in the homelab.
 # Two instances are deployed:
-#   - anton@antonshubin.com  (accountId "b")
-#   - anton@neatsoft.dev      (accountId "c")
+#   - user@example.com     (accountId "b")
+#   - user@example.org      (accountId "c")
 #
 # Both share the same script body — only the accountId differs when the
 # script is uploaded via JMAP. See apply-sieve-filters.ts for the

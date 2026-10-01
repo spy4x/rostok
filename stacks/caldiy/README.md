@@ -4,7 +4,7 @@
 
 ## Subdomain
 
-`schedule.${DOMAIN}`
+`CALDIY_DOMAIN`, default `schedule.${DOMAIN}`
 
 ## Setup
 
@@ -23,7 +23,18 @@
 | `CALDIY_CRON_API_KEY`    | Shared secret for cron endpoints (`scheduleEmailReminders`, etc.). `openssl rand -hex 24`                                           |
 | `CALDIY_VERSION`         | Image tag (default: `latest`)                                                                                                       |
 
-**All five keys are required.** Container exits with `Please set NEXTAUTH_SECRET` if any is empty.
+`rostok stack add caldiy` generates the four secrets. The rest:
+
+| Variable               | Default              | Description                                                      |
+| ---------------------- | -------------------- | ---------------------------------------------------------------- |
+| `CALDIY_DOMAIN`        | `schedule.${DOMAIN}` | Public host; also the app's own URL.                             |
+| `CALDIY_SMTP_HOST`     | `mail.${DOMAIN}`     | SMTP server for outgoing mail.                                   |
+| `CALDIY_SMTP_PORT`     | `587`                | Submission port (STARTTLS).                                      |
+| `CALDIY_SMTP_FROM`     | `noreply@${DOMAIN}`  | From address.                                                    |
+| `CALDIY_SMTP_USERNAME` | `noreply@${DOMAIN}`  | SMTP login.                                                      |
+| `CALDIY_SMTP_PASSWORD` | none                 | SMTP password. Set it to turn mail on; create the mailbox first. |
+
+**The four secrets are required.** Container exits with `Please set NEXTAUTH_SECRET` if any is empty.
 
 ## Notes
 
@@ -41,32 +52,31 @@ If confirmation/notification emails aren't being delivered, verify in this order
 
 ```bash
 # Test SMTP auth from inside caldiy container
-ssh home "docker exec hl-caldiy node -e 'require(\"nodemailer\").createTransport({host:\"mail.antonshubin.com\",port:587,secure:false,auth:{user:\"noreply@antonshubin.com\",pass:process.env.EMAIL_SERVER_PASSWORD},tls:{rejectUnauthorized:false}}).sendMail({from:\"noreply@antonshubin.com\",to:\"anton@antonshubin.com\",subject:\"test\",text:\"hello\"}).then(r=>console.log(\"OK\",r.messageId)).catch(e=>console.error(\"FAIL\",e.message))'"
+ssh home "docker exec hl-caldiy node -e 'require(\"nodemailer\").createTransport({host:\"mail.example.com\",port:587,secure:false,auth:{user:\"noreply@example.com\",pass:process.env.EMAIL_SERVER_PASSWORD},tls:{rejectUnauthorized:false}}).sendMail({from:\"noreply@example.com\",to:\"user@example.com\",subject:\"test\",text:\"hello\"}).then(r=>console.log(\"OK\",r.messageId)).catch(e=>console.error(\"FAIL\",e.message))'"
 # FAIL → goto step 2; OK → skip to step 6
 ```
 
-### 2. Create noreply account on Stalwart (cloudlab)
+### 2. Create noreply account on Stalwart
 
-The `noreply@antonshubin.com` account must exist on the Stalwart mailserver
-(cloudlab). If missing, create it via the admin UI:
+The `noreply@example.com` account must exist on the Stalwart mailserver. If missing, create it via the admin UI:
 
-1. Go to `https://mail.antonshubin.com/admin` → Directory → Add user
-2. Set name: `noreply`, email: `noreply@antonshubin.com`
+1. Go to `https://mail.example.com/admin` → Directory → Add user
+2. Set name: `noreply`, email: `noreply@example.com`
 3. Set password matching `CALDIY_SMTP_PASSWORD` in `servers/home/.env`
 4. Verify with the SMTP test in step 1
 
 ### 3. Network & DNS
 
 ```bash
-dig mail.antonshubin.com +short     # → cloud public IP (23.88.101.28)
-nc -vz mail.antonshubin.com 587     # → open
+dig mail.example.com +short     # → cloud public IP (203.0.113.10)
+nc -vz mail.example.com 587     # → open
 ```
 
 ### 4. STARTTLS cert
 
 ```bash
-echo | openssl s_client -connect mail.antonshubin.com:587 -starttls smtp -servername mail.antonshubin.com 2>/dev/null | grep "subject="
-# Expected: subject=CN=mail.antonshubin.com
+echo | openssl s_client -connect mail.example.com:587 -starttls smtp -servername mail.example.com 2>/dev/null | grep "subject="
+# Expected: subject=CN=mail.example.com
 ```
 
 ### 5. Caldiy container logs

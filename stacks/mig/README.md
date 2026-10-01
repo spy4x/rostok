@@ -7,7 +7,7 @@ book a time slot.
 
 ## What it does
 
-Visitors land on `meet.${DOMAIN}`, pick an available date + time, fill in
+Visitors land on `MIG_DOMAIN` (default `meet.${DOMAIN}`), pick an available date + time, fill in
 name + email, and get a confirmation with a calendar invite (`.ics`).
 The owner receives an email for every booking and every cancellation.
 Either side can cancel via a link in the email.
@@ -117,7 +117,17 @@ which router serves them.
 
 ## Configuration
 
-All config via env vars in `${PATH_APPS}/configs/mig.env`:
+`rostok stack add mig` writes these to `.env`:
+
+| Variable                | Default                                                   | Description                                           |
+| ----------------------- | --------------------------------------------------------- | ----------------------------------------------------- |
+| `MIG_DOMAIN`            | `meet.${DOMAIN}`                                          | Public host of the booking page.                      |
+| `MIG_IMAGE_TAG`         | `latest`                                                  | Image tag; pin it to roll back.                       |
+| `MIG_MIDDLEWARES`       | `security-headers@file,compression@file,robots-deny@file` | Traefik chain for every path outside `/embed`.        |
+| `MIG_EMBED_MIDDLEWARES` | none (follows `MIG_MIDDLEWARES`)                          | Chain for `/embed`; see "Embedding in your own site". |
+
+The stack does not start until `servers/<server>/configs/mig.env` exists: write it
+before the first deploy. It holds mig's own settings, as env vars in `${PATH_APPS}/configs/mig.env`:
 
 ```bash
 # Required
@@ -168,11 +178,11 @@ snapshot.
   redeploy. ⚠️ WARNING: rotating `CANCEL_SECRET` invalidates every
   existing cancel link. Do this only if tokens have leaked.
 - **Rotate the SMTP password**: in production mig sends from the
-  `noreply@antonshubin.com` mailbox, and three other senders log in to the same
+  `noreply@example.com` mailbox, and three other senders log in to the same
   mailbox with the same password. Change it in all four places together, or the
   ones left behind stop mailing without warning:
   - mig: `servers/cloud/configs/mig.env`, `SMTP_PASSWORD`;
-  - antonshubin.com: its production env, `SMTP_PASSWORD` (that repository's
+  - example.com: its production env, `SMTP_PASSWORD` (that repository's
     `docs/deploy.md`, "Shared mail password");
   - Healthchecks: `servers/cloud/.env`, `HEALTHCHECKS_SMTP_PASSWORD`;
   - Vaultwarden: `servers/cloud/.env`, `VAULTWARDEN_SMTP_PASSWORD`.

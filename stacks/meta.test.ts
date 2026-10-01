@@ -39,7 +39,7 @@ async function codeOf(name: string, file: string): Promise<string> {
 /** Every `${KEY}` a text reads, with its `:-default` when it has one. */
 function refsOf(text: string): Map<string, string | undefined> {
   const refs = new Map<string, string | undefined>()
-  for (const m of text.matchAll(/\$\{([A-Z0-9_]+)(:?-([^}]*))?[:?}]/g)) {
+  for (const m of text.matchAll(/\$\{([A-Z0-9_]+)(:?-((?:[^{}]|\$\{[^}]*\})*))?[:?}]/g)) {
     refs.set(m[1], m[3])
   }
   return refs
@@ -80,10 +80,10 @@ function isRead(key: string, files: Map<string, string>): boolean {
 
 /**
  * Stacks whose +meta.ts predates this test and misses compose variables, so they skip only the
- * "declares every compose variable" check. Neither ships in the catalog; the cloud batch of
- * https://github.com/spy4x/rostok/issues/283 completes them and removes them from this list.
+ * "declares every compose variable" check. It does not ship in the catalog; the cloud batch of
+ * https://github.com/spy4x/rostok/issues/283 completes it and removes it from this list.
  */
-const MISSING_COMPOSE_VARS = new Set(["mirotalk", "stalwart"])
+const MISSING_COMPOSE_VARS = new Set(["mirotalk"])
 
 const names = await stacksWithMeta()
 
