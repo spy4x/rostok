@@ -1,7 +1,7 @@
 // Runs BackupOperations against a fake `docker` shell script that logs every
 // call (cwd + args, and separately the variables it received) and answers from
-// files in its directory: the runner gives docker a cleaned environment, so
-// the fake cannot be configured through env vars. The fake never calls a real
+// files in its directory: the up -d fallback gets a cleaned environment, so
+// the fake is not configured through env vars. The fake never calls a real
 // docker, and exits non-zero if it is ever invoked from itself (depth guard).
 
 import { assertEquals, assertStringIncludes } from "@std/assert"
@@ -14,8 +14,8 @@ function fakeDocker(dir: string): string {
 if [ -n "$FAKE_DOCKER_DEPTH" ]; then echo "fake docker recursed" >&2; exit 99; fi
 export FAKE_DOCKER_DEPTH=1
 printf '%s|%s\\n' "$PWD" "$*" >> '${dir}/docker.log'
-printf 'VOLUMES_PATH=%s|PATH_APPS=%s|HOME=%s|DOCKER_HOST=%s\\n' \\
-  "$VOLUMES_PATH" "$PATH_APPS" "$HOME" "$DOCKER_HOST" >> '${dir}/env.log'
+printf 'VOLUMES_PATH=%s|PATH_APPS=%s|HOME=%s|DOCKER_HOST=%s|DOCKER_CONFIG=%s\\n' \\
+  "$VOLUMES_PATH" "$PATH_APPS" "$HOME" "$DOCKER_HOST" "$DOCKER_CONFIG" >> '${dir}/env.log'
 case "$1" in
   ps) cat '${dir}/ps-output'; exit 0 ;;
   compose)
@@ -42,7 +42,7 @@ interface Harness {
   dir: string
   /** `<cwd>|<args>` per docker call */
   log: () => string[]
-  /** `VOLUMES_PATH=..|PATH_APPS=..|HOME=..|DOCKER_HOST=..` per docker call */
+  /** `VOLUMES_PATH=..|PATH_APPS=..|HOME=..|DOCKER_HOST=..|DOCKER_CONFIG=..` per docker call */
   envLog: () => string[]
   run: (
     action: "start" | "stop",
@@ -59,6 +59,7 @@ const RUNNER_ENV: Record<string, string> = {
   PATH_SYNC: `/nonexistent/sync`,
   SERVER_NAME: `test`,
   DOCKER_HOST: `unix:///nonexistent/docker.sock`,
+  HOME: `/nonexistent/root`,
 }
 
 async function withHarness(
@@ -80,6 +81,8 @@ async function withHarness(
       saved.set(k, Deno.env.get(k))
       Deno.env.set(k, v)
     }
+    saved.set(`DOCKER_CONFIG`, Deno.env.get(`DOCKER_CONFIG`))
+    Deno.env.delete(`DOCKER_CONFIG`)
     const { BackupOperations } = await import(`./operations.ts?bust=${crypto.randomUUID()}`)
     const ops = new BackupOperations(`pw`)
     const config: BackupConfigState = {
@@ -151,7 +154,7 @@ Deno.test("stops, starts and rebuilds with the running container's own compose f
   }
 })
 
-Deno.test("runs every docker command without the runner's VOLUMES_PATH and PATH_APPS", async () => {
+Deno.test("runs up -d without the runner's VOLUMES_PATH and PATH_APPS, the rest with them", async () => {
   // Compose prefers its process env over --env-file, so a leaked VOLUMES_PATH
   // would rebuild the stack on the runner's paths, not the deployed ones.
   const root = await Deno.makeTempDir()
@@ -169,10 +172,15 @@ Deno.test("runs every docker command without the runner's VOLUMES_PATH and PATH_
       assertEquals(c.status, BackupStatus.IN_PROGRESS)
       // ps, stop, start and the up -d fallback
       assertEquals(h.log().filter((l) => l.endsWith(` up -d`)).length, 1)
-      // DOCKER_* still reaches docker, and HOME is the data owner's, not root's.
+      // ps, stop and start keep the runner's env, so required variables resolve
+      // even without env files. up -d: DOCKER_* still reaches docker, HOME is
+      // the data owner's, and docker's own config stays the runner's.
+      const inherited = `VOLUMES_PATH=${RUNNER_ENV.VOLUMES_PATH}|` +
+        `PATH_APPS=${RUNNER_ENV.PATH_APPS}|HOME=${RUNNER_ENV.HOME}|` +
+        `DOCKER_HOST=${RUNNER_ENV.DOCKER_HOST}|DOCKER_CONFIG=`
       const clean = `VOLUMES_PATH=|PATH_APPS=|HOME=/home/tester|` +
-        `DOCKER_HOST=${RUNNER_ENV.DOCKER_HOST}`
-      assertEquals(h.envLog(), [clean, clean, clean, clean])
+        `DOCKER_HOST=${RUNNER_ENV.DOCKER_HOST}|DOCKER_CONFIG=${RUNNER_ENV.HOME}/.docker`
+      assertEquals(h.envLog(), [inherited, inherited, inherited, clean])
     })
   } finally {
     await Deno.remove(root, { recursive: true })
@@ -280,20 +288,28 @@ Deno.test("stops a project whose services carry different compose file lists wit
   })
 })
 
-Deno.test("fails with the real cause when one project's compose file lists do not fit together", async () => {
-  await withAppsRoot(async (root) => {
-    const base = `${root}/stacks/app/compose.yml`
-    await withHarness({
-      ps: psLine(`app`, `${base},${root}/one.yml`, `${root}/stacks/app`) +
-        psLine(`app`, `${base},${root}/two.yml`, `${root}/stacks/app`),
-    }, async (h) => {
-      const c = await h.run("stop")
-      assertEquals(c.status, BackupStatus.ERROR)
-      assertStringIncludes(c.error ?? ``, `do not fit together`)
-      assertEquals(h.log().filter((l) => l.includes(`|compose `)), [])
+// The longer list must contain the shorter one in the same order: compose
+// merges files in list order, so a reordered list is a different config.
+const MISFITS: [string, (root: string) => string][] = [
+  [`other files`, (root) => `${root}/stacks/app/compose.yml,${root}/three.yml`],
+  [`the same files reordered`, (root) => `${root}/one.yml,${root}/stacks/app/compose.yml`],
+]
+for (const [name, second] of MISFITS) {
+  Deno.test(`fails with the real cause when one project's compose file lists do not fit together (${name})`, async () => {
+    await withAppsRoot(async (root) => {
+      const first = `${root}/stacks/app/compose.yml,${root}/one.yml,${root}/two.yml`
+      await withHarness({
+        ps: psLine(`app`, first, `${root}/stacks/app`) +
+          psLine(`app`, second(root), `${root}/stacks/app`),
+      }, async (h) => {
+        const c = await h.run("stop")
+        assertEquals(c.status, BackupStatus.ERROR)
+        assertStringIncludes(c.error ?? ``, `do not fit together`)
+        assertEquals(h.log().filter((l) => l.includes(`|compose `)), [])
+      })
     })
   })
-})
+}
 
 Deno.test("stops a running stack whose containers have no working_dir label", async () => {
   await withAppsRoot(async (root) => {

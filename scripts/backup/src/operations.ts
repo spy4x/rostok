@@ -93,8 +93,10 @@ export class BackupOperations {
    * is reported as failed with the stack stopped. A stopped stack and a red
    * report beat a stack silently rebuilt from wrong config.
    *
-   * Every docker command here runs with `composeEnv`, not this process's
-   * environment, so only the deployed env files reach compose.
+   * `up -d` runs with `composeEnv`, not this process's environment, so only
+   * the deployed env files decide what it builds. `ps`, stop and start never
+   * create a container, so they keep the runner's environment: a stack with a
+   * required variable can still be stopped on an apps root without env files.
    */
   private async manageComposeStack(
     stackDir: string,
@@ -147,6 +149,7 @@ export class BackupOperations {
       const { code: upCode, stderr: upErrStr } = await this.docker(
         [...baseArgs, ...DEPLOY_ENV_FILE_ARGS, "up", "-d"],
         target.appsRoot,
+        true,
       )
       if (upCode !== 0) {
         this.markBackupFailed(
@@ -220,21 +223,21 @@ export class BackupOperations {
   }
 
   /**
-   * Runs `docker` for a compose stack with `composeEnv` instead of this
-   * process's environment. A failure to spawn (the apps root is gone, say)
+   * Runs `docker` for a compose stack; `clean` swaps this process's
+   * environment for `composeEnv`. A failure to spawn (the apps root is gone, say)
    * comes back as a failed result, so it fails this stack's backup rather than
    * throwing out of the restart in the runner's `finally`.
    */
   private async docker(
     args: string[],
     cwd?: string,
+    clean = false,
   ): Promise<{ code: number; stdout: string; stderr: string }> {
     try {
       const { code, stdout, stderr } = await new Deno.Command("docker", {
         args,
         cwd,
-        clearEnv: true,
-        env: composeEnv(Deno.env.toObject(), USER),
+        ...(clean ? { clearEnv: true, env: composeEnv(Deno.env.toObject(), USER) } : {}),
         stdout: "piped",
         stderr: "piped",
       }).output()
