@@ -194,7 +194,10 @@ function fakeSignatures(
       state.update = args.update as typeof state.update
       return Promise.resolve(jmapResponse([["x:DkimSignature/set", setResult, "0"]]))
     }
-    return Promise.resolve(jmapResponse([["x:DkimSignature/get", { list: signatures }, "0"]]))
+    return Promise.resolve(jmapResponse([
+      ["x:DkimSignature/query", { ids: signatures.map((s) => s.id) }, "0"],
+      ["x:DkimSignature/get", { list: signatures }, "1"],
+    ]))
   }
   return { fetch, state }
 }
@@ -241,6 +244,17 @@ Deno.test("ensureDkimSignedHeaders fails when the server refuses the update", as
   globalThis.fetch = fake.fetch as typeof fetch
   try {
     await assertRejects(() => ensureDkimSignedHeaders("example.com", "password"), Error, "signed")
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+})
+
+Deno.test("ensureDkimSignedHeaders fails when it finds no signatures", async () => {
+  const originalFetch = globalThis.fetch
+  const fake = fakeSignatures([])
+  globalThis.fetch = fake.fetch as typeof fetch
+  try {
+    await assertRejects(() => ensureDkimSignedHeaders("example.com", "password"), Error, "no DKIM")
   } finally {
     globalThis.fetch = originalFetch
   }

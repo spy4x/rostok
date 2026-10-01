@@ -248,15 +248,20 @@ export const REQUIRED_SIGNED_HEADERS = [
 export async function ensureDkimSignedHeaders(domain: string, password: string): Promise<number> {
   const response = await callStalwartJmap(domain, password, {
     using: ["urn:ietf:params:jmap:core"],
-    methodCalls: [[
-      "x:DkimSignature/get",
-      { accountId: STALWART_ACCOUNT, ids: null, properties: ["id", "headers"] },
-      "0",
-    ]],
+    methodCalls: [
+      ["x:DkimSignature/query", { accountId: STALWART_ACCOUNT, limit: 50 }, "0"],
+      ["x:DkimSignature/get", {
+        accountId: STALWART_ACCOUNT,
+        "#ids": { resultOf: "0", name: "x:DkimSignature/query", path: "/ids" },
+        properties: ["id", "headers"],
+      }, "1"],
+    ],
   })
   const list = (getMethodResponse(response, "x:DkimSignature/get").list ?? []) as Array<
     { id: string; headers?: Record<string, boolean> }
   >
+  // No signatures means the read went wrong, not that every key is complete.
+  if (list.length === 0) throw new Error("no DKIM signatures found to extend")
   const update: Record<string, { headers: Record<string, boolean> }> = {}
   for (const signature of list) {
     const current = signature.headers ?? {}
