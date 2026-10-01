@@ -1,7 +1,9 @@
 import { assertEquals, assertRejects, assertThrows } from "@std/assert"
 
+import type { Options as SieveOptions } from "./apply-sieve-filters.ts"
 import {
   ensureAccount,
+  installRedirect,
   type Jmap,
   type JmapCall,
   parseArgs,
@@ -98,4 +100,75 @@ Deno.test("the redirect script forwards to the target and refuses an injected on
     `redirect "jane@example.com";`,
   )
   assertThrows(() => redirectSieve(`jane@example.com"; discard; "`), Error)
+})
+
+const TARGET = {
+  server: "mail.example.com",
+  address: "hello@example.com",
+  password: PASSWORD,
+  id: "e",
+  redirect: "jane@example.com",
+}
+
+/** An account JMAP that answers SieveScript/get with `scripts`. */
+function accountWith(scripts: Array<{ name: string; isActive: boolean }>): Jmap {
+  return () => Promise.resolve({ methodResponses: [["SieveScript/get", { list: scripts }, "0"]] })
+}
+
+Deno.test("installs the redirect as the account itself, moving no mail", async () => {
+  const seen: SieveOptions[] = []
+  let script = ""
+  await installRedirect(
+    {
+      accountJmap: accountWith([]),
+      apply: async (opts) => {
+        seen.push(opts)
+        script = await Deno.readTextFile(opts.sievePath)
+      },
+    },
+    TARGET,
+  )
+  assertEquals(seen.length, 1)
+  assertEquals(seen[0].user, "hello@example.com")
+  assertEquals(seen[0].accountId, "e")
+  assertEquals(seen[0].scriptName, "redirect")
+  assertEquals(seen[0].skipMove, true)
+  assertEquals(seen[0].skipDeleteBounces, true)
+  assertEquals(seen[0].apiUrl, "https://mail.example.com/jmap/")
+  assertEquals(script.includes(`redirect "jane@example.com";`), true)
+})
+
+Deno.test("replaces its own earlier redirect script", async () => {
+  let applied = 0
+  await installRedirect(
+    {
+      accountJmap: accountWith([{ name: "redirect", isActive: true }]),
+      apply: () => {
+        applied++
+        return Promise.resolve()
+      },
+    },
+    TARGET,
+  )
+  assertEquals(applied, 1)
+})
+
+Deno.test("refuses to overwrite another active Sieve script", async () => {
+  let applied = 0
+  await assertRejects(
+    () =>
+      installRedirect(
+        {
+          accountJmap: accountWith([{ name: "filters", isActive: true }]),
+          apply: () => {
+            applied++
+            return Promise.resolve()
+          },
+        },
+        TARGET,
+      ),
+    Error,
+    "filters",
+  )
+  assertEquals(applied, 0)
 })

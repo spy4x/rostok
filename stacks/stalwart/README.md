@@ -181,13 +181,18 @@ to SMTP with an account of its own, never with the owner's personal password.
 owner's own address, so replies reach a mailbox someone reads:
 
 ```bash
-STALWART_ADMIN_PASSWORD=… APP_PW=… deno run -A scripts/stalwart/ensure-account.ts \
+E=servers/<server>/.env
+STALWART_ADMIN_PASSWORD="$(sed -n 's/^STALWART_ADMIN_PASSWORD=//p' "$E")" \
+APP_PW="$(sed -n 's/^APP_PW=//p' "$E")" \
+deno run -A scripts/stalwart/ensure-account.ts \
   --server mail.example.com --address hello@example.com \
   --description "Jane Doe" --password-env APP_PW --redirect jane@example.com
 ```
 
 Keep the password in the server's `.env` (then `deno task env:encrypt`) and in
 the app's own env. The script is idempotent: an existing account and its
-password are left alone, and the redirect script is replaced on every run.
+password are left alone, and the redirect script is replaced on every run. A
+refused script upload fails the run, and an account that another active Sieve
+script already filters (an owner's own mailbox) is refused, not overwritten.
 Stalwart only lets an account send from its own addresses, so the app's `From`
 is the new address; a display name (`Jane Doe <hello@example.com>`) is fine.

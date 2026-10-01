@@ -8,21 +8,26 @@
 // that forwards everything to the owner's address (without keeping a copy).
 //
 // Idempotent: an existing account is left as it is (its password is not
-// changed), and the redirect script is replaced on every run.
+// changed), and the redirect script is replaced on every run. A refused
+// script upload fails the run, and an account whose mail another active Sieve
+// script already filters is refused rather than overwritten.
 //
 // Usage:
-//   STALWART_ADMIN_PASSWORD=… ACCOUNT_PASSWORD=… deno run -A \
-//     scripts/stalwart/ensure-account.ts \
+//   E=servers/<server>/.env
+//   STALWART_ADMIN_PASSWORD="$(sed -n 's/^STALWART_ADMIN_PASSWORD=//p' "$E")" \
+//   ACCOUNT_PASSWORD="$(sed -n 's/^ACCOUNT_PASSWORD=//p' "$E")" \
+//   deno run -A scripts/stalwart/ensure-account.ts \
 //     --server mail.example.com \
 //     --address hello@example.com \
 //     --description "Jane Doe" \
 //     --password-env ACCOUNT_PASSWORD \
 //     --redirect jane@example.com
 
-import { apply as applySieve } from "./apply-sieve-filters.ts"
+import { STALWART_ACCOUNT } from "../../stacks/stalwart/dkim.ts"
+import { apply as applySieve, type Options as SieveOptions } from "./apply-sieve-filters.ts"
 
 /** Stalwart's management account id for the admin principal. */
-export const ADMIN_ACCOUNT_ID = "d333333"
+export const ADMIN_ACCOUNT_ID = STALWART_ACCOUNT
 
 export interface EnsureAccountOptions {
   /** Host of the Stalwart JMAP endpoint, e.g. `mail.example.com`. */
@@ -161,6 +166,52 @@ export function jmapClient(server: string, user: string, password: string): Jmap
   }
 }
 
+/** Name of the Sieve script `--redirect` installs. */
+export const REDIRECT_SCRIPT = "redirect"
+
+/**
+ * Installs the redirect on account `id`, logged in as the account itself
+ * (Sieve scripts belong to the account). An account can have one active
+ * script only, so another active script, such as an owner's filters, stops
+ * the run instead of being replaced.
+ */
+export async function installRedirect(
+  deps: { accountJmap: Jmap; apply: (opts: SieveOptions) => Promise<void> },
+  target: { server: string; address: string; password: string; id: string; redirect: string },
+): Promise<void> {
+  const scripts = await deps.accountJmap({
+    using: ["urn:ietf:params:jmap:core", "urn:ietf:params:jmap:sieve"],
+    methodCalls: [["SieveScript/get", { accountId: target.id, ids: null }, "0"]],
+  })
+  const other = list(scripts, "SieveScript/get").find((script) =>
+    script.isActive === true && script.name !== REDIRECT_SCRIPT
+  )
+  if (other) {
+    throw new Error(
+      `${target.address} already has an active Sieve script "${other.name}"; ` +
+        `a redirect would replace it`,
+    )
+  }
+  const dir = await Deno.makeTempDir()
+  try {
+    const sievePath = `${dir}/redirect.sieve`
+    await Deno.writeTextFile(sievePath, redirectSieve(target.redirect))
+    await deps.apply({
+      apiUrl: `https://${target.server}/jmap/`,
+      user: target.address,
+      password: target.password,
+      accountId: target.id,
+      sievePath,
+      scriptName: REDIRECT_SCRIPT,
+      skipMove: true,
+      skipDeleteBounces: true,
+      dryRun: false,
+    })
+  } finally {
+    await Deno.remove(dir, { recursive: true })
+  }
+}
+
 if (import.meta.main) {
   const opts = parseArgs(Deno.args)
   const admin = Deno.env.get("STALWART_ADMIN_PASSWORD")
@@ -176,25 +227,10 @@ if (import.meta.main) {
   console.log(`${opts.address}: ${created ? "created" : "already exists"} (id ${id})`)
 
   if (opts.redirect) {
-    const dir = await Deno.makeTempDir()
-    try {
-      const sievePath = `${dir}/redirect.sieve`
-      await Deno.writeTextFile(sievePath, redirectSieve(opts.redirect))
-      // Sieve scripts belong to the account, so the upload logs in as it.
-      await applySieve({
-        apiUrl: `https://${opts.server}/jmap/`,
-        user: opts.address,
-        password,
-        accountId: id,
-        sievePath,
-        scriptName: "redirect",
-        skipMove: true,
-        skipDeleteBounces: true,
-        dryRun: false,
-      })
-      console.log(`${opts.address}: redirects to ${opts.redirect}`)
-    } finally {
-      await Deno.remove(dir, { recursive: true })
-    }
+    await installRedirect(
+      { accountJmap: jmapClient(opts.server, opts.address, password), apply: applySieve },
+      { server: opts.server, address: opts.address, password, id, redirect: opts.redirect },
+    )
+    console.log(`${opts.address}: redirects to ${opts.redirect}`)
   }
 }

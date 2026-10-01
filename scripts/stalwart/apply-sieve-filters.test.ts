@@ -38,6 +38,8 @@ class JmapStore {
   scripts: SieveScript[] = []
   /** Records every method call seen so tests can assert on them. */
   calls: Array<{ name: string; args: Record<string, unknown> }> = []
+  /** When set, SieveScript/set refuses every create, as a server rejecting a script would. */
+  refuseCreate = false
 
   constructor() {
     // Seed standard personal-account mailboxes (matches Stalwart v0.16.11
@@ -164,6 +166,13 @@ class JmapStore {
         const update = (args.update ?? {}) as Record<string, Partial<SieveScript>>
         const destroy = (args.destroy ?? []) as string[]
         const created: Record<string, SieveScript> = {}
+        if (this.refuseCreate && Object.keys(create).length > 0) {
+          return {
+            notCreated: Object.fromEntries(
+              Object.keys(create).map((id) => [id, { type: "invalidScript" }]),
+            ),
+          }
+        }
         for (const [id, spec] of Object.entries(create)) {
           const s: SieveScript = {
             id: this.nextId("sieve"),
@@ -454,4 +463,21 @@ Deno.test("apply errors when user/password missing", async () => {
     Error,
     "required",
   )
+})
+
+Deno.test("apply fails when the server refuses the new script", async () => {
+  const store = new JmapStore()
+  store.refuseCreate = true
+  const restore = withMockedFetch(store)
+  try {
+    const path = await Deno.makeTempFile({ suffix: ".sieve" })
+    await Deno.writeTextFile(path, SIEVE_BODY)
+    await assertRejects(
+      () => apply({ ...baseOpts, sievePath: path, skipMove: true, skipDeleteBounces: true }),
+      Error,
+      "refused",
+    )
+  } finally {
+    restore()
+  }
 })

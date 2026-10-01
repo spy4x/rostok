@@ -206,6 +206,16 @@ export async function apply(opts: Options): Promise<void> {
   for (let i = 0; i < setResp.methodResponses.length; i++) {
     console.log(`  call ${i}: ${JSON.stringify(setResp.methodResponses[i][1]).slice(0, 200)}`)
   }
+  // A refused deactivate, destroy or create must stop the run: the old script
+  // may already be gone, and reporting success would leave the account with no
+  // filter at all.
+  const refused = setResp.methodResponses.filter(([name, result]) => {
+    const r = result as Record<string, unknown>
+    return name === "error" || r.notCreated || r.notUpdated || r.notDestroyed
+  })
+  if (refused.length > 0) {
+    throw new Error(`SieveScript/set refused: ${JSON.stringify(refused.map(([, r]) => r))}`)
+  }
 
   // Phase 3 — bulk-move existing matching messages. Uses sender-based
   // filters for Reports/BANK and subject-keyword filters for Digests.
