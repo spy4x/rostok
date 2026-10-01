@@ -356,7 +356,7 @@ function hasUnsafeDollar(raw: string, known: ReadonlySet<string>): boolean {
       if (!known.has(bare)) return true
       continue
     }
-    if (!closed || !/^[A-Za-z_][A-Za-z0-9_]*$/.test(braced) || !known.has(braced)) return true
+    if (!closed || !known.has(braced)) return true
   }
   return false
 }

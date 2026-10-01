@@ -297,8 +297,15 @@ Deno.test("keysWithUnsafeDollar: reports a bare $name compose would warn about",
 
 Deno.test("keysWithUnsafeDollar: reports an unknown or broken ${...} template", () => {
   assertEquals(
-    keysWithUnsafeDollar({ A: "a${b", B: "a${X:-q}", C: "a${UNKNOWN}", D: "a${}" }),
-    ["A", "B", "C", "D"],
+    keysWithUnsafeDollar({
+      A: "a${b",
+      B: "a${X:-q}",
+      C: "a${UNKNOWN}",
+      D: "a${}",
+      // Unclosed, though `A` is a key: compose prints the whole value.
+      E: "x${A",
+    }),
+    ["A", "B", "C", "D", "E"],
   )
 })
 
