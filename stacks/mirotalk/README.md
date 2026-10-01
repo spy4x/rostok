@@ -16,13 +16,18 @@ establish media connections and calls will hang with both participants
 
 ## Access
 
-Web UI: `https://talk.${DOMAIN}`
+Web UI: `https://<MIROTALK_DOMAIN>`
 
-## Required env vars
+## Configuration
 
-- `MIROTALK_TURN_SERVER_USERNAME` — long random string (coturn credential user)
-- `MIROTALK_TURN_SERVER_CREDENTIAL` — long random string (coturn credential password)
-- `MIROTALK_PUBLIC_IP` — host's external IPv4. coturn hardcodes this in `external-ip=`;
+`rostok stack add mirotalk` writes these.
+
+- `MIROTALK_IMAGE_TAG` — image tag, default `latest`
+- `MIROTALK_DOMAIN` — public host, default `talk.${DOMAIN}`. The TURN URL and the TLS
+  certificate coturn serves use the same host.
+- `MIROTALK_TURN_SERVER_USERNAME` — long random string (coturn credential user), generated
+- `MIROTALK_TURN_SERVER_CREDENTIAL` — long random string (coturn credential password), generated
+- `MIROTALK_PUBLIC_IP` — host's external IPv4, asked for. coturn hardcodes this in `external-ip=`;
   required because cloud VPS interfaces don't carry the public IP directly.
 
 ## Host firewall
@@ -39,7 +44,7 @@ via the API). On hosts running `firewalld`/`nftables`, allow the same.
 
 ## TURN over TLS
 
-The browser advertises `turns://${DOMAIN}:5349` to peers. The
+The browser advertises `turns://<MIROTALK_DOMAIN>:5349` to peers. The
 `mirotalk-cert-extract` sidecar watches Traefik's `acme.json` and writes
 PEM files to a shared volume that coturn mounts — so Let's Encrypt
 renewals propagate automatically.
