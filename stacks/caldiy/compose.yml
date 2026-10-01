@@ -47,12 +47,12 @@ services:
       - DATABASE_URL=postgresql://caldiy:${CALDIY_DB_PASSWORD}@caldiy-db:5432/caldiy
       - DATABASE_DIRECT_URL=postgresql://caldiy:${CALDIY_DB_PASSWORD}@caldiy-db:5432/caldiy
       - NEXTAUTH_SECRET=${CALDIY_NEXTAUTH_SECRET}
-      - NEXTAUTH_URL=https://schedule.${DOMAIN}/api/auth
-      - NEXT_PUBLIC_WEBAPP_URL=https://schedule.${DOMAIN}
+      - NEXTAUTH_URL=https://${CALDIY_DOMAIN}/api/auth
+      - NEXT_PUBLIC_WEBAPP_URL=https://${CALDIY_DOMAIN}
       - CALCOM_TELEMETRY_DISABLED=1
       - NODE_ENV=production
       - TZ=${TIMEZONE}
-      - ALLOWED_HOSTNAMES=["schedule.${DOMAIN}"]
+      - ALLOWED_HOSTNAMES=["${CALDIY_DOMAIN}"]
       - CALENDSO_ENCRYPTION_KEY=${CALDIY_ENCRYPTION_KEY}
       - REDIS_URL=redis://caldiy-redis:6379
       # CRON_API_KEY — shared secret for cron endpoints (scheduleEmailReminders etc.)
@@ -89,7 +89,7 @@ services:
       - "traefik.enable=true"
       - "traefik.docker.network=proxy"
       - "traefik.http.services.hl-caldiy.loadbalancer.server.port=3000"
-      - "traefik.http.routers.hl-schedule.rule=Host(`schedule.${DOMAIN}`)"
+      - "traefik.http.routers.hl-schedule.rule=Host(`${CALDIY_DOMAIN}`)"
       - "traefik.http.routers.hl-schedule.entrypoints=websecure"
       - "traefik.http.routers.hl-schedule.tls=true"
       - "traefik.http.routers.hl-schedule.tls.certresolver=myresolver"
@@ -113,7 +113,7 @@ services:
           while true; do
             for ep in scheduleEmailReminders scheduleSMSReminders scheduleWhatsappReminders; do
               curl -sf -X POST "http://hl-caldiy:3000/api/cron/workflows/$${ep}" \
-                -H "authorization: $${CRON_API_KEY}" \
+                -H "authorization: $$CRON_API_KEY" \
                 -H "user-agent: caldiy-cron/1.0" \
                 || echo "[$${ep}] failed: $$?"
             done
