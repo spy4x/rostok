@@ -1,97 +1,109 @@
 // Runs BackupOperations against a fake `docker` shell script that logs every
-// call (cwd + args) and answers from env vars. The fake never calls a real
+// call (cwd + args, and separately the variables it received) and answers from
+// files in its directory: the runner gives docker a cleaned environment, so
+// the fake cannot be configured through env vars. The fake never calls a real
 // docker, and exits non-zero if it is ever invoked from itself (depth guard).
 
 import { assertEquals, assertStringIncludes } from "@std/assert"
 import { BackupStatus } from "./types.ts"
 import type { BackupConfigState } from "./types.ts"
 
-const FAKE_DOCKER = `#!/bin/sh
+/** The fake `docker`; `dir` holds its logs and canned answers. */
+function fakeDocker(dir: string): string {
+  return `#!/bin/sh
 if [ -n "$FAKE_DOCKER_DEPTH" ]; then echo "fake docker recursed" >&2; exit 99; fi
 export FAKE_DOCKER_DEPTH=1
-printf '%s|%s\\n' "$PWD" "$*" >> "$FAKE_DOCKER_LOG"
+printf '%s|%s\\n' "$PWD" "$*" >> '${dir}/docker.log'
+printf 'VOLUMES_PATH=%s|PATH_APPS=%s|HOME=%s|DOCKER_HOST=%s\\n' \\
+  "$VOLUMES_PATH" "$PATH_APPS" "$HOME" "$DOCKER_HOST" >> '${dir}/env.log'
 case "$1" in
-  ps) printf '%s' "$FAKE_PS_OUTPUT"; exit 0 ;;
+  ps) cat '${dir}/ps-output'; exit 0 ;;
   compose)
     case "$*" in
-      *" start") [ -n "$FAKE_START_STDERR" ] && { echo "$FAKE_START_STDERR" >&2; exit 1; } ;;
+      *" start") [ -s '${dir}/start-stderr' ] && { cat '${dir}/start-stderr' >&2; exit 1; } ;;
     esac
     exit 0 ;;
 esac
 exit 0
 `
+}
 
 const MISSING = `service "app" has no container to start`
 
+/** What the fake docker answers. */
+interface FakeAnswers {
+  /** stdout of `docker ps` */
+  ps?: string
+  /** stderr of a failing `docker compose ... start`; empty means start succeeds */
+  startStderr?: string
+}
+
 interface Harness {
   dir: string
+  /** `<cwd>|<args>` per docker call */
   log: () => string[]
+  /** `VOLUMES_PATH=..|PATH_APPS=..|HOME=..|DOCKER_HOST=..` per docker call */
+  envLog: () => string[]
   run: (
     action: "start" | "stop",
     config?: BackupConfigState,
   ) => Promise<BackupConfigState>
-  ops: { manageContainers(c: BackupConfigState, a: "start" | "stop"): Promise<void> }
   config: BackupConfigState
 }
 
-async function harness(env: Record<string, string>): Promise<Harness> {
-  const dir = await Deno.makeTempDir()
-  const bin = `${dir}/bin`
-  await Deno.mkdir(bin)
-  await Deno.writeTextFile(`${bin}/docker`, FAKE_DOCKER, { mode: 0o755 })
-  const logPath = `${dir}/docker.log`
-  await Deno.writeTextFile(logPath, ``)
-  const saved = new Map<string, string | undefined>()
-  const all: Record<string, string> = {
-    SSH_USER: `tester`,
-    PATH_APPS: `/nonexistent/old-checkout`,
-    VOLUMES_PATH: `/nonexistent/volumes`,
-    PATH_SYNC: `/nonexistent/sync`,
-    SERVER_NAME: `test`,
-    PATH: `${bin}:${Deno.env.get("PATH")}`,
-    FAKE_DOCKER_LOG: logPath,
-    ...env,
-  }
-  for (const [k, v] of Object.entries(all)) {
-    saved.set(k, Deno.env.get(k))
-    Deno.env.set(k, v)
-  }
-  const { BackupOperations } = await import(`./operations.ts?bust=${crypto.randomUUID()}`)
-  const ops = new BackupOperations(`pw`)
-  const config: BackupConfigState = {
-    name: `app`,
-    sourcePaths: [],
-    containers: { stop: ["__compose__"] },
-    fileName: `app/backup.ts`,
-    status: BackupStatus.IN_PROGRESS,
-  }
-  const restore = () => {
-    for (const [k, v] of saved) v === undefined ? Deno.env.delete(k) : Deno.env.set(k, v)
-  }
-  return {
-    dir,
-    ops,
-    config,
-    log: () => Deno.readTextFileSync(logPath).split("\n").filter(Boolean),
-    run: async (action, c = config) => {
-      await ops.manageContainers(c, action)
-      return c
-    },
-    // restore env when the test calls cleanup via dispose
-    [Symbol.dispose]: restore,
-  } as Harness & { [Symbol.dispose]: () => void }
+/** The runner's own environment in every test, as read from its server env file. */
+const RUNNER_ENV: Record<string, string> = {
+  SSH_USER: `tester`,
+  PATH_APPS: `/nonexistent/old-checkout`,
+  VOLUMES_PATH: `/nonexistent/volumes`,
+  PATH_SYNC: `/nonexistent/sync`,
+  SERVER_NAME: `test`,
+  DOCKER_HOST: `unix:///nonexistent/docker.sock`,
 }
 
 async function withHarness(
-  env: Record<string, string>,
+  answers: FakeAnswers,
   fn: (h: Harness) => Promise<void>,
 ): Promise<void> {
-  const h = await harness(env) as Harness & { [Symbol.dispose]: () => void }
+  const dir = await Deno.makeTempDir()
+  const saved = new Map<string, string | undefined>()
   try {
-    await fn(h)
+    const bin = `${dir}/bin`
+    await Deno.mkdir(bin)
+    await Deno.writeTextFile(`${bin}/docker`, fakeDocker(dir), { mode: 0o755 })
+    await Deno.writeTextFile(`${dir}/docker.log`, ``)
+    await Deno.writeTextFile(`${dir}/env.log`, ``)
+    await Deno.writeTextFile(`${dir}/ps-output`, answers.ps ?? ``)
+    await Deno.writeTextFile(`${dir}/start-stderr`, answers.startStderr ?? ``)
+    const env = { ...RUNNER_ENV, PATH: `${bin}:${Deno.env.get("PATH")}` }
+    for (const [k, v] of Object.entries(env)) {
+      saved.set(k, Deno.env.get(k))
+      Deno.env.set(k, v)
+    }
+    const { BackupOperations } = await import(`./operations.ts?bust=${crypto.randomUUID()}`)
+    const ops = new BackupOperations(`pw`)
+    const config: BackupConfigState = {
+      name: `app`,
+      sourcePaths: [],
+      containers: { stop: ["__compose__"] },
+      fileName: `app/backup.ts`,
+      status: BackupStatus.IN_PROGRESS,
+    }
+    const lines = (file: string) =>
+      Deno.readTextFileSync(`${dir}/${file}`).split("\n").filter(Boolean)
+    await fn({
+      dir,
+      config,
+      log: () => lines(`docker.log`),
+      envLog: () => lines(`env.log`),
+      run: async (action, c = config) => {
+        await ops.manageContainers(c, action)
+        return c
+      },
+    })
   } finally {
-    h[Symbol.dispose]()
-    await Deno.remove(h.dir, { recursive: true })
+    for (const [k, v] of saved) v === undefined ? Deno.env.delete(k) : Deno.env.set(k, v)
+    await Deno.remove(dir, { recursive: true })
   }
 }
 
@@ -110,8 +122,8 @@ Deno.test("stops, starts and rebuilds with the running container's own compose f
     }
     const files = `${wd}/stacks/app/compose.yml`
     await withHarness({
-      FAKE_PS_OUTPUT: psLine(`app`, files, `${wd}/stacks/app`),
-      FAKE_START_STDERR: MISSING,
+      ps: psLine(`app`, files, `${wd}/stacks/app`),
+      startStderr: MISSING,
     }, async (h) => {
       await h.run("stop")
       const c = await h.run("start")
@@ -129,6 +141,34 @@ Deno.test("stops, starts and rebuilds with the running container's own compose f
   }
 })
 
+Deno.test("runs every docker command without the runner's VOLUMES_PATH and PATH_APPS", async () => {
+  // Compose prefers its process env over --env-file, so a leaked VOLUMES_PATH
+  // would rebuild the stack on the runner's paths, not the deployed ones.
+  const root = await Deno.makeTempDir()
+  try {
+    await Deno.mkdir(`${root}/stacks/app`, { recursive: true })
+    for (const f of [`.env.root`, `.env`, `stacks/app/compose.yml`]) {
+      await Deno.writeTextFile(`${root}/${f}`, ``)
+    }
+    await withHarness({
+      ps: psLine(`app`, `${root}/stacks/app/compose.yml`, `${root}/stacks/app`),
+      startStderr: MISSING,
+    }, async (h) => {
+      await h.run("stop")
+      const c = await h.run("start")
+      assertEquals(c.status, BackupStatus.IN_PROGRESS)
+      // ps, stop, start and the up -d fallback
+      assertEquals(h.log().filter((l) => l.endsWith(` up -d`)).length, 1)
+      // DOCKER_* still reaches docker, and HOME is the data owner's, not root's.
+      const clean = `VOLUMES_PATH=|PATH_APPS=|HOME=/home/tester|` +
+        `DOCKER_HOST=${RUNNER_ENV.DOCKER_HOST}`
+      assertEquals(h.envLog(), [clean, clean, clean, clean])
+    })
+  } finally {
+    await Deno.remove(root, { recursive: true })
+  }
+})
+
 Deno.test("leaves the stack stopped and reports failure when up -d cannot reproduce the env", async () => {
   const root = await Deno.makeTempDir()
   try {
@@ -138,8 +178,8 @@ Deno.test("leaves the stack stopped and reports failure when up -d cannot reprod
     // no .env.root and no .env
     const files = `${wd}/stacks/app/compose.yml`
     await withHarness({
-      FAKE_PS_OUTPUT: psLine(`app`, files, `${wd}/stacks/app`),
-      FAKE_START_STDERR: MISSING,
+      ps: psLine(`app`, files, `${wd}/stacks/app`),
+      startStderr: MISSING,
     }, async (h) => {
       await h.run("stop")
       const c = await h.run("start")
@@ -155,7 +195,7 @@ Deno.test("leaves the stack stopped and reports failure when up -d cannot reprod
 
 Deno.test("runs no compose command when no container of the stack is running", async () => {
   await withHarness({
-    FAKE_PS_OUTPUT: psLine(`other`, `/srv/stacks/other/compose.yml`, `/srv`),
+    ps: psLine(`other`, `/srv/stacks/other/compose.yml`, `/srv`),
   }, async (h) => {
     await h.run("stop")
     const c = await h.run("start")
@@ -169,7 +209,7 @@ Deno.test("uses the deployed project name even when it differs from the stack di
   try {
     const files = `${root}/stacks/app/compose.yml,${root}/compose-override/app.yml`
     await withHarness(
-      { FAKE_PS_OUTPUT: psLine(`nginx-b`, files, `${root}/stacks/app`) },
+      { ps: psLine(`nginx-b`, files, `${root}/stacks/app`) },
       async (h) => {
         await h.run("stop")
         assertEquals(
@@ -185,7 +225,7 @@ Deno.test("uses the deployed project name even when it differs from the stack di
 
 Deno.test("refuses to stop a stack that runs from two different compose projects", async () => {
   await withHarness({
-    FAKE_PS_OUTPUT: psLine(`a`, `/x/stacks/app/compose.yml`, `/x`) +
+    ps: psLine(`a`, `/x/stacks/app/compose.yml`, `/x`) +
       psLine(`b`, `/y/stacks/app/compose.yml`, `/y`),
   }, async (h) => {
     const c = await h.run("stop")
@@ -196,7 +236,7 @@ Deno.test("refuses to stop a stack that runs from two different compose projects
 
 Deno.test("fails the backup instead of copying live when a running stack matches no compose file", async () => {
   await withHarness({
-    FAKE_PS_OUTPUT: psLine(`app`, `/srv/elsewhere/app.yml`, `/srv/elsewhere`),
+    ps: psLine(`app`, `/srv/elsewhere/app.yml`, `/srv/elsewhere`),
   }, async (h) => {
     const c = await h.run("stop")
     assertEquals(c.status, BackupStatus.ERROR)
@@ -222,7 +262,7 @@ Deno.test("stops a project whose services carry different compose file lists wit
     const base = `${root}/stacks/app/compose.yml`
     const override = `${root}/compose-override/app.yml`
     await withHarness({
-      FAKE_PS_OUTPUT: psLine(`app`, base, `${root}/stacks/app`) +
+      ps: psLine(`app`, base, `${root}/stacks/app`) +
         psLine(`app`, `${base},${override}`, `${root}/stacks/app`),
     }, async (h) => {
       const c = await h.run("stop")
@@ -237,7 +277,7 @@ Deno.test("stops a project whose services carry different compose file lists wit
 Deno.test("fails with the real cause when one project's compose file lists do not fit together", async () => {
   const base = `/srv/apps/stacks/app/compose.yml`
   await withHarness({
-    FAKE_PS_OUTPUT: psLine(`app`, `${base},/srv/apps/one.yml`, `/srv/apps/stacks/app`) +
+    ps: psLine(`app`, `${base},/srv/apps/one.yml`, `/srv/apps/stacks/app`) +
       psLine(`app`, `${base},/srv/apps/two.yml`, `/srv/apps/stacks/app`),
   }, async (h) => {
     const c = await h.run("stop")
@@ -250,12 +290,25 @@ Deno.test("fails with the real cause when one project's compose file lists do no
 Deno.test("stops a running stack whose containers have no working_dir label", async () => {
   await withAppsRoot(async (root) => {
     await withHarness({
-      FAKE_PS_OUTPUT: psLine(`app`, `${root}/stacks/app/compose.yml`, ``),
+      ps: psLine(`app`, `${root}/stacks/app/compose.yml`, ``),
     }, async (h) => {
       await h.run("stop")
       assertEquals(h.log().filter((l) => l.includes(`|compose `)), [
         `${root}|compose -p app -f ${root}/stacks/app/compose.yml stop`,
       ])
     })
+  })
+})
+
+Deno.test("fails the stack's backup instead of throwing when its apps root is gone", async () => {
+  await withHarness({
+    ps: psLine(`app`, `/nonexistent/apps/stacks/app/compose.yml`, ``),
+  }, async (h) => {
+    const stopped = await h.run("stop")
+    assertEquals(stopped.status, BackupStatus.ERROR)
+    assertEquals(stopped.errorAtStep, `compose_stop`)
+    // The runner restarts in a `finally`; a throw there would end the whole run.
+    const started = await h.run("start")
+    assertEquals(started.errorAtStep, `compose_start`)
   })
 })

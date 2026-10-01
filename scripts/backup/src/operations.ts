@@ -2,6 +2,7 @@ import { absPath, error, log } from "../../+lib.ts"
 import { USER } from "./+lib.ts"
 import {
   COMPOSE_LABELS_FORMAT,
+  composeEnv,
   composeFileArgs,
   ComposeTarget,
   DEPLOY_ENV_FILE_ARGS,
@@ -87,17 +88,13 @@ export class BackupOperations {
    * common race when Watchtower updates a service mid-backup and
    * removes/recreates the old container. `up -d` is idempotent: it
    * recreates only missing containers and leaves the rest running. It runs
-   * from the recorded working dir with the same `--env-file`s as
-   * `rostok deploy`; when the compose files or env files are gone it does
-   * NOT run, and the backup is reported as failed with the stack stopped.
-   * A stopped stack and a red report beat a stack silently rebuilt from
-   * wrong config.
+   * from the apps root with the same `--env-file`s as `rostok deploy`; when
+   * the compose files or env files are gone it does NOT run, and the backup
+   * is reported as failed with the stack stopped. A stopped stack and a red
+   * report beat a stack silently rebuilt from wrong config.
    *
-   * HOME is forced to the user's real home before `up -d` so that any
-   * `~` in bind-mount env vars resolves to /home/<USER>, not /root.
-   * (Cron runs the backup as root, which would otherwise redirect
-   * bind mounts into /root/ and take the stack down — see git history
-   * for the 2026-06-26 all-46-services-down incident.)
+   * Every docker command here runs with `composeEnv`, not this process's
+   * environment, so only the deployed env files reach compose.
    */
   private async manageComposeStack(
     stackDir: string,
@@ -122,18 +119,14 @@ export class BackupOperations {
     // variables (`${X:?}`), so pass the deploy env files whenever they exist.
     const envArgs = await hasDeployEnvFiles(target) ? DEPLOY_ENV_FILE_ARGS : []
 
-    const { code, stderr } = await new Deno.Command("docker", {
-      args: [...baseArgs, ...envArgs, action],
-      cwd: target.appsRoot,
-      stdout: "piped",
-      stderr: "piped",
-    }).output()
+    const { code, stderr: errStr } = await this.docker(
+      [...baseArgs, ...envArgs, action],
+      target.appsRoot,
+    )
 
     if (code === 0) {
       return
     }
-
-    const errStr = new TextDecoder().decode(stderr)
 
     // Only retry for start. Stop failures are real (compose file gone,
     // project name typo, daemon down) — don't paper over them.
@@ -151,19 +144,11 @@ export class BackupOperations {
         )
         return
       }
-      const fallback = new Deno.Command("docker", {
-        args: [...baseArgs, ...DEPLOY_ENV_FILE_ARGS, "up", "-d"],
-        cwd: target.appsRoot,
-        env: {
-          ...Deno.env.toObject(),
-          HOME: `/home/${USER}`,
-        },
-        stdout: "piped",
-        stderr: "piped",
-      })
-      const { code: upCode, stderr: upStderr } = await fallback.output()
+      const { code: upCode, stderr: upErrStr } = await this.docker(
+        [...baseArgs, ...DEPLOY_ENV_FILE_ARGS, "up", "-d"],
+        target.appsRoot,
+      )
       if (upCode !== 0) {
-        const upErrStr = new TextDecoder().decode(upStderr)
         this.markBackupFailed(
           config,
           `Error ${action}ing compose stack (start failed: ${errStr}; up -d also failed: ${upErrStr})`,
@@ -190,26 +175,17 @@ export class BackupOperations {
     stackDir: string,
     config: BackupConfigState,
   ): Promise<ComposeTarget | null> {
-    const { code, stdout, stderr } = await new Deno.Command("docker", {
-      args: [
-        "ps",
-        "--filter",
-        "label=com.docker.compose.project",
-        "--format",
-        COMPOSE_LABELS_FORMAT,
-      ],
-      stdout: "piped",
-      stderr: "piped",
-    }).output()
+    const { code, stdout: out, stderr } = await this.docker([
+      "ps",
+      "--filter",
+      "label=com.docker.compose.project",
+      "--format",
+      COMPOSE_LABELS_FORMAT,
+    ])
     if (code !== 0) {
-      this.markBackupFailed(
-        config,
-        `Error listing running containers:\n${new TextDecoder().decode(stderr)}`,
-        "compose_stop",
-      )
+      this.markBackupFailed(config, `Error listing running containers:\n${stderr}`, "compose_stop")
       return null
     }
-    const out = new TextDecoder().decode(stdout)
     const { targets, conflicts } = parseComposeTargets(out, stackDir)
     if (conflicts.length > 0) {
       this.markBackupFailed(config, conflicts.join("\n"), "compose_stop")
@@ -241,6 +217,32 @@ export class BackupOperations {
       return null
     }
     return targets[0]
+  }
+
+  /**
+   * Runs `docker` for a compose stack with `composeEnv` instead of this
+   * process's environment. A failure to spawn (the apps root is gone, say)
+   * comes back as a failed result, so it fails this stack's backup rather than
+   * throwing out of the restart in the runner's `finally`.
+   */
+  private async docker(
+    args: string[],
+    cwd?: string,
+  ): Promise<{ code: number; stdout: string; stderr: string }> {
+    try {
+      const { code, stdout, stderr } = await new Deno.Command("docker", {
+        args,
+        cwd,
+        clearEnv: true,
+        env: composeEnv(Deno.env.toObject(), USER),
+        stdout: "piped",
+        stderr: "piped",
+      }).output()
+      const text = new TextDecoder()
+      return { code, stdout: text.decode(stdout), stderr: text.decode(stderr) }
+    } catch (err) {
+      return { code: -1, stdout: "", stderr: err instanceof Error ? err.message : String(err) }
+    }
   }
 
   /**

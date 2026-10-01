@@ -157,3 +157,29 @@ export async function hasDeployEnvFiles(target: ComposeTarget): Promise<boolean>
 
 /** Env-file arguments `rostok deploy` passes to `docker compose` (see cli/deploy/deploy-script.ts). */
 export const DEPLOY_ENV_FILE_ARGS = ["--env-file=.env.root", "--env-file=.env"]
+
+/**
+ * The environment of every docker command the runner sends for a compose
+ * stack. Compose gives variables in its own environment priority over
+ * `--env-file`, and this runner itself requires `VOLUMES_PATH` and `PATH_APPS`,
+ * so an inherited environment would rebuild a stack on the runner's paths
+ * instead of the deployed ones. Only what docker needs to find and reach the
+ * daemon is kept: `PATH`, `XDG_RUNTIME_DIR` and `DOCKER_*`.
+ *
+ * `HOME` is the data owner's home, as when `rostok deploy` runs compose over
+ * SSH. Cron runs the backup as root, and a `~` in a bind mount must not
+ * resolve to /root (see git history for the 2026-06-26 all-46-services-down
+ * incident).
+ */
+export function composeEnv(
+  inherited: Record<string, string>,
+  user: string,
+): Record<string, string> {
+  const env: Record<string, string> = { HOME: `/home/${user}` }
+  for (const [key, value] of Object.entries(inherited)) {
+    if (key === "PATH" || key === "XDG_RUNTIME_DIR" || key.startsWith("DOCKER_")) {
+      env[key] = value
+    }
+  }
+  return env
+}
