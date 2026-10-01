@@ -8,7 +8,8 @@
 //
 // Variable shape:
 //   - STALWART_DOMAIN, STALWART_MTA_STS_DOMAIN, STALWART_MTA_STS_SECONDARY_DOMAIN: the Traefik
-//     hosts, defaulting to `mail.${DOMAIN}` and `mta-sts.${DOMAIN}`. The deploy hooks, the DKIM
+//     hosts, defaulting to `mail.${DOMAIN}` and `mta-sts.${DOMAIN}`; the secondary one has no default and
+//     compose derives it from STALWART_NEATSOFT_DOMAIN. The deploy hooks, the DKIM
 //     checks and the cert-sync sidecar always talk to `mail.${DOMAIN}`, so change
 //     STALWART_DOMAIN only together with that.
 //   - STALWART_ADMIN_PASSWORD: password of the `admin` recovery account, used by the deploy
@@ -47,10 +48,11 @@ export default {
     },
     {
       key: "STALWART_MTA_STS_SECONDARY_DOMAIN",
+      // No default: compose falls back to `mta-sts.${STALWART_NEATSOFT_DOMAIN}`, a reference a
+      // meta default cannot express. Leave blank unless that host is wrong.
       question:
-        "Host serving the MTA-STS policy of the second mail domain? Same as the primary host if there is only one domain",
-      default: "mta-sts.${DOMAIN}",
-      required: true,
+        "Host serving the MTA-STS policy of the second mail domain? Leave blank for the default",
+      required: false,
     },
     {
       key: "STALWART_ADMIN_PASSWORD",

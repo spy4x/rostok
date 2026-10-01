@@ -18,16 +18,16 @@
 
 `rostok stack add stalwart` writes these to `.env`:
 
-| Variable                            | Default             | Description                                                                                            |
-| ----------------------------------- | ------------------- | ------------------------------------------------------------------------------------------------------ |
-| `STALWART_DOMAIN`                   | `mail.${DOMAIN}`    | Host of the web UI and JMAP. The deploy hooks and cert-sync assume `mail.${DOMAIN}`.                   |
-| `STALWART_MTA_STS_DOMAIN`           | `mta-sts.${DOMAIN}` | Host serving the MTA-STS policy of the primary domain.                                                 |
-| `STALWART_MTA_STS_SECONDARY_DOMAIN` | `mta-sts.${DOMAIN}` | Same for a second mail domain; leave the default with one domain.                                      |
-| `STALWART_NEATSOFT_DOMAIN`          | `${DOMAIN}`         | Second mail domain on the same MX, whose DKIM the deploy hooks check. The key keeps its original name. |
-| `STALWART_ADMIN_PASSWORD`           | generated           | Password of the `admin` account.                                                                       |
-| `STALWART_INITIAL_DEPLOY`           | `false`             | `true` only for the first deploy, before any Stalwart is running.                                      |
-| `STALWART_MEM_LIMIT`                | `512M`              | Container memory limit.                                                                                |
-| `STALWART_CPU_LIMIT`                | `0.5`               | Container CPU limit.                                                                                   |
+| Variable                            | Default                               | Description                                                                                            |
+| ----------------------------------- | ------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| `STALWART_DOMAIN`                   | `mail.${DOMAIN}`                      | Host of the web UI and JMAP. The deploy hooks and cert-sync assume `mail.${DOMAIN}`.                   |
+| `STALWART_MTA_STS_DOMAIN`           | `mta-sts.${DOMAIN}`                   | Host serving the MTA-STS policy of the primary domain.                                                 |
+| `STALWART_MTA_STS_SECONDARY_DOMAIN` | `mta-sts.${STALWART_NEATSOFT_DOMAIN}` | Host serving the MTA-STS policy of the second mail domain; unset uses the default.                     |
+| `STALWART_NEATSOFT_DOMAIN`          | `${DOMAIN}`                           | Second mail domain on the same MX, whose DKIM the deploy hooks check. The key keeps its original name. |
+| `STALWART_ADMIN_PASSWORD`           | generated                             | Password of the `admin` account.                                                                       |
+| `STALWART_INITIAL_DEPLOY`           | `false`                               | `true` only for the first deploy, before any Stalwart is running.                                      |
+| `STALWART_MEM_LIMIT`                | `512M`                                | Container memory limit.                                                                                |
+| `STALWART_CPU_LIMIT`                | `0.5`                                 | Container CPU limit.                                                                                   |
 
 - **Config file:** `/etc/stalwart/config.json` (managed via admin UI)
 - **Data:** `/var/lib/stalwart/data` (SQLite database)

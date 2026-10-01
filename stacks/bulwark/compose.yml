@@ -57,7 +57,7 @@ services:
       - "traefik.enable=true"
       - "traefik.docker.network=proxy"
       - "traefik.http.services.hl-bulwark.loadbalancer.server.port=3000"
-      - "traefik.http.routers.hl-bulwark.rule=Host(`${BULWARK_DOMAIN}`)"
+      - "traefik.http.routers.hl-bulwark.rule=Host(`${BULWARK_DOMAIN:-webmail.${DOMAIN}}`)"
       - "traefik.http.routers.hl-bulwark.entrypoints=websecure"
       - "traefik.http.routers.hl-bulwark.tls=true"
       - "traefik.http.routers.hl-bulwark.tls.certresolver=myresolver"

@@ -69,7 +69,7 @@ services:
       - "traefik.enable=true"
       - "traefik.docker.network=proxy"
       - "traefik.http.services.hl-mig.loadbalancer.server.port=8080"
-      - "traefik.http.routers.hl-mig.rule=Host(`${MIG_DOMAIN}`)"
+      - "traefik.http.routers.hl-mig.rule=Host(`${MIG_DOMAIN:-meet.${DOMAIN}}`)"
       - "traefik.http.routers.hl-mig.entrypoints=websecure"
       - "traefik.http.routers.hl-mig.tls=true"
       - "traefik.http.routers.hl-mig.tls.certresolver=myresolver"
@@ -97,7 +97,7 @@ services:
       # length changes later.
       # PathPrefix is a plain string prefix, so /embedded would match too;
       # mig serves nothing there, so only a 404 page would carry the header.
-      - "traefik.http.routers.hl-mig-embed.rule=Host(`${MIG_DOMAIN}`) && PathPrefix(`/embed`)"
+      - "traefik.http.routers.hl-mig-embed.rule=Host(`${MIG_DOMAIN:-meet.${DOMAIN}}`) && PathPrefix(`/embed`)"
       - "traefik.http.routers.hl-mig-embed.priority=1000"
       - "traefik.http.routers.hl-mig-embed.entrypoints=websecure"
       - "traefik.http.routers.hl-mig-embed.tls=true"

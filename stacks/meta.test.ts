@@ -39,7 +39,7 @@ async function codeOf(name: string, file: string): Promise<string> {
 /** Every `${KEY}` a text reads, with its `:-default` when it has one. */
 function refsOf(text: string): Map<string, string | undefined> {
   const refs = new Map<string, string | undefined>()
-  for (const m of text.matchAll(/\$\{([A-Z0-9_]+)(:?-([^}]*))?[:?}]/g)) {
+  for (const m of text.matchAll(/\$\{([A-Z0-9_]+)(:?-((?:[^{}]|\$\{[^}]*\})*))?[:?}]/g)) {
     refs.set(m[1], m[3])
   }
   return refs

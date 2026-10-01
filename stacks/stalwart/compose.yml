@@ -48,13 +48,13 @@ services:
       - "traefik.docker.network=proxy"
       - "traefik.http.services.hl-stalwart.loadbalancer.server.port=8080"
       # Web UI + JMAP on mail.DOMAIN (exclude /dav/ which has its own router)
-      - "traefik.http.routers.hl-stalwart.rule=Host(`${STALWART_DOMAIN}`) && !PathPrefix(`/dav/`)"
+      - "traefik.http.routers.hl-stalwart.rule=Host(`${STALWART_DOMAIN:-mail.${DOMAIN}}`) && !PathPrefix(`/dav/`)"
       - "traefik.http.routers.hl-stalwart.entrypoints=websecure"
       - "traefik.http.routers.hl-stalwart.tls=true"
       - "traefik.http.routers.hl-stalwart.tls.certresolver=myresolver"
       - "traefik.http.routers.hl-stalwart.middlewares=stalwart-jmap@file,robots-deny@file"
       # CalDAV/CardDAV on mail.DOMAIN/dav (no JMAP middleware — interferes with PROPFIND/REPORT)
-      - "traefik.http.routers.hl-stalwart-dav.rule=Host(`${STALWART_DOMAIN}`) && PathPrefix(`/dav/`)"
+      - "traefik.http.routers.hl-stalwart-dav.rule=Host(`${STALWART_DOMAIN:-mail.${DOMAIN}}`) && PathPrefix(`/dav/`)"
       - "traefik.http.routers.hl-stalwart-dav.entrypoints=websecure"
       - "traefik.http.routers.hl-stalwart-dav.tls=true"
       - "traefik.http.routers.hl-stalwart-dav.tls.certresolver=myresolver"
@@ -84,13 +84,13 @@ services:
       - "traefik.docker.network=proxy"
       - "traefik.http.services.hl-mta-sts.loadbalancer.server.port=8081"
       # MTA-STS for primary domain
-      - "traefik.http.routers.hl-mta-sts-primary.rule=Host(`${STALWART_MTA_STS_DOMAIN}`)"
+      - "traefik.http.routers.hl-mta-sts-primary.rule=Host(`${STALWART_MTA_STS_DOMAIN:-mta-sts.${DOMAIN}}`)"
       - "traefik.http.routers.hl-mta-sts-primary.middlewares=robots-deny@file"
       - "traefik.http.routers.hl-mta-sts-primary.entrypoints=websecure"
       - "traefik.http.routers.hl-mta-sts-primary.tls=true"
       - "traefik.http.routers.hl-mta-sts-primary.tls.certresolver=myresolver"
       # MTA-STS for secondary domain (same MX)
-      - "traefik.http.routers.hl-mta-sts-secondary.rule=Host(`${STALWART_MTA_STS_SECONDARY_DOMAIN}`)"
+      - "traefik.http.routers.hl-mta-sts-secondary.rule=Host(`${STALWART_MTA_STS_SECONDARY_DOMAIN:-mta-sts.${STALWART_NEATSOFT_DOMAIN}}`)"
       - "traefik.http.routers.hl-mta-sts-secondary.middlewares=robots-deny@file"
       - "traefik.http.routers.hl-mta-sts-secondary.entrypoints=websecure"
       - "traefik.http.routers.hl-mta-sts-secondary.tls=true"

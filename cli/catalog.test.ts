@@ -248,7 +248,7 @@ export async function checkStack(
   // 4. Host() rules read one of the stack's own domain variables: <PREFIX>DOMAIN, or
   // <PREFIX>…DOMAIN for a stack with several hosts (IMMICH_KIOSK_DOMAIN).
   if (composeText) {
-    const ownDomain = new RegExp("^`\\$\\{" + prefix + "[A-Z0-9_]*DOMAIN\\}`$")
+    const ownDomain = new RegExp("^`\\$\\{" + prefix + "[A-Z0-9_]*DOMAIN(:-[^`]*)?\\}`$")
     for (const rule of findHostRules(composeText)) {
       if (!ownDomain.test(rule)) {
         violations.push(`Host(${rule}) does not read \${${prefix}DOMAIN} or \${${prefix}…DOMAIN}`)
