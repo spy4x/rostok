@@ -344,7 +344,10 @@ export function decodeEnvValue(value: string): string {
  */
 function hasUnsafeDollar(raw: string, known: ReadonlySet<string>): boolean {
   const value = raw.trim()
-  if (value.startsWith("'")) return false
+  // A well-formed single-quoted value, optionally followed by a comment,
+  // is literal. A malformed one (`'ab'c$d`) makes compose fail with an
+  // error that quotes the rest of the line, so a `$` in it is unsafe.
+  if (value.startsWith("'")) return !/^'[^']*'(\s+#.*)?$/.test(value) && value.includes("$")
   const closing = value.lastIndexOf('"')
   const body = value.startsWith('"')
     ? value.slice(1, closing > 0 ? closing : undefined)
@@ -364,11 +367,15 @@ function hasUnsafeDollar(raw: string, known: ReadonlySet<string>): boolean {
 /**
  * Keys of `env` whose raw value has a `$` docker compose would expand
  * into a warning or an error that prints part of the value (see
- * `hasUnsafeDollar`). A reference to another key of `env`, such as
+ * `hasUnsafeDollar`). A reference to a key of `env` or of `earlier` (an
+ * env file compose reads before this one), such as
  * `MAIL_HOST=mail.${DOMAIN}`, is intended and not reported.
  */
-export function keysWithUnsafeDollar(env: Record<string, string>): string[] {
-  const known = new Set(Object.keys(env))
+export function keysWithUnsafeDollar(
+  env: Record<string, string>,
+  earlier: Record<string, string> = {},
+): string[] {
+  const known = new Set([...Object.keys(earlier), ...Object.keys(env)])
   return Object.keys(env).filter((key) => hasUnsafeDollar(env[key], known))
 }
 

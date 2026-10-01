@@ -295,6 +295,11 @@ Deno.test("keysWithUnsafeDollar: reports a bare $name compose would warn about",
   assertEquals(keysWithUnsafeDollar({ A: "p$ssw0rd", B: "fine", C: '"x$y"' }), ["A", "C"])
 })
 
+Deno.test("keysWithUnsafeDollar: a reference to a key of an earlier file is known", () => {
+  assertEquals(keysWithUnsafeDollar({ HOST: "mail.${DOMAIN}" }, { DOMAIN: "example.com" }), [])
+  assertEquals(keysWithUnsafeDollar({ HOST: "mail.${DOMAIN}" }), ["HOST"])
+})
+
 Deno.test("keysWithUnsafeDollar: reports an unknown or broken ${...} template", () => {
   assertEquals(
     keysWithUnsafeDollar({
@@ -304,8 +309,10 @@ Deno.test("keysWithUnsafeDollar: reports an unknown or broken ${...} template", 
       D: "a${}",
       // Unclosed, though `A` is a key: compose prints the whole value.
       E: "x${A",
+      // Malformed single quotes: compose's error quotes the rest.
+      F: "'ab'c$def",
     }),
-    ["A", "B", "C", "D", "E"],
+    ["A", "B", "C", "D", "E", "F"],
   )
 })
 
@@ -316,6 +323,7 @@ Deno.test("keysWithUnsafeDollar: accepts single quotes, $$ escapes, literal $, c
       VOLUMES_PATH: "${PATH_APPS}/../volumes",
       OTHER: "$PATH_APPS",
       QUOTED: "'p$ssw0rd'",
+      QUOTED_COMMENT_SQ: "'p$ss' # note",
       ESCAPED: "p$$ssw0rd",
       ESCAPED_QUOTED: '"p$$ssw0rd"',
       LITERAL: "a$ b$1 c$! d$",

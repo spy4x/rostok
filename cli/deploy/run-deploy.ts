@@ -79,7 +79,7 @@ import { basename, dirname, join, resolve, toFileUrl } from "@std/path"
 import { parseEnv, readEnvFile } from "../env-files.ts"
 import { isLocalSshAddress, serverDirFor } from "../server-keys.ts"
 import { serverNotFoundMessage, UserError } from "../errors.ts"
-import { resolveDeployEnv } from "./env.ts"
+import { assertNoBareDollar, resolveDeployEnv } from "./env.ts"
 import { checkLocalDeployPaths, checkLocalDockerEndpoint } from "./local-server.ts"
 import { checkDockerGroup, checkRemotePathsNotNested, needsRemoteSudo } from "./docker-preflight.ts"
 import { type ResolvedStackFiles, resolveStackFiles } from "./stack-files.ts"
@@ -176,6 +176,9 @@ export async function runDeploy(
     if (!(err instanceof Deno.errors.NotFound)) throw err
   }
   const rootEnv = entriesToRecord(parseEnv(rootEnvText))
+
+  // #313: before anything else reads the values, refuse a bare `$`.
+  assertNoBareDollar(rootEnv, env, rootEnvPath, envPath)
 
   // #206: legacy fallbacks (SSH_USER, PATH_APPS, PUID, PGID), then fail
   // loudly on any still-missing DEPLOY_REQUIRED_KEYS. Checked against

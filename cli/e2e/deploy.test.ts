@@ -877,6 +877,20 @@ Deno.test("e2e: deploy refuses a bare $ in .env before compose runs, naming only
   }
 })
 
+Deno.test("e2e: deploy refuses a bare $ in a .env.root value the server .env overrides (#313)", async () => {
+  const f = await setupFixture()
+  try {
+    await writeRootEnv(f.projectDir, ["PW=p$ssroot"])
+    await writeServer(f.projectDir, ["PW='ok'"], ["librespeed"])
+    const error = await assertRejects(() => runDeployInProcess(f), UserError)
+    assertStringIncludes(error.message, "PW in ")
+    assertStringIncludes(error.message, ".env.root")
+    assertEquals(error.message.includes("ssroot"), false)
+  } finally {
+    await teardownFixture(f)
+  }
+})
+
 Deno.test("e2e: config.json envs resolves a \${VAR} defined only in .env.root", async () => {
   // Same class of bug as the VOLUMES_PATH regression below: applyStackEnvs
   // used to look up config.json's `${VAR}` references in the raw server
