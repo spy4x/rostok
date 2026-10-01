@@ -97,17 +97,22 @@ Optional:
 ## How stacks are stopped and restarted
 
 Before stopping a stack, the runner finds its running containers and reads their compose labels
-(`com.docker.compose.project`, `.project.config_files`, `.project.working_dir`). Stop, start and the
-`up -d` fallback all use exactly that project name, those compose files and that working dir, so a
+(`com.docker.compose.project`, `.project.config_files`). Stop, start and the `up -d` fallback all
+use exactly that project name and those compose files, run from the apps root (the part of the
+compose path before `/stacks/<name>/compose.yml`, where `rostok deploy` runs compose and keeps
+`.env.root` and `.env`; compose's own `working_dir` label is the stack directory, so it is not
+used). Env files are passed as `--env-file=.env.root --env-file=.env` when both exist. So a
 server deployed with `rostok deploy` (`<disk>/rostok/apps/stacks/<name>/compose.yml`) is handled
 correctly even though the runner lives elsewhere.
 
 - No container of the stack is running: nothing is stopped, and nothing is started afterwards. No
   path is guessed.
-- `start` fails because a container vanished (Watchtower): `up -d` runs from the recorded working
-  dir with `--env-file=.env.root --env-file=.env`, the same as `rostok deploy`. If a recorded
+- `start` fails because a container vanished (Watchtower): `up -d` runs from the apps root with `--env-file=.env.root --env-file=.env`, the same as `rostok deploy`. If a recorded
   compose file or one of those env files no longer exists, `up -d` does not run: the stack stays
   stopped and the backup is reported as failed, rather than rebuilding the stack from wrong config.
+- A running container looks like it belongs to the stack (same project name or stack directory) but
+  no compose file of it ends in `/stacks/<name>/compose.yml`: the backup fails instead of copying
+  the data live.
 - The stack's containers come from more than one compose project: the backup fails without stopping
   anything.
 
