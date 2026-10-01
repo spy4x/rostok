@@ -86,6 +86,7 @@ import { type ResolvedStackFiles, resolveStackFiles } from "./stack-files.ts"
 import { validateStackConfigs } from "./validate-stack-config.ts"
 import { type HookContext, runHook } from "./hooks.ts"
 import {
+  assertNoKeepOwnerParent,
   extractVolumePaths,
   generateFileMountCheckScript,
   generateVolumeCreationScript,
@@ -375,6 +376,8 @@ export async function runDeploy(
         keepOwner.push(`${VOLUMES_PATH}/${rel}`)
       }
     }
+    // #324: a parent volume's chown -R would reach a keepOwner folder; refuse before any remote write.
+    assertNoKeepOwnerParent(volumePaths, keepOwner)
     // Checked now, in a read-only call, before any hook, stale cleanup,
     // file sync or container change: a missing file mount stops the
     // deploy while every stack is still as it was.

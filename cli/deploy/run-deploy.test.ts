@@ -288,6 +288,34 @@ Deno.test("runDeploy: a .. volume path is refused before any hook, sync, cleanup
   }
 })
 
+Deno.test("runDeploy: a volume that contains a keepOwner folder is refused before any remote script or sync (#324)", async () => {
+  const f = await setupRunDeployFixture()
+  try {
+    const stackDir = join(f.projectDir, "stacks", "nested")
+    await Deno.mkdir(stackDir, { recursive: true })
+    await Deno.writeTextFile(
+      join(stackDir, "compose.yml"),
+      "name: ${PROJECT}\nservices:\n  app:\n    image: busybox\n    volumes:\n" +
+        "      - ${VOLUMES_PATH}/nested:/a\n      - ${VOLUMES_PATH}/nested/db:/b\n",
+    )
+    await Deno.writeTextFile(
+      join(stackDir, "+meta.ts"),
+      `export default { name: "nested", description: "d", variables: [], keepOwner: ["nested/db"] }\n`,
+    )
+    await writeRunDeployServer(f.projectDir, ["nested"])
+
+    await assertRejects(
+      () => runDeploy({ cwd: f.projectDir, server: "test" }, f.io),
+      UserError,
+      "keep-owner folder",
+    )
+    assertEquals(f.remote.shellScripts, [])
+    assertEquals(f.remote.rsyncCalls, [])
+  } finally {
+    await teardownRunDeployFixture(f)
+  }
+})
+
 Deno.test("runDeploy: a full deploy's root rsync carries --delete, excludes /stacks, and drops -u (#233)", async () => {
   const f = await setupRunDeployFixture()
   try {
