@@ -204,3 +204,58 @@ Deno.test("fails the backup instead of copying live when a running stack matches
     assertEquals(h.log().filter((l) => l.includes(`|compose `)), [])
   })
 })
+
+/** Runs `fn` with an existing temp dir as the apps root, removed afterwards. */
+async function withAppsRoot(fn: (root: string) => Promise<void>): Promise<void> {
+  const root = await Deno.makeTempDir()
+  try {
+    await fn(root)
+  } finally {
+    await Deno.remove(root, { recursive: true })
+  }
+}
+
+Deno.test("stops a project whose services carry different compose file lists with the longest list", async () => {
+  await withAppsRoot(async (root) => {
+    // `rostok deploy` added an override that changed only service a, so only a
+    // was recreated with it; b keeps the stack's own file alone.
+    const base = `${root}/stacks/app/compose.yml`
+    const override = `${root}/compose-override/app.yml`
+    await withHarness({
+      FAKE_PS_OUTPUT: psLine(`app`, base, `${root}/stacks/app`) +
+        psLine(`app`, `${base},${override}`, `${root}/stacks/app`),
+    }, async (h) => {
+      const c = await h.run("stop")
+      assertEquals(c.status, BackupStatus.IN_PROGRESS)
+      assertEquals(h.log().filter((l) => l.includes(`|compose `)), [
+        `${root}|compose -p app -f ${base} -f ${override} stop`,
+      ])
+    })
+  })
+})
+
+Deno.test("fails with the real cause when one project's compose file lists do not fit together", async () => {
+  const base = `/srv/apps/stacks/app/compose.yml`
+  await withHarness({
+    FAKE_PS_OUTPUT: psLine(`app`, `${base},/srv/apps/one.yml`, `/srv/apps/stacks/app`) +
+      psLine(`app`, `${base},/srv/apps/two.yml`, `/srv/apps/stacks/app`),
+  }, async (h) => {
+    const c = await h.run("stop")
+    assertEquals(c.status, BackupStatus.ERROR)
+    assertStringIncludes(c.error ?? ``, `do not fit together`)
+    assertEquals(h.log().filter((l) => l.includes(`|compose `)), [])
+  })
+})
+
+Deno.test("stops a running stack whose containers have no working_dir label", async () => {
+  await withAppsRoot(async (root) => {
+    await withHarness({
+      FAKE_PS_OUTPUT: psLine(`app`, `${root}/stacks/app/compose.yml`, ``),
+    }, async (h) => {
+      await h.run("stop")
+      assertEquals(h.log().filter((l) => l.includes(`|compose `)), [
+        `${root}|compose -p app -f ${root}/stacks/app/compose.yml stop`,
+      ])
+    })
+  })
+})

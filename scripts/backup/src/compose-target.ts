@@ -8,18 +8,17 @@
 export interface ComposeTarget {
   /** `com.docker.compose.project` */
   project: string
-  /** `com.docker.compose.project.config_files`, split on commas */
-  configFiles: string[]
   /**
-   * `com.docker.compose.project.working_dir`. Real compose sets it to the first
-   * compose file's directory (`<apps>/stacks/<name>`), NOT to where
-   * `rostok deploy` ran, so it is informational only.
+   * `com.docker.compose.project.config_files`, split on commas. When the
+   * stack's containers carry different lists, the one that contains all the
+   * others (see `parseComposeTargets`).
    */
-  workingDir: string
+  configFiles: string[]
   /**
    * The apps root: the part of the stack's compose file before
    * `/stacks/<dir>/compose.yml`. `rostok deploy` runs compose from here and
-   * keeps `.env.root` and `.env` here.
+   * keeps `.env.root` and `.env` here. Compose's own `working_dir` label is the
+   * stack directory (`<apps>/stacks/<name>`), so it is not used.
    */
   appsRoot: string
 }
@@ -31,30 +30,69 @@ export const COMPOSE_LABELS_FORMAT = [
   `{{.Label "com.docker.compose.project.working_dir"}}`,
 ].join("\t")
 
+/** What `parseComposeTargets` found in `docker ps` output. */
+export interface ParsedComposeTargets {
+  /** One target per compose project and apps root. */
+  targets: ComposeTarget[]
+  /** Why a project's containers could not be merged into one target. */
+  conflicts: string[]
+}
+
 /**
- * Parses `docker ps --format COMPOSE_LABELS_FORMAT` output and returns the
- * distinct compose targets whose compose files include
- * `<anything>/stacks/<stackDir>/compose.yml`. Containers without compose
- * labels are skipped.
+ * Parses `docker ps --format COMPOSE_LABELS_FORMAT` output and returns one
+ * target per compose project and apps root among the containers whose compose
+ * files include `<anything>/stacks/<stackDir>/compose.yml`. Containers without
+ * a project or config files label are skipped.
+ *
+ * The containers of one project can carry different `config_files` labels:
+ * `rostok deploy` adds `compose-override/<stack>.yml` after the stack's own
+ * file, compose then recreates only the services the override changes, and
+ * the others keep the shorter list (Watchtower copies the old labels too). So
+ * the target uses the longest list, provided every other list is an ordered
+ * subsequence of it. Lists that do not fit together are a conflict: no single
+ * set of files reproduces every container.
  */
-export function parseComposeTargets(psOutput: string, stackDir: string): ComposeTarget[] {
+export function parseComposeTargets(psOutput: string, stackDir: string): ParsedComposeTargets {
   const suffix = `/stacks/${stackDir}/compose.yml`
-  const found = new Map<string, ComposeTarget>()
+  const groups = new Map<string, { project: string; appsRoot: string; lists: string[][] }>()
   for (const line of psOutput.split("\n")) {
-    const [project, files, workingDir] = line.split("\t").map((part) => part.trim())
-    if (!project || !files || !workingDir) continue
+    const [project, files] = line.split("\t").map((part) => part.trim())
+    if (!project || !files) continue
     const configFiles = files.split(",").map((file) => file.trim()).filter(Boolean)
     const own = configFiles.find((file) => file.endsWith(suffix))
     if (!own) continue
     const appsRoot = own.slice(0, -suffix.length)
-    found.set(JSON.stringify([project, configFiles, workingDir]), {
-      project,
-      configFiles,
-      workingDir,
-      appsRoot,
-    })
+    const key = JSON.stringify([project, appsRoot])
+    const group = groups.get(key) ?? { project, appsRoot, lists: [] }
+    group.lists.push(configFiles)
+    groups.set(key, group)
   }
-  return [...found.values()]
+  const targets: ComposeTarget[] = []
+  const conflicts: string[] = []
+  for (const { project, appsRoot, lists } of groups.values()) {
+    const longest = lists.reduce((a, b) => b.length > a.length ? b : a)
+    if (lists.every((list) => isOrderedSubsequence(list, longest))) {
+      targets.push({ project, configFiles: longest, appsRoot })
+      continue
+    }
+    const distinct = [...new Set(lists.map((list) => list.join(",")))]
+    conflicts.push(
+      `Containers of compose project ${project} in ${appsRoot} were created from compose ` +
+        `files that do not fit together (${distinct.join(" | ")}), so no single set of files ` +
+        `reproduces them. Recreate the stack from its current files (rostok deploy) first.`,
+    )
+  }
+  return { targets, conflicts }
+}
+
+/** Whether every item of `part` occurs in `whole`, in the same order. */
+function isOrderedSubsequence(part: string[], whole: string[]): boolean {
+  let at = 0
+  for (const item of part) {
+    at = whole.indexOf(item, at) + 1
+    if (at === 0) return false
+  }
+  return true
 }
 
 /**

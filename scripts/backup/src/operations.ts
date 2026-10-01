@@ -210,7 +210,11 @@ export class BackupOperations {
       return null
     }
     const out = new TextDecoder().decode(stdout)
-    const targets = parseComposeTargets(out, stackDir)
+    const { targets, conflicts } = parseComposeTargets(out, stackDir)
+    if (conflicts.length > 0) {
+      this.markBackupFailed(config, conflicts.join("\n"), "compose_stop")
+      return null
+    }
     const unmatched = parseUnmatchedStackContainers(out, stackDir)
     if (targets.length === 0 && unmatched.length > 0) {
       this.markBackupFailed(
@@ -230,7 +234,8 @@ export class BackupOperations {
       this.markBackupFailed(
         config,
         `Stack ${stackDir} runs from ${targets.length} different compose projects ` +
-          `(${targets.map((t) => t.project).join(", ")}); refusing to guess which to stop`,
+          `(${targets.map((t) => `${t.project} in ${t.appsRoot}`).join(", ")}); ` +
+          `refusing to guess which to stop`,
         "compose_stop",
       )
       return null
