@@ -197,4 +197,10 @@ export const SHIPPED_STACK_FILES: Record<string, readonly string[]> = {
     "mta-sts/html/.well-known/mta-sts.txt.template",
     "mta-sts/nginx.conf",
   ],
+  pangolin: [
+    "before.deploy.ts",
+    "compose.yml",
+    "traefik/dynamic/00-pangolin.yml",
+    "traefik/traefik_config.yml",
+  ],
 }
