@@ -20,6 +20,8 @@ const traefik = (parse(
 Deno.test("traefik: the API is not served unauthenticated on port 8080 to the proxy network", () => {
   assertEquals(traefik.command.filter((flag) => flag.startsWith("--api")), ["--api=true"])
   assertEquals(traefik.command.includes("--ping=true"), true)
+  // /ping stays on port 8080 (the traefik entrypoint), where the healthcheck asks for it.
+  assertEquals(traefik.command.some((flag) => flag.startsWith("--ping.entrypoint")), false)
   assertEquals(traefik.healthcheck.test.at(-1), "http://localhost:8080/ping")
 })
 

@@ -99,12 +99,16 @@ Deno.test("caldav-mcp: the container has no capabilities, a read-only root and n
 Deno.test("caldav-mcp: the binary gets explicit Deno permissions, never all of them", () => {
   // Network: the listener, the CalDAV host from the build argument, claude.ai's client metadata
   // and Docker's resolver, which looks claude.ai up first. Files: only the OAuth store on /data.
-  assertEquals(/(^|\s)(-A|--allow-all)(\s|$)/m.test(dockerfile), false)
-  assertMatch(
-    dockerfile,
-    /--allow-net="0\.0\.0\.0:3000,\$\{caldav_host\},claude\.ai,127\.0\.0\.11:53"/,
-  )
-  assertMatch(dockerfile, /--allow-read=\/data --allow-write=\/data --allow-env/)
+  // The exact set of permission flags, so a widened (bare --allow-net) or added (--allow-run) one
+  // fails, and so do -A and the short forms (-N, -R, -W, -E, -S).
+  const compile = dockerfile.match(/deno compile [^]*? main\.ts$/m)?.[0] ?? ``
+  const flags = compile.match(/(?<=\s)(-[AERSNW]|--allow-[a-z-]+|--deny-[a-z-]+)(=("[^"]*"|\S+))?/g)
+  assertEquals(flags, [
+    `--allow-net="0.0.0.0:3000,\${caldav_host},claude.ai,127.0.0.11:53"`,
+    `--allow-read=/data`,
+    `--allow-write=/data`,
+    `--allow-env`,
+  ])
   assertEquals(service.build.args, { CALDAV_URL: `\${CALDAV_MCP_SERVER_URL}` })
 })
 
