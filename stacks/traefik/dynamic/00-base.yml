@@ -9,11 +9,16 @@ http:
       compress:
         excludedContentTypes:
           - text/event-stream
+    # security-headers runs on every websecure router (the entrypoint middleware in compose.yml).
+    # It runs after a router's own middlewares and after the app, and each header it names
+    # replaces the value they set, so it names only headers that no service needs to change.
     security-headers:
       headers:
         contentTypeNosniff: true
         frameDeny: true
-        referrerPolicy: strict-origin-when-cross-origin
+        # No referrerPolicy (spy4x/rostok#356): Traefik would replace the stricter `no-referrer`
+        # that an app sets on its own pages (caldav-mcp's consent page and redirect). Browsers
+        # already default to strict-origin-when-cross-origin, the value this used to set.
         stsSeconds: 15552000
         stsIncludeSubdomains: true
         stsPreload: true
@@ -23,13 +28,20 @@ http:
           interest-cohort=(), browsing-topics=(), accelerometer=(),
           gyroscope=(), magnetometer=()
         customResponseHeaders:
-          Access-Control-Allow-Origin: "*"
+          # Decided in spy4x/rostok#354:
+          # - No Access-Control-Allow-Origin. `*` here let any site read any service's responses
+          #   from a browser, and it replaced the narrower origin a service sets itself
+          #   (stalwart-jmap below). A service that needs CORS sets it in the app or on its own
+          #   router, like immich-kiosk (stacks/immich), the reason `*` was added (spy4x/rostok#123).
+          # - Cross-Origin-Opener-Policy same-origin, as the cloud server already served it. It
+          #   affects only windows that open each other, never images or iframes.
+          # - No Cross-Origin-Resource-Policy. same-site blocks a page on another site, such as
+          #   Home Assistant on a LAN address, from showing kiosk photos (spy4x/rostok#123), and this
+          #   middleware runs last, so no router could relax it.
+          Cross-Origin-Opener-Policy: same-origin
           # Cross-Origin-Embedder-Policy is NOT in security-headers —
           # it breaks cross-origin JMAP (Bulwark → Stalwart on different
           # subdomains). Add to individual router middlewares if needed.
-          # Cross-Origin-Opener-Policy / Cross-Origin-Resource-Policy are
-          # intentionally NOT in security-headers — they block cross-origin
-          # image/iframe loads (e.g. HomeAssistant embedding kiosk photos).
           # X-Robots-Tag is intentionally NOT in security-headers. It lives in
           # its own middleware (robots-deny) so public sites (antonshubin,
           # neatsoft) can opt out by not including it in their router labels.
