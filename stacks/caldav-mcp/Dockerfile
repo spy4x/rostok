@@ -2,11 +2,13 @@
 # Source: https://github.com/spy4x/caldav-mcp (single source of truth)
 FROM denoland/deno:alpine-2.9.7 AS builder
 
+# An exact tag: a new value changes this step, so Docker's build cache never keeps an old clone.
+ARG CALDAV_MCP_VERSION=v1.1.0
 RUN apk add --no-cache git
-RUN git clone --depth 1 --branch main \
+RUN git clone --depth 1 --branch "${CALDAV_MCP_VERSION}" \
     https://github.com/spy4x/caldav-mcp.git /app
 WORKDIR /app
-RUN deno compile -A --output /tmp/caldav-mcp main.ts
+RUN deno compile -A --unstable-kv --output /tmp/caldav-mcp main.ts
 
 # ── Runtime: distroless ──
 FROM gcr.io/distroless/cc-debian12
@@ -14,6 +16,7 @@ FROM gcr.io/distroless/cc-debian12
 COPY --from=builder /tmp/caldav-mcp /usr/local/bin/caldav-mcp
 
 EXPOSE 3000
+VOLUME /data
 
 ENTRYPOINT ["caldav-mcp"]
 CMD ["--http"]
