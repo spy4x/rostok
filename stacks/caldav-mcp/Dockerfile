@@ -1,6 +1,6 @@
 # ── Multistage: clone → compile → distroless runtime ──
 # Source: https://github.com/spy4x/caldav-mcp (single source of truth)
-FROM denoland/deno:alpine AS builder
+FROM denoland/deno:alpine-2.9.7 AS builder
 
 RUN apk add --no-cache git
 RUN git clone --depth 1 --branch main \

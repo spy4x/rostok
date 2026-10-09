@@ -25,7 +25,7 @@ docker exec -it open-webui ollama pull codellama
 
 ## Variables
 
-Declared in `+meta.ts`; `rostok stack add open-webui` writes them to the server's `.env`. Requires the `traefik` stack. Served at `${OPEN_WEBUI_DOMAIN}`. `after.deploy.ts` copies the provider list into Open WebUI's database on every deploy. The stack talks to sibling stacks by container name (`ollama`, `searxng`, `playwright`, `caldav-mcp`, `email-mcp`, `google-maps-mcp`, `github-mcp`); a missing one only makes its tool fail. The default document extraction engine is `tika`, which this catalog does not ship: clear `OPEN_WEBUI_CONTENT_EXTRACTION_ENGINE` in the server's `.env` after `stack add` to use the built-in one.
+Declared in `+meta.ts`; `rostok stack add open-webui` writes them to the server's `.env`. Requires the `traefik` stack. Served at `${OPEN_WEBUI_DOMAIN}`. `after.deploy.ts` copies the provider list into Open WebUI's database on every deploy. The stack talks to sibling stacks by container name (`ollama`, `searxng`, `playwright`, `caldav-mcp`, `email-mcp`, `google-maps-mcp`, `github-mcp`); a missing one only makes its tool fail. To use caldav-mcp, write `OPEN_WEBUI_CALDAV_MCP_TOKEN=${CALDAV_MCP_TOKEN}` in the server's `.env` by hand, without quotes and below the `CALDAV_MCP_TOKEN` line, so compose resolves the reference and both stacks share one token. Compose resolves a reference only to a key defined earlier in the file; above it, the key is silently empty and the caldav tool gets 401. The default document extraction engine is `tika`, which this catalog does not ship: clear `OPEN_WEBUI_CONTENT_EXTRACTION_ENGINE` in the server's `.env` after `stack add` to use the built-in one.
 
 | Key                                                    | Default                                  | Meaning                                                          |
 | ------------------------------------------------------ | ---------------------------------------- | ---------------------------------------------------------------- |
@@ -34,6 +34,8 @@ Declared in `+meta.ts`; `rostok stack add open-webui` writes them to the server'
 | `OPEN_WEBUI_OPENAI_API_BASE_URLS`                      | none, required                           | Base URLs of those providers, same order                         |
 | `OPEN_WEBUI_WEBUI_SECRET_KEY`                          | generated, secret                        | Session signing key (`WEBUI_SECRET_KEY`)                         |
 | `OPEN_WEBUI_HF_TOKEN`                                  | none, secret                             | Optional Hugging Face token                                      |
+| `OPEN_WEBUI_MCPO_API_KEY`                              | generated, secret                        | API key Open WebUI sends to mcpo                                 |
+| `OPEN_WEBUI_CALDAV_MCP_TOKEN`                          | none, secret                             | Bearer token sent to caldav-mcp, normally `${CALDAV_MCP_TOKEN}`  |
 | `OPEN_WEBUI_ENABLE_WEB_SEARCH`                         | `true`                                   | Enable web search                                                |
 | `OPEN_WEBUI_WEB_SEARCH_ENGINE`                         | `searxng`                                | Web search engine                                                |
 | `OPEN_WEBUI_SEARXNG_QUERY_URL`                         | `http://searxng:8080/search?format=json` | SearXNG query URL                                                |

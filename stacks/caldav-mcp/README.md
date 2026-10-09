@@ -25,11 +25,12 @@ Internal MCP server — no external web UI. Two access modes:
 `compose.yml` and has no Traefik route, so it needs no domain and no
 `traefik` stack.
 
-| Key                     | Default          | Meaning           |
-| ----------------------- | ---------------- | ----------------- |
-| `CALDAV_MCP_SERVER_URL` | required         | CalDAV server URL |
-| `CALDAV_MCP_USERNAME`   | required         | CalDAV username   |
-| `CALDAV_MCP_PASSWORD`   | required, secret | CalDAV password   |
+| Key                     | Default           | Meaning                            |
+| ----------------------- | ----------------- | ---------------------------------- |
+| `CALDAV_MCP_SERVER_URL` | required          | CalDAV server URL                  |
+| `CALDAV_MCP_USERNAME`   | required          | CalDAV username                    |
+| `CALDAV_MCP_PASSWORD`   | required, secret  | CalDAV password                    |
+| `CALDAV_MCP_TOKEN`      | generated, secret | Bearer token for the HTTP endpoint |
 
 For Stalwart on `mail.${DOMAIN}`, the URL is `https://mail.${DOMAIN}/dav/cal/`.
 The username is the full mailbox address (e.g. `you@example.com`).

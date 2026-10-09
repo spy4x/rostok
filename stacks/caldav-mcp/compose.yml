@@ -18,7 +18,8 @@ services:
       - CALDAV_URL=${CALDAV_MCP_SERVER_URL}
       - CALDAV_USERNAME=${CALDAV_MCP_USERNAME}
       - CALDAV_PASSWORD=${CALDAV_MCP_PASSWORD}
-      - MCP_BEARER_TOKEN=mcpo-local
+      # Required: caldav-mcp turns authentication off when the token is empty.
+      - MCP_BEARER_TOKEN=${CALDAV_MCP_TOKEN:?}
       - HOST=0.0.0.0
       - PORT=3000
       - LOG_LEVEL=info

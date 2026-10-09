@@ -7,8 +7,13 @@
 //
 // The three CALDAV_MCP_* keys point at the CalDAV server the operator already runs, so they have
 // no default: `stack add` asks for them. The password is secret.
+//
+// CALDAV_MCP_TOKEN is the bearer token clients send to the HTTP endpoint, generated at `stack add`.
+// open-webui sends it through its own OPEN_WEBUI_CALDAV_MCP_TOKEN, set to `${CALDAV_MCP_TOKEN}`.
+// compose refuses to start without it, because caldav-mcp turns authentication off when it is empty.
 
 import type { StackMeta } from "@rostok/cli"
+import { generatePassword } from "@rostok/cli"
 
 export default {
   name: "caldav-mcp",
@@ -28,6 +33,13 @@ export default {
     {
       key: "CALDAV_MCP_PASSWORD",
       question: "CalDAV password?",
+      required: true,
+      secret: true,
+    },
+    {
+      key: "CALDAV_MCP_TOKEN",
+      question: "Bearer token MCP clients send (auto-generated)?",
+      default: () => generatePassword(32),
       required: true,
       secret: true,
     },

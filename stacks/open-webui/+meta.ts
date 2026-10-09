@@ -13,6 +13,16 @@
 //   - OPEN_WEBUI_WEBUI_SECRET_KEY: secret, generated at `stack add`. Compose passes it as
 //     WEBUI_SECRET_KEY, which signs sessions.
 //   - OPEN_WEBUI_HF_TOKEN: optional Hugging Face token.
+//   - OPEN_WEBUI_MCPO_API_KEY: secret, generated at `stack add`. mcpo requires it as its API key
+//     and Open WebUI sends it to mcpo.
+//   - OPEN_WEBUI_CALDAV_MCP_TOKEN: the bearer token Open WebUI sends to caldav-mcp. A stack may
+//     only read its own prefixed keys, so it can't read CALDAV_MCP_TOKEN directly. `stack add`
+//     asks for the value; editing the server's `.env` to the unquoted reference
+//     `OPEN_WEBUI_CALDAV_MCP_TOKEN=${CALDAV_MCP_TOKEN}` keeps one secret for both stacks (the CLI
+//     single-quotes any typed value with `$`, which compose then reads literally). Optional, with
+//     no default: a default reference would stop every deploy on a server without caldav-mcp.
+//     The reference line must sit below the CALDAV_MCP_TOKEN line: compose resolves a reference
+//     only to a key defined earlier, and above it the key is silently empty.
 //   - the rest: same defaults as compose.
 //
 // Server-level vars (DOMAIN, VOLUMES_PATH, PATH_APPS) intentionally NOT declared here.
@@ -53,6 +63,19 @@ export default {
     {
       key: "OPEN_WEBUI_HF_TOKEN",
       question: "Hugging Face token (may be empty)?",
+      required: false,
+      secret: true,
+    },
+    {
+      key: "OPEN_WEBUI_MCPO_API_KEY",
+      question: "API key between Open WebUI and mcpo (auto-generated)?",
+      default: () => generatePassword(32),
+      required: true,
+      secret: true,
+    },
+    {
+      key: "OPEN_WEBUI_CALDAV_MCP_TOKEN",
+      question: "Bearer token for caldav-mcp (the value of CALDAV_MCP_TOKEN, or empty)?",
       required: false,
       secret: true,
     },
