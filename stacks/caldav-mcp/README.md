@@ -79,9 +79,9 @@ The binary runs as `PUID:PGID` with no capabilities and a read-only root file sy
 permissions are fixed at build time: it listens on port 3000, reaches only the host of
 `CALDAV_MCP_SERVER_URL` and `claude.ai`, and reads and writes only `/data`. A new CalDAV host needs
 a rebuild, which `deno task deploy` does. Images before spy4x/rostok#356 ran as root and left
-`oauth.kv` owned by root. `deno task deploy` chowns the volume only when the folder itself is
-missing or has the wrong owner, and that folder is already `PUID:PGID`, so the deploy skips it.
-When upgrading from such an image, stop the container, back up `oauth.kv*`, and chown those files to
+`oauth.kv` owned by root. A deploy that logs in as a user other than root chowns the volume only
+when the folder itself is missing or has the wrong owner. That folder is already `PUID:PGID`, so
+the deploy skips it. When upgrading from such an image, stop the container, back up `oauth.kv*`, and chown those files to
 `PUID:PGID` once (`sudo -n chown PUID:PGID ${VOLUMES_PATH}/caldav-mcp/oauth.kv*`), or the store will
 not open and the container restarts in a loop.
 
