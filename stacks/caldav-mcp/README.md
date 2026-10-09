@@ -36,12 +36,15 @@ an internal server needs no domain. It needs the `traefik` stack for the `proxy`
 
 Optional, for [Public with OAuth](#public-with-oauth), set by hand in the server's `.env`:
 
-| Key                          | Default                                  | Meaning                                  |
-| ---------------------------- | ---------------------------------------- | ---------------------------------------- |
-| `CALDAV_MCP_PUBLIC`          | `false`                                  | `true` turns the Traefik route on        |
-| `CALDAV_MCP_DOMAIN`          | `mcp.${DOMAIN}`                          | Public host name                         |
-| `CALDAV_MCP_MIDDLEWARES`     | `security-headers@file,robots-deny@file` | Traefik middlewares                      |
-| `CALDAV_MCP_TRUSTED_PROXIES` | empty                                    | The `proxy` network's subnet, for limits |
+| Key                              | Default                                  | Meaning                                  |
+| -------------------------------- | ---------------------------------------- | ---------------------------------------- |
+| `CALDAV_MCP_PUBLIC`              | `false`                                  | `true` turns the Traefik route on        |
+| `CALDAV_MCP_DOMAIN`              | `mcp.${DOMAIN}`                          | Public host name                         |
+| `CALDAV_MCP_MIDDLEWARES`         | `security-headers@file,robots-deny@file` | Traefik middlewares                      |
+| `CALDAV_MCP_TRUSTED_PROXIES`     | empty                                    | The `proxy` network's subnet, for limits |
+| `CALDAV_MCP_PUBLIC_URL`          | empty                                    | `https://<domain>`, no path              |
+| `CALDAV_MCP_OWNER_PASSWORD_HASH` | empty, secret                            | The owner password hash                  |
+| `CALDAV_MCP_AUTH_PEPPER`         | empty, secret                            | The pepper the hash was made with        |
 
 For Stalwart on `mail.${DOMAIN}`, the URL is `https://mail.${DOMAIN}/dav/cal/`.
 The username is the full mailbox address (e.g. `you@example.com`).
@@ -54,20 +57,35 @@ connector: the consent page asks for the owner password. Grants live in Deno KV 
 `${VOLUMES_PATH}/caldav-mcp/oauth.kv`, so connectors stay signed in across redeploys. The
 bearer token keeps working alongside OAuth.
 
+There is no backup: losing the store only means signing connectors in again.
+
+Set all three OAuth values or none. `CALDAV_MCP_PUBLIC=true` without them publishes a bearer-only
+endpoint, which caldav-mcp still protects but claude.ai cannot use.
+
+The image builds the caldav-mcp tag in `CALDAV_MCP_VERSION` (`Dockerfile`). Bump it there to
+upgrade; a branch would let Docker's build cache keep an old clone.
+
 1. Pick a long random owner password and a pepper of at least 32 characters
    (`openssl rand -base64 48`), then hash the password in a caldav-mcp checkout with caldav-mcp's
    README, "Make the owner password hash": `AUTH_PEPPER` in the environment,
    `deno task password:hash`, password on stdin. Neither value reaches argv or shell history.
-2. Write `servers/<server>/configs/caldav-mcp.env`, single-quoting the hash (it holds `$`):
+2. In the server's `.env` (mode 0600 on the server, encrypted in `.env.age`), single-quoting the
+   two secrets so a `$` in them survives Compose interpolation:
 
    ```env
-   PUBLIC_URL=https://mcp.example.com
-   OWNER_PASSWORD_HASH='<pbkdf2-sha256 hash>'
-   AUTH_PEPPER=<pepper>
+   CALDAV_MCP_PUBLIC=true
+   CALDAV_MCP_PUBLIC_URL=https://mcp.example.com
+   CALDAV_MCP_OWNER_PASSWORD_HASH='<pbkdf2-sha256 hash>'
+   CALDAV_MCP_AUTH_PEPPER='<pepper>'
+   CALDAV_MCP_TRUSTED_PROXIES=<subnet>
    ```
 
-3. In the server's `.env`: `CALDAV_MCP_PUBLIC=true`, and `CALDAV_MCP_TRUSTED_PROXIES` set to the
-   subnet `docker network inspect proxy` prints.
+   The subnet is what this prints on the server:
+   `docker network inspect proxy --format '{{range .IPAM.Config}}{{.Subnet}} {{end}}'`.
+   It trusts every container on `proxy` to set `X-Forwarded-For`; that only affects the per-client
+   rate limit, not the owner-password lockout, which is server-wide.
+
+3. Then `deno task env:encrypt`.
 4. Point the DNS name at the server, then `deno task deploy <server> caldav-mcp`.
 5. In claude.ai, Settings → Connectors → Add custom connector, URL `https://mcp.example.com/mcp`,
    then sign in with the owner password.

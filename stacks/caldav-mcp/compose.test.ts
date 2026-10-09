@@ -1,6 +1,6 @@
 // Guards the bearer token wiring in compose.yml (spy4x/rostok#347).
 
-import { assertEquals } from "@std/assert"
+import { assertEquals, assertMatch } from "@std/assert"
 import { parse } from "yaml"
 
 interface Compose {
@@ -8,7 +8,6 @@ interface Compose {
     environment: string[]
     labels: string[]
     volumes: string[]
-    env_file: { path: string; required: boolean }[]
   }>
 }
 
@@ -34,12 +33,25 @@ Deno.test("caldav-mcp: the Traefik route is off unless the server opts in", () =
   )
 })
 
-Deno.test("caldav-mcp: the OAuth env file is optional", () => {
-  // Without `required: false`, every server without OAuth would fail to deploy.
-  assertEquals(service.env_file, [{
-    path: `\${PATH_APPS}/configs/caldav-mcp.env`,
-    required: false,
-  }])
+Deno.test("caldav-mcp: OAuth settings default to blank, which caldav-mcp reads as off", () => {
+  // A server that sets none of them must still deploy, bearer-only.
+  assertEquals(
+    service.environment.filter((entry) =>
+      /^(PUBLIC_URL|OWNER_PASSWORD_HASH|AUTH_PEPPER)=/.test(entry)
+    ),
+    [
+      `PUBLIC_URL=\${CALDAV_MCP_PUBLIC_URL:-}`,
+      `OWNER_PASSWORD_HASH=\${CALDAV_MCP_OWNER_PASSWORD_HASH:-}`,
+      `AUTH_PEPPER=\${CALDAV_MCP_AUTH_PEPPER:-}`,
+    ],
+  )
+})
+
+Deno.test("caldav-mcp: the image builds a pinned caldav-mcp tag, not a branch", () => {
+  // `up --build` reuses a cached `git clone --branch main` layer, so a branch can build stale code.
+  const dockerfile = Deno.readTextFileSync(new URL(`./Dockerfile`, import.meta.url))
+  assertMatch(dockerfile, /^ARG CALDAV_MCP_VERSION=v\d+\.\d+\.\d+$/m)
+  assertMatch(dockerfile, /git clone --depth 1 --branch "\$\{CALDAV_MCP_VERSION\}"/)
 })
 
 Deno.test("caldav-mcp: the OAuth store lives on a volume at /data", () => {

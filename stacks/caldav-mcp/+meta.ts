@@ -64,5 +64,19 @@ export default {
       key: "CALDAV_MCP_TRUSTED_PROXIES",
       required: false,
     },
+    {
+      key: "CALDAV_MCP_PUBLIC_URL",
+      required: false,
+    },
+    {
+      key: "CALDAV_MCP_OWNER_PASSWORD_HASH",
+      required: false,
+      secret: true,
+    },
+    {
+      key: "CALDAV_MCP_AUTH_PEPPER",
+      required: false,
+      secret: true,
+    },
   ],
 } satisfies StackMeta

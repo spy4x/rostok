@@ -14,12 +14,6 @@ services:
       context: .
       dockerfile: Dockerfile
     restart: unless-stopped
-    # OAuth for remote connectors such as claude.ai (README "Public with OAuth"). The file holds
-    # PUBLIC_URL, OWNER_PASSWORD_HASH and AUTH_PEPPER; caldav-mcp switches OAuth on when all three
-    # are set and refuses to start when only some are. A server without the file stays internal.
-    env_file:
-      - path: ${PATH_APPS}/configs/caldav-mcp.env
-        required: false
     environment:
       - CALDAV_URL=${CALDAV_MCP_SERVER_URL}
       - CALDAV_USERNAME=${CALDAV_MCP_USERNAME}
@@ -29,6 +23,12 @@ services:
       - HOST=0.0.0.0
       - PORT=3000
       - LOG_LEVEL=info
+      # OAuth for remote connectors such as claude.ai (README "Public with OAuth"). caldav-mcp
+      # switches it on when all three are set, refuses to start when only some are, and treats
+      # blank as unset, so a server without them stays bearer-only.
+      - PUBLIC_URL=${CALDAV_MCP_PUBLIC_URL:-}
+      - OWNER_PASSWORD_HASH=${CALDAV_MCP_OWNER_PASSWORD_HASH:-}
+      - AUTH_PEPPER=${CALDAV_MCP_AUTH_PEPPER:-}
       # Rate limits key on the client address that Traefik forwards from the proxy network.
       - TRUSTED_PROXIES=${CALDAV_MCP_TRUSTED_PROXIES:-}
     volumes:
