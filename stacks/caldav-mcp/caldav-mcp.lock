@@ -1,0 +1,116 @@
+{
+  "version": "5",
+  "specifiers": {
+    "jsr:@hectorm/otpauth@9.5.2": "9.5.2",
+    "jsr:@hono/hono@4.13.8": "4.13.8",
+    "jsr:@libs/qrcode@3.1.0": "3.1.0",
+    "jsr:@spy4x/caldav@1.49.0": "1.49.0",
+    "jsr:@spy4x/email@^1.49.0": "1.51.0",
+    "jsr:@spy4x/net@1.49.0": "1.49.0",
+    "jsr:@spy4x/net@^1.49.0": "1.49.0",
+    "jsr:@spy4x/platform@1.49.0": "1.49.0",
+    "jsr:@spy4x/platform@^1.49.0": "1.49.0",
+    "jsr:@spy4x/server@1.49.0": "1.49.0",
+    "jsr:@spy4x/time@1.49.0": "1.49.0",
+    "jsr:@spy4x/time@^1.49.0": "1.49.0",
+    "jsr:@std/crypto@1.1.0": "1.1.0",
+    "jsr:@std/encoding@1.0.11": "1.0.11",
+    "jsr:@std/ulid@1.0.0": "1.0.0",
+    "npm:arktype@2.2.3": "2.2.3"
+  },
+  "jsr": {
+    "@hectorm/otpauth@9.5.2": {
+      "integrity": "efe9d019825c3262b32c144dd2316fa4c3b4537ce025e9d009948e78a28fb55e"
+    },
+    "@hono/hono@4.13.8": {
+      "integrity": "bbb566d9ebb81e74c0d7eeff1f9221ba9f3fda6f1832e5ca66cbddcecb2f7fec"
+    },
+    "@libs/qrcode@3.1.0": {
+      "integrity": "1d65698d3cbaf1d5e2e0b025f7d8572e8b2c485dcfa81d485e0bf0ce607e9c2b"
+    },
+    "@spy4x/caldav@1.49.0": {
+      "integrity": "52386f0fa46e1f7ff7f55aff2303a7a60d2ac08a8d05fd14068d0911bc2ceb4a",
+      "dependencies": [
+        "jsr:@spy4x/net@^1.49.0",
+        "jsr:@spy4x/time@^1.49.0",
+        "jsr:@std/encoding"
+      ]
+    },
+    "@spy4x/email@1.51.0": {
+      "integrity": "1e4e435d4c48b6923ea9a85b402a83e4e8656781adef4318d11deedd5006cc71"
+    },
+    "@spy4x/net@1.49.0": {
+      "integrity": "71978cf06f1b91ce335b3d1fe9ec9f91729f1ea3dd389ab2f80021ba50a7c524"
+    },
+    "@spy4x/platform@1.49.0": {
+      "integrity": "e9bf92c2b963f1969dec8377d900502a832b2e897a15f06d8b32a476bb18ef70",
+      "dependencies": [
+        "jsr:@spy4x/net@^1.49.0",
+        "jsr:@std/crypto",
+        "jsr:@std/encoding",
+        "jsr:@std/ulid"
+      ]
+    },
+    "@spy4x/server@1.49.0": {
+      "integrity": "ab8854b1f60950d45a12b33e07047e6433a41afb99eeac82cda299fa6595254a",
+      "dependencies": [
+        "jsr:@hectorm/otpauth",
+        "jsr:@hono/hono",
+        "jsr:@libs/qrcode",
+        "jsr:@spy4x/email",
+        "jsr:@spy4x/net@^1.49.0",
+        "jsr:@spy4x/platform@^1.49.0",
+        "jsr:@std/crypto",
+        "jsr:@std/encoding",
+        "npm:arktype"
+      ]
+    },
+    "@spy4x/time@1.49.0": {
+      "integrity": "238316fa3b1eb0e1932a719f9d99fb22b312fb9e7ce1e9f10af70afa32c2bebe"
+    },
+    "@std/crypto@1.1.0": {
+      "integrity": "b8d6d0a6377a32b213af2661ed7bf1062d94feac0c57def5526a8e74a95c3ec8"
+    },
+    "@std/encoding@1.0.11": {
+      "integrity": "e7cef2f0b3153bccc17431e7c864a1de03a4b6d9647389c43e08aaa775d37385"
+    },
+    "@std/ulid@1.0.0": {
+      "integrity": "d41c3d27a907714413649fee864b7cde8d42ee68437d22b79d5de4f81d808780"
+    }
+  },
+  "npm": {
+    "@ark/schema@0.56.2": {
+      "integrity": "sha512-Qx4D2JFbBWpntiHZaTv7bGG4H/M2rigiknezKg/WVyDSaLdE4YCcWAOoFB7pjjDqHbbV2OqRfntm1nnXvwMexg==",
+      "dependencies": [
+        "@ark/util"
+      ]
+    },
+    "@ark/util@0.56.2": {
+      "integrity": "sha512-9kU2sUE38FZEGG7l3hamYMBieLYEJh2L1mrYD2eXpT+78EnQSV1bhjxJhnxGBMSTbtwpBSDNSK+K60WvaI/DTQ=="
+    },
+    "arkregex@0.0.8": {
+      "integrity": "sha512-PJcx6G1kQTgLKPUbeYlYecDRaKq15AMSGVajlKFYWlPeJRQL+j3dKE6tyMs40HZ99djS1l9Vhl3ezAHy9JBIqQ==",
+      "dependencies": [
+        "@ark/util"
+      ]
+    },
+    "arktype@2.2.3": {
+      "integrity": "sha512-7W+0RLTUNJiBFIIZXwOQxSR8Z273IAd6IvqBeG9+gHnQKFsIx2C0iOtGTmMrPnlX4qLXyc5+ll7A0BIj9WrbTg==",
+      "dependencies": [
+        "@ark/schema",
+        "@ark/util",
+        "arkregex"
+      ]
+    }
+  },
+  "workspace": {
+    "dependencies": [
+      "jsr:@hono/hono@4.13.8",
+      "jsr:@spy4x/caldav@1.49.0",
+      "jsr:@spy4x/net@1.49.0",
+      "jsr:@spy4x/platform@1.49.0",
+      "jsr:@spy4x/server@1.49.0",
+      "jsr:@spy4x/time@1.49.0"
+    ]
+  }
+}

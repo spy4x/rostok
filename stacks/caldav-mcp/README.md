@@ -38,16 +38,16 @@ A public OAuth-only server clears `CALDAV_MCP_TOKEN` (below).
 
 Optional, for [Public with OAuth](#public-with-oauth), set by hand in the server's `.env`:
 
-| Key                                 | Default                                  | Meaning                                  |
-| ----------------------------------- | ---------------------------------------- | ---------------------------------------- |
-| `CALDAV_MCP_PUBLIC`                 | `false`                                  | `true` turns the Traefik route on        |
-| `CALDAV_MCP_DOMAIN`                 | `mcp.${DOMAIN}`                          | Public host name                         |
-| `CALDAV_MCP_MIDDLEWARES`            | `security-headers@file,robots-deny@file` | Traefik middlewares                      |
-| `CALDAV_MCP_TRUSTED_PROXIES`        | empty                                    | The `proxy` network's subnet, for limits |
-| `CALDAV_MCP_PUBLIC_URL`             | empty                                    | `https://<domain>`, no path              |
-| `CALDAV_MCP_OWNER_PASSWORD_HASH`    | empty, secret                            | The owner password hash                  |
-| `CALDAV_MCP_AUTH_PEPPER`            | empty, secret                            | The pepper the hash was made with        |
-| `CALDAV_MCP_ALLOW_TOKEN_WITH_OAUTH` | `false`                                  | `true` accepts the token next to OAuth   |
+| Key                                 | Default                                  | Meaning                                |
+| ----------------------------------- | ---------------------------------------- | -------------------------------------- |
+| `CALDAV_MCP_PUBLIC`                 | `false`                                  | `true` turns the Traefik route on      |
+| `CALDAV_MCP_DOMAIN`                 | `mcp.${DOMAIN}`                          | Public host name                       |
+| `CALDAV_MCP_MIDDLEWARES`            | `security-headers@file,robots-deny@file` | Traefik middlewares                    |
+| `CALDAV_MCP_TRUSTED_PROXIES`        | empty                                    | Traefik's address as `<ip>/32`, limits |
+| `CALDAV_MCP_PUBLIC_URL`             | empty                                    | `https://<domain>`, no path            |
+| `CALDAV_MCP_OWNER_PASSWORD_HASH`    | empty, secret                            | The owner password hash                |
+| `CALDAV_MCP_AUTH_PEPPER`            | empty, secret                            | The pepper the hash was made with      |
+| `CALDAV_MCP_ALLOW_TOKEN_WITH_OAUTH` | `false`                                  | `true` accepts the token next to OAuth |
 
 For Stalwart on `mail.${DOMAIN}`, the URL is `https://mail.${DOMAIN}/dav/cal/`.
 The username is the full mailbox address (e.g. `you@example.com`).
@@ -70,8 +70,17 @@ There is no backup: losing the store only means signing connectors in again.
 Set all three OAuth values or none. `CALDAV_MCP_PUBLIC=true` without them publishes a bearer-only
 endpoint, which caldav-mcp still protects but claude.ai cannot use.
 
-The image builds the caldav-mcp tag in `CALDAV_MCP_VERSION` (`Dockerfile`). Bump it there to
-upgrade; a branch would let Docker's build cache keep an old clone.
+The image builds the caldav-mcp tag in `CALDAV_MCP_VERSION` (`Dockerfile`) and fails if the tag
+no longer points at `CALDAV_MCP_COMMIT`. Its dependencies come from `caldav-mcp.lock`, with
+`--frozen`. To upgrade, change the tag and the commit together and regenerate the lockfile as the
+`Dockerfile` describes; a branch would let Docker's build cache keep an old clone.
+
+The binary runs as `PUID:PGID` with no capabilities and a read-only root file system. Its Deno
+permissions are fixed at build time: it listens on port 3000, reaches only the host of
+`CALDAV_MCP_SERVER_URL` and `claude.ai`, and reads and writes only `/data`. A new CalDAV host needs
+a rebuild, which `deno task deploy` does. Images before spy4x/rostok#356 ran as root and left
+`oauth.kv` owned by root; chown it once to `PUID:PGID` before the first deploy of this image, or
+the store will not open and the container restarts in a loop.
 
 1. Pick a long random owner password and a pepper of at least 32 characters
    (`openssl rand -base64 48`), then hash the password in a caldav-mcp checkout with caldav-mcp's
@@ -86,17 +95,21 @@ upgrade; a branch would let Docker's build cache keep an old clone.
    CALDAV_MCP_PUBLIC_URL=https://mcp.example.com
    CALDAV_MCP_OWNER_PASSWORD_HASH='<pbkdf2-sha256 hash>'
    CALDAV_MCP_AUTH_PEPPER='<pepper>'
-   CALDAV_MCP_TRUSTED_PROXIES=<subnet>
+   TRAEFIK_PROXY_IP=<ip>
+   CALDAV_MCP_TRUSTED_PROXIES=<ip>/32
    ```
 
-   The subnet is what this prints on the server:
-   `docker network inspect proxy --format '{{range .IPAM.Config}}{{.Subnet}} {{end}}'`.
-   It trusts every container on `proxy` to set `X-Forwarded-For`, which decides the client
+   `TRAEFIK_PROXY_IP` gives Traefik a fixed address on `proxy` (see the traefik stack's README):
+   an unused address inside what this prints on the server,
+   `docker network inspect proxy --format '{{range .IPAM.Config}}{{.Subnet}} {{end}}'`, such as
+   the last one. Only that address may then set `X-Forwarded-For`, which decides the client
    address for the per-client rate limit and, from caldav-mcp v1.3.0, for the owner-password
    lockout too (10 wrong passwords per address in 15 minutes, 100 from all addresses in a day).
+   Trusting the whole subnet would let any container on `proxy` forge that address.
 
 3. Then `deno task env:encrypt`.
-4. Point the DNS name at the server, then `deno task deploy <server> caldav-mcp`.
+4. Point the DNS name at the server, then `deno task deploy <server> traefik` (for the new
+   address) and `deno task deploy <server> caldav-mcp`.
 5. In claude.ai, Settings → Connectors → Add custom connector, URL `https://mcp.example.com/mcp`,
    then sign in with the owner password.
 

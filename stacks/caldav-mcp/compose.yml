@@ -13,7 +13,19 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      args:
+        # The binary may reach only this URL's host and claude.ai (Dockerfile --allow-net).
+        CALDAV_URL: ${CALDAV_MCP_SERVER_URL}
     restart: unless-stopped
+    # The same PUID:PGID the deploy chowns ${VOLUMES_PATH}/caldav-mcp to, never root
+    # (spy4x/rostok#356). The binary needs no capability, writes only to /data and gains no new
+    # privileges.
+    user: "${PUID:-1000}:${PGID:-1000}"
+    cap_drop:
+      - ALL
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
     environment:
       - CALDAV_URL=${CALDAV_MCP_SERVER_URL}
       - CALDAV_USERNAME=${CALDAV_MCP_USERNAME}
@@ -32,7 +44,9 @@ services:
       - PUBLIC_URL=${CALDAV_MCP_PUBLIC_URL:-}
       - OWNER_PASSWORD_HASH=${CALDAV_MCP_OWNER_PASSWORD_HASH:-}
       - AUTH_PEPPER=${CALDAV_MCP_AUTH_PEPPER:-}
-      # Rate limits key on the client address that Traefik forwards from the proxy network.
+      # Rate limits key on the client address in X-Forwarded-For, believed only from these CIDRs.
+      # Name Traefik's fixed address alone (TRAEFIK_PROXY_IP, as <ip>/32): the whole proxy
+      # network would let any container on it forge the address (README "Public with OAuth").
       - TRUSTED_PROXIES=${CALDAV_MCP_TRUSTED_PROXIES:-}
     volumes:
       # The OAuth store (Deno KV, /data/oauth.kv): connectors stay signed in across restarts.
@@ -53,5 +67,6 @@ services:
       - "traefik.http.routers.hl-caldav-mcp.entrypoints=websecure"
       - "traefik.http.routers.hl-caldav-mcp.tls=true"
       - "traefik.http.routers.hl-caldav-mcp.tls.certresolver=myresolver"
-      # No compression middleware: it can hold back streamed (SSE) MCP responses.
+      # Compression still applies: the websecure entrypoint adds compression@file to every router,
+      # and that middleware skips text/event-stream, so streamed (SSE) MCP responses are not held.
       - "traefik.http.routers.hl-caldav-mcp.middlewares=${CALDAV_MCP_MIDDLEWARES:-security-headers@file,robots-deny@file}"
