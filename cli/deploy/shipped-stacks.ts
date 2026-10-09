@@ -131,6 +131,7 @@ export const SHIPPED_STACK_FILES: Record<string, readonly string[]> = {
   ],
   "caldav-mcp": [
     "Dockerfile",
+    "caldav-mcp.lock",
     "compose.yml",
   ],
   "email-mcp": [

@@ -264,6 +264,7 @@
       "!stacks/docker-sock-proxy/compose.yml",
       "!stacks/caldav-mcp/+meta.ts",
       "!stacks/caldav-mcp/Dockerfile",
+      "!stacks/caldav-mcp/caldav-mcp.lock",
       "!stacks/caldav-mcp/compose.yml",
       "!stacks/email-mcp/+meta.ts",
       "!stacks/email-mcp/before.deploy.ts",

@@ -60,6 +60,13 @@ export default {
       required: false,
     },
     {
+      // Opt-in fixed address on the proxy network, so a service can trust X-Forwarded-For from
+      // Traefik alone (caldav-mcp's CALDAV_MCP_TRUSTED_PROXIES). Empty lets Docker pick.
+      key: "TRAEFIK_PROXY_IP",
+      default: "",
+      required: false,
+    },
+    {
       key: "TRAEFIK_CPU_LIMIT",
       question: "CPU limit for the Traefik container?",
       default: "1",

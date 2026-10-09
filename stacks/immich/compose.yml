@@ -177,7 +177,11 @@ services:
       - "traefik.enable=true"
       - "traefik.docker.network=proxy"
       - "traefik.http.routers.hl-immich-kiosk.rule=Host(`${IMMICH_KIOSK_DOMAIN}`)"
-      - "traefik.http.routers.hl-immich-kiosk.middlewares=robots-deny@file"
+      # Other sites, such as a Home Assistant dashboard, fetch kiosk pages (spy4x/rostok#123). The
+      # shared security-headers middleware no longer allows every origin (spy4x/rostok#354), so the
+      # kiosk router sets it itself.
+      - "traefik.http.middlewares.hl-immich-kiosk-cors.headers.customresponseheaders.Access-Control-Allow-Origin=*"
+      - "traefik.http.routers.hl-immich-kiosk.middlewares=hl-immich-kiosk-cors@docker,robots-deny@file"
       - "traefik.http.routers.hl-immich-kiosk.entrypoints=websecure"
       - "traefik.http.routers.hl-immich-kiosk.tls=true"
       - "traefik.http.routers.hl-immich-kiosk.tls.certresolver=myresolver"

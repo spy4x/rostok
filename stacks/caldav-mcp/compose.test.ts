@@ -5,6 +5,11 @@ import { parse } from "yaml"
 
 interface Compose {
   services: Record<string, {
+    build: { args: Record<string, string> }
+    user: string
+    cap_drop: string[]
+    read_only: boolean
+    security_opt: string[]
     environment: string[]
     labels: string[]
     volumes: string[]
@@ -16,6 +21,8 @@ const compose = parse(
 ) as Compose
 
 const service = compose.services[`caldav-mcp`]
+
+const dockerfile = Deno.readTextFileSync(new URL(`./Dockerfile`, import.meta.url))
 
 /** The `KEY=value` entries of the service environment whose key is `key`. */
 function envEntries(key: string): string[] {
@@ -76,4 +83,39 @@ Deno.test("caldav-mcp: the OAuth store lives on a volume at /data", () => {
   // caldav-mcp keeps OAuth grants in /data/oauth.kv; without a volume every redeploy signs
   // connectors out.
   assertEquals(service.volumes, [`\${VOLUMES_PATH}/caldav-mcp:/data:z`])
+})
+
+Deno.test("caldav-mcp: the container runs as PUID:PGID, the owner the deploy gives /data, never root", () => {
+  assertEquals(service.user, `\${PUID:-1000}:\${PGID:-1000}`)
+  assertMatch(dockerfile, /^FROM gcr\.io\/distroless\/cc-debian12:nonroot@sha256:[0-9a-f]{64}$/m)
+})
+
+Deno.test("caldav-mcp: the container has no capabilities, a read-only root and no privilege gain", () => {
+  assertEquals(service.cap_drop, [`ALL`])
+  assertEquals(service.read_only, true)
+  assertEquals(service.security_opt, [`no-new-privileges:true`])
+})
+
+Deno.test("caldav-mcp: the binary gets explicit Deno permissions, never all of them", () => {
+  // Network: the listener, the CalDAV host from the build argument, claude.ai's client metadata
+  // and Docker's resolver, which looks claude.ai up first. Files: only the OAuth store on /data.
+  // The exact set of permission flags, so a widened (bare --allow-net) or added (--allow-run) one
+  // fails, and so do -A and the short forms (-N, -R, -W, -E, -S).
+  const compile = dockerfile.match(/deno compile [^]*? main\.ts$/m)?.[0] ?? ``
+  const flags = compile.match(/(?<=\s)(-[AERSNW]|--allow-[a-z-]+|--deny-[a-z-]+)(=("[^"]*"|\S+))?/g)
+  assertEquals(flags, [
+    `--allow-net="0.0.0.0:3000,\${caldav_host},claude.ai,127.0.0.11:53"`,
+    `--allow-read=/data`,
+    `--allow-write=/data`,
+    `--allow-env`,
+  ])
+  assertEquals(service.build.args, { CALDAV_URL: `\${CALDAV_MCP_SERVER_URL}` })
+})
+
+Deno.test("caldav-mcp: the build is reproducible: images by digest, source by commit, deps frozen", () => {
+  assertMatch(dockerfile, /^FROM denoland\/deno:alpine-[\d.]+@sha256:[0-9a-f]{64} AS builder$/m)
+  assertMatch(dockerfile, /^ARG CALDAV_MCP_COMMIT=[0-9a-f]{40}$/m)
+  assertMatch(dockerfile, /test "\$\(git -C \/app rev-parse HEAD\)" = "\$\{CALDAV_MCP_COMMIT\}"/)
+  assertMatch(dockerfile, /^COPY caldav-mcp\.lock \/app\/deno\.lock$/m)
+  assertMatch(dockerfile, /deno compile --frozen /)
 })

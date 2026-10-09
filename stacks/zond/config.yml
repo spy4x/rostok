@@ -5,4 +5,4 @@ port: 8080
 
 targets:
   - name: traefik
-    url: http://hl-traefik:8080/api/version
+    url: http://hl-traefik:8080/ping
