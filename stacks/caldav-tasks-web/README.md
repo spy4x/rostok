@@ -66,5 +66,6 @@ does. Deploying always pulls the configured tag (`pull_policy: always`), and Wat
 ## Maintenance
 
 - **Rotate the CalDAV password**: change it on the CalDAV server, edit `caldav-tasks-web.env`,
-  run `deno task env:encrypt`, redeploy.
+  redeploy. That file is gitignored and copied to the server as it is; `deno task env:encrypt`
+  covers only `.env*` names, so it stays plain text (spy4x/rostok#350).
 - **Rotate `SESSION_SECRET`**: same steps; it signs the owner out.
