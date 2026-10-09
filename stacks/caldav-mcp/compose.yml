@@ -14,6 +14,12 @@ services:
       context: .
       dockerfile: Dockerfile
     restart: unless-stopped
+    # OAuth for remote connectors such as claude.ai (README "Public with OAuth"). The file holds
+    # PUBLIC_URL, OWNER_PASSWORD_HASH and AUTH_PEPPER; caldav-mcp switches OAuth on when all three
+    # are set and refuses to start when only some are. A server without the file stays internal.
+    env_file:
+      - path: ${PATH_APPS}/configs/caldav-mcp.env
+        required: false
     environment:
       - CALDAV_URL=${CALDAV_MCP_SERVER_URL}
       - CALDAV_USERNAME=${CALDAV_MCP_USERNAME}
@@ -23,6 +29,11 @@ services:
       - HOST=0.0.0.0
       - PORT=3000
       - LOG_LEVEL=info
+      # Rate limits key on the client address that Traefik forwards from the proxy network.
+      - TRUSTED_PROXIES=${CALDAV_MCP_TRUSTED_PROXIES:-}
+    volumes:
+      # The OAuth store (Deno KV, /data/oauth.kv): connectors stay signed in across restarts.
+      - ${VOLUMES_PATH}/caldav-mcp:/data:z
     deploy:
       resources:
         limits:
@@ -30,3 +41,14 @@ services:
           cpus: "0.1"
     networks:
       - proxy
+    labels:
+      # Off unless the server sets CALDAV_MCP_PUBLIC=true; then MCP is at https://<domain>/mcp.
+      - "traefik.enable=${CALDAV_MCP_PUBLIC:-false}"
+      - "traefik.docker.network=proxy"
+      - "traefik.http.services.hl-caldav-mcp.loadbalancer.server.port=3000"
+      - "traefik.http.routers.hl-caldav-mcp.rule=Host(`${CALDAV_MCP_DOMAIN:-mcp.${DOMAIN}}`)"
+      - "traefik.http.routers.hl-caldav-mcp.entrypoints=websecure"
+      - "traefik.http.routers.hl-caldav-mcp.tls=true"
+      - "traefik.http.routers.hl-caldav-mcp.tls.certresolver=myresolver"
+      # No compression middleware: it can hold back streamed (SSE) MCP responses.
+      - "traefik.http.routers.hl-caldav-mcp.middlewares=${CALDAV_MCP_MIDDLEWARES:-security-headers@file,robots-deny@file}"

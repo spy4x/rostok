@@ -11,19 +11,21 @@ CalDAV MCP server providing calendar/todo access to AI assistants.
 
 ## Access
 
-Internal MCP server — no external web UI. Two access modes:
+Internal by default — no external web UI. Three access modes:
 
 1. **Docker HTTP (default)** — reachable inside Docker network at `hl-caldav-mcp:3000`
    (used by OpenWebUI, n8n, anything that can do HTTP).
 2. **Local stdio** — for OpenCode running on the host. Launched via a script in
    `~/sync/code/mcps/caldav/start.sh` (see [OpenCode MCP setup](#opencode-mcp-setup) below).
+3. **Public with OAuth** — opt-in per server, for remote connectors such as claude.ai (see
+   [Public with OAuth](#public-with-oauth) below).
 
 ## Variables
 
 `rostok stack add caldav-mcp` asks for these and writes them to the server's
 `.env`. The stack builds its image from the `Dockerfile` next to
-`compose.yml` and has no Traefik route, so it needs no domain and no
-`traefik` stack.
+`compose.yml`. Its Traefik route is off unless the server opts in (below), so
+an internal server needs no domain. It needs the `traefik` stack for the `proxy` network.
 
 | Key                     | Default           | Meaning                            |
 | ----------------------- | ----------------- | ---------------------------------- |
@@ -32,8 +34,43 @@ Internal MCP server — no external web UI. Two access modes:
 | `CALDAV_MCP_PASSWORD`   | required, secret  | CalDAV password                    |
 | `CALDAV_MCP_TOKEN`      | generated, secret | Bearer token for the HTTP endpoint |
 
+Optional, for [Public with OAuth](#public-with-oauth), set by hand in the server's `.env`:
+
+| Key                          | Default                                  | Meaning                                  |
+| ---------------------------- | ---------------------------------------- | ---------------------------------------- |
+| `CALDAV_MCP_PUBLIC`          | `false`                                  | `true` turns the Traefik route on        |
+| `CALDAV_MCP_DOMAIN`          | `mcp.${DOMAIN}`                          | Public host name                         |
+| `CALDAV_MCP_MIDDLEWARES`     | `security-headers@file,robots-deny@file` | Traefik middlewares                      |
+| `CALDAV_MCP_TRUSTED_PROXIES` | empty                                    | The `proxy` network's subnet, for limits |
+
 For Stalwart on `mail.${DOMAIN}`, the URL is `https://mail.${DOMAIN}/dav/cal/`.
 The username is the full mailbox address (e.g. `you@example.com`).
+
+## Public with OAuth
+
+caldav-mcp serves an OAuth authorization server when `PUBLIC_URL`, `OWNER_PASSWORD_HASH` and
+`AUTH_PEPPER` are all set (its README, "Use it from claude.ai"). Only the owner can approve a
+connector: the consent page asks for the owner password. Grants live in Deno KV at
+`${VOLUMES_PATH}/caldav-mcp/oauth.kv`, so connectors stay signed in across redeploys. The
+bearer token keeps working alongside OAuth.
+
+1. Pick a long random owner password and a pepper of at least 32 characters
+   (`openssl rand -base64 48`), then hash the password in a caldav-mcp checkout with caldav-mcp's
+   README, "Make the owner password hash": `AUTH_PEPPER` in the environment,
+   `deno task password:hash`, password on stdin. Neither value reaches argv or shell history.
+2. Write `servers/<server>/configs/caldav-mcp.env`, single-quoting the hash (it holds `$`):
+
+   ```env
+   PUBLIC_URL=https://mcp.example.com
+   OWNER_PASSWORD_HASH='<pbkdf2-sha256 hash>'
+   AUTH_PEPPER=<pepper>
+   ```
+
+3. In the server's `.env`: `CALDAV_MCP_PUBLIC=true`, and `CALDAV_MCP_TRUSTED_PROXIES` set to the
+   subnet `docker network inspect proxy` prints.
+4. Point the DNS name at the server, then `deno task deploy <server> caldav-mcp`.
+5. In claude.ai, Settings → Connectors → Add custom connector, URL `https://mcp.example.com/mcp`,
+   then sign in with the owner password.
 
 ## OpenCode MCP setup
 
