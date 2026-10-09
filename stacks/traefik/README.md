@@ -45,8 +45,12 @@ full old → new key table.
 
 ## Access
 
-- Dashboard: `https://${TRAEFIK_DOMAIN}` (default `https://traefik.${DOMAIN}`)
+- Dashboard: `https://${TRAEFIK_DOMAIN}/dashboard/` (default `https://traefik.${DOMAIN}`);
+  `/dashboard` without the slash redirects there
 - Requires basic auth (`TRAEFIK_BASIC_AUTH_USER`/`TRAEFIK_BASIC_AUTH_PASSWORD`)
+- The API and dashboard are served only there. Port 8080 on the `proxy` network answers
+  `GET /ping` for health checks and nothing else; `--api.insecure` used to serve the whole API
+  there, without a password, to every container on `proxy` (spy4x/rostok#356).
 
 ## Middleware
 

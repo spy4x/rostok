@@ -19,7 +19,7 @@ services:
     expose:
       - "8080"
     healthcheck:
-      test: ["CMD", "wget", "--spider", "http://localhost:8080/api/version"]
+      test: ["CMD", "wget", "--spider", "http://localhost:8080/ping"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -32,7 +32,11 @@ services:
       - label=type:container_runtime_t # Required for SELinux to access docker.sock
     command:
       # - "--log.level=DEBUG"
-      - "--api.insecure=true"
+      # The API and dashboard are served only through the hl-traefik router below, behind
+      # dashboard-auth. Port 8080 on the proxy network answers /ping and nothing else; with
+      # api.insecure it served the whole API, unauthenticated, to every container (spy4x/rostok#356).
+      - "--api=true"
+      - "--ping=true"
       - "--providers.docker=true"
       - "--providers.docker.exposedbydefault=false"
       - "--providers.file.directory=/etc/traefik/dynamic"
@@ -79,9 +83,13 @@ services:
     labels:
       - "traefik.enable=true"
       - "traefik.docker.network=proxy"
-      - "traefik.http.services.hl-traefik.loadbalancer.server.port=8080"
       - "traefik.http.routers.hl-traefik.rule=Host(`${TRAEFIK_DOMAIN}`)"
       - "traefik.http.routers.hl-traefik.entrypoints=websecure"
       - "traefik.http.routers.hl-traefik.tls=true"
       - "traefik.http.routers.hl-traefik.tls.certresolver=myresolver"
-      - "traefik.http.routers.hl-traefik.middlewares=dashboard-auth@file"
+      - "traefik.http.routers.hl-traefik.service=api@internal"
+      # api@internal answers only /dashboard/ with the slash. Monitors and bookmarks that used the
+      # old port-8080 service ask for /dashboard, so send them on (spy4x/rostok#356).
+      - "traefik.http.middlewares.hl-traefik-dashboard-slash.redirectregex.regex=^(https?://[^/]+/dashboard)$$"
+      - "traefik.http.middlewares.hl-traefik-dashboard-slash.redirectregex.replacement=$$1/"
+      - "traefik.http.routers.hl-traefik.middlewares=dashboard-auth@file,hl-traefik-dashboard-slash@docker"
