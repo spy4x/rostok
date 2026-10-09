@@ -91,13 +91,64 @@ upgrade; a branch would let Docker's build cache keep an old clone.
 
    The subnet is what this prints on the server:
    `docker network inspect proxy --format '{{range .IPAM.Config}}{{.Subnet}} {{end}}'`.
-   It trusts every container on `proxy` to set `X-Forwarded-For`; that only affects the per-client
-   rate limit, not the owner-password lockout, which is server-wide.
+   It trusts every container on `proxy` to set `X-Forwarded-For`, which decides the client
+   address for the per-client rate limit and, from caldav-mcp v1.3.0, for the owner-password
+   lockout too (10 wrong passwords per address in 15 minutes, 100 from all addresses in a day).
 
 3. Then `deno task env:encrypt`.
 4. Point the DNS name at the server, then `deno task deploy <server> caldav-mcp`.
 5. In claude.ai, Settings → Connectors → Add custom connector, URL `https://mcp.example.com/mcp`,
    then sign in with the owner password.
+
+### Sign a connector out
+
+From caldav-mcp v1.3.0 each grant ends 90 days after approval, and the owner can revoke one while
+the server runs, for example after losing a phone that had Claude signed in:
+
+```bash
+ssh <server> docker exec hl-caldav-mcp caldav-mcp grants list           # id, client, start, end
+ssh <server> docker exec hl-caldav-mcp caldav-mcp grants revoke <grantId>
+```
+
+`revoke` signs out that connector only; the others stay signed in. A connector approved before
+v1.3.0 shows up in the list only after its next token refresh. To sign everything out at once,
+delete `oauth.kv` and its `-shm` and `-wal` files while the container is stopped; every connector
+then asks for the owner password. A login shell may not have `VOLUMES_PATH`, so ask Docker for the
+volume path. On the server:
+
+```bash
+DATA="$(docker inspect hl-caldav-mcp --format '{{range .Mounts}}{{if eq .Destination "/data"}}{{.Source}}{{end}}{{end}}')"
+test -n "$DATA" && docker stop hl-caldav-mcp && {
+  docker run --rm -u 0:0 -v "$DATA:/data:z" --entrypoint rm denoland/deno:alpine-2.9.7 \
+    -f /data/oauth.kv /data/oauth.kv-shm /data/oauth.kv-wal
+  docker start hl-caldav-mcp
+}
+```
+
+### Let the owner in during a lockout
+
+From caldav-mcp v1.3.0, after 100 wrong owner passwords from all addresses within a day, every
+approval answers `429`, the right password included, until the day has passed. Anyone who reaches
+the server can keep that going for as long as they keep sending wrong passwords, and a restart does
+not end it, because the count lives in `oauth.kv`. Connectors that are already signed in keep
+working; only new approvals are refused.
+
+To let the owner approve again, block the sending addresses first, then delete the server-wide
+count, the key `["mcp-oauth", "attempts", "total"]`. The runtime image has no `deno`, so run the
+builder image against the volume while the container is stopped. On the server:
+
+```bash
+DATA="$(docker inspect hl-caldav-mcp --format '{{range .Mounts}}{{if eq .Destination "/data"}}{{.Source}}{{end}}{{end}}')"
+test -n "$DATA" && docker stop hl-caldav-mcp && {
+  docker run --rm -u 0:0 -v "$DATA:/data:z" denoland/deno:alpine-2.9.7 eval --unstable-kv \
+    'const kv = await Deno.openKv("/data/oauth.kv"); await kv.delete(["mcp-oauth", "attempts", "total"]); kv.close()'
+  docker start hl-caldav-mcp
+}
+```
+
+It deletes that one key: grants, tokens and the per-address counts stay. The container starts again
+even when the delete fails; check with `docker ps` that `hl-caldav-mcp` is running. Approve within the next
+few minutes, before new wrong passwords reach the limit again.
 
 ## OpenCode MCP setup
 
