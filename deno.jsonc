@@ -304,6 +304,8 @@
       "!stacks/caldiy/compose.yml",
       "!stacks/mig/+meta.ts",
       "!stacks/mig/compose.yml",
+      "!stacks/caldav-tasks-web/+meta.ts",
+      "!stacks/caldav-tasks-web/compose.yml",
       "!stacks/stalwart/+meta.ts",
       "!stacks/stalwart/after.deploy.ts",
       "!stacks/stalwart/before.deploy.ts",

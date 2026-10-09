@@ -1,0 +1,56 @@
+name: ${PROJECT}
+
+networks:
+  proxy:
+    external: true
+
+services:
+  # caldav-tasks-web — a web client for the tasks on a CalDAV server (Stalwart here).
+  # One owner, one CalDAV account, no database: the app is stateless, so there is no volume
+  # and no backup.
+  caldav-tasks-web:
+    container_name: hl-caldav-tasks-web
+    # Published by the app's own CI (github.com/spy4x/caldav-tasks-web) to Docker Hub on every
+    # v* tag: a stable tag like v1.2.3 also moves `latest`, a pre-release tag like v1.2.3-rc.1
+    # never does. `pull_policy: always` makes every deploy pull the tag below first, and
+    # Watchtower rolls out a new stable release on its own. Pin or roll back by setting
+    # CALDAV_TASKS_WEB_IMAGE_TAG=v1.0.0 in the server's `.env`, then deploying.
+    image: antonshubin/caldav-tasks-web:${CALDAV_TASKS_WEB_IMAGE_TAG:-latest}
+    pull_policy: always
+    # The image runs as a non-root user and writes nothing at run time. The same PUID:PGID as
+    # every other stack keeps file ownership uniform.
+    user: "${PUID:-1000}:${PGID:-1000}"
+    restart: unless-stopped
+    env_file:
+      - ${PATH_APPS}/configs/caldav-tasks-web.env
+    healthcheck:
+      # The image has neither wget nor curl, so deno itself asks /health on the app's port.
+      test:
+        - CMD
+        - deno
+        - eval
+        - "Deno.exit((await fetch('http://127.0.0.1:8080/health')).ok ? 0 : 1)"
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+          cpus: "0.5"
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - proxy
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=proxy"
+      - "traefik.http.services.hl-caldav-tasks-web.loadbalancer.server.port=8080"
+      - "traefik.http.routers.hl-caldav-tasks-web.rule=Host(`${CALDAV_TASKS_WEB_DOMAIN:-todos.${DOMAIN}}`)"
+      - "traefik.http.routers.hl-caldav-tasks-web.entrypoints=websecure"
+      - "traefik.http.routers.hl-caldav-tasks-web.tls=true"
+      - "traefik.http.routers.hl-caldav-tasks-web.tls.certresolver=myresolver"
+      # robots-deny: a private task list is not index-worthy. Deploy traefik first: a router
+      # naming a middleware that does not exist yet answers 404.
+      - "traefik.http.routers.hl-caldav-tasks-web.middlewares=${CALDAV_TASKS_WEB_MIDDLEWARES:-security-headers@file,compression@file,robots-deny@file}"

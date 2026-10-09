@@ -79,6 +79,7 @@ import mirotalk from "../stacks/mirotalk/+meta.ts"
 import bulwark from "../stacks/bulwark/+meta.ts"
 import caldiy from "../stacks/caldiy/+meta.ts"
 import mig from "../stacks/mig/+meta.ts"
+import caldavTasksWeb from "../stacks/caldav-tasks-web/+meta.ts"
 import stalwart from "../stacks/stalwart/+meta.ts"
 import pangolin from "../stacks/pangolin/+meta.ts"
 
@@ -130,6 +131,7 @@ const STACK_META: Record<string, StackMeta> = {
   bulwark,
   caldiy,
   mig,
+  "caldav-tasks-web": caldavTasksWeb,
   stalwart,
   pangolin,
 }

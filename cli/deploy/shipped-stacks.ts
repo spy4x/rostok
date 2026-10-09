@@ -187,6 +187,9 @@ export const SHIPPED_STACK_FILES: Record<string, readonly string[]> = {
   mig: [
     "compose.yml",
   ],
+  "caldav-tasks-web": [
+    "compose.yml",
+  ],
   stalwart: [
     "after.deploy.ts",
     "before.deploy.ts",

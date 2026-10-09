@@ -25,6 +25,10 @@ Deno.test("mig compose.yml: without MIG_DOMAIN the host stays meet.<domain>", as
   assertEquals(await hostsOf("mig", env), ["meet.example.com"])
 })
 
+Deno.test("caldav-tasks-web compose.yml: without CALDAV_TASKS_WEB_DOMAIN the host stays todos.<domain>", async () => {
+  assertEquals(await hostsOf("caldav-tasks-web", env), ["todos.example.com"])
+})
+
 Deno.test("stalwart compose.yml: without the new domain keys the hosts stay as before", async () => {
   assertEquals(await hostsOf("stalwart", env), [
     "mail.example.com",
