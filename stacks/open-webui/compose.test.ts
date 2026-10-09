@@ -19,8 +19,8 @@ const compose = parse(
 
 Deno.test("mcpo: compose requires OPEN_WEBUI_MCPO_API_KEY instead of running unauthenticated", () => {
   const command = compose.services.mcpo.command ?? []
-  const keyAt = command.indexOf(`--api-key`)
-  assertEquals(command[keyAt + 1], `\${OPEN_WEBUI_MCPO_API_KEY:?}`)
+  const keys = command.flatMap((arg, i) => arg === `--api-key` ? [command[i + 1]] : [])
+  assertEquals(keys, [`\${OPEN_WEBUI_MCPO_API_KEY:?}`])
 })
 
 Deno.test("open-webui: sends mcpo and caldav-mcp each their own bearer key, none hardcoded", () => {

@@ -21,6 +21,8 @@
 //     `OPEN_WEBUI_CALDAV_MCP_TOKEN=${CALDAV_MCP_TOKEN}` keeps one secret for both stacks (the CLI
 //     single-quotes any typed value with `$`, which compose then reads literally). Optional, with
 //     no default: a default reference would stop every deploy on a server without caldav-mcp.
+//     The reference line must sit below the CALDAV_MCP_TOKEN line: compose resolves a reference
+//     only to a key defined earlier, and above it the key is silently empty.
 //   - the rest: same defaults as compose.
 //
 // Server-level vars (DOMAIN, VOLUMES_PATH, PATH_APPS) intentionally NOT declared here.
