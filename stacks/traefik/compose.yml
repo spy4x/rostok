@@ -74,7 +74,10 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - ./dynamic/:/etc/traefik/dynamic/:ro
     networks:
-      - proxy
+      proxy:
+        # Optional fixed address on the proxy network, so a service can trust X-Forwarded-For from
+        # Traefik alone instead of from the whole network (spy4x/rostok#356). Blank: Docker picks.
+        ipv4_address: ${TRAEFIK_PROXY_IP:-}
     deploy:
       resources:
         limits:

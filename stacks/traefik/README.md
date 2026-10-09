@@ -29,7 +29,13 @@ CONTACT_EMAIL=you@email.com             # Let's Encrypt email — a server-level
 TRAEFIK_BASIC_AUTH_USER=admin           # Dashboard auth (default: admin)
 TRAEFIK_BASIC_AUTH_PASSWORD=...         # Dashboard auth (default: generated, 24 chars)
 TRAEFIK_FORWARDED_TRUSTED_IPS=            # Optional: CIDRs whose X-Forwarded-* headers are trusted (default: none)
+TRAEFIK_PROXY_IP=                         # Optional: fixed address on the proxy network (default: Docker picks)
 ```
+
+Set `TRAEFIK_PROXY_IP` when a service behind Traefik must trust `X-Forwarded-For` from Traefik
+alone, such as caldav-mcp's `CALDAV_MCP_TRUSTED_PROXIES`. Pick an unused address inside the
+`proxy` network's subnet (`docker network inspect proxy`), such as the last one, which Docker
+hands out last.
 
 Only list a proxy you control in `TRAEFIK_FORWARDED_TRUSTED_IPS`: a trusted address may set
 `X-Forwarded-For`, `X-Forwarded-Host` and the other `X-Forwarded-*` headers for every router on

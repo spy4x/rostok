@@ -4,10 +4,13 @@
 import { assertEquals } from "@std/assert"
 import { parse } from "yaml"
 
+import meta from "./+meta.ts"
+
 interface Service {
   command: string[]
   healthcheck: { test: string[] }
   labels: string[]
+  networks: Record<string, { ipv4_address?: string }>
 }
 
 const traefik = (parse(
@@ -26,6 +29,13 @@ Deno.test("traefik: the dashboard is served only through its router, behind dash
   const chain = traefik.labels.find((l) => l.startsWith(`${router}middlewares=`))
   assertEquals(chain?.split("=")[1]?.split(",")[0], "dashboard-auth@file")
   assertEquals(traefik.labels.some((l) => l.includes("loadbalancer.server.port=8080")), false)
+})
+
+Deno.test("traefik: TRAEFIK_PROXY_IP is an optional fixed address on the proxy network", () => {
+  assertEquals(traefik.networks.proxy?.ipv4_address, "${TRAEFIK_PROXY_IP:-}")
+  const v = meta.variables.find((v) => v.key === "TRAEFIK_PROXY_IP")
+  assertEquals(v?.required, false)
+  assertEquals(v?.default, "")
 })
 
 Deno.test("traefik: /dashboard without the slash redirects to /dashboard/", () => {
