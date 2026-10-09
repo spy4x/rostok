@@ -112,8 +112,18 @@ ssh <server> docker exec hl-caldav-mcp caldav-mcp grants revoke <grantId>
 
 `revoke` signs out that connector only; the others stay signed in. A connector approved before
 v1.3.0 shows up in the list only after its next token refresh. To sign everything out at once,
-stop the stack, delete `${VOLUMES_PATH}/caldav-mcp/oauth.kv` and its `-shm` and `-wal` files, and
-deploy again; every connector then asks for the owner password.
+delete `oauth.kv` and its `-shm` and `-wal` files while the container is stopped; every connector
+then asks for the owner password. A login shell may not have `VOLUMES_PATH`, so ask Docker for the
+volume path. On the server:
+
+```bash
+DATA="$(docker inspect hl-caldav-mcp --format '{{range .Mounts}}{{if eq .Destination "/data"}}{{.Source}}{{end}}{{end}}')"
+test -n "$DATA" && docker stop hl-caldav-mcp && {
+  docker run --rm -u 0:0 -v "$DATA:/data:z" --entrypoint rm denoland/deno:alpine-2.9.7 \
+    -f /data/oauth.kv /data/oauth.kv-shm /data/oauth.kv-wal
+  docker start hl-caldav-mcp
+}
+```
 
 ### Let the owner in during a lockout
 
@@ -129,13 +139,15 @@ builder image against the volume while the container is stopped. On the server:
 
 ```bash
 DATA="$(docker inspect hl-caldav-mcp --format '{{range .Mounts}}{{if eq .Destination "/data"}}{{.Source}}{{end}}{{end}}')"
-test -n "$DATA" && docker stop hl-caldav-mcp &&
+test -n "$DATA" && docker stop hl-caldav-mcp && {
   docker run --rm -u 0:0 -v "$DATA:/data:z" denoland/deno:alpine-2.9.7 eval --unstable-kv \
-    'const kv = await Deno.openKv("/data/oauth.kv"); await kv.delete(["mcp-oauth", "attempts", "total"]); kv.close()' &&
+    'const kv = await Deno.openKv("/data/oauth.kv"); await kv.delete(["mcp-oauth", "attempts", "total"]); kv.close()'
   docker start hl-caldav-mcp
+}
 ```
 
-It deletes that one key: grants, tokens and the per-address counts stay. Approve within the next
+It deletes that one key: grants, tokens and the per-address counts stay. The container starts again
+even when the delete fails; check with `docker ps` that `hl-caldav-mcp` is running. Approve within the next
 few minutes, before new wrong passwords reach the limit again.
 
 ## OpenCode MCP setup
