@@ -115,6 +115,29 @@ v1.3.0 shows up in the list only after its next token refresh. To sign everythin
 stop the stack, delete `${VOLUMES_PATH}/caldav-mcp/oauth.kv` and its `-shm` and `-wal` files, and
 deploy again; every connector then asks for the owner password.
 
+### Let the owner in during a lockout
+
+From caldav-mcp v1.3.0, after 100 wrong owner passwords from all addresses within a day, every
+approval answers `429`, the right password included, until the day has passed. Anyone who reaches
+the server can keep that going for as long as they keep sending wrong passwords, and a restart does
+not end it, because the count lives in `oauth.kv`. Connectors that are already signed in keep
+working; only new approvals are refused.
+
+To let the owner approve again, block the sending addresses first, then delete the server-wide
+count, the key `["mcp-oauth", "attempts", "total"]`. The runtime image has no `deno`, so run the
+builder image against the volume while the container is stopped. On the server:
+
+```bash
+DATA="$(docker inspect hl-caldav-mcp --format '{{range .Mounts}}{{if eq .Destination "/data"}}{{.Source}}{{end}}{{end}}')"
+test -n "$DATA" && docker stop hl-caldav-mcp &&
+  docker run --rm -u 0:0 -v "$DATA:/data:z" denoland/deno:alpine-2.9.7 eval --unstable-kv \
+    'const kv = await Deno.openKv("/data/oauth.kv"); await kv.delete(["mcp-oauth", "attempts", "total"]); kv.close()' &&
+  docker start hl-caldav-mcp
+```
+
+It deletes that one key: grants, tokens and the per-address counts stay. Approve within the next
+few minutes, before new wrong passwords reach the limit again.
+
 ## OpenCode MCP setup
 
 OpenCode config (`~/.config/opencode/opencode.json`) registers this server
