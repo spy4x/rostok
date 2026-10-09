@@ -24,6 +24,18 @@ steps:
       - apt-get update && apt-get install -y git zsh
       - deno task check
 
+  # A `v*` tag publishes to JSR with the global token, so the tagged commit must already be on
+  # `main` (reviewed, green CI). A tag on an unmerged branch stops here, before `publish` runs.
+  # Woodpecker's clone is shallow and has no `main`, so fetch it with full depth first.
+  on-main:
+    image: alpine/git:2.47.2
+    when:
+      event: tag
+      ref: refs/tags/v*
+    commands:
+      - git fetch --no-tags --depth=2147483647 origin main
+      - git merge-base --is-ancestor "$${CI_COMMIT_SHA}" FETCH_HEAD || { echo "Refusing to publish, commit $${CI_COMMIT_SHA} is not on main"; exit 1; }
+
   # Publishes @rostok/cli to JSR, only on a `v*` tag and only after `check`
   # passed. JSR_TOKEN is a repository secret that must be allowed for the tag
   # event only (never push or pull_request), so push and pull-request builds
