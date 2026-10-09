@@ -18,8 +18,11 @@ services:
       - CALDAV_URL=${CALDAV_MCP_SERVER_URL}
       - CALDAV_USERNAME=${CALDAV_MCP_USERNAME}
       - CALDAV_PASSWORD=${CALDAV_MCP_PASSWORD}
-      # Required: caldav-mcp turns authentication off when the token is empty.
-      - MCP_BEARER_TOKEN=${CALDAV_MCP_TOKEN:?}
+      # The static token internal clients such as Open WebUI send. Blank means none: caldav-mcp then
+      # needs OAuth and refuses to start in HTTP mode without either. With OAuth on it refuses this
+      # token unless ALLOW_BEARER_TOKEN_WITH_OAUTH is true (README "Public with OAuth").
+      - MCP_BEARER_TOKEN=${CALDAV_MCP_TOKEN:-}
+      - ALLOW_BEARER_TOKEN_WITH_OAUTH=${CALDAV_MCP_ALLOW_TOKEN_WITH_OAUTH:-false}
       - HOST=0.0.0.0
       - PORT=3000
       - LOG_LEVEL=info

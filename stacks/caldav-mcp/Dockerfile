@@ -3,7 +3,7 @@
 FROM denoland/deno:alpine-2.9.7 AS builder
 
 # An exact tag: a new value changes this step, so Docker's build cache never keeps an old clone.
-ARG CALDAV_MCP_VERSION=v1.1.0
+ARG CALDAV_MCP_VERSION=v1.2.0
 RUN apk add --no-cache git
 RUN git clone --depth 1 --branch "${CALDAV_MCP_VERSION}" \
     https://github.com/spy4x/caldav-mcp.git /app
