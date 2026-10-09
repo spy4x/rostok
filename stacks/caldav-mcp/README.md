@@ -34,17 +34,20 @@ an internal server needs no domain. It needs the `traefik` stack for the `proxy`
 | `CALDAV_MCP_PASSWORD`   | required, secret  | CalDAV password                    |
 | `CALDAV_MCP_TOKEN`      | generated, secret | Bearer token for the HTTP endpoint |
 
+A public OAuth-only server clears `CALDAV_MCP_TOKEN` (below).
+
 Optional, for [Public with OAuth](#public-with-oauth), set by hand in the server's `.env`:
 
-| Key                              | Default                                  | Meaning                                  |
-| -------------------------------- | ---------------------------------------- | ---------------------------------------- |
-| `CALDAV_MCP_PUBLIC`              | `false`                                  | `true` turns the Traefik route on        |
-| `CALDAV_MCP_DOMAIN`              | `mcp.${DOMAIN}`                          | Public host name                         |
-| `CALDAV_MCP_MIDDLEWARES`         | `security-headers@file,robots-deny@file` | Traefik middlewares                      |
-| `CALDAV_MCP_TRUSTED_PROXIES`     | empty                                    | The `proxy` network's subnet, for limits |
-| `CALDAV_MCP_PUBLIC_URL`          | empty                                    | `https://<domain>`, no path              |
-| `CALDAV_MCP_OWNER_PASSWORD_HASH` | empty, secret                            | The owner password hash                  |
-| `CALDAV_MCP_AUTH_PEPPER`         | empty, secret                            | The pepper the hash was made with        |
+| Key                                 | Default                                  | Meaning                                  |
+| ----------------------------------- | ---------------------------------------- | ---------------------------------------- |
+| `CALDAV_MCP_PUBLIC`                 | `false`                                  | `true` turns the Traefik route on        |
+| `CALDAV_MCP_DOMAIN`                 | `mcp.${DOMAIN}`                          | Public host name                         |
+| `CALDAV_MCP_MIDDLEWARES`            | `security-headers@file,robots-deny@file` | Traefik middlewares                      |
+| `CALDAV_MCP_TRUSTED_PROXIES`        | empty                                    | The `proxy` network's subnet, for limits |
+| `CALDAV_MCP_PUBLIC_URL`             | empty                                    | `https://<domain>`, no path              |
+| `CALDAV_MCP_OWNER_PASSWORD_HASH`    | empty, secret                            | The owner password hash                  |
+| `CALDAV_MCP_AUTH_PEPPER`            | empty, secret                            | The pepper the hash was made with        |
+| `CALDAV_MCP_ALLOW_TOKEN_WITH_OAUTH` | `false`                                  | `true` accepts the token next to OAuth   |
 
 For Stalwart on `mail.${DOMAIN}`, the URL is `https://mail.${DOMAIN}/dav/cal/`.
 The username is the full mailbox address (e.g. `you@example.com`).
@@ -54,8 +57,13 @@ The username is the full mailbox address (e.g. `you@example.com`).
 caldav-mcp serves an OAuth authorization server when `PUBLIC_URL`, `OWNER_PASSWORD_HASH` and
 `AUTH_PEPPER` are all set (its README, "Use it from claude.ai"). Only the owner can approve a
 connector: the consent page asks for the owner password. Grants live in Deno KV at
-`${VOLUMES_PATH}/caldav-mcp/oauth.kv`, so connectors stay signed in across redeploys. The
-bearer token keeps working alongside OAuth.
+`${VOLUMES_PATH}/caldav-mcp/oauth.kv`, so connectors stay signed in across redeploys.
+
+With OAuth on, caldav-mcp (v1.2.0 and later) refuses the bearer token and answers it like any wrong
+token, so a leaked token does not open the public endpoint. Leave `CALDAV_MCP_TOKEN` empty on a
+public server. A server that must serve Open WebUI and claude.ai from one copy sets
+`CALDAV_MCP_ALLOW_TOKEN_WITH_OAUTH=true`. Safer is a second, internal copy on the server that runs
+Open WebUI, with `CALDAV_MCP_PUBLIC=false` and the token set.
 
 There is no backup: losing the store only means signing connectors in again.
 
@@ -74,6 +82,7 @@ upgrade; a branch would let Docker's build cache keep an old clone.
 
    ```env
    CALDAV_MCP_PUBLIC=true
+   CALDAV_MCP_TOKEN=
    CALDAV_MCP_PUBLIC_URL=https://mcp.example.com
    CALDAV_MCP_OWNER_PASSWORD_HASH='<pbkdf2-sha256 hash>'
    CALDAV_MCP_AUTH_PEPPER='<pepper>'

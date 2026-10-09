@@ -11,7 +11,8 @@
 //
 // CALDAV_MCP_TOKEN is the bearer token clients send to the HTTP endpoint, generated at `stack add`.
 // open-webui sends it through its own OPEN_WEBUI_CALDAV_MCP_TOKEN, set to `${CALDAV_MCP_TOKEN}`.
-// compose refuses to start without it, because caldav-mcp turns authentication off when it is empty.
+// A public OAuth-only server clears it: caldav-mcp refuses it while OAuth is on unless
+// CALDAV_MCP_ALLOW_TOKEN_WITH_OAUTH=true, and refuses to start with neither the token nor OAuth.
 
 import type { StackMeta } from "@rostok/cli"
 import { generatePassword } from "@rostok/cli"
@@ -77,6 +78,11 @@ export default {
       key: "CALDAV_MCP_AUTH_PEPPER",
       required: false,
       secret: true,
+    },
+    {
+      key: "CALDAV_MCP_ALLOW_TOKEN_WITH_OAUTH",
+      default: "false",
+      required: false,
     },
   ],
 } satisfies StackMeta
