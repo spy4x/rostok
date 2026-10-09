@@ -91,13 +91,29 @@ upgrade; a branch would let Docker's build cache keep an old clone.
 
    The subnet is what this prints on the server:
    `docker network inspect proxy --format '{{range .IPAM.Config}}{{.Subnet}} {{end}}'`.
-   It trusts every container on `proxy` to set `X-Forwarded-For`; that only affects the per-client
-   rate limit, not the owner-password lockout, which is server-wide.
+   It trusts every container on `proxy` to set `X-Forwarded-For`, which decides the client
+   address for the per-client rate limit and, from caldav-mcp v1.3.0, for the owner-password
+   lockout too (10 wrong passwords per address in 15 minutes, 100 from all addresses in a day).
 
 3. Then `deno task env:encrypt`.
 4. Point the DNS name at the server, then `deno task deploy <server> caldav-mcp`.
 5. In claude.ai, Settings → Connectors → Add custom connector, URL `https://mcp.example.com/mcp`,
    then sign in with the owner password.
+
+### Sign a connector out
+
+From caldav-mcp v1.3.0 each grant ends 90 days after approval, and the owner can revoke one while
+the server runs, for example after losing a phone that had Claude signed in:
+
+```bash
+ssh <server> docker exec hl-caldav-mcp caldav-mcp grants list           # id, client, start, end
+ssh <server> docker exec hl-caldav-mcp caldav-mcp grants revoke <grantId>
+```
+
+`revoke` signs out that connector only; the others stay signed in. A connector approved before
+v1.3.0 shows up in the list only after its next token refresh. To sign everything out at once,
+stop the stack, delete `${VOLUMES_PATH}/caldav-mcp/oauth.kv` and its `-shm` and `-wal` files, and
+deploy again; every connector then asks for the owner password.
 
 ## OpenCode MCP setup
 
