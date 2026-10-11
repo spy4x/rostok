@@ -55,6 +55,11 @@ blocks UDP entirely (corporate firewalls, some hotel/captive WiFi), the
 browser needs `turns://` on TCP 5349. Without it the call hangs
 indefinitely with both peers "connected" but no media.
 
+## Backup
+
+None, and none is needed. Rooms are not stored. The one volume, `coturn-certs`, holds certificates
+that the `mirotalk-cert-extract` sidecar writes again from Traefik's `acme.json` when it starts.
+
 ## Usage
 
 Create a room, share the link. Participants join in browser — no install.

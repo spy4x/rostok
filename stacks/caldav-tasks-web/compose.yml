@@ -8,8 +8,8 @@ services:
   # caldav-tasks-web — a web client for the tasks on a CalDAV server (Stalwart here).
   # One owner, one CalDAV account, no database. The only file it writes is /data/push.json: the
   # browsers subscribed to reminder notifications and the reminders sent in the last hour, when
-  # the push settings are present in caldav-tasks-web.env. No backup: a subscribed browser saves itself again the next time the
-  # app is opened in it.
+  # the push settings are present in caldav-tasks-web.env. backup.ts copies it every night; if it
+  # is lost anyway, a subscribed browser saves itself again the next time the app is opened in it.
   caldav-tasks-web:
     container_name: hl-caldav-tasks-web
     # Published by the app's own CI (github.com/spy4x/caldav-tasks-web) to Docker Hub on every
