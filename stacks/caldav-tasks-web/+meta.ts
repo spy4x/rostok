@@ -2,8 +2,8 @@
 //
 // caldav-tasks-web is a web client for the tasks on a CalDAV server
 // (github.com/spy4x/caldav-tasks-web), served at `todos.${DOMAIN}` behind Traefik. Its own
-// settings (CalDAV address and account, owner password hash, secrets, optional push keys) live in the
-// operator-written file `${PATH_APPS}/configs/caldav-tasks-web.env`, which
+// settings (CalDAV address and account, owner password hash, secrets, optional push keys) live
+// in the operator-written file `${PATH_APPS}/configs/caldav-tasks-web.env`, which
 // `servers/<server>/configs/caldav-tasks-web.env` provides: see the stack README. The stack
 // cannot start without that file, so write it before the first deploy.
 //
