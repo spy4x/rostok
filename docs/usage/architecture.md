@@ -80,7 +80,7 @@ Each stack has:
 
 - `compose.yml` — Docker Compose definition
 - `backup.ts` — backup config (skipped for stateless services; a stack that keeps a volume
-  without one says why under "Backup" in its README: `mirotalk`, `pangolin`)
+  without one says why under "Backup" in its README: `metube`, `mirotalk`, `pangolin`)
 - `README.md` — purpose, configuration, troubleshooting
 - `+meta.ts` — CLI schema (READY-TO-IMPLEMENT for v1; tracked per
   `docs/design/v1-cli.md` §4 rollout)

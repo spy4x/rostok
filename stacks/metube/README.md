@@ -23,6 +23,12 @@ Paste YouTube URL and click download. Files saved to configured output directory
 - [MeTube GitHub](https://github.com/alexta69/metube)
 - [yt-dlp Documentation](https://github.com/yt-dlp/yt-dlp)
 
+## Backup
+
+None. The stack keeps no state of its own. Its two folders, `PATH_VIDEOS` and `PATH_MUSIC`, hold
+downloaded media, which is large and can be downloaded again; back them up yourself if you want to
+keep them.
+
 ## Variables
 
 Declared in `+meta.ts`. Requires the `traefik` stack. Server-level keys (`DOMAIN`, `TIMEZONE`,

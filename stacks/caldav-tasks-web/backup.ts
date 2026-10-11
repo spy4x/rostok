@@ -7,8 +7,9 @@ import { BackupConfig } from "@scripts/backup"
 // unlikely, and the previous night's snapshot would still be good. Stopping it
 // would take the app down every night.
 //
-// No pathsToChangeOwnership: the volume belongs to the container's user, and a
-// chown to the server user would stop the app from writing the file.
+// No pathsToChangeOwnership: the volume belongs to the container's PUID:PGID,
+// and where that is not the server user, a chown to the server user would stop
+// the app from writing the file.
 const backupConfig: BackupConfig = {
   name: "caldav-tasks-web",
   sourcePaths: "default",

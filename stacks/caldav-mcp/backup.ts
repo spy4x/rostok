@@ -5,7 +5,8 @@ import { BackupConfig } from "@scripts/backup"
 // copied in one consistent state.
 //
 // No pathsToChangeOwnership: the volume belongs to the container's PUID:PGID,
-// and a chown to the server user would lock the app out of its own store.
+// and where that is not the server user, a chown to the server user would lock
+// the app out of its own store.
 const backupConfig: BackupConfig = {
   name: "caldav-mcp",
   sourcePaths: "default",
