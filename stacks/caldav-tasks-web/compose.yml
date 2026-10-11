@@ -6,8 +6,10 @@ networks:
 
 services:
   # caldav-tasks-web — a web client for the tasks on a CalDAV server (Stalwart here).
-  # One owner, one CalDAV account, no database: the app is stateless, so there is no volume
-  # and no backup.
+  # One owner, one CalDAV account, no database. The only file it writes is /data/push.json: the
+  # browsers subscribed to reminder notifications and the reminders sent in the last hour, when
+  # the push settings are present in caldav-tasks-web.env. No backup: a subscribed browser saves itself again the next time the
+  # app is opened in it.
   caldav-tasks-web:
     container_name: hl-caldav-tasks-web
     # Published by the app's own CI (github.com/spy4x/caldav-tasks-web) to Docker Hub on every
@@ -17,12 +19,14 @@ services:
     # CALDAV_TASKS_WEB_IMAGE_TAG=v1.0.0 in the server's `.env`, then deploying.
     image: antonshubin/caldav-tasks-web:${CALDAV_TASKS_WEB_IMAGE_TAG:-latest}
     pull_policy: always
-    # The image runs as a non-root user and writes nothing at run time. The same PUID:PGID as
-    # every other stack keeps file ownership uniform.
+    # The image runs as a non-root user. The same PUID:PGID as every other stack keeps file
+    # ownership uniform; deploy creates the folder below and gives it to that user.
     user: "${PUID:-1000}:${PGID:-1000}"
     restart: unless-stopped
     env_file:
       - ${PATH_APPS}/configs/caldav-tasks-web.env
+    volumes:
+      - ${VOLUMES_PATH}/caldav-tasks-web:/data:z
     healthcheck:
       # The image has neither wget nor curl, so deno itself asks /health on the app's port.
       test:
