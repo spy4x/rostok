@@ -9,7 +9,9 @@ Web client for the tasks on a CalDAV server. One owner, one CalDAV account, no d
 The owner signs in with a password and sees the task lists of one CalDAV account (for example
 the Stalwart in this catalog): list, create, edit, complete and delete tasks. The server only
 relays requests to the CalDAV server, so any other CalDAV client (Tasks.org, for one) sees every
-change. Nothing is stored in the container.
+change. With the push settings below, a reminder set on a task notifies the browsers the owner
+turned notifications on in, also while the app is closed. The only thing the server stores is the
+list of those browsers.
 
 ## Access
 
@@ -28,7 +30,7 @@ change. Nothing is stored in the container.
 
 The stack does not start until `servers/<server>/configs/caldav-tasks-web.env` exists: write it
 before the first deploy. It holds the app's own settings, as env vars in
-`${PATH_APPS}/configs/caldav-tasks-web.env`. All seven are required; the app refuses to start
+`${PATH_APPS}/configs/caldav-tasks-web.env`. These seven are required; the app refuses to start
 without any of them:
 
 | Variable              | Meaning                                                                                   |
@@ -41,6 +43,19 @@ without any of them:
 | `AUTH_PEPPER`         | Key for the password hasher; at least 32 characters (`openssl rand -base64 32`).          |
 | `SESSION_SECRET`      | Signs the session cookie; at least 32 characters. Changing it signs everyone out.         |
 
+Reminder notifications are optional and need five more, all or none. With none the app runs
+without notifications; with only some it refuses to start and names the missing ones:
+
+| Variable             | Meaning                                                                                         |
+| -------------------- | ----------------------------------------------------------------------------------------------- |
+| `VAPID_PUBLIC_KEY`   | The public half of the Web Push key pair (`deno task vapid:keys --print` in the app's repo).    |
+| `VAPID_PRIVATE_KEY`  | The private half. Changing the pair makes every browser subscribe again the next time it opens. |
+| `VAPID_SUBJECT`      | A contact for the push services: a `mailto:` or `https:` address.                               |
+| `DATA_DIR`           | `/data`, the folder the volume is mounted at. The image allows writing nowhere else.            |
+| `REMINDER_TIME_ZONE` | An IANA zone, such as `Europe/Berlin`, for reminders on tasks with a date and no time.          |
+
+The container must reach the browsers' push services over HTTPS (Google, Mozilla, Apple).
+
 See <https://github.com/spy4x/caldav-tasks-web/blob/main/.env.example> for the syntax.
 
 ## Resources
@@ -50,7 +65,9 @@ See <https://github.com/spy4x/caldav-tasks-web/blob/main/.env.example> for the s
 
 ## Backup
 
-None. The app keeps no data: tasks live on the CalDAV server, which has its own backup.
+None. Tasks live on the CalDAV server, which has its own backup. The one file the app writes,
+`${VOLUMES_PATH}/caldav-tasks-web/push.json`, lists the browsers subscribed to notifications; if
+it is lost, each browser saves itself again the next time the app is opened in it.
 
 ## Upgrading / rollback
 
