@@ -66,9 +66,11 @@ See <https://github.com/spy4x/caldav-tasks-web/blob/main/.env.example> for the s
 
 ## Backup
 
-None. Tasks live on the CalDAV server, which has its own backup. The one file the app writes,
-`${VOLUMES_PATH}/caldav-tasks-web/push.json`, lists the browsers subscribed to notifications and the reminders sent in the last hour; if
-it is lost, each browser saves itself again the next time the app is opened in it.
+Tasks live on the CalDAV server, which has its own backup. The one file the app writes,
+`${VOLUMES_PATH}/caldav-tasks-web/push.json`, lists the browsers subscribed to notifications and the
+reminders sent in the last hour. `backup.ts` copies it every night without stopping the container.
+If it is lost anyway, each browser saves itself again the next time the app is opened in it; until
+then that browser gets no reminders.
 
 ## Upgrading / rollback
 

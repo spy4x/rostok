@@ -65,7 +65,8 @@ public server. A server that must serve Open WebUI and claude.ai from one copy s
 `CALDAV_MCP_ALLOW_TOKEN_WITH_OAUTH=true`. Safer is a second, internal copy on the server that runs
 Open WebUI, with `CALDAV_MCP_PUBLIC=false` and the token set.
 
-There is no backup: losing the store only means signing connectors in again.
+`backup.ts` backs the store up every night and stops the container for the few seconds the copy
+takes. Without a restore, losing the store means signing every connector in again.
 
 Set all three OAuth values or none. `CALDAV_MCP_PUBLIC=true` without them publishes a bearer-only
 endpoint, which caldav-mcp still protects but claude.ai cannot use.
