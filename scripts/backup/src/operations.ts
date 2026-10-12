@@ -125,7 +125,8 @@ export class BackupOperations {
       target = remembered
     }
 
-    log(`${action}ing compose stack ${target.project} from ${target.appsRoot}`)
+    const verb = action === "stop" ? "Stopping" : "Starting"
+    log(`${verb} compose stack ${target.project} from ${target.appsRoot}`)
     const baseArgs = ["compose", "-p", target.project, ...composeFileArgs(target)]
     // Compose interpolates the files even for stop/start, and stacks use required
     // variables (`${X:?}`), so pass the deploy env files whenever they exist.
@@ -164,7 +165,7 @@ export class BackupOperations {
 
     this.markBackupFailed(
       config,
-      `Error ${action}ing compose stack:\n${errStr}`,
+      `Error ${verb.toLowerCase()} compose stack:\n${errStr}`,
       `compose_${action}`,
     )
   }
