@@ -7,12 +7,21 @@ import { assert } from "@std/assert"
 /**
  * Interpolate `${KEY}`, `${KEY:-fallback}` and `${KEY-fallback}` like docker compose, innermost
  * reference first so a fallback may hold another reference. A key missing from `env` is empty;
- * `:-` also replaces an empty value. Throws when a compose-style (upper-case) reference is still left; shell `${var}` text in a
- * command is not touched.
+ * `:-` also replaces an empty value. A required reference, `${KEY:?}` or `${KEY?}`, throws when
+ * the key is missing (with `:`, also when it is empty), as compose refuses to run then. Throws
+ * when a compose-style (upper-case) reference is still left; shell `${var}` text in a command is
+ * not touched.
  */
 export function interpolate(text: string, env: Record<string, string>): string {
   const ref = /\$\{([A-Z0-9_]+)(?:(:?)-([^${}]*))?\}/g
-  let out = text
+  const required = /\$\{([A-Z0-9_]+)(:?)\?[^${}]*\}/g
+  let out = text.replace(required, (_m, key: string, colon: string) => {
+    const value = env[key]
+    if (value === undefined || (colon === ":" && value === "")) {
+      throw new Error(`required variable ${key} is missing a value`)
+    }
+    return value
+  })
   for (let i = 0; i < 10 && /\$\{[A-Z0-9_]+/.test(out); i++) {
     out = out.replace(ref, (_m, key: string, colon: string | undefined, fallback?: string) => {
       const value = env[key]

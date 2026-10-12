@@ -6,6 +6,10 @@
 //   the Let's Encrypt certificate the `mirotalk-cert-extract` sidecar copies out of Traefik's
 //   `acme.json`, so the certificate and the TURN URL name the same host.
 // - MIROTALK_TURN_SERVER_USERNAME / _CREDENTIAL: coturn's long-term credential, generated.
+// - MIROTALK_JWT_KEY: the key MiroTalk signs its room and API tokens with, generated. The image
+//   exits at start without one of at least 32 characters (spy4x/rostok#373), so compose requires
+//   it: a server that lacks it fails the deploy instead of running a container that restarts
+//   forever.
 // - MIROTALK_PUBLIC_IP: the server's external IPv4. It comes from outside (a cloud VPS interface
 //   does not carry it), so it has no default: `stack add` asks for it.
 // - fileMounts: the sidecar mounts `acme.json` read-only. It is a file, so deploy must never
@@ -44,6 +48,12 @@ export default {
     },
     {
       key: "MIROTALK_TURN_SERVER_CREDENTIAL",
+      default: () => generatePassword(48),
+      required: true,
+      secret: true,
+    },
+    {
+      key: "MIROTALK_JWT_KEY",
       default: () => generatePassword(48),
       required: true,
       secret: true,
