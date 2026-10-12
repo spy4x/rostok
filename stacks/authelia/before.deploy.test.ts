@@ -429,6 +429,38 @@ Deno.test("the authelia service gets a config-hash label that changes when eithe
   assert(ownConfig !== ownConfigEdited, "an edit of the server's own configuration.yml kept it")
 })
 
+Deno.test("the generated configuration.yml asks for the password on every protected host", async () => {
+  await withStaging(async (staging) => {
+    assertEquals((await runHook(staging)).code, 0)
+    assertStringIncludes(
+      await configurationIn(staging),
+      "access_control:\n  default_policy: one_factor\n",
+    )
+  })
+})
+
+Deno.test("another session secret gives another salt for the same user and password", async () => {
+  // The salt is keyed with a secret of this server: two servers with the same first password do
+  // not write the same hash.
+  const salts: string[] = []
+  for (const secret of [SESSION_SECRET, `${SESSION_SECRET}x`]) {
+    await withStaging(async (staging) => {
+      const out = await runHook(staging, { ...ENV, AUTHELIA_SESSION_SECRET: secret })
+      assertEquals(out.code, 0, out.stderr)
+      salts.push((await usersIn(staging)).match(/password: "([^"]+)"/)![1].split("$")[3])
+    })
+  }
+  assert(salts[0] !== salts[1], "both session secrets gave the same salt")
+})
+
+Deno.test("the generated users.yml is readable by its owner only", async () => {
+  await withStaging(async (staging) => {
+    assertEquals((await runHook(staging)).code, 0)
+    const stat = await Deno.stat(join(staging, "configs", "authelia", "users.yml"))
+    assertEquals((stat.mode ?? 0) & 0o777, 0o600)
+  })
+})
+
 Deno.test("an SMTP password without an SMTP server stops the deploy when the config is generated", async () => {
   await withStaging(async (staging) => {
     const out = await runHook(staging, { ...ENV, AUTHELIA_SMTP_PASSWORD: SMTP_PASSWORD })
