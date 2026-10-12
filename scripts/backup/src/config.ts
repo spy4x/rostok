@@ -4,16 +4,33 @@ import { BackupConfigState, BackupStatus } from "./types.ts"
 
 export class BackupConfigProcessor {
   /**
-   * Validates and normalizes a backup configuration
+   * Validates and normalizes a backup configuration: `normalize`, then a check
+   * that every source path exists (a backup of a missing folder is an error).
    */
   static validateAndNormalize(config: BackupConfigState): boolean {
+    if (!this.normalize(config)) return false
+
+    for (const path of config.sourcePaths) {
+      if (!this.checkPathExists(config, path)) {
+        return false
+      }
+    }
+
+    return true
+  }
+
+  /**
+   * Replaces every `"default"` in a backup configuration with what it stands
+   * for, without looking at the disk. A restore uses this alone: the folder it
+   * is about to put back may not exist yet.
+   */
+  static normalize(config: BackupConfigState): boolean {
     if (!config.name) {
       config.name = config.fileName
       this.markConfigFailed(config, "Backup config is missing a name")
       return false
     }
 
-    // Normalize source paths
     if (config.sourcePaths === "default") {
       config.sourcePaths = this.getDefaultSourcePaths(config)
     }
@@ -23,19 +40,10 @@ export class BackupConfigProcessor {
       return false
     }
 
-    // Validate source paths exist
-    for (const path of config.sourcePaths) {
-      if (!this.checkPathExists(config, path)) {
-        return false
-      }
-    }
-
-    // Normalize ownership paths
     if (config.pathsToChangeOwnership === "default") {
       config.pathsToChangeOwnership = this.getDefaultSourcePaths(config)
     }
 
-    // Normalize containers
     if (config.containers?.stop === "default") {
       config.containers.stop = ["__compose__"]
     }

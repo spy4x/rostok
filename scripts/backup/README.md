@@ -226,17 +226,39 @@ All errors are logged with context and reported in the final notification.
 
 ## Restore Process
 
-To restore files from a restic backup:
+```bash
+deno task backup:restore <service-name> [snapshot-id]
+```
+
+Run it on the server the way the nightly backup runs: as the same user (root,
+when the cron job is root's) and with the same env files. Only root can give
+restored files back the owners the snapshot recorded.
+
+The task takes the newest snapshot unless you name one, asks for a typed `yes`,
+then:
+
+1. stops the service's containers, the same ones the backup stops;
+2. unpacks the snapshot into a `.restore-*` folder next to the destination, not
+   into the system temp folder;
+3. renames the data now in place to `<folder>.backup-<time>` and moves the
+   restored folder in, with the owners and modes from the snapshot;
+4. starts the containers again, also when a step failed.
+
+Nothing is deleted. When the service works, remove the `.backup-<time>` folders
+by hand.
+
+A snapshot taken before the volumes moved to another folder still restores: a
+folder is matched by its name when the snapshot holds exactly one folder of that
+name. When that is not certain, the task stops before it touches anything and
+lists the snapshot's folders.
+
+To look inside a repository or restore single files, use restic directly:
 
 ```bash
-# Set password environment variable
 export RESTIC_PASSWORD="your-backup-password"
 
 # List snapshots
 restic -r /path/to/repo snapshots
-
-# Restore a snapshot
-restic -r /path/to/repo restore <snapshot-id> --target <target-dir>
 
 # Restore specific files
 restic -r /path/to/repo restore <snapshot-id> --target <target-dir> --include "path/to/specific/file"
