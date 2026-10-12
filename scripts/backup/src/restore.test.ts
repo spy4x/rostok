@@ -220,3 +220,21 @@ Deno.test("restore: when one folder cannot be put in place, the others go back",
     ])
   })
 })
+
+Deno.test("restore: a folder whose own move fails gets its previous data back", async () => {
+  await withTempDir(async (root) => {
+    // A folder cannot be renamed into itself, as root or as anyone else.
+    const from = join(root, "x")
+    const to = join(from, "sub", "vol")
+    await Deno.mkdir(to, { recursive: true })
+    await Deno.writeTextFile(join(to, "db"), "live")
+
+    await assertRejects(
+      () => applyRestore([{ from, to }], "stamp"),
+      Error,
+      "Every folder is back as it was before the restore.",
+    )
+    assertEquals(await Deno.readTextFile(join(to, "db")), "live")
+    assertEquals([...Deno.readDirSync(join(from, "sub"))].map((e) => e.name), ["vol"])
+  })
+})
