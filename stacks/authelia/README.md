@@ -159,6 +159,12 @@ this version:
    database to a new key, use `authelia storage encryption change-key` first, then put the new
    key into `.env`.
 
+   Put a value that contains `$` in single quotes, for example
+   `AUTHELIA_STORAGE_ENCRYPTION_KEY='${...}'` for a placeholder that became the key. Without
+   the quotes compose reads it as a reference to another variable, the value comes out empty,
+   and the deploy stops with "required variable AUTHELIA_STORAGE_ENCRYPTION_KEY is missing a
+   value".
+
    The session secret and the reset-password secret may be new values: sessions end and
    pending reset links stop working, nothing else.
 
