@@ -116,7 +116,9 @@ export function withExtraDomains(composeText: string, extraDomains: string[]): s
  */
 const NOT_ROUTED_HINT = ". Traefik has no working router for the mail host. If the traefik stack " +
   "was upgraded before this one, deploy stalwart once with STALWART_INITIAL_DEPLOY=true: that " +
-  'brings the router back. See the stack README, "Upgrading from STALWART_NEATSOFT_DOMAIN".'
+  "brings the router back. With that flag a failed check after the deploy stops the mail " +
+  "container; deploying again without the flag starts it. See the stack README, " +
+  '"Upgrading from STALWART_NEATSOFT_DOMAIN".'
 
 /** Run the hook. `stagingDir` is the deploy staging folder. */
 async function main(stagingDir: string): Promise<void> {

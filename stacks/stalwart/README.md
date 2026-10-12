@@ -92,6 +92,11 @@ To recover, set `STALWART_INITIAL_DEPLOY=true` in the server's `.env`, deploy `s
 remove the line again. That one deploy skips the DKIM step before the sync (the one after it still
 runs) and brings the router back with its own middleware.
 
+Be careful with that flag on a live mail server. While it is set, any failure after the deploy (a
+health wait that times out, one failed DKIM lookup) stops the `hl-stalwart` container, and SMTP and
+IMAP go down with it. If that happens, remove the line and deploy `stalwart` again: that starts
+the container. Never leave the flag in `.env` after the deploy.
+
 - **Config file:** `/etc/stalwart/config.json` (managed via admin UI)
 - **Data:** `/var/lib/stalwart/data` (SQLite database)
 - **Volumes:** `data/` (SQLite), `config/` (config.json), `lib/` (runtime data)
