@@ -28,6 +28,8 @@ case "$1" in
         else cat '${dir}/running-after-start'; fi ;;
     esac
     exit 0 ;;
+  start|stop)
+    [ -e '${dir}/fail-'"$1-$2" ] && { echo "cannot $1 $2" >&2; exit 1; } ;;
 esac
 exit 0
 `
@@ -416,5 +418,48 @@ Deno.test("fails the stack's backup when it cannot list running services after s
     assertEquals(c.status, BackupStatus.ERROR)
     assertEquals(c.errorAtStep, `compose_start`)
     assertStringIncludes(c.error ?? ``, `could not list its running services`)
+  })
+})
+
+/** A config that names its containers, as a non-compose backup.ts does. */
+function listConfig(stop: string[]): BackupConfigState {
+  return {
+    name: `app`,
+    sourcePaths: [],
+    containers: { stop },
+    fileName: `app.backup.ts`,
+    status: BackupStatus.IN_PROGRESS,
+  }
+}
+
+Deno.test("starts every listed container when one of them fails to start", async () => {
+  await withHarness({}, async (h) => {
+    await Deno.writeTextFile(`${h.dir}/fail-start-one`, ``)
+    await Deno.writeTextFile(`${h.dir}/fail-start-three`, ``)
+    const c = await h.run("start", listConfig([`one`, `two`, `three`, `four`]))
+    assertEquals(h.log().map((l) => l.split(`|`)[1]), [
+      `start one`,
+      `start two`,
+      `start three`,
+      `start four`,
+    ])
+    assertEquals(c.status, BackupStatus.ERROR)
+    assertEquals(c.errorAtStep, `docker_start`)
+    assertEquals(
+      c.error,
+      `Error starting container one:\ncannot start one\n` +
+        `Error starting container three:\ncannot start three`,
+    )
+  })
+})
+
+Deno.test("stops no further container after one fails to stop, and names it", async () => {
+  await withHarness({}, async (h) => {
+    await Deno.writeTextFile(`${h.dir}/fail-stop-two`, ``)
+    const c = await h.run("stop", listConfig([`one`, `two`, `three`]))
+    assertEquals(h.log().map((l) => l.split(`|`)[1]), [`stop one`, `stop two`])
+    assertEquals(c.status, BackupStatus.ERROR)
+    assertEquals(c.errorAtStep, `docker_stop`)
+    assertEquals(c.error, `Error stopping container two:\ncannot stop two`)
   })
 })

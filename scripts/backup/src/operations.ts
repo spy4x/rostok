@@ -29,7 +29,11 @@ export class BackupOperations {
   }
 
   /**
-   * Starts or stops Docker containers for a backup configuration
+   * Starts or stops Docker containers for a backup configuration.
+   *
+   * With an explicit container list, "stop" ends at the first container that
+   * does not stop, and "start" tries every container and reports each one that
+   * did not start. Either way the backup is marked failed.
    */
   async manageContainers(
     config: BackupConfigState,
@@ -51,8 +55,12 @@ export class BackupOperations {
       return
     }
 
+    // A failed stop ends the loop: the caller starts the whole list again.
+    // A failed start does not: every container after it must still come up.
+    const verb = action === "stop" ? "stopping" : "starting"
+    const failures: string[] = []
     for (const containerName of config.containers.stop) {
-      log(`${action}ing container ${containerName}`)
+      log(`${verb[0].toUpperCase()}${verb.slice(1)} container ${containerName}`)
 
       const cmd = new Deno.Command("docker", {
         args: [action, containerName],
@@ -63,12 +71,14 @@ export class BackupOperations {
       const { code, stderr } = await cmd.output()
 
       if (code !== 0) {
-        const errorMsg = `Error ${action}ing container ${containerName}:\n${
-          new TextDecoder().decode(stderr)
-        }`
-        this.markBackupFailed(config, errorMsg, `docker_${action}`)
-        return
+        failures.push(
+          `Error ${verb} container ${containerName}:\n${new TextDecoder().decode(stderr).trim()}`,
+        )
+        if (action === "stop") break
       }
+    }
+    if (failures.length > 0) {
+      this.markBackupFailed(config, failures.join("\n"), `docker_${action}`)
     }
   }
 
@@ -115,7 +125,8 @@ export class BackupOperations {
       target = remembered
     }
 
-    log(`${action}ing compose stack ${target.project} from ${target.appsRoot}`)
+    const verb = action === "stop" ? "Stopping" : "Starting"
+    log(`${verb} compose stack ${target.project} from ${target.appsRoot}`)
     const baseArgs = ["compose", "-p", target.project, ...composeFileArgs(target)]
     // Compose interpolates the files even for stop/start, and stacks use required
     // variables (`${X:?}`), so pass the deploy env files whenever they exist.
@@ -154,7 +165,7 @@ export class BackupOperations {
 
     this.markBackupFailed(
       config,
-      `Error ${action}ing compose stack:\n${errStr}`,
+      `Error ${verb.toLowerCase()} compose stack:\n${errStr}`,
       `compose_${action}`,
     )
   }

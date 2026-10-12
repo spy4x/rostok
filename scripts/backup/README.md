@@ -234,6 +234,13 @@ Run it on the server the way the nightly backup runs: as the same user (root,
 when the cron job is root's) and with the same env files. Only root can give
 restored files back the owners the snapshot recorded.
 
+The task reads `.env.root` and `servers/home/.env`, like `deno task backup`. On
+another server, or when the env files live elsewhere, name them yourself:
+
+```bash
+deno run --env-file=<root env> --env-file=<server env> -A scripts/backup/restore.ts <service-name> [snapshot-id]
+```
+
 The task takes the newest snapshot unless you name one, asks for a typed `yes`,
 then:
 
