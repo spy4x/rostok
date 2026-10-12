@@ -1,7 +1,6 @@
 // The deploy logic `rostok deploy <server> [stack]` runs in-process
-// (#203 point 1). Ported from the old scripts/deploy/+main.ts, which now
-// wraps this module (see scripts/deploy/+main.ts) so `deno task deploy`
-// keeps working in this repo.
+// (#203 point 1). Ported from the old scripts/deploy/+main.ts, which is
+// gone: this repo has no `deno task deploy` any more.
 //
 // Differences from the old script, per #203/#206/#207/#208:
 //   - Takes the project directory, server name and optional stack as

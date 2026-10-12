@@ -16,7 +16,7 @@ interface RepoReport {
  *   - partial: delete corrupted snapshot blobs + corrupted index files, run `restic repair index`
  *   - broken: re-initialize repo (data loss acknowledged; backup must run again to repopulate)
  *
- * Run: deno task backup:recover
+ * Run: deno run -A --env-file=<env file> scripts/backup/recover.ts [--dry-run]
  */
 async function main() {
   const password = Deno.env.get("BACKUPS_PASSWORD")
@@ -104,7 +104,7 @@ async function main() {
   if (failures.length) {
     log(`\n${failures.length} repo(s) could not be recovered: ${failures.join(", ")}`)
   }
-  log("\nDone. Re-run main backup: deno task backup")
+  log("\nDone. Re-run the backup: deno run -A --env-file=<env file> scripts/backup/+main.ts")
 }
 
 async function checkRepo(name: string, path: string, password: string): Promise<RepoReport> {

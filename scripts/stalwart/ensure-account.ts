@@ -12,8 +12,10 @@
 // script upload fails the run, and an account whose mail another active Sieve
 // script already filters is refused rather than overwritten.
 //
-// Usage:
-//   E=servers/<server>/.env
+// Usage, from a clone of this repo. The script reads no file: both passwords
+// come from the environment, here taken from a server's env file in your own
+// rostok project.
+//   E=<your rostok project>/servers/<server>/.env
 //   STALWART_ADMIN_PASSWORD="$(sed -n 's/^STALWART_ADMIN_PASSWORD=//p' "$E")" \
 //   ACCOUNT_PASSWORD="$(sed -n 's/^ACCOUNT_PASSWORD=//p' "$E")" \
 //   deno run -A scripts/stalwart/ensure-account.ts \

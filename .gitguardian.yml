@@ -12,4 +12,3 @@ content:
   # Also exclude the .env.example files — they contain placeholders only
   ignored_paths:
     - "**/.env.example"
-    - "**/.env.root.example"

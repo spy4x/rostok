@@ -45,7 +45,7 @@ Examples:
     rostok stack add traefik -s home      # add a stack to a server
     rostok stack remove traefik -s home   # remove a stack from a server
     rostok stack list --tree              # browse the bundled catalog
-    rostok deploy home                    # deploy (wraps deno task deploy)
+    rostok deploy home                    # deploy over SSH
     rostok env status                     # encryption posture + next steps`
 
 // deno-lint-ignore no-explicit-any

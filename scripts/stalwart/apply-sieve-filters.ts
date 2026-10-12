@@ -11,7 +11,7 @@
 // that group doesn't exist, so the bounces land in INBOX).
 //
 // Usage:
-//   deno run -A ./stacks/stalwart/apply-sieve-filters.ts \
+//   deno run -A scripts/stalwart/apply-sieve-filters.ts \
 //     --api-url https://mail.example.com/jmap/ \
 //     --user "user@example.com" \
 //     --password "$EMAIL_MCP_PERSONAL_PASSWORD" \

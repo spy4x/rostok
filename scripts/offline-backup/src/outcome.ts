@@ -83,7 +83,7 @@ export function formatOutcomeBanner(
     case BackupOutcome.SkippedByOperator:
       return [
         `\n⚠️  ${subject} completed but NOT VERIFIED — you chose to skip verification.`,
-        `   Run 'deno task offline-backup verify' to check the drive.`,
+        `   Run 'deno run -A --env-file=<env file> scripts/offline-backup/+main.ts verify' to check the drive.`,
       ]
     case BackupOutcome.Unverified:
       return [
