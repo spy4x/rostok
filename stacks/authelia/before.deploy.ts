@@ -19,6 +19,13 @@
 // With AUTHELIA_SMTP_PASSWORD set, the hook also puts AUTHELIA_NOTIFIER_SMTP_PASSWORD into the
 // staged `stacks/authelia/compose.yml`, in place of a marker line (see `withSmtpPassword`).
 //
+// Last, the hook puts a hash of the two staged files into the staged compose.yml as a label of
+// the authelia service (see `withConfigHash`). A deploy replaces a changed file on the server,
+// but each is mounted as a single file, so the running container keeps the old one and compose
+// sees nothing to do. The changed label makes compose recreate the container exactly when a
+// file changed. A file a per-server hook writes later is not in that hash (README, "The
+// server's own files win").
+//
 // The first user's password is AUTHELIA_ADMIN_PASSWORD from the server's `.env`, where
 // `stack add` generated it, like every other stack's first password. Only its hash is written;
 // neither the password nor the hash is printed. The hash is PBKDF2-SHA512, which Authelia reads
@@ -41,6 +48,12 @@ export const SMTP_PASSWORD_MARKER = "# rostok:smtp-password"
 
 /** What replaces the marker: Authelia's own variable, required from the server's `.env`. */
 const SMTP_PASSWORD_LINE = "- AUTHELIA_NOTIFIER_SMTP_PASSWORD=${AUTHELIA_SMTP_PASSWORD:?}"
+
+/** The comment line in compose.yml that the hook replaces with the config hash label. */
+export const CONFIG_HASH_MARKER = "# rostok:config-hash"
+
+/** The label of the authelia service that holds the hash of its two config files. */
+export const CONFIG_HASH_LABEL = "rostok.authelia.config-hash"
 
 /** PBKDF2-SHA512 rounds: Authelia's own default for this algorithm. */
 const PBKDF2_ITERATIONS = 310_000
@@ -139,25 +152,54 @@ export function hasSmtpPassword(getEnv: GetEnv): boolean {
 }
 
 /**
+ * `composeText` with `line` in place of the one line that is `marker`, keeping its indent. A
+ * line that already starts with `existing` is replaced instead, so a second run changes nothing.
+ * Throws when the text holds neither, or the marker more than once: the line would silently not
+ * reach Authelia.
+ */
+function setLine(composeText: string, marker: string, existing: string, line: string): string {
+  const lines = composeText.split("\n")
+  let at = lines.findIndex((l) => l.trim().startsWith(existing))
+  if (at < 0) {
+    const markers = lines.flatMap((l, i) => l.trim() === marker ? [i] : [])
+    if (markers.length !== 1) {
+      throw new Error(
+        `compose.yml must hold the line "${marker}" exactly once (found ${markers.length})`,
+      )
+    }
+    at = markers[0]
+  }
+  lines[at] = lines[at].slice(0, lines[at].length - lines[at].trimStart().length) + line
+  return lines.join("\n")
+}
+
+/**
  * `composeText` (the stack's compose.yml) with the marker line replaced by the variable that hands
  * Authelia the SMTP password. Authelia reads even an empty AUTHELIA_NOTIFIER_SMTP_PASSWORD as "an
  * SMTP notifier is configured" and refuses to start beside the file notifier, so the variable
- * may only exist when SMTP is used. A text that already holds the variable is returned as it is; one with neither
- * the marker nor the variable throws, because the password would silently not reach Authelia.
+ * may only exist when SMTP is used.
  */
 export function withSmtpPassword(composeText: string): string {
-  const lines = composeText.split("\n")
-  if (lines.some((line) => line.trim() === SMTP_PASSWORD_LINE)) return composeText
-  const markers = lines.flatMap((line, i) => line.trim() === SMTP_PASSWORD_MARKER ? [i] : [])
-  if (markers.length !== 1) {
-    throw new Error(
-      `compose.yml must hold the line "${SMTP_PASSWORD_MARKER}" exactly once ` +
-        `(found ${markers.length})`,
-    )
-  }
-  const indent = lines[markers[0]].slice(0, lines[markers[0]].indexOf("#"))
-  lines[markers[0]] = indent + SMTP_PASSWORD_LINE
-  return lines.join("\n")
+  return setLine(composeText, SMTP_PASSWORD_MARKER, SMTP_PASSWORD_LINE, SMTP_PASSWORD_LINE)
+}
+
+/**
+ * `composeText` with the label that holds the SHA-256 of the two config files, in place of its
+ * marker line. Compose recreates a container whose labels changed, and only then does Authelia
+ * get a file the deploy replaced: a single-file mount keeps pointing at the old file.
+ */
+export async function withConfigHash(
+  composeText: string,
+  configuration: string,
+  users: string,
+): Promise<string> {
+  const digest = await crypto.subtle.digest(
+    "SHA-256",
+    new TextEncoder().encode(JSON.stringify([configuration, users])),
+  )
+  const hex = [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("")
+  const existing = `- "${CONFIG_HASH_LABEL}=`
+  return setLine(composeText, CONFIG_HASH_MARKER, existing, `${existing}${hex}"`)
 }
 
 /** Base64 as Authelia's PBKDF2 format writes it: `.` for `+`, no padding. */
@@ -281,6 +323,16 @@ export async function main(stagingDir: string, getEnv: GetEnv): Promise<void> {
     await Deno.writeTextFile(`${dir}/${name}`, await render(), { mode })
     console.log(`${STAGED_DIR}/${name}: generated`)
   }
+  const composePath = `${stagingDir}/${STAGED_COMPOSE}`
+  await Deno.writeTextFile(
+    composePath,
+    await withConfigHash(
+      await Deno.readTextFile(composePath),
+      await Deno.readTextFile(`${dir}/configuration.yml`),
+      await Deno.readTextFile(`${dir}/users.yml`),
+    ),
+  )
+  console.log(`${STAGED_COMPOSE}: config hash label set`)
 }
 
 if (import.meta.main) {

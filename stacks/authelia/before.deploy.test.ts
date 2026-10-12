@@ -5,7 +5,7 @@
 import { assert, assertEquals, assertMatch, assertStringIncludes } from "@std/assert"
 import { join } from "@std/path"
 import { interpolate } from "../compose-interpolate.ts"
-import { SMTP_PASSWORD_MARKER } from "./before.deploy.ts"
+import { CONFIG_HASH_LABEL, CONFIG_HASH_MARKER, SMTP_PASSWORD_MARKER } from "./before.deploy.ts"
 import { pbkdf2Sync } from "node:crypto"
 import { Buffer } from "node:buffer"
 
@@ -111,6 +111,13 @@ const composeIn = (staging: string) =>
 function environmentOf(compose: string, env: Record<string, string>): string[] {
   const code = compose.split("\n").filter((l) => !l.trim().startsWith("#")).join("\n")
   return [...interpolate(code, env).matchAll(/^ {6}- ([A-Z_]+=.*)$/gm)].map((m) => m[1])
+}
+
+/** The hash in the config-hash label of a staged compose.yml. Throws when the label is missing. */
+function configHashOf(compose: string): string {
+  const found = compose.match(new RegExp(`^ +- "${CONFIG_HASH_LABEL}=([0-9a-f]{64})"$`, "m"))
+  if (!found) throw new Error("compose.yml holds no config-hash label")
+  return found[1]
 }
 
 /** Put the server's own `name` into staging, as deploy does before any hook runs. */
@@ -367,17 +374,59 @@ Deno.test("with AUTHELIA_SMTP_PASSWORD the staged compose.yml hands it to Authel
   })
 })
 
-Deno.test("without AUTHELIA_SMTP_PASSWORD the staged compose.yml is untouched and names no SMTP variable", async () => {
+Deno.test("without AUTHELIA_SMTP_PASSWORD the hook changes only the config-hash line of compose.yml, and no SMTP variable appears", async () => {
   // Authelia takes even an empty AUTHELIA_NOTIFIER_SMTP_PASSWORD as an SMTP notifier and refuses
   // to start beside the file notifier.
   await withStaging(async (staging) => {
     const before = await composeIn(staging)
     const out = await runHook(staging)
     assertEquals(out.code, 0, out.stderr)
-    assertEquals(await composeIn(staging), before)
-    const names = environmentOf(before, ENV).map((item) => item.slice(0, item.indexOf("=")))
+    const after = await composeIn(staging)
+    assertEquals(
+      after.replace(`- "${CONFIG_HASH_LABEL}=${configHashOf(after)}"`, CONFIG_HASH_MARKER),
+      before,
+    )
+    const names = environmentOf(after, ENV).map((item) => item.slice(0, item.indexOf("=")))
     assertEquals(names.filter((name) => name.includes("SMTP")), [])
   })
+})
+
+Deno.test("the authelia service gets a config-hash label that changes when either config file changes, and only then", async () => {
+  // The two files are single-file mounts: a deploy that replaces one leaves the running container
+  // on the old file, and compose recreates the container only when its own definition changed.
+  const hashFor = async (
+    env: Record<string, string>,
+    own: Record<string, string> = {},
+  ): Promise<string> => {
+    let hash = ""
+    await withStaging(async (staging) => {
+      for (const [name, text] of Object.entries(own)) await writeOwn(staging, name, text)
+      const out = await runHook(staging, env)
+      assertEquals(out.code, 0, out.stderr)
+      const compose = await composeIn(staging)
+      hash = configHashOf(compose)
+      // A label of the authelia service: in its `labels:` list, before the next service.
+      const label = compose.indexOf(`      - "${CONFIG_HASH_LABEL}=`)
+      assert(label > compose.indexOf("    labels:"), "the hash is not under labels:")
+      assert(
+        label < compose.indexOf("  authelia-redis:"),
+        "the hash is not on the authelia service",
+      )
+    })
+    return hash
+  }
+  const base = await hashFor(ENV)
+  assertEquals(await hashFor(ENV), base, "the same settings gave another hash")
+  const password = await hashFor({ ...ENV, AUTHELIA_ADMIN_PASSWORD: `${ADMIN_PASSWORD}x` })
+  assert(password !== base, "a changed first password kept the hash")
+  const domain = await hashFor({ ...ENV, AUTHELIA_DOMAIN: "login.${DOMAIN}" })
+  assert(domain !== base && domain !== password, "a changed configuration.yml kept the hash")
+  const ownUsers = await hashFor(ENV, { "users.yml": "users: {}\n" })
+  const ownUsersEdited = await hashFor(ENV, { "users.yml": "users: {} # edited\n" })
+  assert(ownUsers !== ownUsersEdited, "an edit of the server's own users.yml kept the hash")
+  const ownConfig = await hashFor(ENV, { "configuration.yml": "theme: dark\n" })
+  const ownConfigEdited = await hashFor(ENV, { "configuration.yml": "theme: light\n" })
+  assert(ownConfig !== ownConfigEdited, "an edit of the server's own configuration.yml kept it")
 })
 
 Deno.test("an SMTP password without an SMTP server stops the deploy when the config is generated", async () => {

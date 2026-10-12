@@ -42,6 +42,12 @@ when one is missing. They are never written into `configuration.yml`: Authelia d
 Both files are written again on every deploy, with the same content for the same settings. To
 change the first user's password, change `AUTHELIA_ADMIN_PASSWORD` in `.env` and deploy.
 
+A deploy after a change to either file recreates the Authelia container, so the change takes
+effect at once; a deploy with no change leaves the container running. The hook does this with a
+label on the container (`rostok.authelia.config-hash`) that holds a hash of the two files. It is
+needed because each file is mounted on its own: without it, the container would keep the old
+file until someone restarted it.
+
 ### Password reset and mail
 
 Without `AUTHELIA_SMTP_ADDRESS` and `AUTHELIA_SMTP_SENDER`, password reset is switched off.
@@ -68,6 +74,18 @@ generate `configuration.yml`, or the other way round. A per-server hook,
 `configs/authelia/` of its working directory, for example from an encrypted source. It runs
 after the stack's hook, and what it writes replaces the generated file before anything is
 copied to the server.
+
+A file written by a per-server hook is the one case where a change does not restart Authelia by
+itself: the hash is taken before that hook runs. Either list the file for the stack in
+`servers/<server>/config.json`, so the deploy restarts the stack when the file on the server
+changed:
+
+```json
+{ "name": "authelia", "watchFilesAndRestartIfChanged": ["configs/authelia/users.yml"] }
+```
+
+or restart the container on the server after such a deploy: `docker restart hl-authelia`. A
+plain file in `servers/<server>/configs/authelia/` needs neither.
 
 Three rules for your own `configuration.yml`:
 
