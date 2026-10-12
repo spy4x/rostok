@@ -4,14 +4,16 @@
 // Example: deno task backup:restore gatus a1b2c3d4
 //
 // Run it the way the nightly backup runs (same user, same env files): restic
-// can only give the files back their owners when it runs as root.
+// can only give the files back their owners when it runs as root. The task
+// reads .env.root and servers/home/.env; on another server run
+//   deno run --env-file=<root env> --env-file=<server env> -A scripts/backup/restore.ts <service>
 
 import { dirname, join } from "@std/path"
 import { absPath, error, log } from "../+lib.ts"
 import { getEnvVar, PATH_APPS, USER } from "./src/+lib.ts"
 import { BackupConfigProcessor } from "./src/config.ts"
 import { BackupOperations } from "./src/operations.ts"
-import { applyRestore, planRestore } from "./src/restore.ts"
+import { applyRestore, literalIncludePattern, planRestore } from "./src/restore.ts"
 import { type BackupConfigState, BackupStatus } from "./src/types.ts"
 
 interface RestoreOptions {
@@ -180,7 +182,7 @@ class RestoreRunner {
         "--target",
         targetPath,
         "--include",
-        snapshotPath,
+        literalIncludePattern(snapshotPath),
       ],
       env: { RESTIC_PASSWORD: this.backupsPassword },
       stdout: "inherit",

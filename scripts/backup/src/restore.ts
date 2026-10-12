@@ -40,6 +40,16 @@ export function planRestore(sourcePaths: string[], snapshotPaths: string[]): Res
 }
 
 /**
+ * Turns a snapshot path into a `restic restore --include` pattern that matches
+ * only that path. restic reads `*`, `?` and `[` in a pattern as wildcards and
+ * `\` as the escape character, so a folder named `data[1]` would otherwise
+ * match `data1` and never itself.
+ */
+export function literalIncludePattern(snapshotPath: string): string {
+  return snapshotPath.replace(/[\\*?[]/g, "\\$&")
+}
+
+/**
  * Puts the restored folders in place. Data already at a destination is
  * renamed to `<destination>.backup-<stamp>` and never deleted. Each restored
  * folder is renamed into place, not copied, so it keeps the owner and mode

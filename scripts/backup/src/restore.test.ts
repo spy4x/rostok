@@ -4,7 +4,7 @@
 
 import { assertEquals, assertRejects, assertThrows } from "@std/assert"
 import { join } from "@std/path"
-import { applyRestore, planRestore } from "./restore.ts"
+import { applyRestore, literalIncludePattern, planRestore } from "./restore.ts"
 
 /** Runs `fn` in a fresh temp folder and removes it afterwards. */
 async function withTempDir(fn: (root: string) => Promise<void>): Promise<void> {
@@ -237,4 +237,16 @@ Deno.test("restore: a folder whose own move fails gets its previous data back", 
     assertEquals(await Deno.readTextFile(join(to, "db")), "live")
     assertEquals([...Deno.readDirSync(join(from, "sub"))].map((e) => e.name), ["vol"])
   })
+})
+
+Deno.test("escapes every restic pattern character of a snapshot path", () => {
+  assertEquals(literalIncludePattern("/vol/data[1]"), "/vol/data\\[1]")
+  assertEquals(literalIncludePattern("/vol/a*b"), "/vol/a\\*b")
+  assertEquals(literalIncludePattern("/vol/q?z"), "/vol/q\\?z")
+  assertEquals(literalIncludePattern("/vol/b\\c"), "/vol/b\\\\c")
+  assertEquals(literalIncludePattern("/vol/**/[a-z]?"), "/vol/\\*\\*/\\[a-z]\\?")
+})
+
+Deno.test("leaves a snapshot path without pattern characters as it is", () => {
+  assertEquals(literalIncludePattern("/srv/volumes/gatus data-1.x"), "/srv/volumes/gatus data-1.x")
 })
