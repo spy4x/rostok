@@ -23,7 +23,7 @@ The backup system is organized into clean, modular components:
 Backup configurations are loaded from two locations:
 
 1. **`stacks/*/backup.ts`** - Service backup configurations (co-located with service definitions)
-2. **`servers/{name}/configs/backup/*.backup.ts`** - Non-service backups (server-specific folders, etc.)
+2. **`<PATH_APPS>/configs/backup/*.backup.ts`** on the server - Non-service backups (server-specific folders, etc.). In your rostok project these files live in `servers/{name}/configs/backup/`, and `rostok deploy` copies them over.
 
 The system automatically discovers and merges configurations from both locations.
 
@@ -193,7 +193,7 @@ When adding a new service with persistent data:
 
 3. **Skip backup config entirely** for stateless services (no volumes, config via env vars only)
 
-4. **For non-service backups** (server-specific folders), create `servers/{name}/configs/backup/mybackup.backup.ts` instead
+4. **For non-service backups** (server-specific folders), create `servers/{name}/configs/backup/mybackup.backup.ts` in your rostok project instead
 
 The backup script automatically discovers configs from both locations during execution.
 
@@ -227,21 +227,16 @@ All errors are logged with context and reported in the final notification.
 ## Restore Process
 
 ```bash
-deno task backup:restore <service-name> [snapshot-id]
+deno run -A --env-file=<env file> scripts/backup/restore.ts <service-name> [snapshot-id]
 ```
 
 Run it on the server the way the nightly backup runs: as the same user (root,
-when the cron job is root's) and with the same env files. Only root can give
-restored files back the owners the snapshot recorded.
+when the cron job is root's) and with the same `--env-file` arguments as the
+backup's cron line. Only root can give restored files back the owners the
+snapshot recorded. There is no `deno task` for it: the script reads no env file
+by itself, so every setting comes from the files you name.
 
-The task reads `.env.root` and `servers/home/.env`, like `deno task backup`. On
-another server, or when the env files live elsewhere, name them yourself:
-
-```bash
-deno run --env-file=<root env> --env-file=<server env> -A scripts/backup/restore.ts <service-name> [snapshot-id]
-```
-
-The task takes the newest snapshot unless you name one, asks for a typed `yes`,
+The script takes the newest snapshot unless you name one, asks for a typed `yes`,
 then:
 
 1. stops the service's containers, the same ones the backup stops;
@@ -258,7 +253,7 @@ by hand.
 
 A snapshot taken before the volumes moved to another folder still restores: a
 folder is matched by its name when the snapshot holds exactly one folder of that
-name. When that is not certain, the task stops before it touches anything and
+name. When that is not certain, the script stops before it touches anything and
 lists the snapshot's folders.
 
 To look inside a repository or restore single files, use restic directly:

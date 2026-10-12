@@ -176,7 +176,7 @@ export async function serverCreate(opts: ServerCreateOptions = {}): Promise<Serv
 
   await Deno.mkdir(join(serverDir, "configs"), { recursive: true })
 
-  // #206: write every key scripts/deploy/+main.ts needs (DEPLOY_REQUIRED_KEYS
+  // #206: write every key `rostok deploy` needs (DEPLOY_REQUIRED_KEYS
   // is a subset of this list) — SSH_USER always has a value (either parsed
   // from `user@host` or asked), PATH_APPS defaults to DEFAULT_PATH_APPS.
   const incoming: EnvEntry[] = [

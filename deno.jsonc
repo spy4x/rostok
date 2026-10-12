@@ -1,68 +1,10 @@
 {
   "tasks": {
-    // #region Ansible
-    "ansible": {
-      "command": "deno run -A ./scripts/ansible/+main.ts",
-      "description": "🔧 Run Ansible playbooks (auto-loads env vars)"
-    },
-    // #endregion Ansible
-
-    // #region Deploy
-    "deploy": {
-      "command": "deno run -A ./scripts/deploy/+main.ts",
-      "description": "🚀 Deploy to remote server. Usage: deploy <server> [stack]"
-    },
-    "ssh": {
-      "command": "deno run -A ./scripts/ssh/+main.ts",
-      "description": "🔐 SSH into server (interactive) or run remote command: ssh <server> [cmd...]"
-    },
-    // #endregion Deploy
-
-    // #region Backup
-    // Each server has its own .env with BACKUP_PATHS and SSH_ADDRESS.
-    // Override the env-file path with the SERVER_ENV env var.
-    "backup": {
-      "command": "deno run --env-file=.env.root --env-file=servers/home/.env -A ./scripts/backup/+main.ts",
-      "description": "💾 Run backup for all services using Restic"
-    },
-    "backup:restore": {
-      "command": "deno run --env-file=.env.root --env-file=servers/home/.env -A ./scripts/backup/restore.ts",
-      "description": "📥 Restore service data from backup (interactive)"
-    },
-    "backup:recover": {
-      "command": "deno run --env-file=.env.root --env-file=servers/home/.env -A ./scripts/backup/recover.ts",
-      "description": "🚧 Recover corrupted restic repos (dry-run by default, pass --execute)"
-    },
-    "backup:recover:dry-run": {
-      "command": "deno run --env-file=.env.root --env-file=servers/home/.env -A ./scripts/backup/recover.ts -- --dry-run",
-      "description": "🔍 Scan and report corrupted restic repos without modifying anything"
-    },
-    "offline-backup": {
-      "command": "deno run --env-file=.env.root -A ./scripts/offline-backup/+main.ts",
-      "description": "🗄️ Backup/restore to/from external drive (monthly offline backups)"
-    },
-    // #endregion Backup
-
-    // #region Encryption
-    // age64 — per-value age encryption. Each value independent — only changed lines diff.
-    // Runs in-process (jsr:@age/age-encryption) — no `age` binary, no --allow-run.
-    "env:encrypt": {
-      "command": "deno run --no-prompt -R -W=. jsr:@spy4x/server@1.2.0/env-age64/cli encrypt",
-      "description": "🔐 Encrypt .env → .env.age (only changed values re-encrypted)"
-    },
-    "env:decrypt": {
-      "command": "deno run --no-prompt -R -W=. jsr:@spy4x/server@1.2.0/env-age64/cli decrypt",
-      "description": "🔓 Decrypt .env.age → .env (decrypts age64 values)"
-    },
-    // #endregion Encryption
-
     // #region Git Hooks
-    // Installs pre-commit, post-checkout, post-merge hooks in shared .git/hooks/
-    // Works with worktrees (resolves via git rev-parse --git-common-dir).
+    // Installs the pre-commit hook in the shared .git/hooks/. Works with
+    // worktrees (resolves via git rev-parse --git-common-dir).
     "hooks:install": "deno run -R -W --allow-run=git --allow-env=GIT_DIR scripts/hooks/install.ts",
-    "hooks:pre-commit": "deno task check && deno task env:encrypt",
-    "hooks:post-checkout": "deno task env:decrypt",
-    "hooks:post-merge": "deno task env:decrypt",
+    "hooks:pre-commit": "deno task check",
     // #endregion Git Hooks
 
     // #region Checks
@@ -95,8 +37,7 @@
       // Bare `deno check` resolves files itself and honours the top-level
       // "exclude" list, and Deno's walker skips node_modules on its own.
       // The previous `**/*.ts` was expanded by the task shell instead,
-      // which follows symlinks: on a checkout with servers/ synced, the
-      // pnpm store under servers/portable/configs/dsh/profiles/node_modules
+      // which follows symlinks: one stray node_modules in the checkout
       // turns 132 checked files into ~20k paths and the launch fails with
       // "Argument list too long" — at the exit code, indistinguishable
       // from a type error.
@@ -155,7 +96,7 @@
   },
   "publish": {
     // Ship the CLI + only `+meta.ts` from `stacks/`. Everything else in
-    // `stacks/`, `scripts/`, `ansible/`, `docs/` is rostok-repo dev
+    // `stacks/`, `scripts/`, `docs/` is rostok-repo dev
     // tooling — the published CLI never reads it.
     //
     // JSR's exclude doesn't follow gitignore semantics for negative
@@ -171,8 +112,6 @@
       "**/*.test.ts",
       "**/*.test.tsx",
       "**/*_test.ts",
-      "ansible",
-      "ansible/**",
       "scripts",
       "scripts/**",
       "docs",
@@ -324,10 +263,10 @@
     ]
   },
   "exclude": [
-    // Per-host configs and secrets, gitignored. `deno fmt` and `deno lint`
-    // skip gitignored paths on their own, but `deno check` does not, so
-    // without this line the four *.ts files under servers/ would join the
-    // type-check set on any machine that syncs them — and nowhere else.
+    // Guard: `servers/` belongs to a user's own rostok project, never to
+    // this checkout, and is gitignored. `deno fmt` and `deno lint` skip
+    // gitignored paths on their own, but `deno check` does not, so a stray
+    // copy would otherwise join the type-check set.
     "servers",
     "**/.vite/*",
     "**/.cache/*",
@@ -338,9 +277,7 @@
     "dist",
     "build",
     "docs",
-    "ansible",
     "**/.dockerignore",
-    "**/.env.root.example",
     "**/.gitguardian.yml",
     "**/.vscode/**",
     "**/.woodpecker.yml",

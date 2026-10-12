@@ -105,10 +105,14 @@ This drive contains encrypted backups of critical homelab services.
 
 **Restore Command:**  
 \`\`\`bash
-cd ~/dev/rostok && deno task offline-backup restore
+# in a clone of github.com/spy4x/rostok:
+deno run -A --env-file=<env file> scripts/offline-backup/+main.ts restore
 \`\`\`
 
-**Password Location:** \`~/dev/rostok/.env\` file as \`BACKUPS_PASSWORD\`
+\`<env file>\` is the env file of your own rostok project that holds
+\`BACKUP_PATHS\` and \`BACKUPS_PASSWORD\`.
+
+**Password Location:** \`BACKUPS_PASSWORD\` in your rostok project's env file
 
 ## Storage (Singapore Climate)
 
@@ -140,15 +144,15 @@ ${pathsInfo}
 
 ### Password Location
 
-Restic password is stored in your own rostok code repository on GitHub
-in the \`.env\` file as \`BACKUPS_PASSWORD\`. The actual \`.env\` file is not
-committed to the repository for security. Store a copy in your password
-manager. The same value also lives on the local computer in \`~/rostok/.env\`
-and on each deployed server in \`~/<apps_folder>/.env\`.
+The Restic password is \`BACKUPS_PASSWORD\` in the env file of your own
+rostok project (the folder \`rostok init\` created, not the rostok source
+repository). The plaintext env file is never committed. Store a copy in your
+password manager. The same value also lives on each deployed server in
+\`~/<apps_folder>/.env\`.
 
 ### Quick Restore
 
-Connect drive and execute \`deno task offline-backup restore\` from rostok repo.  
+Connect the drive and run the restore command above from a clone of the rostok repo.  
 The script will guide you through the restore process.
 `
 

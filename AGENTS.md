@@ -5,9 +5,8 @@ the catalog of self-hosted services and the CLI tool that scaffolds
 users' projects.
 
 What lives here is a **catalog** (`stacks/`) and the **CLI source**
-(`scripts/hooks/`, plus the new `cli/` package in development). Env-file
-encryption (age64) comes from the published `@spy4x/server/env-age64`
-module, not from a local copy.
+(`cli/`). Env-file encryption (age64) comes from the published
+`@spy4x/server/env-age64` module, not from a local copy.
 
 ---
 
@@ -23,23 +22,16 @@ rostok/                          [tracked]
 │       └── README.md            # what the stack does, how to configure
 ├── cli/                         # the rostok CLI source (added in v1 phase 2)
 ├── scripts/
-│   ├── backup/                  # Restic backup system (per-stack backup.ts)
-│   └── hooks/                   # git hooks (post-checkout, post-merge, pre-commit)
+│   ├── backup/                  # Restic backup runner (servers run it from a pinned clone)
+│   ├── offline-backup/          # copy of the backups on an external drive
+│   ├── stalwart/                # helpers for the stalwart mail stack
+│   ├── release/                 # tag-versus-version guard for publishing
+│   └── hooks/                   # git pre-commit hook (runs `deno task check`)
 ├── docs/                        # CLI docs, catalog, design notes
 ├── deno.jsonc                   # tasks + deps
 ├── README.md                    # public landing page
 ├── LICENSE
 └── AGENTS.md                    # this file
-
-rostok/                          [gitignored, personal — see below]
-├── .env.root                    # plaintext deploy env vars
-├── .env.root.age                # age64-encrypted .env.root
-└── servers/
-    └── <server>/                # one dir per real server (cloud, home, offsite, portable)
-        ├── .env                 # plaintext per-server env
-        ├── .env.age             # age64-encrypted per-server env
-        ├── config.json          # server-level config
-        └── configs/             # per-service configs (dash PWA, gatus, etc.)
 ```
 
 `stacks/` is the catalog — every entry is reusable by any user. Never
@@ -48,24 +40,12 @@ through JSR; it's read by every `rostok` invocation.
 
 ---
 
-## 🔒 Personal deploy state (kept locally, gitignored — never committed)
+## 🔒 No servers, settings or secrets here
 
-The repo's **tracked** tree is the public catalog only. The owner's
-personal homelab deploy state lives here locally but is **never
-committed** — all gitignored under `.gitignore`:
-
-- `.env.root`, `.env.root.age` — root-level deploy env vars
-  (caught by `.gitignore` patterns `.env` / `.env.*`)
-- `servers/<server>/.env`, `.env.age` — per-server env vars
-- `servers/<server>/config.json`, `configs/...` — per-server configs
-
-**Why gitignored:** the repo travels through JSR; any tracked
-personal data leaks the owner's infra to every consumer.
-
-**Plan:** move this state to a separate location (e.g.
-`~/apps/homelab/`) and out of the rostok repo entirely. Until then,
-`deno task check` works as-is and the personal files don't
-interfere with the catalog.
+This repo holds only the public catalog and the CLI. A user's servers,
+settings and secrets live in their own rostok project (the folder
+`rostok init` creates), never in this checkout. `.gitignore` still lists
+`servers/` and `.env*` as a guard, and no task or script here reads them.
 
 ---
 
@@ -156,22 +136,21 @@ From `deno.jsonc` `lint`:
 
 ## 🔐 Secrets
 
+This repo tracks no env file, so it has no `env:encrypt` task and no
+age key. What follows describes a user's rostok project, which the CLI
+manages.
+
 `.env` is gitignored. `.env.age` is committed (encrypted with age64).
 The age key lives in `.age/key.txt` (gitignored). Never commit the key.
 
-Workflow:
+Workflow, in the project:
 
 1. Edit `.env`
-2. `deno task env:encrypt` → writes `.env.age`
+2. `rostok env encrypt` → writes `.env.age`
 3. Commit `.env.age`
 
 Per-value encryption: only changed lines re-encrypt. No churn on
-unrelated keys.
-
-`deno task env:encrypt`/`env:decrypt` (`jsr:@spy4x/server/env-age64/cli`)
-exit 1 when `.age/key.txt` is missing, so `hooks:pre-commit`
-(`deno task check && deno task env:encrypt`) fails on a project that
-hasn't run `rostok env setup` yet. That is deliberate: run
+unrelated keys. `rostok env encrypt` needs `.age/key.txt`: run
 `rostok env setup` once per project before the first commit that
 touches `.env`.
 
@@ -231,11 +210,11 @@ git -C "$MAIN" fetch --prune
 ```
 deno task check             # lint + fmt + type-check + tests
 deno task fix               # auto-fix lint + fmt
-deno task env:encrypt       # .env → .env.age
-deno task env:decrypt       # .env.age → .env
-deno task hooks:install     # install git hooks
-deno task backup            # run Restic backup (per-stack backup.ts)
-deno task backup:restore    # interactive restore
+deno task hooks:install     # install the pre-commit hook
+
+# Backup scripts take their settings from the env file you name:
+deno run -A --env-file=<env file> scripts/backup/+main.ts
+deno run -A --env-file=<env file> scripts/backup/restore.ts <service>
 ```
 
 ---

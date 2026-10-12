@@ -24,7 +24,7 @@ so the repo is safe to push. `rostok deploy home` then copies the files to the
 server over SSH and starts them with Docker Compose.
 
 **росток** is Russian for "sprout". rostok grew out of the repo that runs my own
-servers, and I still deploy my services from it: this repository's stacks and
+servers, and I still deploy my services with it: this repository's stacks and
 deploy code run my machines, and
 [dash.antonshubin.com](https://dash.antonshubin.com) shows them live.
 

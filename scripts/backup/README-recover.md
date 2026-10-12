@@ -20,11 +20,14 @@ Common causes:
 
 ```bash
 # Scan and report what needs recovery (no changes)
-deno task backup:recover:dry-run
+deno run -A --env-file=<env file> scripts/backup/recover.ts --dry-run
 
 # Actually recover (will prompt for confirmation)
-deno task backup:recover -- --execute
+deno run -A --env-file=<env file> scripts/backup/recover.ts
 ```
+
+`<env file>` is the one the nightly backup's cron line passes. The script reads
+no env file by itself.
 
 ## What it does
 
@@ -36,8 +39,8 @@ For each repo under `~/sync/backups/`:
 
 ## Requirements
 
-- `BACKUPS_PASSWORD` env var (from `.env.root`)
-- `PATH_BACKUPS` env var (from `servers/<server>/.env`)
+- `BACKUPS_PASSWORD` and `PATH_BACKUPS` env vars, from the env file you pass
+  (in a rostok project: `.env.root` and `servers/<server>/.env`)
 - `restic` installed (`brew install restic` / `apt install restic`)
 
 ## Recovery vs password rotation
@@ -45,10 +48,12 @@ For each repo under `~/sync/backups/`:
 If password was rotated (uncommitted manual rotation), old snapshots remain encrypted with old password and cannot be recovered even with this tool — restic can't decrypt blobs without the correct password. Verify password hasn't changed:
 
 ```bash
-# Compare current password to last commit's age64-encrypted value
+# In your rostok project: when did the encrypted value last change?
 git log -p -- .env.root.age | grep BACKUPS_PASSWORD
-sops --decrypt --input-type dotenv --output-type dotenv /path/to/old/.env.root.age | grep BACKUPS_PASSWORD
 ```
+
+To read an old value, check out that commit in a worktree of your project and
+run `rostok env decrypt` there.
 
 ## Related: post-recovery cleanup
 
@@ -56,4 +61,4 @@ After running recovery and re-running backups successfully:
 
 - Remove old, orphaned worktrees: `git worktree list`, then `git worktree remove <path> && git branch -d <branch>`
 - Investigate disk usage: `df -h`, `ncdu ~/sync/backups/`
-- Add disk space alerts (see `docs/disaster-recovery.md`)
+- Add disk space alerts (see `docs/usage/disaster-recovery.md`)

@@ -756,9 +756,9 @@ Deno.test("checkStack: flags a hook that imports out of its stack directory", as
 //      "is it prefixed" check but is still wrong): `HOMELAB_USER`,
 //      `homelab_user` (the ansible var), any `VPN_*` key, any
 //      `${X_SUBDOMAIN}`, and a `BASIC_AUTH_` key without the
-//      `TRAEFIK_`/`GATUS_` prefix. Scans ansible/, scripts/, cli/ and
-//      stacks/ — not just stacks/, since the rename touched playbooks
-//      and CLI code too.
+//      `TRAEFIK_`/`GATUS_` prefix. Scans scripts/, cli/ and stacks/ —
+//      not just stacks/, since the rename touched scripts and CLI code
+//      too.
 //   B. The general rule every stack must follow: every key a
 //      compose.yml or deploy hook reads from the host env (`${VAR}`
 //      inside compose, `Deno.env.get("VAR")` or a `keys`-array inside a
@@ -936,17 +936,15 @@ const ALLOW_LISTED_LEGACY_MENTIONS: readonly string[] = [
   "cli/catalog.test.ts",
   // Assert a .env with only the legacy key has no remote user / GID.
   "cli/deploy/env.test.ts",
-  "scripts/ansible/inventory.test.ts",
   "stacks/syncthing/before.deploy.test.ts",
   // Asserts the legacy BASIC_AUTH_* branch is gone (throws, not read).
   "stacks/traefik/before.deploy.test.ts",
 ]
 
-Deno.test("repo: no ansible/scripts/cli/stacks file references a banned legacy env key", async () => {
+Deno.test("repo: no scripts/cli/stacks file references a banned legacy env key", async () => {
   const violations: string[] = []
   const repoRoot = fromFileUrl(new URL("..", import.meta.url))
   const targets: Array<{ dir: string; extensions: string[] }> = [
-    { dir: fromFileUrl(new URL("../ansible", import.meta.url)), extensions: [".yml", ".yaml"] },
     { dir: fromFileUrl(new URL("../scripts", import.meta.url)), extensions: [".ts"] },
     { dir: fromFileUrl(new URL(".", import.meta.url)), extensions: [".ts"] },
     { dir: fromFileUrl(new URL("../stacks", import.meta.url)), extensions: [".yml", ".ts"] },

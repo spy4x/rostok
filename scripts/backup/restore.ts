@@ -1,12 +1,11 @@
 // Restore script for recovering service data from backups
-// Usage: deno task backup:restore <service-name> [snapshot-id]
-// Example: deno task backup:restore gatus
-// Example: deno task backup:restore gatus a1b2c3d4
+// Usage: deno run -A --env-file=<env file> scripts/backup/restore.ts <service-name> [snapshot-id]
+// Example: deno run -A --env-file=<env file> scripts/backup/restore.ts gatus
+// Example: deno run -A --env-file=<env file> scripts/backup/restore.ts gatus a1b2c3d4
 //
-// Run it the way the nightly backup runs (same user, same env files): restic
-// can only give the files back their owners when it runs as root. The task
-// reads .env.root and servers/home/.env; on another server run
-//   deno run --env-file=<root env> --env-file=<server env> -A scripts/backup/restore.ts <service>
+// Run it the way the nightly backup runs: as the same user and with the same
+// --env-file arguments as the backup's cron line. restic can only give the
+// files back their owners when it runs as root.
 
 import { dirname, join } from "@std/path"
 import { absPath, error, log } from "../+lib.ts"
@@ -202,9 +201,11 @@ async function isDirectory(path: string): Promise<boolean> {
 
 const args = Deno.args
 if (args.length < 1) {
-  console.log("Usage: deno task backup:restore <service-name> [snapshot-id]")
-  console.log("Example: deno task backup:restore gatus")
-  console.log("Example: deno task backup:restore gatus a1b2c3d4")
+  console.log(
+    "Usage: deno run -A --env-file=<env file> scripts/backup/restore.ts <service-name> [snapshot-id]",
+  )
+  console.log("Example: deno run -A --env-file=<env file> scripts/backup/restore.ts gatus")
+  console.log("Example: deno run -A --env-file=<env file> scripts/backup/restore.ts gatus a1b2c3d4")
   console.log("")
   console.log("The service name should match the 'name' field in backup config.")
   Deno.exit(1)

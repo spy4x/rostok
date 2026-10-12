@@ -33,9 +33,11 @@ outage, accidental `rm -rf`) is recoverable.
 
 If one container's volume is corrupted or wiped:
 
-1. **Stop the service** to avoid writes during restore:
+1. **Stop the service's containers** on the server to avoid writes
+   during restore (`docker ps` lists them; stack containers start with
+   `hl-`):
    ```bash
-   deno task deploy <server> --stop <stack>
+   docker stop <container>
    ```
 
 2. **Identify the backup ID** for that stack. Each `backup.ts` declares
@@ -55,7 +57,7 @@ If one container's volume is corrupted or wiped:
 
 5. **Restart** and verify health:
    ```bash
-   deno task deploy <server> <stack>
+   rostok deploy <server> <stack>
    ```
 
 ## Scenario 2 — server hardware failure
@@ -72,9 +74,9 @@ If the box itself is gone:
 3. **Restore the on-disk layout** — `${VOLUMES_PATH}/<stack>/` for each
    service. Use `restic restore latest --target /`.
 
-4. **Re-deploy** the same stacks. `deno task deploy <server>` runs the
-   deploy script which restores `docker compose.yml`, the env files,
-   and any per-stack config from the backup.
+4. **Re-deploy** the same stacks from your rostok project.
+   `rostok deploy <server>` copies each stack's `compose.yml`, the env
+   files and any per-stack config to the new host and starts them.
 
 5. **Update DNS** if the server's public IP changed. (Hetzner
    floating IPs help — point the same IP at the new box, no DNS
@@ -132,8 +134,9 @@ Restic repos can corrupt from disk errors or interrupted writes.
 The bundled `scripts/backup/recover.ts` scans for corruption:
 
 ```bash
-deno task backup:recover:dry-run          # report only
-deno task backup:recover -- --execute     # attempt repair
+# on the server, with the env file the backup's cron line passes
+deno run -A --env-file=<env file> scripts/backup/recover.ts --dry-run   # report only
+deno run -A --env-file=<env file> scripts/backup/recover.ts             # repair, asks first
 ```
 
 If repair fails, fall back to the cross-server copy or the external
@@ -151,7 +154,7 @@ key leaks):
 
 3. **Re-encrypt** and commit:
    ```bash
-   deno task env:encrypt
+   rostok env encrypt
    ```
 
 4. **Redeploy** to make the running services pick up the new value.

@@ -1,33 +1,19 @@
 #!/usr/bin/env -S deno run -A
 
-import { load } from "@std/dotenv"
 import { create } from "./src/create.ts"
 import { restore } from "./src/restore.ts"
 import { verify } from "./src/verify-mode.ts"
 
-// Load env files
-let envVars: Record<string, string> = {}
-
-try {
-  const rootEnv = await load({ envPath: ".env.root" })
-  envVars = { ...rootEnv }
-} catch {
-  // .env.root may not exist
-}
-
-try {
-  const localEnv = await load({ envPath: ".env" })
-  envVars = { ...envVars, ...localEnv }
-} catch {
-  // .env may not exist
-}
+// Settings come from the process environment only: pass your project's env
+// files with --env-file. Nothing is read from the directory this runs in.
+const envVars: Record<string, string> = Deno.env.toObject()
 
 // Parse command
 const args = Deno.args
 
 if (args.length < 1) {
   console.log(`
-Usage: deno task offline-backup <command>
+Usage: deno run -A --env-file=<env file> scripts/offline-backup/+main.ts <command>
 
 Commands:
   create    Create new offline backup
@@ -35,10 +21,8 @@ Commands:
   verify    Verify existing offline backup drive integrity
   help      Show this help
 
-Examples:
-  deno task offline-backup create
-  deno task offline-backup restore
-  deno task offline-backup verify
+<env file> holds BACKUP_PATHS and BACKUPS_PASSWORD; repeat --env-file when
+they live in two files (a rostok project's .env.root and servers/<name>/.env).
 `)
   Deno.exit(0)
 }
@@ -50,7 +34,7 @@ const requiredVars = ["BACKUP_PATHS", "BACKUPS_PASSWORD"]
 const missing = requiredVars.filter((k) => !envVars[k])
 if (missing.length > 0) {
   console.error(`❌ Missing required environment variables: ${missing.join(", ")}`)
-  console.error("   Ensure .env and .env.root are properly configured.")
+  console.error("   Pass the env file(s) that define them with --env-file.")
   Deno.exit(1)
 }
 
@@ -68,7 +52,7 @@ switch (command) {
   case "--help":
   case "-h":
     console.log(`
-Usage: deno task offline-backup <command>
+Usage: deno run -A --env-file=<env file> scripts/offline-backup/+main.ts <command>
 
 Commands:
   create    Create new offline backup
@@ -79,6 +63,8 @@ Commands:
     break
   default:
     console.error(`Unknown command: ${command}`)
-    console.error("Run 'deno task offline-backup help' for usage")
+    console.error(
+      "Run 'deno run -A --env-file=<env file> scripts/offline-backup/+main.ts help' for usage",
+    )
     Deno.exit(1)
 }
