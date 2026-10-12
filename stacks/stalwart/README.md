@@ -94,8 +94,10 @@ runs) and brings the router back with its own middleware.
 
 Be careful with that flag on a live mail server. While it is set, any failure after the deploy (a
 health wait that times out, one failed DKIM lookup) stops the `hl-stalwart` container, and SMTP and
-IMAP go down with it. If that happens, remove the line and deploy `stalwart` again: that starts
-the container. Never leave the flag in `.env` after the deploy.
+IMAP go down with it. If that happens, start the container on the server
+(`docker start hl-stalwart`), or deploy `stalwart` again with the flag still set; a deploy without
+the flag cannot run while the container is stopped. Remove the flag once a deploy has gone
+through, and never leave it in `.env`.
 
 - **Config file:** `/etc/stalwart/config.json` (managed via admin UI)
 - **Data:** `/var/lib/stalwart/data` (SQLite database)
