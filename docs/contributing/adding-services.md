@@ -352,8 +352,10 @@ deno task fmt:check                  # format
 
 CI (when present) runs the same checks. A failing check blocks merge.
 
-For visual review, run `deno task env:decrypt` and inspect the
-generated `.env` shape (don't commit it — it's gitignored).
+For visual review, add the stack to a throwaway rostok project with
+the CLI from your checkout (`deno run -A <checkout>/cli/+main.ts stack
+add <name>`) and inspect the `.env` it writes (don't commit it — it's
+gitignored).
 
 ---
 

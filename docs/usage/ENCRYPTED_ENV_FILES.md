@@ -42,7 +42,7 @@ nano servers/home/.env
 ### 3. Encrypt
 
 ```bash
-deno task env:encrypt
+rostok env encrypt
 ```
 
 Produces `servers/home/.env.age` with age64-encrypted values.
@@ -51,7 +51,7 @@ Only changed values get re-encrypted — unchanged ciphertext stays identical by
 ### 4. Decrypt (for deploy or editing)
 
 ```bash
-deno task env:decrypt
+rostok env decrypt
 ```
 
 Decrypts all age64 values back to plain `.env`.
@@ -63,7 +63,7 @@ Decrypts all age64 values back to plain `.env`.
 vim servers/home/.env
 
 # Re-encrypt (only changed lines)
-deno task env:encrypt
+rostok env encrypt
 
 # See clean diff
 git diff servers/home/.env.age  # ← only YOUR changes shown
@@ -73,8 +73,8 @@ git add servers/home/.env.age
 git commit -m "fix(env): rotate CALDAV_PASSWORD"
 
 # Deploy
-deno task env:decrypt
-deno task deploy home caldav-mcp
+rostok env decrypt
+rostok deploy home caldav-mcp
 ```
 
 ## Values that contain `$`
@@ -144,8 +144,8 @@ To allow multiple people to decrypt, share the `.age/key.txt` file securely
 
 | Command | Description |
 |---------|-------------|
-| `deno task env:encrypt` | `.env` → `.env.age` (diff-based, only changed values) |
-| `deno task env:decrypt` | `.env.age` → `.env` (decrypts age64) |
+| `rostok env encrypt` | `.env` → `.env.age` (diff-based, only changed values) |
+| `rostok env decrypt` | `.env.age` → `.env` (decrypts age64) |
 
 ## Troubleshooting
 

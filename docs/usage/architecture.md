@@ -23,7 +23,7 @@ the values each stack needs, and re-encrypts the secrets for git.
 │  │  backup.ts   │   │                                 │     │
 │  │  README.md   │   │  depends on:                    │     │
 │  └──────────────┘   │    @spy4x/server/env-age64      │     │
-│       │             │    scripts/hooks/               │     │
+│       │             │                                 │     │
 │       │             └─────────────────────────────────┘     │
 │       │                        │                            │
 │       └────────┬───────────────┘                            │
@@ -99,14 +99,12 @@ local script. Each `KEY=age64:...` line is encrypted independently. Only
 changed lines re-encrypt. Avoids the "re-encrypt everything on every
 run" problem with SOPS.
 
-### `scripts/hooks/` — git hooks
+### `scripts/hooks/` — git hook for this repo
 
-Installs pre-commit, post-checkout, post-merge hooks that:
-
-- Auto-encrypt `.env` → `.env.age` before commit
-- Auto-decrypt `.env.age` → `.env` after checkout/merge
-
-The wizard (`$ rostok`) runs `hooks:install` once during init.
+`deno task hooks:install` installs a pre-commit hook that runs
+`deno task check`. It is for people who work on rostok itself: this
+repo holds no env files, and the CLI installs no git hooks in a user's
+project.
 
 ### User's project folder
 
@@ -133,8 +131,7 @@ files; `.env` files stay on disk.
    └─▶ Prompts for project name, server name, SSH target, domain
    └─▶ Prompts for stack variables (or uses --var defaults)
    └─▶ Writes deno.jsonc, .env.root, servers/<n>/{config.json,.env}
-   └─▶ Triggers env:encrypt → .env.age
-   └─▶ Installs git hooks
+   └─▶ Encrypts .env → .env.age (once a key exists)
 
 2. User runs `rostok deploy home`
    └─▶ For each stack in servers/home/config.json:
@@ -145,7 +142,7 @@ files; `.env` files stay on disk.
 
 3. Git workflow
    └─▶ User commits servers/<n>/.env.age (encrypted)
-   └─▶ On another machine, .env.age auto-decrypts to .env
+   └─▶ On another machine, `rostok env decrypt` turns .env.age into .env
 ```
 
 ## Deploy is the source of truth
