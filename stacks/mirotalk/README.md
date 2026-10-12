@@ -27,8 +27,29 @@ Web UI: `https://<MIROTALK_DOMAIN>`
   certificate coturn serves use the same host.
 - `MIROTALK_TURN_SERVER_USERNAME` — long random string (coturn credential user), generated
 - `MIROTALK_TURN_SERVER_CREDENTIAL` — long random string (coturn credential password), generated
+- `MIROTALK_JWT_KEY` — key MiroTalk signs its room and API tokens with, generated. Required: the
+  image exits at start without one of at least 32 characters, so the deploy stops when it is
+  missing.
 - `MIROTALK_PUBLIC_IP` — host's external IPv4, asked for. coturn hardcodes this in `external-ip=`;
   required because cloud VPS interfaces don't carry the public IP directly.
+
+## Upgrading an existing project
+
+MiroTalk 2.1 refuses to start without `JWT_KEY`. A project that added this stack before
+`MIROTALK_JWT_KEY` existed has no such line. Its next deploy does not start a container that
+restarts forever: it reports `mirotalk` as failed with
+`required variable MIROTALK_JWT_KEY is missing a value` and exits non-zero. A whole-server deploy
+still updates the other stacks, but runs none of their after-deploy hooks. Before that deploy, add
+the key in one of two ways:
+
+- Run `rostok stack add mirotalk -s <server>` again. It generates only the missing key, keeps every
+  other value and re-encrypts the file.
+- Or by hand: generate a key of at least 32 characters with `openssl rand -hex 32`, add
+  `MIROTALK_JWT_KEY=<that value>` to the server's `.env`, and run `rostok env encrypt`.
+
+Then commit the `.env.age` file and run `rostok deploy <server>`.
+
+Changing the key later only ends the tokens MiroTalk has already handed out; they last an hour.
 
 ## Host firewall
 

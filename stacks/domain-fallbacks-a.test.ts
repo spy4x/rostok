@@ -12,10 +12,18 @@ const stacksDir = new URL("./", import.meta.url)
 // What a server's .env holds without any key this wave introduced.
 const OLD_ENV = { DOMAIN: "example.com", NGINX_CONTAINER_NAME: "hl-nginx" }
 
-const CASES: { stack: string; hosts: string[]; override: string }[] = [
+// mirotalk's compose requires a JWT key (`${MIROTALK_JWT_KEY:?}`), so its .env always has one.
+const MIROTALK_ENV = { ...OLD_ENV, MIROTALK_JWT_KEY: "k".repeat(32) }
+
+const CASES: { stack: string; hosts: string[]; override: string; env?: typeof OLD_ENV }[] = [
   { stack: "adguard", hosts: ["dns.example.com"], override: "ADGUARD_DOMAIN" },
   { stack: "healthchecks", hosts: ["healthchecks.example.com"], override: "HEALTHCHECKS_DOMAIN" },
-  { stack: "mirotalk", hosts: ["talk.example.com"], override: "MIROTALK_DOMAIN" },
+  {
+    stack: "mirotalk",
+    hosts: ["talk.example.com"],
+    override: "MIROTALK_DOMAIN",
+    env: MIROTALK_ENV,
+  },
   { stack: "nginx", hosts: ["hl-nginx.example.com"], override: "NGINX_DOMAIN" },
   { stack: "ollama", hosts: ["ollama.example.com"], override: "OLLAMA_DOMAIN" },
   {
@@ -25,13 +33,13 @@ const CASES: { stack: string; hosts: string[]; override: string }[] = [
   },
 ]
 
-for (const { stack, hosts, override } of CASES) {
+for (const { stack, hosts, override, env = OLD_ENV } of CASES) {
   Deno.test(`${stack} compose: an .env without the new domain keys keeps the old host`, async () => {
-    assertEquals(hostsIn(await renderCompose(stack, OLD_ENV)), hosts)
+    assertEquals(hostsIn(await renderCompose(stack, env)), hosts)
   })
 
   Deno.test(`${stack} compose: ${override} in the .env replaces the host`, async () => {
-    const rendered = await renderCompose(stack, { ...OLD_ENV, [override]: "custom.test" })
+    const rendered = await renderCompose(stack, { ...env, [override]: "custom.test" })
     assertEquals(hostsIn(rendered)[0], "custom.test")
   })
 }
@@ -52,7 +60,7 @@ Deno.test("healthchecks compose: the site URL and allowed hosts follow the old h
 })
 
 Deno.test("mirotalk compose: the TURN host and certificate follow the old host without MIROTALK_DOMAIN", async () => {
-  const rendered = await renderCompose("mirotalk", OLD_ENV)
+  const rendered = await renderCompose("mirotalk", MIROTALK_ENV)
   assert(rendered.includes("TURN_SERVER_URL=turns:talk.example.com:5349"))
   assert(rendered.includes("--realm=talk.example.com"))
   assert(rendered.includes("--server-name=talk.example.com"))
@@ -60,7 +68,7 @@ Deno.test("mirotalk compose: the TURN host and certificate follow the old host w
 })
 
 Deno.test("mirotalk: coturn reads the certificate file the sidecar writes", async () => {
-  for (const env of [OLD_ENV, { ...OLD_ENV, MIROTALK_DOMAIN: "call.test" }]) {
+  for (const env of [MIROTALK_ENV, { ...MIROTALK_ENV, MIROTALK_DOMAIN: "call.test" }]) {
     const rendered = await renderCompose("mirotalk", env)
     const domain = rendered.match(/- MIROTALK_DOMAIN=(\S+)/)?.[1]
     assert(domain, "the sidecar gets no MIROTALK_DOMAIN")

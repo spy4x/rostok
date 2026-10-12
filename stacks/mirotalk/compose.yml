@@ -19,6 +19,8 @@ services:
       start_period: 40s
     environment:
       - TZ=${TIMEZONE:-UTC}
+      # Required: the image exits at start without a JWT key of at least 32 characters.
+      - JWT_KEY=${MIROTALK_JWT_KEY:?}
       - TURN_SERVER_ENABLED=true
       - TURN_SERVER_URL=turns:${MIROTALK_DOMAIN:-talk.${DOMAIN}}:5349
       - TURN_SERVER_USERNAME=${MIROTALK_TURN_SERVER_USERNAME}
