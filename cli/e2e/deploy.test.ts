@@ -820,6 +820,80 @@ await Deno.writeTextFile(logPath, "server:" + JSON.stringify(record) + "\\n", { 
   }
 })
 
+Deno.test("e2e: stalwart's extra mail domains and MTA-STS policy stay on the server when another stack deploys alone", async () => {
+  const f = await setupFixture()
+  try {
+    // The catalog's stalwart stack as a project-local copy without its
+    // after-hook, which waits for a live mail server. The before-hook,
+    // compose.yml and the policy template are the shipped ones, and the
+    // hook runs as in any deploy: from its source, cwd = staging.
+    const catalog = new URL("../../stacks/stalwart/", import.meta.url)
+    const policyDir = "mta-sts/html/.well-known"
+    const shipped = [
+      "compose.yml",
+      "before.deploy.ts",
+      "dkim.ts",
+      "mta-sts/nginx.conf",
+      `${policyDir}/mta-sts.txt.template`,
+    ]
+    for (const rel of shipped) {
+      const dest = join(f.projectDir, "stacks", "stalwart", rel)
+      await Deno.mkdir(dirname(dest), { recursive: true })
+      await Deno.copyFile(new URL(rel, catalog), dest)
+    }
+    await writeServer(f.projectDir, [
+      // Never resolves, so the hook cannot reach a real mail server.
+      "DOMAIN=example.invalid",
+      "STALWART_ADMIN_PASSWORD=not-a-real-password",
+      "STALWART_INITIAL_DEPLOY=true",
+      "STALWART_EXTRA_DOMAINS=example.org,example.net",
+    ], ["stalwart", "librespeed"])
+
+    // Traefik's certificate store, which the stack declares as a file mount.
+    const acmeDir = join(f.remoteDir, "srv", "volumes", "traefik", "letsencrypt")
+    await Deno.mkdir(acmeDir, { recursive: true })
+    await Deno.writeTextFile(join(acmeDir, "acme.json"), "{}")
+
+    const remoteApps = join(f.remoteDir, "srv", "apps")
+    const assertServerHoldsBothDomains = async (when: string) => {
+      // The compose file as the server reads it at this moment: its own
+      // text, with the simple `${KEY}` and `${KEY:-}` references filled
+      // from the server's current .env. A later `docker compose up` on
+      // the server (the backup runner does one) sees exactly this.
+      const env = new Map(
+        (await Deno.readTextFile(join(remoteApps, ".env"))).split("\n").filter((l) =>
+          l.includes("=")
+        ).map((l) => [l.slice(0, l.indexOf("=")), l.slice(l.indexOf("=") + 1)] as const),
+      )
+      const compose =
+        (await Deno.readTextFile(join(remoteApps, "stacks", "stalwart", "compose.yml")))
+          .replace(/\$\{([A-Z0-9_]+)(:-)?\}/g, (_m, key: string) => env.get(key) ?? "")
+      for (const domain of ["example.org", "example.net"]) {
+        assertStringIncludes(compose, `.rule=Host(\`mta-sts.${domain}\`)"`, when)
+      }
+      assertStringIncludes(compose, ",mail.example.org,mail.example.net\n", when)
+      assertEquals(
+        await Deno.readTextFile(join(remoteApps, "stacks", "stalwart", policyDir, "mta-sts.txt")),
+        "version: STSv1\nmode: enforce\nmx: mail.example.invalid\nmax_age: 86400\n",
+        when,
+      )
+    }
+
+    const first = await runDeployInProcess(f, { stack: "stalwart" })
+    assertEquals(first.result.deployedStacks, ["stalwart"])
+    await assertServerHoldsBothDomains("after deploying stalwart")
+
+    const second = await runDeployInProcess(f, { stack: "librespeed" })
+    assertEquals(second.result.deployedStacks, ["librespeed"])
+    await assertServerHoldsBothDomains("after deploying librespeed alone")
+
+    // The project's own stack folder is the hook's source, not its output.
+    await assertNotExists(join(f.projectDir, "stacks", "stalwart", policyDir, "mta-sts.txt"))
+  } finally {
+    await teardownFixture(f)
+  }
+})
+
 Deno.test("e2e: a hook receives $-heavy env values byte-for-byte (no --env-file mangling)", async () => {
   const f = await setupFixture()
   try {

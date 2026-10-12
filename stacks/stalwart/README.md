@@ -38,27 +38,59 @@
 - routes `https://mta-sts.<domain>` to the MTA-STS policy server (same policy, same MX),
 - lets cert-sync copy the `mail.<domain>` certificate when Traefik holds one.
 
-Compose cannot loop over a list, so `before.deploy.ts` turns it into two keys in the deployed
-`.env`, `STALWART_MTA_STS_EXTRA_RULE` and `STALWART_CERT_SYNC_EXTRA`. Never set those by hand: the
-next deploy overwrites them.
+Compose cannot loop over a list, so `before.deploy.ts` writes these into the copy of `compose.yml`
+that goes to the server: one Traefik router per extra domain (`hl-mta-sts-<domain>`, dots as
+underscores) and the `mail.<domain>` hosts on the `CERT_SYNC_DOMAINS` line. They live in
+`stacks/stalwart/` on the server, so deploying another stack alone, or a `docker compose up` run on
+the server, keeps every extra domain. Never edit the server's copy: the next deploy rewrites it.
+
+Each `mta-sts.` host has its own router, so Traefik orders each certificate by itself. An extra
+domain whose `mta-sts.` DNS record is missing gets no certificate, and no other host is affected.
+
+The same hook renders the MTA-STS policy, `mta-sts/html/.well-known/mta-sts.txt`, from the
+template beside it. Both steps write into the deploy's staging copy of this stack, never into the
+catalog, so they work the same when rostok is installed from JSR.
 
 ### Upgrading from `STALWART_NEATSOFT_DOMAIN`
 
-The key `STALWART_NEATSOFT_DOMAIN` (one second mail domain) is gone, and a deploy that still finds
-it in the server's `.env` stops with an error before anything is synced. In `servers/<server>/.env`:
+The key `STALWART_NEATSOFT_DOMAIN` (one second mail domain) is no longer read. In
+`servers/<server>/.env`:
 
-- one mail domain (the old value was `${DOMAIN}` or the primary domain): delete the line;
-- a second mail domain: rename the key, `STALWART_EXTRA_DOMAINS=example.org`.
+- a second mail domain: rename the key, `STALWART_EXTRA_DOMAINS=example.org`. Until you do, the
+  deploy stops with an error before anything is synced, so the second domain is never dropped
+  silently;
+- one mail domain (the line is blank, `${DOMAIN}` or the primary domain): the deploy carries on
+  and prints one line asking you to delete it.
 
 `STALWART_MTA_STS_SECONDARY_DOMAIN` is no longer read: the policy host of a domain is always
-`mta-sts.<domain>`, as the MTA-STS standard requires. Delete that line too. Then run
-`rostok env encrypt` and deploy. The two MTA-STS routers became one, `hl-mta-sts`, so Traefik
-requests one certificate that names every `mta-sts.` host.
+`mta-sts.<domain>`, as the MTA-STS standard requires. Delete that line too, then run
+`rostok env encrypt`.
+
+Certificates: the primary router keeps its name (`hl-mta-sts-primary`) and the second domain's
+router is renamed, but Traefik stores certificates by host name. A server that already serves
+`mta-sts.<domain>` for both domains keeps both certificates and orders nothing new. Only a host
+Traefik has never served gets a new certificate.
 
 The CORS rule for the webmail moved from the Traefik stack's `dynamic/00-base.yml` to this stack's
 own router. It allows `STALWART_WEBMAIL_ORIGIN`, by default `https://webmail.${DOMAIN}`; set the
-key when the webmail lives on another host. Deploy `stalwart` together with `traefik`: the old
-Traefik file no longer defines `stalwart-jmap@file`, and the new router no longer uses it.
+key when the webmail lives on another host.
+
+**Deploy order for this upgrade.** Deploy the whole server (`rostok deploy <server>`), or
+`stalwart` first and `traefik` after it. Both stacks change together: the new Traefik files no
+longer define `stalwart-jmap@file`, and the new stalwart router no longer uses it.
+
+If `traefik` is deployed alone first, the stalwart stack still running names a middleware that is
+gone, and Traefik switches that router off. What you see:
+
+- `https://mail.<domain>/` answers `404 page not found`, so the admin page and the webmail's
+  connection to the mail server stop. Mail delivery (ports 25, 465, 587, 993) is not affected.
+- Traefik's log says `middleware "stalwart-jmap@file" does not exist`.
+- `rostok deploy <server> stalwart` then stops at `live Stalwart health check failed: HTTP 404`,
+  because the hook asks the live server through that router.
+
+To recover, set `STALWART_INITIAL_DEPLOY=true` in the server's `.env`, deploy `stalwart`, and
+remove the line again. That one deploy skips the DKIM step before the sync (the one after it still
+runs) and brings the router back with its own middleware.
 
 - **Config file:** `/etc/stalwart/config.json` (managed via admin UI)
 - **Data:** `/var/lib/stalwart/data` (SQLite database)

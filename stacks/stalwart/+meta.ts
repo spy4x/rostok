@@ -17,8 +17,7 @@
 //   - STALWART_EXTRA_DOMAINS: further mail domains on the same MX, comma-separated. Optional:
 //     blank means DOMAIN is the only mail domain. For each one the deploy hooks check DKIM,
 //     Traefik routes `mta-sts.<domain>` and cert-sync copies the `mail.<domain>` certificate.
-//     compose.yml also reads STALWART_MTA_STS_EXTRA_RULE and STALWART_CERT_SYNC_EXTRA, which
-//     before.deploy.ts derives from this list on every deploy; nobody sets those two.
+//     before.deploy.ts writes both into the deployed copy of compose.yml on every deploy.
 //   - STALWART_INITIAL_DEPLOY: set to `true` only for the very first deploy, when no live
 //     Stalwart exists yet for the hooks to talk to. Not required.
 //
