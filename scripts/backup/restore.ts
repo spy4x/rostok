@@ -2,221 +2,202 @@
 // Usage: deno task backup:restore <service-name> [snapshot-id]
 // Example: deno task backup:restore gatus
 // Example: deno task backup:restore gatus a1b2c3d4
+//
+// Run it the way the nightly backup runs (same user, same env files): restic
+// can only give the files back their owners when it runs as root.
 
+import { dirname, join } from "@std/path"
 import { absPath, error, log } from "../+lib.ts"
 import { getEnvVar, PATH_APPS, USER } from "./src/+lib.ts"
 import { BackupConfigProcessor } from "./src/config.ts"
+import { BackupOperations } from "./src/operations.ts"
+import { applyRestore, planRestore } from "./src/restore.ts"
+import { type BackupConfigState, BackupStatus } from "./src/types.ts"
 
 interface RestoreOptions {
   serviceName: string
   snapshotId?: string
-  targetServer?: string
+}
+
+interface Snapshot {
+  id: string
+  fullId: string
+  time: string
+  paths: string[]
 }
 
 class RestoreRunner {
-  private backupsPassword: string
-  private backupsBasePath: string
-  private configsPath: string
-
-  constructor() {
-    this.backupsPassword = getEnvVar("BACKUPS_PASSWORD")
-    this.backupsBasePath = absPath(getEnvVar("PATH_SYNC") + "/backups", USER)
-    this.configsPath = absPath(`${PATH_APPS}/configs/backup`, USER)
-  }
+  private backupsPassword = getEnvVar("BACKUPS_PASSWORD")
+  // The same folder the backup runner writes its repositories to.
+  private backupsBasePath = absPath(getEnvVar("PATH_BACKUPS"), USER)
+  private operations = new BackupOperations(this.backupsPassword)
 
   async run(options: RestoreOptions): Promise<void> {
     log(`Starting restore for service: ${options.serviceName}`)
 
-    // Load backup configs to find the service
     const configs = await BackupConfigProcessor.loadConfigurations(
-      absPath(getEnvVar("PATH_APPS") + "/stacks", USER),
-      this.configsPath,
+      absPath(`${PATH_APPS}/stacks`, USER),
+      absPath(`${PATH_APPS}/configs/backup`, USER),
     )
     const config = configs.find((c) => c.name === options.serviceName)
-
     if (!config) {
-      error(`Service "${options.serviceName}" not found in backup configs`)
-      log("Available services:")
-      for (const c of configs) {
-        log(`  - ${c.name}${c.destName ? ` (backup: ${c.destName})` : ""}`)
-      }
-      Deno.exit(1)
+      const names = configs.map((c) =>
+        `  - ${c.name}${c.destName ? ` (backup: ${c.destName})` : ""}`
+      )
+      throw new Error(
+        `Service "${options.serviceName}" not found in backup configs. Available services:\n${
+          names.join("\n")
+        }`,
+      )
     }
 
-    const destName = config.destName || config.name
-    const repoPath = `${this.backupsBasePath}/${destName}`
+    // Resolve "default" without requiring the folders to exist: a restore is
+    // often run exactly because they are gone.
+    if (!BackupConfigProcessor.normalize(config)) {
+      throw new Error(config.error ?? `Backup config of ${config.name} is not valid`)
+    }
+    const sourcePaths = (config.sourcePaths as string[]).map((path) =>
+      absPath(path, USER).replace(/(?<=.)\/+$/, "")
+    )
 
-    // Check if repository exists
-    if (!await this.checkRepository(repoPath)) {
-      error(`Backup repository not found at: ${repoPath}`)
-      Deno.exit(1)
+    const repoPath = `${this.backupsBasePath}/${config.destName || config.name}`
+    if (!await isDirectory(repoPath)) {
+      throw new Error(`Backup repository not found at: ${repoPath}`)
     }
 
-    // List snapshots
     const snapshots = await this.listSnapshots(repoPath)
-    if (snapshots.length === 0) {
-      error("No snapshots found in repository")
-      Deno.exit(1)
-    }
-
-    // Select snapshot
-    const snapshotId = options.snapshotId || snapshots[0].id
-    const snapshot = snapshots.find((s) => s.id.startsWith(snapshotId))
-
-    if (!snapshot) {
-      error(`Snapshot "${snapshotId}" not found`)
-      Deno.exit(1)
-    }
-
+    if (snapshots.length === 0) throw new Error("No snapshots found in repository")
+    const snapshot = options.snapshotId
+      ? snapshots.find((s) => s.fullId.startsWith(options.snapshotId!))
+      : snapshots[0]
+    if (!snapshot) throw new Error(`Snapshot "${options.snapshotId}" not found`)
     log(`Selected snapshot: ${snapshot.id} (${snapshot.time})`)
 
-    // Confirm restore
+    // Fails here, before anything is stopped, when the snapshot does not hold
+    // the folders this config names.
+    const matches = planRestore(sourcePaths, snapshot.paths)
+
     const confirm = prompt(
-      `\nThis will restore ${config.name} from snapshot ${
-        snapshot.id.substring(0, 8)
-      }.\nType 'yes' to continue: `,
+      `\nThis will restore ${config.name} from snapshot ${snapshot.id}:\n${
+        matches.map(({ snapshotPath, to }) =>
+          snapshotPath === to ? `  ${to}` : `  ${to}\n    from the snapshot's ${snapshotPath}`
+        ).join("\n")
+      }\nData already there is kept beside it as <folder>.backup-<time>.\nType 'yes' to continue: `,
     )
     if (confirm?.toLowerCase() !== "yes") {
       log("Restore cancelled")
-      Deno.exit(0)
+      return
     }
 
-    // Stop containers
-    if (config.containers?.stop && config.containers.stop.length > 0) {
-      log("Stopping containers...")
-      for (const container of config.containers.stop) {
-        await this.stopContainer(container)
-      }
-    }
+    // Ctrl-C also reaches restic, which then fails; staying alive lets the
+    // `finally` below start the containers again.
+    const onInterrupt = () => log("Interrupted, putting things back...")
+    Deno.addSignalListener("SIGINT", onInterrupt)
 
-    // Restore from backup
-    const tempRestorePath = await Deno.makeTempDir({ prefix: "restore_" })
+    const restoreRoots: string[] = []
     try {
-      log(`Restoring to temporary location: ${tempRestorePath}`)
-      await this.restoreSnapshot(repoPath, snapshot.id, tempRestorePath)
+      await this.operations.manageContainers(config, "stop")
+      this.throwIfFailed(config)
 
-      // Copy restored files to actual location
-      for (const sourcePath of config.sourcePaths) {
-        const actualPath = absPath(sourcePath, USER)
-        log(`Copying restored files to: ${actualPath}`)
-
-        // Backup existing data
-        const backupPath = `${actualPath}.backup-${Date.now()}`
-        log(`Backing up existing data to: ${backupPath}`)
-        await this.runCommand("mv", [actualPath, backupPath])
-
-        // Copy restored data
-        await this.runCommand("cp", ["-r", tempRestorePath, actualPath])
-
-        // Fix permissions
-        if (config.pathsToChangeOwnership && config.pathsToChangeOwnership.length > 0) {
-          for (const path of config.pathsToChangeOwnership) {
-            const actualPath = absPath(path, USER)
-            const user = getEnvVar("SSH_USER")
-            log(`Fixing permissions for: ${actualPath}`)
-            await this.runCommand("chown", ["-R", `${user}:${user}`, actualPath])
-          }
-        }
+      // Each folder is unpacked next to its destination: the move into place
+      // is then a rename on one disk, and the system temp folder, often
+      // RAM-backed, never has to hold a volume.
+      const moves = []
+      for (const { snapshotPath, to } of matches) {
+        await Deno.mkdir(dirname(to), { recursive: true })
+        const root = await Deno.makeTempDir({ dir: dirname(to), prefix: ".restore-" })
+        restoreRoots.push(root)
+        log(`Unpacking ${snapshotPath} into: ${root}`)
+        await this.restoreSnapshot(repoPath, snapshot.id, snapshotPath, root)
+        moves.push({ from: join(root, snapshotPath), to })
       }
 
-      log("✅ Restore completed successfully!")
+      const stamp = new Date().toISOString().replace(/[:.]/g, "-")
+      const keptOldData = await applyRestore(moves, stamp)
+      for (const path of keptOldData) log(`Previous data kept at: ${path}`)
+
+      await this.operations.changeOwnership(config)
+      this.throwIfFailed(config)
     } finally {
-      // Cleanup temp directory
-      await Deno.remove(tempRestorePath, { recursive: true })
-
-      // Start containers
-      if (config.containers?.stop && config.containers.stop.length > 0) {
-        log("Starting containers...")
-        for (const container of config.containers.stop) {
-          await this.startContainer(container)
+      // Containers first: a failed cleanup must not leave the service down.
+      // A failed stop must not hide a failed start either.
+      config.status = BackupStatus.IN_PROGRESS
+      await this.operations.manageContainers(config, "start")
+      for (const root of restoreRoots) {
+        try {
+          await Deno.remove(root, { recursive: true })
+        } catch (err) {
+          error(`Could not remove ${root}, delete it by hand: ${err}`)
         }
       }
+      Deno.removeSignalListener("SIGINT", onInterrupt)
     }
+    this.throwIfFailed(config)
 
-    log("\nRestore verification:")
-    log("1. Check if the service is running: docker compose ps")
-    log("2. Check logs: docker compose logs -f <container-name>")
-    log("3. Test service functionality")
+    log("✅ Restore completed successfully!")
+    log("Check that the service runs and works, then delete the .backup-<time> folders.")
   }
 
-  private async checkRepository(repoPath: string): Promise<boolean> {
-    try {
-      const stat = await Deno.stat(repoPath)
-      return stat.isDirectory
-    } catch {
-      return false
+  private throwIfFailed(config: BackupConfigState): void {
+    if (config.status === BackupStatus.ERROR) {
+      throw new Error(config.error ?? `Restore of ${config.name} failed`)
     }
   }
 
-  private async listSnapshots(
-    repoPath: string,
-  ): Promise<Array<{ id: string; time: string; host: string }>> {
-    const cmd = new Deno.Command("restic", {
+  private async listSnapshots(repoPath: string): Promise<Snapshot[]> {
+    const output = await new Deno.Command("restic", {
       args: ["-r", repoPath, "snapshots", "--json"],
       env: { RESTIC_PASSWORD: this.backupsPassword },
       stdout: "piped",
       stderr: "piped",
-    })
-
-    const output = await cmd.output()
+    }).output()
     if (!output.success) {
-      error("Failed to list snapshots")
-      error(new TextDecoder().decode(output.stderr))
-      Deno.exit(1)
+      throw new Error(`Failed to list snapshots: ${new TextDecoder().decode(output.stderr)}`)
     }
 
-    const snapshots = JSON.parse(new TextDecoder().decode(output.stdout))
+    const snapshots: Array<
+      { id: string; short_id: string; time: string; paths: string[] }
+    > = JSON.parse(
+      new TextDecoder().decode(output.stdout),
+    )
     return snapshots
       .reverse() // Most recent first
-      .map((s: { short_id: string; time: string; hostname: string }) => ({
-        id: s.short_id,
-        time: s.time,
-        host: s.hostname,
-      }))
+      .map((s) => ({ id: s.short_id, fullId: s.id, time: s.time, paths: s.paths }))
   }
 
   private async restoreSnapshot(
     repoPath: string,
     snapshotId: string,
+    snapshotPath: string,
     targetPath: string,
   ): Promise<void> {
-    const cmd = new Deno.Command("restic", {
-      args: ["-r", repoPath, "restore", snapshotId, "--target", targetPath],
+    const output = await new Deno.Command("restic", {
+      args: [
+        "-r",
+        repoPath,
+        "restore",
+        snapshotId,
+        "--target",
+        targetPath,
+        "--include",
+        snapshotPath,
+      ],
       env: { RESTIC_PASSWORD: this.backupsPassword },
       stdout: "inherit",
       stderr: "inherit",
-    })
-
-    const output = await cmd.output()
-    if (!output.success) {
-      error("Failed to restore snapshot")
-      Deno.exit(1)
-    }
-  }
-
-  private async stopContainer(containerName: string): Promise<void> {
-    await this.runCommand("docker", ["compose", "stop", containerName])
-  }
-
-  private async startContainer(containerName: string): Promise<void> {
-    await this.runCommand("docker", ["compose", "start", containerName])
-  }
-
-  private async runCommand(cmd: string, args: string[]): Promise<void> {
-    const command = new Deno.Command(cmd, {
-      args,
-      stdout: "inherit",
-      stderr: "inherit",
-    })
-
-    const output = await command.output()
-    if (!output.success) {
-      error(`Command failed: ${cmd} ${args.join(" ")}`)
-    }
+    }).output()
+    if (!output.success) throw new Error(`Failed to unpack ${snapshotPath}; no data was changed`)
   }
 }
 
-// Main execution
+async function isDirectory(path: string): Promise<boolean> {
+  try {
+    return (await Deno.stat(path)).isDirectory
+  } catch {
+    return false
+  }
+}
+
 const args = Deno.args
 if (args.length < 1) {
   console.log("Usage: deno task backup:restore <service-name> [snapshot-id]")
@@ -227,10 +208,9 @@ if (args.length < 1) {
   Deno.exit(1)
 }
 
-const options: RestoreOptions = {
-  serviceName: args[0],
-  snapshotId: args[1],
+try {
+  await new RestoreRunner().run({ serviceName: args[0], snapshotId: args[1] })
+} catch (err) {
+  error(err instanceof Error ? err.message : String(err))
+  Deno.exit(1)
 }
-
-const runner = new RestoreRunner()
-await runner.run(options)
