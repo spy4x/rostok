@@ -26,7 +26,7 @@
       "description": "💾 Run backup for all services using Restic"
     },
     "backup:restore": {
-      "command": "deno run -A ./scripts/backup/restore.ts",
+      "command": "deno run --env-file=.env.root --env-file=servers/home/.env -A ./scripts/backup/restore.ts",
       "description": "📥 Restore service data from backup (interactive)"
     },
     "backup:recover": {
