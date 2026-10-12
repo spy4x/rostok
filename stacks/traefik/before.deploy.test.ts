@@ -1,10 +1,11 @@
-// Tests for stacks/traefik/before.deploy.ts pure helpers.
-// (No shell interaction — those run via the deploy script.)
+// Tests for stacks/traefik/before.deploy.ts: its pure helpers, and the copy of a server's own
+// dynamic config files, by function and by running the hook in a staging folder.
 
-import { assertEquals, assertNotEquals, assertThrows } from "@std/assert"
+import { assertEquals, assertNotEquals, assertRejects, assertThrows } from "@std/assert"
+import { join } from "@std/path"
 import { compareSync, getRounds } from "npm:bcryptjs@3.0.3"
 
-import { hashPassword, resolveHtpasswdCredential } from "./before.deploy.ts"
+import { copyServerConfigs, hashPassword, resolveHtpasswdCredential } from "./before.deploy.ts"
 
 /** Build a `getEnv` from a plain object, as resolveHtpasswdCredential expects. */
 function envFrom(vars: Record<string, string>): (key: string) => string | undefined {
@@ -96,4 +97,98 @@ Deno.test("resolveHtpasswdCredential: legacy BASIC_AUTH_USER/PASSWORD is not rea
     Error,
     "No basic-auth credentials set",
   )
+})
+
+// ── copyServerConfigs ───────────────────────────────────────────────────
+
+Deno.test("a server's own dynamic config files are copied next to the catalog's base file", async () => {
+  const root = await Deno.makeTempDir()
+  try {
+    const source = join(root, "configs")
+    const dest = join(root, "dynamic")
+    await Deno.mkdir(source)
+    await Deno.mkdir(dest)
+    await Deno.writeTextFile(join(dest, "00-base.yml"), "base\n")
+    await Deno.writeTextFile(join(source, "10-cors.yml"), "cors\n")
+    await Deno.writeTextFile(join(source, "20-routes.yaml"), "routes\n")
+
+    assertEquals(await copyServerConfigs(source, dest), ["10-cors.yml", "20-routes.yaml"])
+    assertEquals(await Deno.readTextFile(join(dest, "10-cors.yml")), "cors\n")
+    assertEquals(await Deno.readTextFile(join(dest, "20-routes.yaml")), "routes\n")
+    assertEquals(await Deno.readTextFile(join(dest, "00-base.yml")), "base\n")
+  } finally {
+    await Deno.remove(root, { recursive: true })
+  }
+})
+
+Deno.test("only plain .yml and .yaml files are copied: no notes, folders or symlinks", async () => {
+  const root = await Deno.makeTempDir()
+  try {
+    const source = join(root, "configs")
+    const dest = join(root, "dynamic")
+    await Deno.mkdir(join(source, "old.yml"), { recursive: true })
+    await Deno.mkdir(dest)
+    await Deno.writeTextFile(join(root, "outside.yml"), "outside\n")
+    await Deno.writeTextFile(join(source, "notes.md"), "notes\n")
+    await Deno.writeTextFile(join(source, "10-a.yml"), "a\n")
+    await Deno.symlink(join(root, "outside.yml"), join(source, "20-link.yml"))
+
+    assertEquals(await copyServerConfigs(source, dest), ["10-a.yml"])
+    assertEquals((await Array.fromAsync(Deno.readDir(dest))).map((e) => e.name), ["10-a.yml"])
+  } finally {
+    await Deno.remove(root, { recursive: true })
+  }
+})
+
+Deno.test("a server without configs/traefik/dynamic deploys the catalog's files only", async () => {
+  const root = await Deno.makeTempDir()
+  try {
+    assertEquals(await copyServerConfigs(join(root, "missing"), root), [])
+  } finally {
+    await Deno.remove(root, { recursive: true })
+  }
+})
+
+Deno.test("a missing destination fails the deploy instead of dropping the server's files", async () => {
+  const root = await Deno.makeTempDir()
+  try {
+    await Deno.writeTextFile(join(root, "10-a.yml"), "a\n")
+    await assertRejects(() => copyServerConfigs(root, join(root, "missing")), Deno.errors.NotFound)
+  } finally {
+    await Deno.remove(root, { recursive: true })
+  }
+})
+
+Deno.test("the hook adds a server's configs/traefik/dynamic files in a deploy staging folder", async () => {
+  const staging = await Deno.makeTempDir()
+  try {
+    const dynamic = join(staging, "stacks/traefik/dynamic")
+    await Deno.mkdir(dynamic, { recursive: true })
+    await Deno.copyFile(
+      new URL("./dynamic/00-base.yml", import.meta.url),
+      join(dynamic, "00-base.yml"),
+    )
+    await Deno.mkdir(join(staging, "configs/traefik/dynamic"), { recursive: true })
+    await Deno.writeTextFile(join(staging, "configs/traefik/dynamic/10-cors.yml"), "server\n")
+
+    const out = await new Deno.Command(Deno.execPath(), {
+      args: ["run", "-A", new URL("./before.deploy.ts", import.meta.url).href],
+      cwd: staging,
+      env: { TRAEFIK_BASIC_AUTH_USER: "admin", TRAEFIK_BASIC_AUTH_PASSWORD: "s3cr3t" },
+      stdout: "piped",
+      stderr: "piped",
+    }).output()
+    assertEquals(out.code, 0, new TextDecoder().decode(out.stderr))
+
+    assertEquals(await Deno.readTextFile(join(dynamic, "10-cors.yml")), "server\n")
+    assertEquals(
+      await Deno.readTextFile(join(dynamic, "00-base.yml")),
+      await Deno.readTextFile(new URL("./dynamic/00-base.yml", import.meta.url)),
+    )
+    const [user, hash] = (await Deno.readTextFile(join(dynamic, ".htpasswd"))).trim().split(":")
+    assertEquals(user, "admin")
+    assertEquals(compareSync("s3cr3t", hash), true)
+  } finally {
+    await Deno.remove(staging, { recursive: true })
+  }
 })

@@ -1,7 +1,8 @@
 // Copies server-specific Traefik dynamic config files into the dynamic/
-// directory before deployment. This allows per-server overrides (e.g.,
-// authelia middleware + opencode-web route on home) while keeping a shared
-// base config (00-base.yml) used by all servers.
+// directory before deployment. This is how a server adds its own routers,
+// services and middlewares (a login middleware, a route to a service that
+// is not a stack, a CORS rule for one of its hosts) next to the shared base
+// config (00-base.yml) every server gets, without the catalog knowing them.
 //
 // Also generates .htpasswd for dashboard-auth by bcrypt-hashing
 // TRAEFIK_BASIC_AUTH_PASSWORD. Uses `npm:bcryptjs` instead of the
@@ -19,14 +20,15 @@
 // after.deploy.ts hook restarts hl-traefik after deploy so it picks up
 // the new file.
 //
-// Expected file location on server:
+// Paths are relative to the deploy staging folder, the hook's working directory:
 //   configs/traefik/dynamic/*.yml  →  stacks/traefik/dynamic/*.yml
+// (`configs/` is the project's `servers/<server>/configs/`.)
 
 import { hashSync } from "npm:bcryptjs@3.0.3"
 
 const DYNAMIC_DIR = "stacks/traefik/dynamic"
 const HTPASSWD_PATH = `${DYNAMIC_DIR}/.htpasswd`
-const configSource = "configs/traefik/dynamic"
+const CONFIG_SOURCE = "configs/traefik/dynamic"
 
 /**
  * bcrypt-hash `password`. Cost 10 matches `htpasswd -B`'s default and is
@@ -93,36 +95,45 @@ async function generateHtpasswd(): Promise<void> {
   console.log(`Generated ${HTPASSWD_PATH}`)
 }
 
-async function copyServerConfigs(): Promise<void> {
-  try {
-    const entries: Deno.DirEntry[] = []
-    for await (const entry of Deno.readDir(configSource)) {
-      entries.push(entry)
-    }
+/** Whether a file name is a Traefik dynamic config the file provider loads. */
+export function isDynamicConfigName(name: string): boolean {
+  return name.endsWith(".yml") || name.endsWith(".yaml")
+}
 
-    if (entries.length > 0) {
-      for (const entry of entries) {
-        if (entry.isFile && (entry.name.endsWith(".yml") || entry.name.endsWith(".yaml"))) {
-          const destPath = `${DYNAMIC_DIR}/${entry.name}`
-          await Deno.copyFile(`${configSource}/${entry.name}`, destPath)
-          console.log(`Copied ${configSource}/${entry.name} → ${destPath}`)
-        }
-      }
-    } else {
-      console.log(`No server-specific Traefik configs found in ${configSource}`)
-    }
+/**
+ * Copy every `.yml`/`.yaml` file of `source` (the server's own `configs/traefik/dynamic/`) into
+ * `dest`, next to the catalog's `00-base.yml`, and return the copied names, sorted. This is how a
+ * server adds routers, services and middlewares the catalog does not know about. A missing
+ * `source` returns an empty list. A server file with the name of a catalog file replaces it.
+ */
+export async function copyServerConfigs(source: string, dest: string): Promise<string[]> {
+  let entries: Deno.DirEntry[]
+  try {
+    entries = await Array.fromAsync(Deno.readDir(source))
   } catch (err) {
-    if (err instanceof Deno.errors.NotFound) {
-      console.log(`No server-specific Traefik configs (${configSource} not found)`)
-    } else {
-      throw err
-    }
+    // Only a missing source is fine; a missing destination must fail the deploy below.
+    if (err instanceof Deno.errors.NotFound) return []
+    throw err
   }
+  const copied: string[] = []
+  for (const entry of entries) {
+    // Plain files only: a symlink could point outside the server's folder.
+    if (!entry.isFile || entry.isSymlink || !isDynamicConfigName(entry.name)) continue
+    await Deno.copyFile(`${source}/${entry.name}`, `${dest}/${entry.name}`)
+    copied.push(entry.name)
+  }
+  return copied.sort()
 }
 
 if (import.meta.main) {
   try {
-    await copyServerConfigs()
+    const copied = await copyServerConfigs(CONFIG_SOURCE, DYNAMIC_DIR)
+    if (copied.length === 0) {
+      console.log(`No server-specific Traefik configs in ${CONFIG_SOURCE}`)
+    }
+    for (const name of copied) {
+      console.log(`Copied ${CONFIG_SOURCE}/${name} → ${DYNAMIC_DIR}/${name}`)
+    }
     await generateHtpasswd()
   } catch (err) {
     console.error("before.deploy.ts FAILED:", err instanceof Error ? err.message : String(err))
