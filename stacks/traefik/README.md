@@ -102,6 +102,10 @@ A router then uses it as `app-cors@file`.
   from `STALWART_WEBMAIL_ORIGIN` (default `https://webmail.${DOMAIN}`). Nothing to add when your
   webmail is at that host; see the stalwart README otherwise. If a router of your own used
   `stalwart-jmap@file`, define that middleware in a file of your own as shown above.
+  Deploy the whole server, or `stalwart` before `traefik`: a stalwart stack deployed before this
+  upgrade still names `stalwart-jmap@file`, and Traefik switches off a router whose middleware is
+  missing (`https://mail.<domain>/` answers 404). The stalwart README, "Upgrading from
+  `STALWART_NEATSOFT_DOMAIN`", has the recovery.
 - `robots-deny` and `allow-index` are unchanged. Only comments that named particular sites went.
 
 ## Resources
