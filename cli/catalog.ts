@@ -82,8 +82,9 @@ import mig from "../stacks/mig/+meta.ts"
 import caldavTasksWeb from "../stacks/caldav-tasks-web/+meta.ts"
 import stalwart from "../stacks/stalwart/+meta.ts"
 import pangolin from "../stacks/pangolin/+meta.ts"
+import authelia from "../stacks/authelia/+meta.ts"
 
-// Stacks without a +meta.ts (authelia, opencode-web, plausible) are not in the catalog yet.
+// Stacks without a +meta.ts (opencode-web, plausible) are not in the catalog yet.
 
 const STACK_META: Record<string, StackMeta> = {
   traefik,
@@ -134,6 +135,7 @@ const STACK_META: Record<string, StackMeta> = {
   "caldav-tasks-web": caldavTasksWeb,
   stalwart,
   pangolin,
+  authelia,
 }
 
 const ENTRIES: CatalogEntry[] = Object.entries(STACK_META)

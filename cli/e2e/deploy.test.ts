@@ -894,6 +894,54 @@ Deno.test("e2e: stalwart's extra mail domains and MTA-STS policy stay on the ser
   }
 })
 
+Deno.test("e2e: authelia's generated configuration.yml reaches the server, and a per-server hook's users.yml replaces the generated one", async () => {
+  const f = await setupFixture()
+  try {
+    // The bundled catalog stack, as a JSR install runs it. The per-server hook stands for one
+    // that decrypts the server's own users.yml into staging. Deploy runs it after the stack's
+    // hook, so the stack's hook cannot see that file: what counts is which one is synced.
+    const serverHookDir = join(f.projectDir, "servers", "test", "configs", "authelia")
+    await Deno.mkdir(serverHookDir, { recursive: true })
+    await Deno.writeTextFile(
+      join(serverHookDir, "before.deploy.ts"),
+      `const generated = await Deno.readTextFile("configs/authelia/users.yml")
+await Deno.writeTextFile(
+  "configs/authelia/users.yml",
+  "# from the server's hook, which saw: " + generated.split("\\n").find((l) => l === "users:") + "\\n",
+)
+`,
+    )
+    await writeServer(f.projectDir, [
+      "DOMAIN=example.test",
+      "AUTHELIA_DOMAIN=auth.${DOMAIN}",
+      "AUTHELIA_SESSION_SECRET=not-a-real-session-secret",
+      "AUTHELIA_STORAGE_ENCRYPTION_KEY=not-a-real-storage-key",
+      "AUTHELIA_IDENTITY_VALIDATION_RESET_PASSWORD_JWT_SECRET=not-a-real-jwt-secret",
+      "AUTHELIA_ADMIN_PASSWORD=not-a-real-password",
+    ], ["authelia"])
+
+    const { result } = await runDeployInProcess(f)
+    assertEquals(result.deployedStacks, ["authelia"])
+
+    const remoteConfigs = join(f.remoteDir, "srv", "apps", "configs", "authelia")
+    assertEquals(
+      await Deno.readTextFile(join(remoteConfigs, "users.yml")),
+      "# from the server's hook, which saw: users:\n",
+    )
+    const configuration = await Deno.readTextFile(join(remoteConfigs, "configuration.yml"))
+
+    assertStringIncludes(configuration, `authelia_url: "https://auth.example.test"`)
+    for (const secret of ["not-a-real-session-secret", "not-a-real-storage-key", "${"]) {
+      assert(!configuration.includes(secret), `configuration.yml on the server holds ${secret}`)
+    }
+    // The project's own folder is the hook's input, never its output.
+    await assertNotExists(join(serverHookDir, "users.yml"))
+    await assertNotExists(join(serverHookDir, "configuration.yml"))
+  } finally {
+    await teardownFixture(f)
+  }
+})
+
 Deno.test("e2e: a hook receives $-heavy env values byte-for-byte (no --env-file mangling)", async () => {
   const f = await setupFixture()
   try {

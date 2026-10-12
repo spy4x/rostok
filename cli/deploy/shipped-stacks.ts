@@ -207,4 +207,8 @@ export const SHIPPED_STACK_FILES: Record<string, readonly string[]> = {
     "traefik/dynamic/00-pangolin.yml",
     "traefik/traefik_config.yml",
   ],
+  authelia: [
+    "before.deploy.ts",
+    "compose.yml",
+  ],
 }

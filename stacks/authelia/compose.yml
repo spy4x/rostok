@@ -14,7 +14,16 @@ services:
       - ${VOLUMES_PATH}/authelia/data:/data:z
     environment:
       - TZ=${TIMEZONE}
-      - AUTHELIA_SESSION_SECRET=${AUTHELIA_SESSION_SECRET}
+      # Authelia reads these three from the environment, and they win over configuration.yml.
+      # It does not expand `${...}` inside that file, so a secret must never be written there.
+      # `:?` stops the deploy when one is missing or empty.
+      - AUTHELIA_SESSION_SECRET=${AUTHELIA_SESSION_SECRET:?}
+      - AUTHELIA_STORAGE_ENCRYPTION_KEY=${AUTHELIA_STORAGE_ENCRYPTION_KEY:?}
+      - AUTHELIA_IDENTITY_VALIDATION_RESET_PASSWORD_JWT_SECRET=${AUTHELIA_IDENTITY_VALIDATION_RESET_PASSWORD_JWT_SECRET:?}
+      # before.deploy.ts replaces the next line with AUTHELIA_NOTIFIER_SMTP_PASSWORD when
+      # AUTHELIA_SMTP_PASSWORD is set. It cannot always be here: Authelia takes even an empty value
+      # as an SMTP notifier and then refuses to start beside the file notifier.
+      # rostok:smtp-password
     restart: unless-stopped
     healthcheck:
       test: [
@@ -36,7 +45,7 @@ services:
       - "traefik.enable=true"
       - "traefik.docker.network=proxy"
       - "traefik.http.services.hl-authelia.loadbalancer.server.port=9091"
-      - "traefik.http.routers.hl-authelia.rule=Host(`auth.${DOMAIN}`)"
+      - "traefik.http.routers.hl-authelia.rule=Host(`${AUTHELIA_DOMAIN:-auth.${DOMAIN}}`)"
       - "traefik.http.routers.hl-authelia.entrypoints=websecure"
       - "traefik.http.routers.hl-authelia.tls=true"
       - "traefik.http.routers.hl-authelia.tls.certresolver=myresolver"

@@ -259,7 +259,10 @@
       "!stacks/pangolin/before.deploy.ts",
       "!stacks/pangolin/compose.yml",
       "!stacks/pangolin/traefik/dynamic/00-pangolin.yml",
-      "!stacks/pangolin/traefik/traefik_config.yml"
+      "!stacks/pangolin/traefik/traefik_config.yml",
+      "!stacks/authelia/+meta.ts",
+      "!stacks/authelia/before.deploy.ts",
+      "!stacks/authelia/compose.yml"
     ]
   },
   "exclude": [
