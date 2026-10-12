@@ -238,11 +238,13 @@ The task takes the newest snapshot unless you name one, asks for a typed `yes`,
 then:
 
 1. stops the service's containers, the same ones the backup stops;
-2. unpacks the snapshot into a `.restore-*` folder next to the destination, not
-   into the system temp folder;
-3. renames the data now in place to `<folder>.backup-<time>` and moves the
-   restored folder in, with the owners and modes from the snapshot;
-4. starts the containers again, also when a step failed.
+2. unpacks each folder of the snapshot into a `.restore-*` folder next to its
+   destination, not into the system temp folder, so each disk needs free room
+   for a second copy of its own folder;
+3. renames the data now in place to `<folder>.backup-<time>` and renames the
+   restored folder in, with the owners and modes from the snapshot. If one
+   folder cannot be put in place, the others go back as they were;
+4. starts the containers again, also when a step failed or you pressed Ctrl-C.
 
 Nothing is deleted. When the service works, remove the `.backup-<time>` folders
 by hand.

@@ -86,13 +86,18 @@ Deno.test('restore: a stack with "default" paths gets its volume back, old data 
   await Deno.chmod(join(restoreRoot, volume, "db.sqlite"), 0o600)
   await Deno.chmod(join(restoreRoot, volume), 0o750)
 
-  const moves = planRestore(config.sourcePaths as string[], [volume], restoreRoot)
-  const kept = await applyRestore(moves, "stamp")
+  const restoredInode = (await Deno.stat(join(restoreRoot, volume, "db.sqlite"))).ino
+
+  const matches = planRestore(config.sourcePaths as string[], [volume])
+  assertEquals(matches, [{ snapshotPath: volume, to: volume }])
+  const kept = await applyRestore([{ from: join(restoreRoot, volume), to: volume }], "stamp")
 
   assertEquals(await Deno.readTextFile(join(volume, "db.sqlite")), "good")
   assertEquals(await Deno.readTextFile(join(volume, "attachments", "a.txt")), "file")
   assertEquals((await Deno.stat(join(volume, "db.sqlite"))).mode! & 0o777, 0o600)
   assertEquals((await Deno.stat(volume)).mode! & 0o777, 0o750)
+  // The very files restic wrote, not copies: a copy made by root is root's.
+  assertEquals((await Deno.stat(join(volume, "db.sqlite"))).ino, restoredInode)
   assertEquals(kept, [`${volume}.backup-stamp`])
   assertEquals(await Deno.readTextFile(join(kept[0], "db.sqlite")), "broken")
 })
@@ -116,7 +121,7 @@ Deno.test("restore: a missing volume is put back where the config names it", asy
     await Deno.mkdir(join(restoreRoot, volume), { recursive: true })
     await Deno.writeTextFile(join(restoreRoot, volume, "db.sqlite"), "good")
 
-    const kept = await applyRestore(planRestore([volume], [volume], restoreRoot), "stamp")
+    const kept = await applyRestore([{ from: join(restoreRoot, volume), to: volume }], "stamp")
 
     assertEquals(kept, [])
     assertEquals(await Deno.readTextFile(join(volume, "db.sqlite")), "good")
@@ -128,23 +133,22 @@ Deno.test("restore: a snapshot taken before the volumes moved lands at the new p
     planRestore(
       ["/new/volumes/notes", "/new/volumes/notes-db"],
       ["/old/volumes/notes", "/old/volumes/notes-db"],
-      "/new/volumes/.restore-1",
     ),
     [
-      { from: "/new/volumes/.restore-1/old/volumes/notes", to: "/new/volumes/notes" },
-      { from: "/new/volumes/.restore-1/old/volumes/notes-db", to: "/new/volumes/notes-db" },
+      { snapshotPath: "/old/volumes/notes", to: "/new/volumes/notes" },
+      { snapshotPath: "/old/volumes/notes-db", to: "/new/volumes/notes-db" },
     ],
   )
 })
 
 Deno.test("restore: refuses to guess between two snapshot folders of the same name", () => {
   assertThrows(
-    () => planRestore(["/new/data"], ["/a/data", "/b/data"], "/new/.restore-1"),
+    () => planRestore(["/new/data"], ["/a/data", "/b/data"]),
     Error,
     "/a/data, /b/data",
   )
   assertThrows(
-    () => planRestore(["/new/data"], ["/a/other"], "/new/.restore-1"),
+    () => planRestore(["/new/data"], ["/a/other"]),
     Error,
     "Cannot tell which folder",
   )
@@ -153,7 +157,7 @@ Deno.test("restore: refuses to guess between two snapshot folders of the same na
 Deno.test("restore: a folder the snapshot holds exactly is never matched by name too", () => {
   // "/x/data" is in the snapshot as itself, so it cannot also stand in for "/y/data".
   assertThrows(
-    () => planRestore(["/y/data", "/x/data"], ["/x/data"], "/r"),
+    () => planRestore(["/y/data", "/x/data"], ["/x/data"]),
     Error,
     "Cannot tell which folder",
   )
@@ -180,6 +184,38 @@ Deno.test("restore: nothing is touched when the snapshot lacks one of the folder
     assertEquals(await Deno.readTextFile(join(first, "live.txt")), "live")
     assertEquals([...Deno.readDirSync(join(root, "volumes"))].map((e) => e.name).sort(), [
       ".restore-1",
+      "first",
+    ])
+  })
+})
+
+Deno.test("restore: when one folder cannot be put in place, the others go back", async () => {
+  await withTempDir(async (root) => {
+    const first = join(root, "volumes", "first")
+    const restoredFirst = join(root, "volumes", ".restore-1", "first")
+    const restoredSecond = join(root, "volumes", ".restore-2", "second")
+    await Deno.mkdir(first, { recursive: true })
+    await Deno.writeTextFile(join(first, "db"), "live")
+    await Deno.mkdir(restoredFirst, { recursive: true })
+    await Deno.writeTextFile(join(restoredFirst, "db"), "snapshot")
+    await Deno.mkdir(restoredSecond, { recursive: true })
+    // A file where the second destination's parent folder should be.
+    await Deno.writeTextFile(join(root, "blocked"), "")
+
+    await assertRejects(
+      () =>
+        applyRestore([
+          { from: restoredFirst, to: first },
+          { from: restoredSecond, to: join(root, "blocked", "second") },
+        ], "stamp"),
+      Error,
+      "Every folder is back as it was before the restore.",
+    )
+    assertEquals(await Deno.readTextFile(join(first, "db")), "live")
+    assertEquals(await Deno.readTextFile(join(restoredFirst, "db")), "snapshot")
+    assertEquals([...Deno.readDirSync(join(root, "volumes"))].map((e) => e.name).sort(), [
+      ".restore-1",
+      ".restore-2",
       "first",
     ])
   })
