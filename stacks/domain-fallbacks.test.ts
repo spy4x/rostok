@@ -11,7 +11,7 @@ async function hostsOf(stack: string, env: Record<string, string>): Promise<stri
   return [...new Set(hostsIn(await renderCompose(stack, env)))].sort()
 }
 
-const env = { DOMAIN: "example.com", STALWART_NEATSOFT_DOMAIN: "example.org" }
+const env = { DOMAIN: "example.com" }
 
 Deno.test("bulwark compose.yml: without BULWARK_DOMAIN the host stays webmail.<domain>", async () => {
   assertEquals(await hostsOf("bulwark", env), ["webmail.example.com"])
@@ -33,7 +33,6 @@ Deno.test("stalwart compose.yml: without the new domain keys the hosts stay as b
   assertEquals(await hostsOf("stalwart", env), [
     "mail.example.com",
     "mta-sts.example.com",
-    "mta-sts.example.org",
   ])
 })
 

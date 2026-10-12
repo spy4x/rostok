@@ -52,7 +52,14 @@ services:
       - "traefik.http.routers.hl-stalwart.entrypoints=websecure"
       - "traefik.http.routers.hl-stalwart.tls=true"
       - "traefik.http.routers.hl-stalwart.tls.certresolver=myresolver"
-      - "traefik.http.routers.hl-stalwart.middlewares=stalwart-jmap@file,robots-deny@file"
+      - "traefik.http.routers.hl-stalwart.middlewares=hl-stalwart-jmap@docker,robots-deny@file"
+      # A JMAP webmail on another host (the bulwark stack, webmail.${DOMAIN}) calls this router
+      # from the browser: allow that one origin, and relax COEP/CORP for it.
+      - "traefik.http.middlewares.hl-stalwart-jmap.headers.customresponseheaders.Cross-Origin-Embedder-Policy=unsafe-none"
+      - "traefik.http.middlewares.hl-stalwart-jmap.headers.customresponseheaders.Cross-Origin-Resource-Policy=cross-origin"
+      - "traefik.http.middlewares.hl-stalwart-jmap.headers.customresponseheaders.Access-Control-Allow-Origin=${STALWART_WEBMAIL_ORIGIN:-https://webmail.${DOMAIN}}"
+      - "traefik.http.middlewares.hl-stalwart-jmap.headers.customresponseheaders.Access-Control-Allow-Methods=GET, POST, OPTIONS"
+      - "traefik.http.middlewares.hl-stalwart-jmap.headers.customresponseheaders.Access-Control-Allow-Headers=Content-Type, Authorization"
       # CalDAV/CardDAV on mail.DOMAIN/dav (no JMAP middleware — interferes with PROPFIND/REPORT)
       - "traefik.http.routers.hl-stalwart-dav.rule=Host(`${STALWART_DOMAIN:-mail.${DOMAIN}}`) && PathPrefix(`/dav/`)"
       - "traefik.http.routers.hl-stalwart-dav.entrypoints=websecure"
@@ -61,8 +68,8 @@ services:
       - "traefik.http.routers.hl-stalwart-dav.middlewares=robots-deny@file"
       - "traefik.http.routers.hl-stalwart-dav.service=hl-stalwart"
 
-  # MTA-STS policy server — serves .well-known/mta-sts.txt for TLS enforcement
-  # Covers mta-sts.${DOMAIN} and mta-sts.${STALWART_NEATSOFT_DOMAIN} (same MX)
+  # MTA-STS policy server — serves .well-known/mta-sts.txt for TLS enforcement.
+  # Covers mta-sts.${DOMAIN} and mta-sts.<domain> of every STALWART_EXTRA_DOMAINS entry (same MX).
   mta-sts:
     container_name: hl-mta-sts
     image: nginx:alpine
@@ -83,18 +90,14 @@ services:
       - "traefik.enable=true"
       - "traefik.docker.network=proxy"
       - "traefik.http.services.hl-mta-sts.loadbalancer.server.port=8081"
-      # MTA-STS for primary domain
-      - "traefik.http.routers.hl-mta-sts-primary.rule=Host(`${STALWART_MTA_STS_DOMAIN:-mta-sts.${DOMAIN}}`)"
-      - "traefik.http.routers.hl-mta-sts-primary.middlewares=robots-deny@file"
-      - "traefik.http.routers.hl-mta-sts-primary.entrypoints=websecure"
-      - "traefik.http.routers.hl-mta-sts-primary.tls=true"
-      - "traefik.http.routers.hl-mta-sts-primary.tls.certresolver=myresolver"
-      # MTA-STS for secondary domain (same MX)
-      - "traefik.http.routers.hl-mta-sts-secondary.rule=Host(`${STALWART_MTA_STS_SECONDARY_DOMAIN:-mta-sts.${STALWART_NEATSOFT_DOMAIN}}`)"
-      - "traefik.http.routers.hl-mta-sts-secondary.middlewares=robots-deny@file"
-      - "traefik.http.routers.hl-mta-sts-secondary.entrypoints=websecure"
-      - "traefik.http.routers.hl-mta-sts-secondary.tls=true"
-      - "traefik.http.routers.hl-mta-sts-secondary.tls.certresolver=myresolver"
+      # One router for the primary domain and every extra one. Compose cannot loop over
+      # STALWART_EXTRA_DOMAINS, so before.deploy.ts writes STALWART_MTA_STS_EXTRA_RULE into the
+      # deployed .env: ` || Host(...)` per extra domain, empty without any.
+      - "traefik.http.routers.hl-mta-sts.rule=Host(`${STALWART_MTA_STS_DOMAIN:-mta-sts.${DOMAIN}}`)${STALWART_MTA_STS_EXTRA_RULE:-}"
+      - "traefik.http.routers.hl-mta-sts.middlewares=robots-deny@file"
+      - "traefik.http.routers.hl-mta-sts.entrypoints=websecure"
+      - "traefik.http.routers.hl-mta-sts.tls=true"
+      - "traefik.http.routers.hl-mta-sts.tls.certresolver=myresolver"
 
   # Synchronizes Let's Encrypt certs from Traefik's acme.json into Stalwart
   cert-sync:
@@ -111,7 +114,9 @@ services:
       - ${VOLUMES_PATH}/stalwart/cert-sync-state:/root/.cache/stalwart-cert-sync:z
     environment:
       - ACME_PATH=/acme.json
-      - CERT_SYNC_DOMAINS=${STALWART_DOMAIN:-mail.${DOMAIN}},mail.${STALWART_NEATSOFT_DOMAIN}
+      # STALWART_CERT_SYNC_EXTRA: `,mail.<domain>` per STALWART_EXTRA_DOMAINS entry, written by
+      # before.deploy.ts like the rule above.
+      - CERT_SYNC_DOMAINS=${STALWART_DOMAIN:-mail.${DOMAIN}}${STALWART_CERT_SYNC_EXTRA:-}
       - STALWART_PASSWORD=${STALWART_ADMIN_PASSWORD}
     restart: unless-stopped
     security_opt:

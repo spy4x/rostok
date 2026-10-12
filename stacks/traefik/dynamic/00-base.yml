@@ -31,8 +31,8 @@ http:
           # Decided in spy4x/rostok#354:
           # - No Access-Control-Allow-Origin. `*` here let any site read any service's responses
           #   from a browser, and it replaced the narrower origin a service sets itself
-          #   (stalwart-jmap below). A service that needs CORS sets it in the app or on its own
-          #   router, like immich-kiosk (stacks/immich), the reason `*` was added (spy4x/rostok#123).
+          #   (the stalwart stack on its JMAP router). A service that needs CORS sets it in the app
+          #   or on its own router, like immich-kiosk (stacks/immich), the reason `*` was added (spy4x/rostok#123).
           # - Cross-Origin-Opener-Policy same-origin, as the cloud server already served it. It
           #   affects only windows that open each other, never images or iframes.
           # - No Cross-Origin-Resource-Policy. same-site blocks a page on another site, such as
@@ -43,34 +43,27 @@ http:
           # it breaks cross-origin JMAP (Bulwark → Stalwart on different
           # subdomains). Add to individual router middlewares if needed.
           # X-Robots-Tag is intentionally NOT in security-headers. It lives in
-          # its own middleware (robots-deny) so public sites (antonshubin,
-          # neatsoft) can opt out by not including it in their router labels.
+          # its own middleware (robots-deny) so a public site can opt out by
+          # not including it in its router labels.
           # All private self-hosted services SHOULD add robots-deny@file to
           # their Traefik router middlewares. See docs/blocking-crawlers.md.
     # robots-deny: opt-in X-Robots-Tag noindex/nofollow for self-hosted services.
     # Add to a router's middlewares chain to block indexing:
     #   traefik.http.routers.X.middlewares=...,robots-deny@file
-    # Public sites (antonshubin.com, neatsoft.dev) should NOT add this.
+    # A public site that search engines should index does NOT add this.
     robots-deny:
       headers:
         customResponseHeaders:
           X-Robots-Tag: "noindex, nofollow, noarchive, nosnippet"
-    # Unused — kept for documentation. Do not apply.
+    # allow-index: says "index me" out loud, for a public site (the nginx and oko stacks use it).
     allow-index:
       headers:
         customResponseHeaders:
           X-Robots-Tag: "all"
-    # Stalwart JMAP — needs permissive COEP/CORP so Bulwark's browser can
-    # make cross-origin JMAP requests from webmail.antonshubin.com.
-    stalwart-jmap:
-      headers:
-        customResponseHeaders:
-          Cross-Origin-Embedder-Policy: "unsafe-none"
-          Cross-Origin-Resource-Policy: "cross-origin"
-          Access-Control-Allow-Origin: "https://webmail.antonshubin.com"
-          Access-Control-Allow-Methods: "GET, POST, OPTIONS"
-          Access-Control-Allow-Headers: "Content-Type, Authorization"
+    # No CORS rule for a webmail here: the stalwart stack defines its own on its router
+    # (hl-stalwart-jmap, origin from STALWART_WEBMAIL_ORIGIN). A header rule that names one
+    # installation's host belongs in that server's configs/traefik/dynamic/, not in this file.
 
-  # Routers and services for file-based (non-Docker) routes.
-  # Home-server specific routes (authelia, opencode-web, etc.) are
-  # in servers/home/configs/traefik/dynamic/ and only deployed to home.
+  # A server adds its own routers, services and middlewares in
+  # servers/<server>/configs/traefik/dynamic/*.yml: before.deploy.ts copies them next to this
+  # file on every deploy (see README.md, "Per-server dynamic config").

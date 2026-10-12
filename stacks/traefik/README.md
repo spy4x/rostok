@@ -24,8 +24,8 @@ labels:
 ## Environment Variables
 
 ```bash
-TRAEFIK_DOMAIN=traefik.yourdomain.com   # Full dashboard host (default: traefik.${DOMAIN})
-CONTACT_EMAIL=you@email.com             # Let's Encrypt email — a server-level key, set by `server create`
+TRAEFIK_DOMAIN=traefik.example.com      # Full dashboard host (default: traefik.${DOMAIN})
+CONTACT_EMAIL=you@example.com           # Let's Encrypt email — a server-level key, set by `server create`
 TRAEFIK_BASIC_AUTH_USER=admin           # Dashboard auth (default: admin)
 TRAEFIK_BASIC_AUTH_PASSWORD=...         # Dashboard auth (default: generated, 24 chars)
 TRAEFIK_FORWARDED_TRUSTED_IPS=            # Optional: CIDRs whose X-Forwarded-* headers are trusted (default: none)
@@ -72,6 +72,37 @@ defined in a file provider, not this service's own docker labels:
 labels:
   - "traefik.http.routers.myservice.middlewares=dashboard-auth@file"
 ```
+
+## Per-server dynamic config
+
+`dynamic/00-base.yml` holds the middlewares every server gets. A server adds its own routers,
+services and middlewares without touching the catalog: put `.yml` or `.yaml` files in the
+project's `servers/<server>/configs/traefik/dynamic/`. On every deploy `before.deploy.ts` copies
+them next to `00-base.yml`, and Traefik's file provider loads the whole folder. Other file types,
+folders and symlinks are skipped. A file named like a catalog file (`00-base.yml`) replaces it,
+so pick another name unless that is what you want.
+
+For example, `servers/home/configs/traefik/dynamic/10-cors.yml`:
+
+```yaml
+http:
+  middlewares:
+    app-cors:
+      headers:
+        customResponseHeaders:
+          Access-Control-Allow-Origin: "https://app.example.com"
+```
+
+A router then uses it as `app-cors@file`.
+
+### Upgrade note: what left `00-base.yml`
+
+- The `stalwart-jmap` middleware, which allowed one installation's webmail origin on every server,
+  is gone. The `stalwart` stack now defines the same headers on its own router, with the origin
+  from `STALWART_WEBMAIL_ORIGIN` (default `https://webmail.${DOMAIN}`). Nothing to add when your
+  webmail is at that host; see the stalwart README otherwise. If a router of your own used
+  `stalwart-jmap@file`, define that middleware in a file of your own as shown above.
+- `robots-deny` and `allow-index` are unchanged. Only comments that named particular sites went.
 
 ## Resources
 

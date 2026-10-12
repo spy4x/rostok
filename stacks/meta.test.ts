@@ -8,6 +8,7 @@ import { assert, assertEquals } from "@std/assert"
 import { validateStackMeta } from "../cli/stack-meta.ts"
 import { SERVER_KEYS } from "../cli/server-keys.ts"
 import type { StackMeta } from "../cli/stack-meta.ts"
+import { DERIVED_KEYS as stalwartDerivedKeys } from "./stalwart/before.deploy.ts"
 
 const stacksDir = new URL("./", import.meta.url)
 
@@ -87,6 +88,13 @@ const names = await stacksWithMeta()
  */
 const WRITTEN_BY_SERVER = new Set<string>(SERVER_KEYS)
 
+/**
+ * Keys a stack's own before.deploy.ts writes into the deployed `.env` from a declared variable
+ * (stalwart: one entry per STALWART_EXTRA_DOMAINS domain). Compose reads them, but no person sets
+ * them, so `stack add` must not ask for them.
+ */
+const WRITTEN_BY_HOOK = new Set<string>(stalwartDerivedKeys)
+
 Deno.test("stacks: at least one stack has a +meta.ts", () => {
   assert(names.length > 0, "found no stacks/*/+meta.ts — the glob or the directory moved")
 })
@@ -102,7 +110,7 @@ for (const name of names) {
   Deno.test(`${name} +meta.ts: declares every compose variable that is not server-level`, () => {
     const declared = new Set(meta.variables.map((v) => v.key))
     for (const key of composeRefs.keys()) {
-      if (WRITTEN_BY_SERVER.has(key)) continue
+      if (WRITTEN_BY_SERVER.has(key) || WRITTEN_BY_HOOK.has(key)) continue
       assert(declared.has(key), `compose.yml reads \${${key}} but +meta.ts does not declare it`)
     }
   })
