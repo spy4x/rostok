@@ -175,27 +175,27 @@ Deno.test("stale-container cleanup keeps this stack's container in the deployed 
 })
 
 Deno.test("stale-container cleanup reads names from the resolved config of a deployAs stack", async () => {
-  // nginx deployed as neatsoft-landing sets container_name from
+  // nginx deployed as acme-landing sets container_name from
   // NGINX_CONTAINER_NAME, so the name exists only after compose resolves it
   // with the same env files, project and compose files as `up`.
   const config = [
-    "name: neatsoft-landing",
+    "name: acme-landing",
     "services:",
     "  nginx:",
-    "    container_name: neatsoft-landing",
+    "    container_name: acme-landing",
     "    image: nginx:alpine",
     "",
   ].join("\n")
-  const run = await runWithFakeDocker({ name: "nginx", deployAs: "neatsoft-landing" }, config, [
-    "neatsoft-landing id-old hl",
-    "neatsoft-landing-preview id-preview other",
+  const run = await runWithFakeDocker({ name: "nginx", deployAs: "acme-landing" }, config, [
+    "acme-landing id-old hl",
+    "acme-landing-preview id-preview other",
     "hl-nginx id-hl-nginx other",
   ])
   assertEquals(run.removed, ["id-old"])
   const configCall = run.calls.find((c) => c.endsWith(" config"))
   assertEquals(
     configCall,
-    "compose -p neatsoft-landing --env-file=.env.root --env-file=.env " +
+    "compose -p acme-landing --env-file=.env.root --env-file=.env " +
       "-f stacks/nginx/compose.yml config",
   )
 })

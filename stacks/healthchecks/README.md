@@ -40,7 +40,7 @@ Create check in UI, then ping endpoint from cron job:
 
 ```bash
 # In crontab
-0 2 * * * /path/to/backup.sh && curl -fsS -m 10 --retry 5 https://healthchecks.yourdomain.com/ping/YOUR-UUID
+0 2 * * * /path/to/backup.sh && curl -fsS -m 10 --retry 5 https://healthchecks.example.com/ping/YOUR-UUID
 ```
 
 Alert fires if ping not received within expected interval.

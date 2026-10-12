@@ -16,10 +16,10 @@ SMTP for password resets and emergency access (optional — omit to run
 without email):
 
 ```bash
-VAULTWARDEN_SMTP_HOST=mail.yourdomain.com
+VAULTWARDEN_SMTP_HOST=mail.example.com
 VAULTWARDEN_SMTP_PORT=587
-VAULTWARDEN_SMTP_FROM=noreply@yourdomain.com
-VAULTWARDEN_SMTP_USERNAME=noreply@yourdomain.com
+VAULTWARDEN_SMTP_FROM=noreply@example.com
+VAULTWARDEN_SMTP_USERNAME=noreply@example.com
 VAULTWARDEN_SMTP_PASSWORD=...
 ```
 

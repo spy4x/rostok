@@ -17,7 +17,7 @@ import {
   validateConfig,
 } from "./before.deploy.ts"
 
-const USER = "spy4x"
+const USER = "alice"
 
 Deno.test("validateConfig: minimal valid config", () => {
   const cfg = validateConfig({
@@ -43,17 +43,22 @@ Deno.test("validateConfig: full valid config (with versioning, paused, addresses
           type: "trashcan",
           params: { cleanoutDays: "180", keep: "5" },
         },
-        devices: ["spy4x-home", "spy4x-offsite"],
+        devices: ["alice-home", "alice-offsite"],
       },
       {
         id: "backups",
         path: "/hdd/sync/backups",
-        devices: ["spy4x-home"],
+        devices: ["alice-home"],
       },
     ],
     devices: [
-      { id: "AAA-BBB", name: "spy4x-home" },
-      { id: "CCC-DDD", name: "spy4x-offsite", addresses: ["tcp://1.2.3.4:22000"], untrusted: true },
+      { id: "AAA-BBB", name: "alice-home" },
+      {
+        id: "CCC-DDD",
+        name: "alice-offsite",
+        addresses: ["tcp://203.0.113.4:22000"],
+        untrusted: true,
+      },
     ],
   })
   assertEquals(cfg.folders?.length, 2)

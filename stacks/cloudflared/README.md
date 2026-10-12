@@ -56,16 +56,16 @@ In the Cloudflare Dashboard, configure your tunnel to route traffic:
 1. Go to your tunnel's **Public Hostname** tab
 2. Add routes for your services:
    - **Subdomain**: `example` (e.g., jellyfin, immich, etc.)
-   - **Domain**: `yourdomain.com`
+   - **Domain**: `example.com`
    - **Service**:
      - **Type**: `HTTP`
      - **URL**: `traefik:443` or `traefik:80`
 
 Example routes:
 
-- `jellyfin.yourdomain.com` → `http://traefik:80` → Traefik routes to jellyfin container
-- `immich.yourdomain.com` → `http://traefik:80` → Traefik routes to immich container
-- `*.yourdomain.com` → `http://traefik:80` → Traefik routes based on subdomain
+- `jellyfin.example.com` → `http://traefik:80` → Traefik routes to jellyfin container
+- `immich.example.com` → `http://traefik:80` → Traefik routes to immich container
+- `*.example.com` → `http://traefik:80` → Traefik routes based on subdomain
 
 ### 4. Update DNS (if needed)
 

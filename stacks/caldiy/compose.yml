@@ -57,9 +57,8 @@ services:
       - REDIS_URL=redis://caldiy-redis:6379
       # CRON_API_KEY — shared secret for cron endpoints (scheduleEmailReminders etc.)
       - CRON_API_KEY=${CALDIY_CRON_API_KEY}
-      # SMTP — uses shared mailserver on cloud (mail.${DOMAIN})
-      # Resolves via Cloudflare DNS to cloud server (23.88.x.x).
-      # STARTTLS cert is Let's Encrypt (CN=mail.${DOMAIN}), valid.
+      # SMTP: any mail server reachable from this container, for example the stalwart stack
+      # (mail.${DOMAIN}) on this or another server.
       - EMAIL_FROM=${CALDIY_SMTP_FROM}
       - EMAIL_FROM_NAME=Cal.diy
       - EMAIL_SERVER_HOST=${CALDIY_SMTP_HOST}
