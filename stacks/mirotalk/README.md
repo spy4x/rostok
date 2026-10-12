@@ -36,13 +36,18 @@ Web UI: `https://<MIROTALK_DOMAIN>`
 ## Upgrading an existing project
 
 MiroTalk 2.1 refuses to start without `JWT_KEY`. A project that added this stack before
-`MIROTALK_JWT_KEY` existed has no such line, and its next deploy stops with
-`required variable MIROTALK_JWT_KEY is missing a value` instead of starting a container that
-restarts forever. Before that deploy:
+`MIROTALK_JWT_KEY` existed has no such line. Its next deploy does not start a container that
+restarts forever: it reports `mirotalk` as failed with
+`required variable MIROTALK_JWT_KEY is missing a value` and exits non-zero. A whole-server deploy
+still updates the other stacks, but runs none of their after-deploy hooks. Before that deploy, add
+the key in one of two ways:
 
-1. Generate a key of at least 32 characters: `openssl rand -hex 32`.
-2. Add `MIROTALK_JWT_KEY=<that value>` to the server's `.env`.
-3. Run `rostok env encrypt`, commit the `.env.age` file, then `rostok deploy <server>`.
+- Run `rostok stack add mirotalk -s <server>` again. It generates only the missing key, keeps every
+  other value and re-encrypts the file.
+- Or by hand: generate a key of at least 32 characters with `openssl rand -hex 32`, add
+  `MIROTALK_JWT_KEY=<that value>` to the server's `.env`, and run `rostok env encrypt`.
+
+Then commit the `.env.age` file and run `rostok deploy <server>`.
 
 Changing the key later only ends the tokens MiroTalk has already handed out; they last an hour.
 
