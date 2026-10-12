@@ -87,6 +87,9 @@ changed:
 or restart the container on the server after such a deploy: `docker restart hl-authelia`. A
 plain file in `servers/<server>/configs/authelia/` needs neither.
 
+Without one of the two, the running Authelia keeps the old file: a user you removed can still
+sign in, and a changed password is not in effect, until the container restarts.
+
 Three rules for your own `configuration.yml`:
 
 - Do not set `session.secret`, `storage.encryption_key` or
@@ -127,8 +130,24 @@ A router asks Authelia by naming the middleware:
 - "traefik.http.routers.hl-myservice.middlewares=authelia@file"
 ```
 
-The stack does not define that middleware. Add it to a Traefik dynamic file of the server, as a
-`forwardAuth` to `http://hl-authelia:9091/api/authz/forward-auth`.
+The stack does not define that middleware. Add it to a Traefik dynamic file of the server:
+
+```yaml
+http:
+  middlewares:
+    authelia:
+      forwardAuth:
+        address: http://hl-authelia:9091/api/authz/forward-auth
+        authResponseHeaders:
+          - Remote-User
+          - Remote-Groups
+          - Remote-Email
+          - Remote-Name
+```
+
+Keep the `authResponseHeaders` list. Traefik then replaces those four headers with Authelia's
+answer; without the list, a `Remote-User` header sent by the client reaches the service
+unchanged, and a service that trusts it takes a signed-in user for someone else.
 
 ## Existing server
 
