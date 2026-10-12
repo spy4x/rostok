@@ -24,9 +24,9 @@ const OFFSITE_ID = "SXYX5HB-OFFSITE-PLACEHOLDER-IDENTIFIER-DUMMY0"
 const LAPTOP_ID = "LAPTOP-PLACEHOLDER-IDENTIFIER-DUMMY0"
 
 const nameMap = new Map<string, string>([
-  ["spy4x-home", HOME_ID],
-  ["spy4x-offsite", OFFSITE_ID],
-  ["spy4x-laptop", LAPTOP_ID],
+  ["alice-home", HOME_ID],
+  ["alice-offsite", OFFSITE_ID],
+  ["alice-laptop", LAPTOP_ID],
 ])
 
 const currentFolder: ApiFolder = {
@@ -91,7 +91,7 @@ Deno.test("resolveFolderDeviceIds: maps names to IDs", () => {
   const folder: FolderRef = {
     id: "f",
     path: "/sync/f",
-    devices: ["spy4x-home", "spy4x-offsite"],
+    devices: ["alice-home", "alice-offsite"],
   }
   assertEquals(resolveFolderDeviceIds(folder, nameMap), [
     HOME_ID,
@@ -122,7 +122,7 @@ Deno.test("desiredFolder: applies YAML overrides on top of current", () => {
     id: "archive",
     path: "/sync/archive",
     type: "sendreceive",
-    devices: ["spy4x-home", "spy4x-laptop"],
+    devices: ["alice-home", "alice-laptop"],
   }
   const desired = desiredFolder(yaml, currentFolder, nameMap)
   assertEquals(desired.path, "/sync/archive")
@@ -145,7 +145,7 @@ Deno.test("desiredFolder: applies versioning override", () => {
       type: "trashcan",
       params: { cleanoutDays: "180", keep: "5" },
     },
-    devices: ["spy4x-home"],
+    devices: ["alice-home"],
   }
   const desired = desiredFolder(yaml, currentFolder, nameMap)
   assertEquals(desired.versioning?.type, "trashcan")
@@ -159,7 +159,7 @@ Deno.test("desiredFolder: preserves undeclared fields (deep snapshot)", () => {
   const yaml: FolderRef = {
     id: "archive",
     path: "/sync/archive",
-    devices: ["spy4x-home"],
+    devices: ["alice-home"],
   }
   const desired = desiredFolder(yaml, currentFolder, nameMap)
   // current has paused:false — preserved
@@ -171,7 +171,7 @@ Deno.test("desiredFolder: applies paused override", () => {
     id: "archive",
     path: "/sync/archive",
     paused: true,
-    devices: ["spy4x-home"],
+    devices: ["alice-home"],
   }
   const desired = desiredFolder(yaml, currentFolder, nameMap)
   assertEquals(desired.paused, true)
@@ -182,26 +182,26 @@ Deno.test("desiredFolder: applies paused override", () => {
 Deno.test("desiredDevice: applies addresses override", () => {
   const current: ApiDevice = {
     deviceID: OFFSITE_ID,
-    name: "spy4x-offsite",
+    name: "alice-offsite",
     addresses: ["dynamic"],
     compression: "metadata",
   }
   const desired = desiredDevice(
-    { id: OFFSITE_ID, name: "spy4x-offsite", addresses: ["tcp://1.2.3.4:22000"] },
+    { id: OFFSITE_ID, name: "alice-offsite", addresses: ["tcp://203.0.113.4:22000"] },
     current,
   )
-  assertEquals(desired.addresses, ["tcp://1.2.3.4:22000"])
+  assertEquals(desired.addresses, ["tcp://203.0.113.4:22000"])
 })
 
 Deno.test("desiredDevice: applies untrusted override", () => {
   const current: ApiDevice = {
     deviceID: OFFSITE_ID,
-    name: "spy4x-offsite",
+    name: "alice-offsite",
     addresses: ["dynamic"],
     untrusted: false,
   }
   const desired = desiredDevice(
-    { id: OFFSITE_ID, name: "spy4x-offsite", untrusted: true },
+    { id: OFFSITE_ID, name: "alice-offsite", untrusted: true },
     current,
   )
   assertEquals(desired.untrusted, true)
@@ -210,14 +210,14 @@ Deno.test("desiredDevice: applies untrusted override", () => {
 Deno.test("desiredDevice: preserves undeclared fields", () => {
   const current: ApiDevice = {
     deviceID: OFFSITE_ID,
-    name: "spy4x-offsite",
+    name: "alice-offsite",
     addresses: ["dynamic"],
     compression: "metadata",
     paused: true,
     introducer: true,
   }
   const desired = desiredDevice(
-    { id: OFFSITE_ID, name: "spy4x-offsite" },
+    { id: OFFSITE_ID, name: "alice-offsite" },
     current,
   )
   assertEquals(desired.compression, "metadata")

@@ -7,17 +7,17 @@
 // creates it, it only checks that Traefik has already written it.
 //
 // Variable shape:
-//   - STALWART_DOMAIN, STALWART_MTA_STS_DOMAIN, STALWART_MTA_STS_SECONDARY_DOMAIN: the Traefik
-//     hosts, defaulting to `mail.${DOMAIN}` and `mta-sts.${DOMAIN}`; the secondary one has no default and
-//     compose derives it from STALWART_NEATSOFT_DOMAIN. The deploy hooks, the DKIM
-//     checks and the cert-sync sidecar always talk to `mail.${DOMAIN}`, so change
-//     STALWART_DOMAIN only together with that.
+//   - STALWART_DOMAIN, STALWART_MTA_STS_DOMAIN: the Traefik hosts, defaulting to `mail.${DOMAIN}`
+//     and `mta-sts.${DOMAIN}`. The deploy hooks, the DKIM checks and the cert-sync sidecar always
+//     talk to `mail.${DOMAIN}`, so change STALWART_DOMAIN only together with that.
+//   - STALWART_WEBMAIL_ORIGIN: the one browser origin allowed to call JMAP from another host,
+//     defaulting to the bulwark stack's `https://webmail.${DOMAIN}`.
 //   - STALWART_ADMIN_PASSWORD: password of the `admin` recovery account, used by the deploy
 //     hooks and the cert-sync sidecar. Generated.
-//   - STALWART_NEATSOFT_DOMAIN: a second mail domain on the same MX, whose DKIM setup the
-//     deploy hooks check. Route its MTA-STS host with STALWART_MTA_STS_SECONDARY_DOMAIN. The
-//     key keeps its original name so existing servers need no change. The default is `${DOMAIN}`
-//     itself, which makes a server with one mail domain work.
+//   - STALWART_EXTRA_DOMAINS: further mail domains on the same MX, comma-separated. Optional:
+//     blank means DOMAIN is the only mail domain. For each one the deploy hooks check DKIM,
+//     Traefik routes `mta-sts.<domain>` and cert-sync copies the `mail.<domain>` certificate.
+//     before.deploy.ts writes both into the deployed copy of compose.yml on every deploy.
 //   - STALWART_INITIAL_DEPLOY: set to `true` only for the very first deploy, when no live
 //     Stalwart exists yet for the hooks to talk to. Not required.
 //
@@ -49,12 +49,10 @@ export default {
       required: true,
     },
     {
-      key: "STALWART_MTA_STS_SECONDARY_DOMAIN",
-      // No default: compose falls back to `mta-sts.${STALWART_NEATSOFT_DOMAIN}`, a reference a
-      // meta default cannot express. Leave blank unless that host is wrong.
-      question:
-        "Host serving the MTA-STS policy of the second mail domain? Leave blank for the default",
-      required: false,
+      key: "STALWART_WEBMAIL_ORIGIN",
+      question: "Origin (https://host) of the webmail allowed to call JMAP from the browser?",
+      default: "https://webmail.${DOMAIN}",
+      required: true,
     },
     {
       key: "STALWART_ADMIN_PASSWORD",
@@ -64,11 +62,9 @@ export default {
       secret: true,
     },
     {
-      key: "STALWART_NEATSOFT_DOMAIN",
-      question:
-        "Second mail domain served on the same MX? Use the primary domain if there is only one",
-      default: "${DOMAIN}",
-      required: true,
+      key: "STALWART_EXTRA_DOMAINS",
+      question: "Further mail domains served on the same MX, comma-separated? Leave blank for none",
+      required: false,
     },
     {
       key: "STALWART_INITIAL_DEPLOY",

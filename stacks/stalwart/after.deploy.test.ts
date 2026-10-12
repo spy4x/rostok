@@ -6,7 +6,7 @@
 // this exact argv shape reaching a real `ssh` binary.
 
 import { assertEquals, assertThrows } from "@std/assert"
-import { buildSshArgs } from "./after.deploy.ts"
+import { buildSshArgs, dkimDomains } from "./after.deploy.ts"
 
 Deno.test("buildSshArgs: -p, the standard options, then '--' then the target and command", () => {
   const args = buildSshArgs("192.0.2.10", "22", "root", ["docker", "stop", "hl-stalwart"])
@@ -71,4 +71,15 @@ Deno.test("buildSshArgs: rejects a port outside 1-65535", () => {
     Error,
     "invalid SSH_PORT",
   )
+})
+
+Deno.test("the DKIM check covers the primary domain and every STALWART_EXTRA_DOMAINS entry", () => {
+  const env: Record<string, string> = {
+    DOMAIN: "example.com",
+    STALWART_EXTRA_DOMAINS: "example.org,example.net",
+  }
+  assertEquals(dkimDomains((key) => env[key]), ["example.com", "example.org", "example.net"])
+  assertEquals(dkimDomains((key) => ({ DOMAIN: "example.com" } as typeof env)[key]), [
+    "example.com",
+  ])
 })

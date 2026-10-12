@@ -2,7 +2,7 @@
 // 1. Adds Docker proxy subnet (172.18.0.0/16) to Allowed IPs so fail2ban never
 //    blocks reverse proxy. Removes any blocked IPs from same subnet.
 // 2. Sets SystemSettings.defaultHostname to mail.${DOMAIN} so outbound EHLO is
-//    a valid FQDN (RFC 2821 4.1.1.1). Without this, Stalwart falls back to the
+//    a valid FQDN (RFC 2821, the EHLO command). Without this, Stalwart falls back to the
 //    container hostname (e.g. "55458b1fafce") and remote MTAs reject with
 //    "Access denied - Invalid HELO name".
 // 3. Keeps DKIM management manual while Cloudflare DNS publication is manual.
@@ -18,10 +18,10 @@ import {
   verifyActiveDkimDns,
 } from "./dkim.ts"
 import type { JmapCall, JmapResponse } from "./dkim.ts"
+import { resolveExtraDomains } from "./before.deploy.ts"
 
 const PASSWORD = Deno.env.get("STALWART_ADMIN_PASSWORD") ?? ""
 const DOMAIN = Deno.env.get("DOMAIN") ?? ""
-const NEATSOFT_DOMAIN = Deno.env.get("STALWART_NEATSOFT_DOMAIN") ?? ""
 // SSH_HOST/SSH_PORT/SSH_USER: contract keys parsed once from SSH_ADDRESS
 // by cli/deploy/hooks.ts's buildHookEnv (#229) — see its module comment.
 // Building ssh's argv from these instead of the raw SSH_ADDRESS string
@@ -36,11 +36,10 @@ const INITIAL_DEPLOY = Deno.env.get("STALWART_INITIAL_DEPLOY") === "true"
 
 if (
   import.meta.main &&
-  (!PASSWORD || !DOMAIN || !NEATSOFT_DOMAIN || !SSH_HOST)
+  (!PASSWORD || !DOMAIN || !SSH_HOST)
 ) {
   console.error(
-    "after.deploy.ts: STALWART_ADMIN_PASSWORD, DOMAIN, STALWART_NEATSOFT_DOMAIN and " +
-      "SSH_HOST must be set",
+    "after.deploy.ts: STALWART_ADMIN_PASSWORD, DOMAIN and SSH_HOST must be set",
   )
   Deno.exit(1)
 }
@@ -87,7 +86,6 @@ export function buildSshArgs(
 const SUBNET = "172.18.0.0/16"
 const ACCOUNT = STALWART_ACCOUNT
 const DEFAULT_HOSTNAME = `mail.${DOMAIN}`
-const EXPECTED_DKIM_DOMAINS = [DOMAIN, NEATSOFT_DOMAIN]
 let stalwartStopped = false
 
 /** Call Stalwart's public HTTPS JMAP endpoint without exposing credentials in argv. */
@@ -218,7 +216,7 @@ async function ensureSmtp587(): Promise<boolean> {
 
 /** Ensure SystemSettings.defaultHostname is set to a valid FQDN.
  *  Required so outbound SMTP EHLO advertises a real hostname instead of the
- *  docker container ID (which remote MTAs reject per RFC 2821 4.1.1.1). */
+ *  docker container ID (which remote MTAs reject, as RFC 2821 requires of EHLO). */
 async function ensureDefaultHostname(): Promise<"created" | "updated" | "unchanged"> {
   // Look up primary domain id (the one matching DOMAIN).
   const query = await jmap({
@@ -318,20 +316,25 @@ async function stopStalwartAfterDkimFailure(): Promise<void> {
   stalwartStopped = true
 }
 
+/**
+ * The domains whose DKIM setup the deploy checks: the primary DOMAIN, then every domain of
+ * STALWART_EXTRA_DOMAINS. Exported for tests.
+ */
+export function dkimDomains(getEnv: (key: string) => string | undefined): string[] {
+  return [getEnv("DOMAIN") ?? "", ...resolveExtraDomains(getEnv)]
+}
+
 async function main() {
+  const expectedDkimDomains = dkimDomains((key) => Deno.env.get(key))
   console.log("Waiting for Stalwart to become healthy...")
   await waitHealthy()
   console.log("✓ Stalwart healthy")
 
   try {
-    const manualDkim = await ensureManualDkimManagement(
-      DOMAIN,
-      PASSWORD,
-      EXPECTED_DKIM_DOMAINS,
-    )
+    const manualDkim = await ensureManualDkimManagement(DOMAIN, PASSWORD, expectedDkimDomains)
     if (manualDkim > 0) console.log(`✓ Set manual DKIM management for ${manualDkim} domain(s)`)
     else console.log("✓ DKIM management already manual")
-    const verifiedDkim = await verifyActiveDkimDns(DOMAIN, PASSWORD, EXPECTED_DKIM_DOMAINS)
+    const verifiedDkim = await verifyActiveDkimDns(DOMAIN, PASSWORD, expectedDkimDomains)
     console.log(`✓ Verified ${verifiedDkim} active DKIM key(s) in public DNS`)
   } catch (err) {
     const errorMessage = err instanceof Error ? err.message : String(err)

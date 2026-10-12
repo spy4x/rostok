@@ -27,7 +27,7 @@ storage:
 
 endpoints:
   - name: MyService
-    url: "https://myservice.yourdomain.com"
+    url: "https://myservice.example.com"
     interval: 5m
     conditions:
       - "[STATUS] == 200"

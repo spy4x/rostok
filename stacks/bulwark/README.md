@@ -27,7 +27,9 @@ JMAP (RFC 8620) — no IMAP polling, real-time push via EventSource.
 | `BULWARK_ADMIN_PASSWORD` | generated           | Password for the setup wizard and admin dashboard. |
 | `BULWARK_SESSION_SECRET` | generated           | Signs admin session cookies.                       |
 
-The JMAP server is `https://mail.${DOMAIN}`, where the `stalwart` stack puts it.
+The JMAP server is `https://mail.${DOMAIN}`, where the `stalwart` stack puts it. Stalwart allows
+browser calls from one origin, its `STALWART_WEBMAIL_ORIGIN` (default `https://webmail.${DOMAIN}`):
+when you change `BULWARK_DOMAIN`, set that key to the same host.
 
 ## Initial Setup
 

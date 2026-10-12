@@ -20,9 +20,9 @@ User database in `servers/home/configs/authelia/users.yml`:
 
 ```yaml
 users:
-  spy4x:
+  alice:
     password: <bcrypt hash>
-    email: admin@antonshubin.com
+    email: admin@example.com
     groups:
       - admin
 ```

@@ -18,16 +18,86 @@
 
 `rostok stack add stalwart` writes these to `.env`:
 
-| Variable                            | Default                               | Description                                                                                            |
-| ----------------------------------- | ------------------------------------- | ------------------------------------------------------------------------------------------------------ |
-| `STALWART_DOMAIN`                   | `mail.${DOMAIN}`                      | Host of the web UI and JMAP. The deploy hooks and cert-sync assume `mail.${DOMAIN}`.                   |
-| `STALWART_MTA_STS_DOMAIN`           | `mta-sts.${DOMAIN}`                   | Host serving the MTA-STS policy of the primary domain.                                                 |
-| `STALWART_MTA_STS_SECONDARY_DOMAIN` | `mta-sts.${STALWART_NEATSOFT_DOMAIN}` | Host serving the MTA-STS policy of the second mail domain; unset uses the default.                     |
-| `STALWART_NEATSOFT_DOMAIN`          | `${DOMAIN}`                           | Second mail domain on the same MX, whose DKIM the deploy hooks check. The key keeps its original name. |
-| `STALWART_ADMIN_PASSWORD`           | generated                             | Password of the `admin` account.                                                                       |
-| `STALWART_INITIAL_DEPLOY`           | `false`                               | `true` only for the first deploy, before any Stalwart is running.                                      |
-| `STALWART_MEM_LIMIT`                | `512M`                                | Container memory limit.                                                                                |
-| `STALWART_CPU_LIMIT`                | `0.5`                                 | Container CPU limit.                                                                                   |
+| Variable                  | Default                     | Description                                                                                       |
+| ------------------------- | --------------------------- | ------------------------------------------------------------------------------------------------- |
+| `STALWART_DOMAIN`         | `mail.${DOMAIN}`            | Host of the web UI and JMAP. The deploy hooks and cert-sync assume `mail.${DOMAIN}`.              |
+| `STALWART_MTA_STS_DOMAIN` | `mta-sts.${DOMAIN}`         | Host serving the MTA-STS policy of the primary domain.                                            |
+| `STALWART_WEBMAIL_ORIGIN` | `https://webmail.${DOMAIN}` | The one browser origin allowed to call JMAP from another host: the webmail (the `bulwark` stack). |
+| `STALWART_EXTRA_DOMAINS`  | none                        | Further mail domains on the same MX, comma-separated (`example.org,example.net`). Optional.       |
+| `STALWART_ADMIN_PASSWORD` | generated                   | Password of the `admin` account.                                                                  |
+| `STALWART_INITIAL_DEPLOY` | `false`                     | `true` only for the first deploy, before any Stalwart is running.                                 |
+| `STALWART_MEM_LIMIT`      | `512M`                      | Container memory limit.                                                                           |
+| `STALWART_CPU_LIMIT`      | `0.5`                       | Container CPU limit.                                                                              |
+
+### More than one mail domain
+
+`DOMAIN` is the primary mail domain. List every further domain this server receives mail for in
+`STALWART_EXTRA_DOMAINS`. For each one the deploy:
+
+- keeps its DKIM management manual and checks its active DKIM keys in public DNS,
+- routes `https://mta-sts.<domain>` to the MTA-STS policy server (same policy, same MX),
+- lets cert-sync copy the `mail.<domain>` certificate when Traefik holds one.
+
+Compose cannot loop over a list, so `before.deploy.ts` writes these into the copy of `compose.yml`
+that goes to the server: one Traefik router per extra domain (`hl-mta-sts-<domain>`, dots as
+underscores) and the `mail.<domain>` hosts on the `CERT_SYNC_DOMAINS` line. They live in
+`stacks/stalwart/` on the server, so deploying another stack alone, or a `docker compose up` run on
+the server, keeps every extra domain. Never edit the server's copy: the next deploy rewrites it.
+
+Each `mta-sts.` host has its own router, so Traefik orders each certificate by itself. An extra
+domain whose `mta-sts.` DNS record is missing gets no certificate, and no other host is affected.
+
+The same hook renders the MTA-STS policy, `mta-sts/html/.well-known/mta-sts.txt`, from the
+template beside it. Both steps write into the deploy's staging copy of this stack, never into the
+catalog, so they work the same when rostok is installed from JSR.
+
+### Upgrading from `STALWART_NEATSOFT_DOMAIN`
+
+The key `STALWART_NEATSOFT_DOMAIN` (one second mail domain) is no longer read. In
+`servers/<server>/.env`:
+
+- a second mail domain: rename the key, `STALWART_EXTRA_DOMAINS=example.org`. Until you do, the
+  deploy stops with an error before anything is synced, so the second domain is never dropped
+  silently;
+- one mail domain (the line is blank, `${DOMAIN}` or the primary domain): the deploy carries on
+  and prints one line asking you to delete it.
+
+`STALWART_MTA_STS_SECONDARY_DOMAIN` is no longer read: the policy host of a domain is always
+`mta-sts.<domain>`, as the MTA-STS standard requires. Delete that line too, then run
+`rostok env encrypt`.
+
+Certificates: the primary router keeps its name (`hl-mta-sts-primary`) and the second domain's
+router is renamed, but Traefik stores certificates by host name. A server that already serves
+`mta-sts.<domain>` for both domains keeps both certificates and orders nothing new. Only a host
+Traefik has never served gets a new certificate.
+
+The CORS rule for the webmail moved from the Traefik stack's `dynamic/00-base.yml` to this stack's
+own router. It allows `STALWART_WEBMAIL_ORIGIN`, by default `https://webmail.${DOMAIN}`; set the
+key when the webmail lives on another host.
+
+**Deploy order for this upgrade.** Deploy the whole server (`rostok deploy <server>`), or
+`stalwart` first and `traefik` after it. Both stacks change together: the new Traefik files no
+longer define `stalwart-jmap@file`, and the new stalwart router no longer uses it.
+
+If `traefik` is deployed alone first, the stalwart stack still running names a middleware that is
+gone, and Traefik switches that router off. What you see:
+
+- `https://mail.<domain>/` answers `404 page not found`, so the admin page and the webmail's
+  connection to the mail server stop. Mail delivery (ports 25, 465, 587, 993) is not affected.
+- Traefik's log says `middleware "stalwart-jmap@file" does not exist`.
+- `rostok deploy <server> stalwart` then stops at `live Stalwart health check failed: HTTP 404`,
+  because the hook asks the live server through that router.
+
+To recover, set `STALWART_INITIAL_DEPLOY=true` in the server's `.env`, deploy `stalwart`, and
+remove the line again. That one deploy skips the DKIM step before the sync (the one after it still
+runs) and brings the router back with its own middleware.
+
+Be careful with that flag on a live mail server. While it is set, any failure after the deploy (a
+health wait that times out, one failed DKIM lookup) stops the `hl-stalwart` container, and SMTP and
+IMAP go down with it. If that happens, start the container on the server
+(`docker start hl-stalwart`), or deploy `stalwart` again with the flag still set; a deploy without
+the flag cannot run while the container is stopped. Remove the flag once a deploy has gone
+through, and never leave it in `.env`.
 
 - **Config file:** `/etc/stalwart/config.json` (managed via admin UI)
 - **Data:** `/var/lib/stalwart/data` (SQLite database)
