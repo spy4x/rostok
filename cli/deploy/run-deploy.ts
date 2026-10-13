@@ -220,10 +220,10 @@ export async function runDeploy(
       home,
     })
     checkLocalDeployPaths({
-      projectRoots: [await realPathOr(projectRoot)],
-      pathApps: await realPathOr(PATH_APPS),
-      volumesPath: await realPathOr(VOLUMES_PATH),
-      home: home === undefined ? undefined : await realPathOr(home),
+      projectRoots: [await realPathOr(projectRoot, `the project folder`)],
+      pathApps: await realPathOr(PATH_APPS, `PATH_APPS`),
+      volumesPath: await realPathOr(VOLUMES_PATH, `VOLUMES_PATH`),
+      home: home === undefined ? undefined : await realPathOr(home, `HOME`),
     })
     await (io.checkLocalDockerEndpoint ?? checkLocalDockerEndpoint)(SSH_ADDRESS)
   }
@@ -822,16 +822,31 @@ function removeStagingDirSync(dir: string): void {
  * `path` with symlinks resolved. A path that doesn't exist yet resolves
  * its deepest existing ancestor and keeps the rest as written, so a
  * not-yet-created PATH_APPS under a symlink is still compared by where
- * it will really land.
+ * it will really land. Any other failure (no permission to look inside
+ * a parent, a parent that is a file) is a UserError that names
+ * `variable`, the setting the path came from, and the path (#291).
  */
-async function realPathOr(path: string): Promise<string> {
+async function realPathOr(path: string, variable: string): Promise<string> {
+  try {
+    return await realPathOrParent(path)
+  } catch (err) {
+    const reason = err instanceof Error ? err.message : String(err)
+    throw new UserError(
+      `cannot resolve ${variable} (${path}): ${reason}\n` +
+        `Set it to a path this user can reach, whose parents are all folders.`,
+    )
+  }
+}
+
+/** The walk behind `realPathOr`; throws whatever `Deno.realPath` throws, except NotFound. */
+async function realPathOrParent(path: string): Promise<string> {
   try {
     return await Deno.realPath(path)
   } catch (err) {
     if (!(err instanceof Deno.errors.NotFound)) throw err
     const parent = dirname(path)
     if (parent === path) return path
-    return join(await realPathOr(parent), basename(path))
+    return join(await realPathOrParent(parent), basename(path))
   }
 }
 

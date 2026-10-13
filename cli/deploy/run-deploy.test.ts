@@ -1004,6 +1004,55 @@ Deno.test("runDeploy: a not-yet-created local PATH_APPS under a symlink into the
   }
 })
 
+Deno.test("runDeploy: a local PATH_APPS under a file is refused with a UserError that names PATH_APPS and the path (#291)", async () => {
+  const f = await setupRunDeployFixture()
+  const elsewhere = await Deno.makeTempDir({ prefix: "rostok-rundeploy-elsewhere-" })
+  try {
+    // Like /etc/passwd/apps: a parent of PATH_APPS is a file.
+    const file = join(await Deno.realPath(elsewhere), "a-file")
+    await Deno.writeTextFile(file, "")
+    const pathApps = `${file}/apps`
+    await writeLocalServer(f.projectDir, pathApps)
+    const endpointChecks: string[] = []
+    const io: RunDeployIO = {
+      ...f.io,
+      checkLocalDockerEndpoint: async (address) => {
+        endpointChecks.push(address)
+      },
+    }
+    const err = await assertRejects(
+      () => runDeploy({ cwd: f.projectDir, server: "test" }, io),
+      UserError,
+    )
+    assertStringIncludes(err.message, `cannot resolve PATH_APPS (${pathApps})`)
+    assertEquals(f.remote.calls, [])
+    assertEquals(endpointChecks, [])
+  } finally {
+    await Deno.remove(elsewhere, { recursive: true })
+    await teardownRunDeployFixture(f)
+  }
+})
+
+Deno.test("runDeploy: a local PATH_APPS that does not exist yet passes the path guard (#291)", async () => {
+  const f = await setupRunDeployFixture()
+  const elsewhere = await Deno.makeTempDir({ prefix: "rostok-rundeploy-elsewhere-" })
+  try {
+    await writeLocalServer(f.projectDir, join(elsewhere, "not", "yet", "apps"))
+    const endpointChecks: string[] = []
+    const io: RunDeployIO = {
+      ...f.io,
+      checkLocalDockerEndpoint: async (address) => {
+        endpointChecks.push(address)
+      },
+    }
+    await runDeploy({ cwd: f.projectDir, server: "test" }, io)
+    assertEquals(endpointChecks, ["local"])
+  } finally {
+    await Deno.remove(elsewhere, { recursive: true })
+    await teardownRunDeployFixture(f)
+  }
+})
+
 /** A project stack `needy` whose +meta.ts marks NEEDY_TOKEN and NEEDY_PORT required; returns its hook marker's path. */
 async function writeNeedyStack(projectDir: string): Promise<string> {
   const stackDir = join(projectDir, "stacks", "needy")
