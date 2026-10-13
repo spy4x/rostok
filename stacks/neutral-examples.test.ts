@@ -5,7 +5,7 @@
 //
 // Three rules, none of which needs a private list:
 //   - E-mail addresses must be at a reserved example domain (RFC 2606 / RFC 6761).
-//   - IPv4 addresses must be private, loopback, link-local, documentation (RFC 5737) or one of
+//   - IPv4 addresses must be private, loopback, link-local, reserved, documentation (RFC 5737) or one of
 //     the public DNS resolvers named below. This is the rule that guards a server's real IP,
 //     without the check having to publish it.
 //   - The author's public names (already on the README and the GitHub profile) may appear only
@@ -38,7 +38,8 @@ export function isNeutralIpv4(a: number, b: number, c: number): boolean {
     (a === 169 && b === 254) ||
     (a === 172 && b >= 16 && b <= 31) ||
     (a === 192 && b === 168) ||
-    (a === 192 && b === 0 && c === 2) ||
+    (a === 192 && b === 0 && (c === 0 || c === 2)) ||
+    (a === 198 && (b === 18 || b === 19)) ||
     (a === 198 && b === 51 && c === 100) ||
     (a === 203 && b === 0 && c === 113)
 }
@@ -133,7 +134,7 @@ Deno.test("an e-mail address outside the example domains is reported", () => {
 })
 
 Deno.test("a public IPv4 address is reported, also when its last octets are masked", () => {
-  assertEquals(findLeftovers("ssh root@198.18.0.1").length, 1)
+  assertEquals(findLeftovers("ssh root@198.20.0.1").length, 1)
   assertEquals(findLeftovers("the cloud server (203.1.x.x)").length, 1)
   assertEquals(findLeftovers("addresses: tcp://45.67.89.10:22000").length, 1)
 })
@@ -147,7 +148,10 @@ Deno.test("private, loopback, documentation and resolver IPv4 addresses are allo
     "169.254.169.254",
     "172.18.0.0/16",
     "192.168.1.10",
+    "192.0.0.8",
     "192.0.2.1",
+    "198.18.0.1",
+    "198.19.255.254",
     "198.51.100.7",
     "203.0.113.9",
     "255.255.255.0",
@@ -157,7 +161,11 @@ Deno.test("private, loopback, documentation and resolver IPv4 addresses are allo
   ]
   assertEquals(findLeftovers(neutral.join(" ")), [])
   // Neighbours of the allowed ranges are public.
-  assertEquals(findLeftovers("172.32.0.1 192.0.3.1 100.128.0.1 198.51.101.1").length, 4)
+  assertEquals(
+    findLeftovers("172.32.0.1 192.0.1.1 192.0.3.1 100.128.0.1 198.17.0.1 198.20.0.1 198.51.101.1")
+      .length,
+    7,
+  )
   // A version with a part above 255 is not an address.
   assertEquals(findLeftovers("tag 1.300.2.1, section 1.2.3.300"), [])
 })
