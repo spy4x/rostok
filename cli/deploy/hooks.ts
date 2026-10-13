@@ -123,6 +123,7 @@
 // alias, the same as before #229 and the same as every non-hook ssh call
 // deploy makes.
 
+import { IMAGE_POLICY_KEY } from "../images/policy.ts"
 import { loadCatalog } from "../catalog.ts"
 import { decodeEnvValue } from "../env-files.ts"
 import { UserError } from "../errors.ts"
@@ -314,7 +315,10 @@ export function buildHookEnv(
       const ownedByAnotherStack = [...ctx.installedStackNames, ...CATALOG_STACK_NAMES].some(
         (otherStack) => otherStack !== stackName && key.startsWith(stackKeyPrefix(otherStack)),
       )
-      if (!(key in processEnv) && !ownedByAnotherStack) {
+      // IMAGE_POLICY is rostok's own setting in the same files: no hook
+      // gets it, and it is no stray key to warn about.
+      const rostokSetting = key === IMAGE_POLICY_KEY
+      if (!(key in processEnv) && !ownedByAnotherStack && !rostokSetting) {
         const list = droppedByFile.get(source) ?? []
         list.push(sanitizeForLog(key))
         droppedByFile.set(source, list)
