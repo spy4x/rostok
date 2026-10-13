@@ -659,6 +659,13 @@ Deno.test("buildHookEnv: a key owned by another INSTALLED stack is dropped silen
   assertEquals(env.LIBRESPEED_IMAGE_TAG, undefined)
 })
 
+Deno.test("buildHookEnv: rostok's own IMAGE_POLICY setting is dropped silently, no warning", () => {
+  const ctx: HookContext = { ...BASE_CTX, rootEnv: { IMAGE_POLICY: "pinned" } }
+  const { env, warnings } = buildHookEnv(ctx, STACK_NAME, {})
+  assertEquals(warnings, [])
+  assertEquals(env.IMAGE_POLICY, undefined)
+})
+
 Deno.test("buildHookEnv: a key of a catalog stack that is not installed is dropped silently (#256)", () => {
   // `stack remove librespeed -n` keeps librespeed's values in .env; every
   // later deploy must not warn about them from every remaining hook.
