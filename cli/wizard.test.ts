@@ -15,6 +15,11 @@ async function withTmpDir<T>(fn: (dir: string) => Promise<T>): Promise<T> {
   }
 }
 
+// Interactive runs reach the wizard's image-policy question; these
+// tests are about other steps, so they answer it up front, the way
+// `--var IMAGE_POLICY=pinned` does.
+const ANSWERED_IMAGE_POLICY = { IMAGE_POLICY: "pinned" }
+
 const SERVER_INPUTS = {
   serverName: "home",
   sshTarget: "homelab",
@@ -243,6 +248,7 @@ Deno.test("runWizard: multi-select — picking two stacks adds both", async () =
     const catalogDir = join(dir, "catalog")
     await writeTraefikWebCatalog(catalogDir)
     const result = await runWizard({
+      providedVars: ANSWERED_IMAGE_POLICY,
       cwd: dir,
       catalogDir,
       serverInputs: SERVER_INPUTS,
@@ -261,6 +267,7 @@ Deno.test("runWizard: the stack picker's options show each stack's description n
     await writeTraefikWebCatalog(catalogDir)
     let seenOptions: { name: string; value: string }[] = []
     await runWizard({
+      providedVars: ANSWERED_IMAGE_POLICY,
       cwd: dir,
       catalogDir,
       serverInputs: SERVER_INPUTS,
@@ -285,6 +292,7 @@ Deno.test("runWizard: multi-select — picking traefik + web together never asks
     const catalogDir = join(dir, "catalog")
     await writeTraefikWebCatalog(catalogDir)
     const result = await runWizard({
+      providedVars: ANSWERED_IMAGE_POLICY,
       cwd: dir,
       catalogDir,
       serverInputs: SERVER_INPUTS,
@@ -303,6 +311,7 @@ Deno.test("runWizard: the key-generation offer runs, once, after a fresh init, i
   await withTmpDir(async (dir) => {
     let calls = 0
     await runWizard({
+      providedVars: ANSWERED_IMAGE_POLICY,
       cwd: dir,
       serverInputs: SERVER_INPUTS,
       skipStackAdd: true,
@@ -340,6 +349,7 @@ Deno.test("runWizard: the key-generation offer does NOT re-run on an already-ini
     // cliffy Confirm.prompt and hangs on a real TTY (reproduced with
     // `python3 -c 'import pty; pty.spawn(...)'`).
     await runWizard({
+      providedVars: ANSWERED_IMAGE_POLICY,
       cwd: dir,
       serverInputs: SERVER_INPUTS,
       skipStackAdd: true,
@@ -347,6 +357,7 @@ Deno.test("runWizard: the key-generation offer does NOT re-run on an already-ini
     })
     let calls = 0
     await runWizard({
+      providedVars: ANSWERED_IMAGE_POLICY,
       cwd: dir,
       serverInputs: SERVER_INPUTS,
       skipStackAdd: true,
@@ -376,5 +387,80 @@ Deno.test("runWizard: -n --var serverName=../x leaves an empty folder", async ()
     const entries: string[] = []
     for await (const e of Deno.readDir(dir)) entries.push(e.name)
     assertEquals(entries, [], "init must not have written anything")
+  })
+})
+
+// #340 — the wizard asks once whether image tags are pinned or latest
+// and writes the answer to the project's .env.root.
+
+async function rootEnvOf(dir: string): Promise<string> {
+  return await Deno.readTextFile(join(dir, ".env.root"))
+}
+
+Deno.test("runWizard: a non-interactive run writes IMAGE_POLICY=pinned to .env.root", async () => {
+  await withTmpDir(async (dir) => {
+    await runWizard({ cwd: dir, nonInteractive: true, serverInputs: SERVER_INPUTS })
+    assertEquals(await rootEnvOf(dir), "IMAGE_POLICY=pinned\n")
+  })
+})
+
+Deno.test("runWizard: --var IMAGE_POLICY=latest sets the project's policy, also over an earlier one", async () => {
+  await withTmpDir(async (dir) => {
+    await runWizard({
+      cwd: dir,
+      nonInteractive: true,
+      serverInputs: SERVER_INPUTS,
+      providedVars: { IMAGE_POLICY: "latest" },
+    })
+    assertEquals(await rootEnvOf(dir), "IMAGE_POLICY=latest\n")
+    await runWizard({
+      cwd: dir,
+      nonInteractive: true,
+      serverInputs: SERVER_INPUTS,
+      providedVars: { IMAGE_POLICY: "pinned" },
+    })
+    assertEquals(await rootEnvOf(dir), "IMAGE_POLICY=pinned\n")
+  })
+})
+
+Deno.test("runWizard: an interactive run asks for the image policy once, offers pinned, and a re-run does not ask again", async () => {
+  await withTmpDir(async (dir) => {
+    const asked: { message: string; default?: string }[] = []
+    const options = {
+      cwd: dir,
+      serverInputs: SERVER_INPUTS,
+      skipStackAdd: true,
+      offerKeyGeneration: () => Promise.resolve(),
+      promptFn: (base: { message: string; default?: string }) => {
+        asked.push(base)
+        return Promise.resolve("latest")
+      },
+    }
+    await runWizard(options)
+    assertEquals(asked.length, 1)
+    assertEquals(asked[0].message.includes("IMAGE_POLICY"), true)
+    assertEquals(asked[0].default, "pinned")
+    assertEquals(await rootEnvOf(dir), "IMAGE_POLICY=latest\n")
+
+    await runWizard(options)
+    assertEquals(asked.length, 1)
+    assertEquals(await rootEnvOf(dir), "IMAGE_POLICY=latest\n")
+  })
+})
+
+Deno.test("runWizard: an IMAGE_POLICY other than pinned or latest is refused and not written", async () => {
+  await withTmpDir(async (dir) => {
+    await assertRejects(
+      () =>
+        runWizard({
+          cwd: dir,
+          nonInteractive: true,
+          serverInputs: SERVER_INPUTS,
+          providedVars: { IMAGE_POLICY: "sometimes" },
+        }),
+      UserError,
+      `invalid IMAGE_POLICY: must be "pinned" or "latest"`,
+    )
+    assertEquals(await rootEnvOf(dir), "")
   })
 })

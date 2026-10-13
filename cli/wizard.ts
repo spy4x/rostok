@@ -19,6 +19,7 @@ import { stackAdd, type StackAddResult } from "./stack-add.ts"
 import { resolveCatalog } from "./catalog-paths.ts"
 import { serverDirFor, validateServerName } from "./server-keys.ts"
 import { buildNextSteps } from "./next-steps.ts"
+import { chooseImagePolicy } from "./images/policy.ts"
 import { assertInteractiveStdin, type ConfirmFn, type PromptFn } from "./prompts.ts"
 import { join, relative } from "@std/path"
 
@@ -83,6 +84,15 @@ export async function runWizard(opts: WizardOptions = {}): Promise<WizardResult>
   if (init.shouldOfferKeyGeneration && !opts.nonInteractive) {
     await offerKeyGeneration(cwd)
   }
+
+  // Pinned or latest image tags, asked once per project (#340). The
+  // answer lives in .env.root; a re-run finds it there and doesn't ask.
+  await chooseImagePolicy({
+    cwd,
+    providedVars: opts.providedVars,
+    nonInteractive: opts.nonInteractive,
+    promptFn: opts.promptFn,
+  })
 
   // Step 2: server create.
   const server = await serverCreate({
