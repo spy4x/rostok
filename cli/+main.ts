@@ -14,6 +14,7 @@ import { parseStackFlags, parseVarFlags } from "./cli-flags.ts"
 import { LOCAL_SSH_ADDRESS } from "./server-keys.ts"
 import { deployCommand } from "./commands/deploy.ts"
 import { envCommand } from "./commands/env.ts"
+import { imagesCommand } from "./commands/images.ts"
 import { stackListCommand } from "./commands/list.ts"
 import { stackAddCommand } from "./commands/stack-add.ts"
 import { stackRemoveCommand } from "./commands/stack-remove.ts"
@@ -46,6 +47,7 @@ Examples:
     rostok stack remove traefik -s home   # remove a stack from a server
     rostok stack list --tree              # browse the bundled catalog
     rostok deploy home                    # deploy over SSH
+    rostok images outdated                # pinned images with a newer version
     rostok env status                     # encryption posture + next steps`
 
 // deno-lint-ignore no-explicit-any
@@ -146,6 +148,8 @@ Examples:
   cmd.command("deploy", deployCommand)
 
   cmd.command("env", envCommand)
+
+  cmd.command("images", imagesCommand)
 
   return cmd
 }

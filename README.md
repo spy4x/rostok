@@ -66,6 +66,21 @@ auto-encrypted to `.env.age` (once a key exists — `rostok env setup`),
 so secrets are safe to commit. Every command and flag:
 [docs/commands.md](docs/commands.md).
 
+## Image versions: pinned or latest
+
+You choose once, in the wizard, and can change it per server:
+
+- **`pinned`** (the default). `rostok stack add` writes the exact
+  version of each image into the server's `.env`, so nothing changes
+  until you decide. `rostok images outdated` shows what has a newer
+  version, `rostok images update <server>` moves the pins, and
+  `rostok deploy` applies them.
+- **`latest`**. Images follow the newest release.
+
+It is one line, `IMAGE_POLICY=pinned` or `IMAGE_POLICY=latest`, in
+`.env.root` for the whole project or in a server's `.env` for that
+server. Details: [docs/commands.md](docs/commands.md#image-versions).
+
 ## What you get
 
 After `$ rostok`, your project folder holds:

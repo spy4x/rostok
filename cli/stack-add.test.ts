@@ -8,6 +8,7 @@ import { UserError } from "./errors.ts"
 import { readEnvFile } from "./env-files.ts"
 import { stackAdd } from "./stack-add.ts"
 import type { PromptBase } from "./prompts.ts"
+import { fakeRegistry, sha } from "./images/fake-registry.test.ts"
 
 async function withTmpDir<T>(fn: (dir: string) => Promise<T>): Promise<T> {
   const dir = await Deno.makeTempDir({ prefix: "rostok-stack-add-" })
@@ -620,3 +621,288 @@ Deno.test("stack add refuses a stack whose own key prefix is reserved (GIT_)", a
     assertEquals(entries.some((e) => e.key === "GIT_MIRROR_URL"), false)
   })
 })
+
+// #340 — IMAGE_POLICY: under `pinned`, stack add writes the exact version
+// of each variable-tagged image; under `latest` it leaves the tags as
+// they were. Registry answers come from a fake `fetch`.
+
+const GATUS_META = `
+import type { StackMeta } from "@rostok/cli"
+export default {
+  name: "gatus",
+  description: "fixture",
+  variables: [
+    { key: "GATUS_IMAGE_TAG", default: "latest", required: false },
+    { key: "GATUS_DOMAIN", default: "uptime.\${DOMAIN}", required: true },
+  ],
+} satisfies StackMeta
+`
+
+/** gatus on GHCR (declared in +meta.ts) plus a database image whose tag variable +meta.ts doesn't declare. */
+const GATUS_COMPOSE = `services:
+  gatus:
+    image: ghcr.io/twin/gatus:\${GATUS_IMAGE_TAG:-latest}
+  db:
+    image: postgres:\${GATUS_DB_IMAGE_TAG:-16}
+`
+
+function gatusRegistry() {
+  return fakeRegistry({
+    "ghcr.io/twin/gatus": {
+      tags: { latest: sha("b1"), "v5.11.0": sha("b0"), "v5.12.1": sha("b1") },
+    },
+    "registry-1.docker.io/library/postgres": {
+      tags: { "16": sha("e1"), "16.9": sha("e1"), "17.5": sha("e2"), latest: sha("e2") },
+    },
+  })
+}
+
+/** A project with server `home` and a fixture catalog holding the gatus stack. */
+async function withGatusProject<T>(
+  files: { rootEnv?: string; serverEnv?: string },
+  fn: (dir: string, catalogDir: string) => Promise<T>,
+): Promise<T> {
+  return await withTmpDir(async (dir) => {
+    const catalogDir = join(dir, "catalog")
+    await writeCatalog(catalogDir, { gatus: GATUS_META })
+    await Deno.writeTextFile(join(catalogDir, "gatus", "compose.yml"), GATUS_COMPOSE)
+    await Deno.mkdir(join(dir, "servers", "home"), { recursive: true })
+    await Deno.writeTextFile(
+      join(dir, "servers", "home", ".env"),
+      `DOMAIN=example.com\n${files.serverEnv ?? ""}`,
+    )
+    if (files.rootEnv !== undefined) await Deno.writeTextFile(join(dir, ".env.root"), files.rootEnv)
+    return await fn(dir, catalogDir)
+  })
+}
+
+async function serverEnvOf(dir: string): Promise<Record<string, string>> {
+  const entries = await readEnvFile(join(dir, "servers", "home", ".env"))
+  return Object.fromEntries(entries.map((e) => [e.key, e.value]))
+}
+
+Deno.test("pinned policy: stack add writes each image's exact version into the server's .env", async () => {
+  await withGatusProject({}, async (dir, catalogDir) => {
+    const registry = gatusRegistry()
+    const result = await stackAdd("gatus", "home", {
+      cwd: dir,
+      catalogDir,
+      nonInteractive: true,
+      fetch: registry.fetch,
+    })
+    const env = await serverEnvOf(dir)
+    assertEquals(env.GATUS_IMAGE_TAG, "v5.12.1")
+    assertEquals(env.GATUS_DB_IMAGE_TAG, "16.9")
+    assertEquals(env.GATUS_DOMAIN, "uptime.example.com")
+    assertEquals(result.newCount, 3)
+  })
+})
+
+Deno.test("pinned policy: an image with no version tag for its digest is pinned as latest@sha256", async () => {
+  await withGatusProject({ rootEnv: "IMAGE_POLICY=pinned\n" }, async (dir, catalogDir) => {
+    const registry = fakeRegistry({
+      "ghcr.io/twin/gatus": { tags: { latest: sha("b1"), "v5.11.0": sha("b0") } },
+      "registry-1.docker.io/library/postgres": { tags: { "16": sha("e1") } },
+    })
+    await stackAdd("gatus", "home", {
+      cwd: dir,
+      catalogDir,
+      nonInteractive: true,
+      fetch: registry.fetch,
+    })
+    const env = await serverEnvOf(dir)
+    assertEquals(env.GATUS_IMAGE_TAG, `latest@${sha("b1")}`)
+    assertEquals(env.GATUS_DB_IMAGE_TAG, `16@${sha("e1")}`)
+  })
+})
+
+Deno.test("latest policy in .env.root: stack add asks no registry and writes no pin", async () => {
+  await withGatusProject({ rootEnv: "IMAGE_POLICY=latest\n" }, async (dir, catalogDir) => {
+    const registry = gatusRegistry()
+    await stackAdd("gatus", "home", {
+      cwd: dir,
+      catalogDir,
+      nonInteractive: true,
+      fetch: registry.fetch,
+    })
+    const env = await serverEnvOf(dir)
+    assertEquals(registry.calls, [])
+    assertEquals(env.GATUS_IMAGE_TAG, "latest") // the stack's own default, as before #340
+    assertEquals("GATUS_DB_IMAGE_TAG" in env, false)
+  })
+})
+
+Deno.test("a server's IMAGE_POLICY wins over the project's at stack add, in both directions", async () => {
+  await withGatusProject(
+    { rootEnv: "IMAGE_POLICY=pinned\n", serverEnv: "IMAGE_POLICY=latest\n" },
+    async (dir, catalogDir) => {
+      const registry = gatusRegistry()
+      await stackAdd("gatus", "home", {
+        cwd: dir,
+        catalogDir,
+        nonInteractive: true,
+        fetch: registry.fetch,
+      })
+      assertEquals(registry.calls, [])
+      assertEquals((await serverEnvOf(dir)).GATUS_IMAGE_TAG, "latest")
+    },
+  )
+  await withGatusProject(
+    { rootEnv: "IMAGE_POLICY=latest\n", serverEnv: "IMAGE_POLICY=pinned\n" },
+    async (dir, catalogDir) => {
+      await stackAdd("gatus", "home", {
+        cwd: dir,
+        catalogDir,
+        nonInteractive: true,
+        fetch: gatusRegistry().fetch,
+      })
+      assertEquals((await serverEnvOf(dir)).GATUS_IMAGE_TAG, "v5.12.1")
+    },
+  )
+})
+
+Deno.test("pinned policy: a tag the user already has in .env, or passes with --var, is never overwritten", async () => {
+  await withGatusProject(
+    // The user's own choices, one of them on another major version than the compose default.
+    { serverEnv: "GATUS_DB_IMAGE_TAG=17.5\n" },
+    async (dir, catalogDir) => {
+      const registry = gatusRegistry()
+      await stackAdd("gatus", "home", {
+        cwd: dir,
+        catalogDir,
+        nonInteractive: true,
+        providedVars: { GATUS_IMAGE_TAG: "latest" },
+        fetch: registry.fetch,
+      })
+      const env = await serverEnvOf(dir)
+      assertEquals(env.GATUS_DB_IMAGE_TAG, "17.5")
+      assertEquals(env.GATUS_IMAGE_TAG, "latest")
+      assertEquals(registry.calls, [])
+    },
+  )
+})
+
+Deno.test("pinned policy: an unreachable registry warns once per image, leaves its variable unset and still adds the stack", async () => {
+  await withGatusProject({}, async (dir, catalogDir) => {
+    const registry = gatusRegistry()
+    registry.down.add("ghcr.io")
+    const warnings: string[] = []
+    const originalWarn = console.warn
+    console.warn = (...args: unknown[]) => warnings.push(args.join(" "))
+    try {
+      await stackAdd("gatus", "home", {
+        cwd: dir,
+        catalogDir,
+        nonInteractive: true,
+        fetch: registry.fetch,
+      })
+    } finally {
+      console.warn = originalWarn
+    }
+    const env = await serverEnvOf(dir)
+    assertEquals("GATUS_IMAGE_TAG" in env, false)
+    assertEquals(env.GATUS_DB_IMAGE_TAG, "16.9")
+    assertEquals(env.GATUS_DOMAIN, "uptime.example.com")
+    const pinWarnings = warnings.filter((w) => w.includes("could not pin"))
+    assertEquals(pinWarnings.length, 1)
+    assertStringIncludes(pinWarnings[0], "ghcr.io/twin/gatus:latest")
+    const config = JSON.parse(await Deno.readTextFile(join(dir, "servers", "home", "config.json")))
+    assertEquals(config.stacks, [{ name: "gatus" }])
+
+    // The registry is back: the same command pins what it could not pin before.
+    registry.down.clear()
+    await stackAdd("gatus", "home", {
+      cwd: dir,
+      catalogDir,
+      nonInteractive: true,
+      fetch: registry.fetch,
+    })
+    assertEquals((await serverEnvOf(dir)).GATUS_IMAGE_TAG, "v5.12.1")
+  })
+})
+
+Deno.test("pinned policy: a database default of 16 is never pinned to another major version", async () => {
+  await withGatusProject({}, async (dir, catalogDir) => {
+    // `16` and a wrongly pushed 17.5 share one digest; no 16.x tag does.
+    const registry = fakeRegistry({
+      "ghcr.io/twin/gatus": { tags: { latest: sha("b1"), "v5.12.1": sha("b1") } },
+      "registry-1.docker.io/library/postgres": {
+        tags: { "16": sha("e1"), "17.5": sha("e1"), "16.8": sha("e0") },
+      },
+    })
+    await stackAdd("gatus", "home", {
+      cwd: dir,
+      catalogDir,
+      nonInteractive: true,
+      fetch: registry.fetch,
+    })
+    assertEquals((await serverEnvOf(dir)).GATUS_DB_IMAGE_TAG, `16@${sha("e1")}`)
+  })
+})
+
+Deno.test("an invalid IMAGE_POLICY stops stack add before it writes anything", async () => {
+  await withGatusProject({ rootEnv: "IMAGE_POLICY=sometimes\n" }, async (dir, catalogDir) => {
+    await assertRejects(
+      () => stackAdd("gatus", "home", { cwd: dir, catalogDir, nonInteractive: true }),
+      UserError,
+      ".env.root: IMAGE_POLICY must be",
+    )
+    assertEquals(await serverEnvOf(dir), { DOMAIN: "example.com" })
+  })
+})
+
+// A CLI installed from a package host downloads a shipped stack's compose
+// file. These two tests add the catalog's own traefik stack, with that
+// download failing in the two ways a host fails.
+for (
+  const [failure, reason, fetchFn] of [
+    [
+      "is unreachable",
+      "packages.example.com unreachable",
+      () => Promise.reject(new TypeError("connection refused")),
+    ],
+    [
+      "answers 404",
+      "packages.example.com answered HTTP 404",
+      () => Promise.resolve(new Response("not found", { status: 404 })),
+    ],
+  ] as const
+) {
+  Deno.test(`pinned policy: when the package host ${failure} for the compose file, stack add warns once, adds the stack and writes no floating image tag`, async () => {
+    await withTmpDir(async (dir) => {
+      await Deno.mkdir(join(dir, "servers", "home"), { recursive: true })
+      await Deno.writeTextFile(join(dir, "servers", "home", ".env"), "DOMAIN=example.com\n")
+      const warnings: string[] = []
+      const originalWarn = console.warn
+      console.warn = (...args: unknown[]) => warnings.push(args.join(" "))
+      try {
+        await stackAdd("traefik", "home", {
+          cwd: dir,
+          nonInteractive: true,
+          fetch: fetchFn as typeof fetch,
+          resolveStackFiles: () =>
+            Promise.resolve({
+              files: new Map([[
+                "compose.yml",
+                "https://packages.example.com/stacks/traefik/compose.yml",
+              ]]),
+              origin: "shipped",
+            }),
+        })
+      } finally {
+        console.warn = originalWarn
+      }
+      assertEquals(warnings.filter((w) => w.includes("compose file")), [
+        `rostok: could not read the compose file of stack 'traefik' (${reason}), so its image ` +
+        "versions are not pinned. Run the same `rostok stack add` again to pin them.",
+      ])
+      const env = await serverEnvOf(dir)
+      assertEquals(Object.keys(env).filter((key) => key.endsWith("_IMAGE_TAG")), [])
+      assertEquals(env.DOMAIN, "example.com")
+      const config = JSON.parse(
+        await Deno.readTextFile(join(dir, "servers", "home", "config.json")),
+      )
+      assertEquals(config.stacks, [{ name: "traefik" }])
+    })
+  })
+}
