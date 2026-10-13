@@ -56,7 +56,7 @@
 import { shQuote } from "./exec.ts"
 import { UserError } from "../errors.ts"
 import { pathComponents } from "../server-keys.ts"
-import { validateStackMeta } from "../stack-meta.ts"
+import { type StackMeta, validateStackMeta } from "../stack-meta.ts"
 import { loadCatalog } from "../catalog.ts"
 
 /**
@@ -163,12 +163,28 @@ async function loadMetaList(
   files: Map<string, string>,
   field: "fileMounts" | "keepOwner",
 ): Promise<string[]> {
+  return (await loadDeployMeta(stackName, files, field))?.[field] ?? []
+}
+
+/**
+ * The `+meta.ts` a deploy uses for a stack: the project's own
+ * `stacks/<name>/+meta.ts` when `files` has one, else the bundled
+ * catalog's, else undefined. A local `+meta.ts` that fails to load falls
+ * back to the catalog's with a warning, or throws a UserError for a stack
+ * the catalog doesn't know. `field` names what the caller reads from it,
+ * for those two messages.
+ */
+export async function loadDeployMeta(
+  stackName: string,
+  files: Map<string, string>,
+  field: string,
+): Promise<StackMeta | undefined> {
   const bundled = loadCatalog().find((e) => e.name === stackName)?.meta
   const metaUrl = files.get("+meta.ts")
-  if (!metaUrl) return bundled?.[field] ?? []
+  if (!metaUrl) return bundled
   try {
     const mod = await import(metaUrl)
-    return validateStackMeta(mod.default)[field] ?? []
+    return validateStackMeta(mod.default)
   } catch (err) {
     const reason = err instanceof Error ? err.message : String(err)
     if (!bundled) {
@@ -181,7 +197,7 @@ async function loadMetaList(
       `Warning: could not load stacks/${stackName}/+meta.ts (${reason}); ` +
         `using the bundled catalog's ${field} for ${stackName} instead. ${META_IMPORT_HINT}`,
     )
-    return bundled[field] ?? []
+    return bundled
   }
 }
 

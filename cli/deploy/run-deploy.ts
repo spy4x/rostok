@@ -78,7 +78,12 @@ import { basename, dirname, join, resolve, toFileUrl } from "@std/path"
 import { parseEnv, readEnvFile } from "../env-files.ts"
 import { isLocalSshAddress, serverDirFor } from "../server-keys.ts"
 import { serverNotFoundMessage, UserError } from "../errors.ts"
-import { assertNoBareDollar, resolveDeployEnv } from "./env.ts"
+import {
+  assertNoBareDollar,
+  assertRequiredStackKeys,
+  resolveDeployEnv,
+  type StackRequiredKeys,
+} from "./env.ts"
 import { checkLocalDeployPaths, checkLocalDockerEndpoint } from "./local-server.ts"
 import { checkDockerGroup, checkRemotePathsNotNested, needsRemoteSudo } from "./docker-preflight.ts"
 import { type ResolvedStackFiles, resolveStackFiles } from "./stack-files.ts"
@@ -89,6 +94,7 @@ import {
   extractVolumePaths,
   generateFileMountCheckScript,
   generateVolumeCreationScript,
+  loadDeployMeta,
   loadStackFileMounts,
   loadStackKeepOwner,
 } from "./volumes.ts"
@@ -377,6 +383,27 @@ export async function runDeploy(
     }
     // #324: a parent volume's chown -R would reach a keepOwner folder; refuse before any remote write.
     assertNoKeepOwnerParent(volumePaths, keepOwner)
+    // #383: a key a stack's +meta.ts marks required, and its compose file
+    // uses without a fallback, must have a value before any hook, cleanup,
+    // file sync or container change. A stack with no +meta.ts (a project's
+    // own, outside the catalog) has none to check.
+    const requiredKeys: StackRequiredKeys[] = []
+    for (const stackConfig of stacks) {
+      const files = stackFiles.get(stackConfig.name)?.files ?? new Map<string, string>()
+      const meta = await loadDeployMeta(stackConfig.name, files, "required variables")
+      const composeFiles = [
+        join(stagingDir, "stacks", stackConfig.name, "compose.yml"),
+        join(stagingDir, "compose-override", `${stackConfig.name}.yml`),
+      ]
+      requiredKeys.push({
+        stack: stackConfig.name,
+        keys: (meta?.variables ?? []).filter((v) => v.required === true).map((v) => v.key),
+        compose: (await Promise.all(composeFiles.map(readTextIfExists))).join("\n"),
+        envs: stackConfig.envs,
+      })
+    }
+    assertRequiredStackKeys(resolvedEnv, requiredKeys, envPath, rootEnvPath)
+
     // Checked now, in a read-only call, before any hook, stale cleanup,
     // file sync or container change: a missing file mount stops the
     // deploy while every stack is still as it was.
@@ -805,6 +832,16 @@ async function realPathOr(path: string): Promise<string> {
     const parent = dirname(path)
     if (parent === path) return path
     return join(await realPathOr(parent), basename(path))
+  }
+}
+
+/** The text of `path`, or "" when there is no such file. */
+async function readTextIfExists(path: string): Promise<string> {
+  try {
+    return await Deno.readTextFile(path)
+  } catch (err) {
+    if (err instanceof Deno.errors.NotFound) return ""
+    throw err
   }
 }
 
