@@ -1,5 +1,5 @@
-// Tests for stacks/gatus/after.deploy.ts's pure helper.
-// (No shell interaction — that runs via the deploy script.)
+// Tests for stacks/gatus/after.deploy.ts: its pure helpers, then the hook as a
+// subprocess with a fake `docker` and a fake `ssh` on PATH.
 //
 // buildRestartCommand takes the already-parsed SSH_HOST/SSH_PORT/SSH_USER
 // contract keys (#229) — parsing SSH_ADDRESS itself is cli/server-keys.ts's
@@ -7,7 +7,7 @@
 // These tests are only about this hook's own argv shape.
 
 import { assertEquals, assertThrows } from "@std/assert"
-import { buildRestartCommand } from "./after.deploy.ts"
+import { buildRestartCommand, buildTargetRestart } from "./after.deploy.ts"
 
 Deno.test("buildRestartCommand: -p, the standard options, then '--' then the target", () => {
   const args = buildRestartCommand("192.0.2.10", "22", "user", "hl-gatus")
@@ -111,4 +111,77 @@ Deno.test("buildRestartCommand: rejects a port outside 1-65535", () => {
     Error,
     "invalid SSH_PORT",
   )
+})
+
+Deno.test("buildTargetRestart: no host — docker restart on this machine, no ssh", () => {
+  assertEquals(buildTargetRestart(undefined, undefined, "user", "hl-gatus"), {
+    cmd: "docker",
+    args: ["restart", "hl-gatus"],
+  })
+})
+
+Deno.test("buildTargetRestart: with a host — the same restart over ssh", () => {
+  assertEquals(buildTargetRestart("192.0.2.10", "2222", "user", "hl-gatus"), {
+    cmd: "ssh",
+    args: buildRestartCommand("192.0.2.10", "2222", "user", "hl-gatus"),
+  })
+})
+
+/**
+ * Runs the hook with a fake `docker` and a fake `ssh` first on PATH and returns its exit code and
+ * what the fakes were called with, one call per line, each starting with the program's name. Both
+ * fakes exit 0. Neither calls any program by the name `docker` or `ssh`, and a depth guard makes
+ * each exit 97 if it is ever entered from itself.
+ */
+async function runHookWithFakes(
+  hookEnv: Record<string, string>,
+): Promise<{ code: number; calls: string[] }> {
+  const binDir = await Deno.makeTempDir({ prefix: "rostok-fake-gatus-" })
+  const logPath = `${binDir}/calls.log`
+  try {
+    for (const name of ["docker", "ssh"]) {
+      const script = `#!/bin/sh\n` +
+        `[ -n "$FAKE_TOOL_DEPTH" ] && exit 97\n` +
+        `export FAKE_TOOL_DEPTH=1\n` +
+        `echo "${name} $*" >> "${logPath}"\n` +
+        `exit 0\n`
+      await Deno.writeTextFile(`${binDir}/${name}`, script, { mode: 0o755 })
+    }
+    await Deno.writeTextFile(logPath, "")
+    const env = Deno.env.toObject()
+    for (const key of ["SSH_ADDRESS", "SSH_HOST", "SSH_PORT", "SSH_USER", "FAKE_TOOL_DEPTH"]) {
+      delete env[key]
+    }
+    const output = await new Deno.Command(Deno.execPath(), {
+      args: ["run", "-A", import.meta.resolve("./after.deploy.ts")],
+      env: { ...env, ...hookEnv, PATH: `${binDir}:${env.PATH ?? ""}` },
+      clearEnv: true,
+      stdout: "null",
+      stderr: "null",
+    }).output()
+    const calls = (await Deno.readTextFile(logPath)).split("\n").filter((line) => line.length > 0)
+    return { code: output.code, calls }
+  } finally {
+    await Deno.remove(binDir, { recursive: true })
+  }
+}
+
+Deno.test("after.deploy.ts subprocess: on a local server (no SSH_HOST) it restarts hl-gatus with the local docker and exits 0", async () => {
+  // What deploy sets for a local server: SSH_ADDRESS=local, and no SSH_HOST or SSH_PORT.
+  const { code, calls } = await runHookWithFakes({ SSH_ADDRESS: "local", SSH_USER: "user" })
+  assertEquals(calls, ["docker restart hl-gatus"])
+  assertEquals(code, 0)
+})
+
+Deno.test("after.deploy.ts subprocess: with SSH_HOST it restarts hl-gatus over ssh and exits 0", async () => {
+  const { code, calls } = await runHookWithFakes({
+    SSH_ADDRESS: "user@192.0.2.10:2222",
+    SSH_HOST: "192.0.2.10",
+    SSH_PORT: "2222",
+    SSH_USER: "user",
+  })
+  assertEquals(calls, [
+    "ssh -p 2222 -o ConnectTimeout=10 -o BatchMode=yes -- user@192.0.2.10 docker restart hl-gatus",
+  ])
+  assertEquals(code, 0)
 })

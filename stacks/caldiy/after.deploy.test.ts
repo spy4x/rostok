@@ -1,8 +1,8 @@
-// Tests for stacks/caldiy/after.deploy.ts's pure ssh argv builder.
-// (No shell interaction beyond the fake ssh below.)
+// Tests for stacks/caldiy/after.deploy.ts's pure command builders.
+// (No shell interaction beyond the fake ssh and docker below.)
 
 import { assertEquals, assertThrows } from "@std/assert"
-import { buildSshArgs } from "./after.deploy.ts"
+import { buildPsqlCommand, buildSshArgs } from "./after.deploy.ts"
 
 Deno.test("buildSshArgs: -p, the standard options, then '--' then the target and command", () => {
   const args = buildSshArgs("192.0.2.10", "22", "root", "docker exec -i hl-caldiy-db psql")
@@ -143,4 +143,84 @@ Deno.test("after.deploy.ts subprocess: no SSH_PORT — omits -p entirely (fake s
       "root@192.0.2.1",
     ])
   })
+})
+
+const PSQL = "docker exec -i hl-caldiy-db psql -U caldiy -d caldiy -t -A"
+
+Deno.test("buildPsqlCommand: no host — docker exec on this machine, no ssh", () => {
+  const { cmd, args } = buildPsqlCommand(undefined, undefined, "root")
+  assertEquals([cmd, ...args].join(" "), PSQL)
+})
+
+Deno.test("buildPsqlCommand: with a host — the same psql command over ssh, as one argument", () => {
+  assertEquals(buildPsqlCommand("192.0.2.1", "2222", "root"), {
+    cmd: "ssh",
+    args: buildSshArgs("192.0.2.1", "2222", "root", PSQL),
+  })
+})
+
+/**
+ * Runs the hook with a fake `docker` and a fake `ssh` first on PATH and returns its exit code and
+ * what the fakes were called with, one call per line, each starting with the program's name. Both
+ * fakes answer psql as a database that already holds the workflow: `1` to the connection check,
+ * `7` (a workflow id) to anything else. Neither calls any program by the name `docker` or `ssh`,
+ * and a depth guard makes each exit 97 if it is ever entered from itself.
+ */
+async function runHookWithFakes(
+  hookEnv: Record<string, string>,
+): Promise<{ code: number; calls: string[] }> {
+  const binDir = await Deno.makeTempDir({ prefix: "rostok-fake-caldiy-" })
+  const logPath = `${binDir}/calls.log`
+  try {
+    for (const name of ["docker", "ssh"]) {
+      const script = `#!/bin/sh\n` +
+        `[ -n "$FAKE_TOOL_DEPTH" ] && exit 97\n` +
+        `export FAKE_TOOL_DEPTH=1\n` +
+        `echo "${name} $*" >> "${logPath}"\n` +
+        `sql=$(cat)\n` +
+        `case "$sql" in "SELECT 1 AS ok") echo 1 ;; *) echo 7 ;; esac\n`
+      await Deno.writeTextFile(`${binDir}/${name}`, script, { mode: 0o755 })
+    }
+    await Deno.writeTextFile(logPath, "")
+    const env = Deno.env.toObject()
+    for (const key of ["SSH_ADDRESS", "SSH_HOST", "SSH_PORT", "SSH_USER", "FAKE_TOOL_DEPTH"]) {
+      delete env[key]
+    }
+    const output = await new Deno.Command(Deno.execPath(), {
+      args: ["run", "-A", import.meta.resolve("./after.deploy.ts")],
+      env: { ...env, ...hookEnv, PATH: `${binDir}:${env.PATH ?? ""}` },
+      clearEnv: true,
+      stdout: "null",
+      stderr: "null",
+    }).output()
+    const calls = (await Deno.readTextFile(logPath)).split("\n").filter((line) => line.length > 0)
+    return { code: output.code, calls }
+  } finally {
+    await Deno.remove(binDir, { recursive: true })
+  }
+}
+
+Deno.test("after.deploy.ts subprocess: on a local server (no SSH_HOST) it runs psql with the local docker and exits 0", async () => {
+  // What deploy sets for a local server: SSH_ADDRESS=local, and no SSH_HOST or SSH_PORT.
+  const { code, calls } = await runHookWithFakes({
+    SSH_ADDRESS: "local",
+    SSH_USER: "root",
+    PATH_APPS: "/srv/apps",
+  })
+  // The connection check, then the lookup that finds the workflow.
+  assertEquals(calls, [PSQL, PSQL])
+  assertEquals(code, 0)
+})
+
+Deno.test("after.deploy.ts subprocess: with SSH_HOST it runs the same psql over ssh and exits 0", async () => {
+  const { code, calls } = await runHookWithFakes({
+    SSH_ADDRESS: "root@192.0.2.1:2222",
+    SSH_HOST: "192.0.2.1",
+    SSH_PORT: "2222",
+    SSH_USER: "root",
+    PATH_APPS: "/srv/apps",
+  })
+  const overSsh = `ssh -p 2222 -o ConnectTimeout=10 -o BatchMode=yes -- root@192.0.2.1 ${PSQL}`
+  assertEquals(calls, [overSsh, overSsh])
+  assertEquals(code, 0)
 })
