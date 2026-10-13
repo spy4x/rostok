@@ -35,7 +35,7 @@ Deno.test("isPrerelease is true for rc, beta and nightly suffixes and false for 
   }
 })
 
-Deno.test("newestInFamily keeps the v prefix, the suffix and the number of parts, and skips pre-releases", () => {
+Deno.test("newestInFamily keeps the v prefix, the suffix and the number of parts, so a release never moves to a pre-release", () => {
   const tags = [
     "latest",
     "1.27.3-alpine",

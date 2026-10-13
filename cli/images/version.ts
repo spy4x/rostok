@@ -53,7 +53,8 @@ export function compareVersions(a: VersionTag, b: VersionTag): number {
 /**
  * The newest tag in `tags` that can replace the pin `current`: same `v`
  * prefix, same suffix and same number of parts (so `16.4` moves to
- * `16.9`, never to the rolling `16`), no pre-release. With `sameMajor`
+ * `16.9`, never to the rolling `16`). The suffix rule also keeps a
+ * release from moving to a pre-release (`1.3.0-rc1`). With `sameMajor`
  * it also keeps the first number. Returns `current` when nothing newer
  * exists.
  */
@@ -65,7 +66,7 @@ export function newestInFamily(
   let newest = current
   for (const tag of tags) {
     const candidate = parseVersionTag(tag)
-    if (!candidate || isPrerelease(candidate)) continue
+    if (!candidate) continue
     if (candidate.prefix !== current.prefix || candidate.suffix !== current.suffix) continue
     if (candidate.parts.length !== current.parts.length) continue
     if (sameMajor && candidate.parts[0] !== current.parts[0]) continue
