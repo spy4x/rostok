@@ -295,6 +295,13 @@ async function writeServer(
     ["PUID", "1000"],
     ["PGID", "1000"],
     ["DOCKER_GROUP_ID", "988"],
+    // What `stack add` writes for the two catalog stacks these tests deploy:
+    // a deploy stops on a required key that their compose files need (#383).
+    ["LIBRESPEED_DOMAIN", "speed.example.test"],
+    ["JELLYFIN_DOMAIN", "jellyfin.example.test"],
+    ["PATH_MEDIA", "/srv/media"],
+    ["PATH_VIDEOS", "/srv/media/videos"],
+    ["PATH_MUSIC", "/srv/media/music"],
   ]
   const envLines = [
     ...baseline.filter(([key]) => !omit.has(key)).map(([key, value]) => `${key}=${value}`),

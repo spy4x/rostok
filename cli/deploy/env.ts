@@ -359,3 +359,71 @@ export function resolveDeployEnv(
 
   return { env: resolved, notices }
 }
+
+/** What `assertRequiredStackKeys` needs to know about one stack being deployed. */
+export interface StackRequiredKeys {
+  /** The stack's name in config.json. */
+  stack: string
+  /** The keys its `+meta.ts` marks `required: true`. */
+  keys: string[]
+  /** The text of its compose file and of the server's override for it, joined. */
+  compose: string
+  /** The stack's own `envs` from config.json, which the deploy adds to the server's `.env`. */
+  envs?: Record<string, string>
+}
+
+/**
+ * True when the compose text uses `key` at least once without a fallback:
+ * `${KEY}`, `$KEY` or `${KEY:?message}`. Compose then puts an empty string
+ * there (or refuses to start) when the key has no value. False when every
+ * use gives a fallback, `${KEY:-value}` or `${KEY-value}`, and when the
+ * text never mentions the key. `$${KEY}` is compose's escape for a literal
+ * `${KEY}` and is no use at all.
+ */
+export function composeNeedsKey(compose: string, key: string): boolean {
+  const name = key.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+  const uses = compose.matchAll(
+    new RegExp(
+      `(?<!\\$)\\$(?:\\{${name}(?![A-Za-z0-9_])([^}]*)\\}|${name}(?![A-Za-z0-9_]))`,
+      "g",
+    ),
+  )
+  return [...uses].some((use) => !/^:?-/.test(use[1] ?? ""))
+}
+
+/**
+ * Throw a UserError that lists, per stack, every required key the server
+ * has no value for (#383). Runs before anything is copied to the server:
+ * a stack without such a key used to deploy "successfully" and die at start.
+ *
+ * `env` is `.env.root` merged with the server `.env`. A key with a blank
+ * value counts as missing. Only a key the stack's compose file uses
+ * without a fallback (`composeNeedsKey`) is checked. The others would
+ * block servers that work today:
+ *
+ * - a key that compose always gives a fallback: servers set up before the
+ *   key existed run without it, and the catalog documents blank as a valid
+ *   choice for some (caldav-mcp's CALDAV_MCP_TOKEN);
+ * - a key that only a hook reads: the hooks fall back to a value of their
+ *   own (authelia's AUTHELIA_ADMIN_USER) or check their keys themselves.
+ */
+export function assertRequiredStackKeys(
+  env: Record<string, string>,
+  stacks: StackRequiredKeys[],
+  envPath: string,
+  rootEnvPath: string,
+): void {
+  const lines: string[] = []
+  for (const { stack, keys, compose, envs } of stacks) {
+    const values = { ...env, ...envs }
+    const missing = keys.filter((key) => !values[key]?.trim() && composeNeedsKey(compose, key))
+    if (missing.length > 0) lines.push(`  ${stack}: ${missing.join(", ")}`)
+  }
+  if (lines.length === 0) return
+  throw new UserError(
+    `missing required key(s) in ${envPath} (also checked ${rootEnvPath}), by stack:\n` +
+      `${lines.join("\n")}\n` +
+      `Nothing was copied to the server. Give each key a value in ${envPath} and deploy again; ` +
+      `the stack's README says what each one is for.`,
+  )
+}

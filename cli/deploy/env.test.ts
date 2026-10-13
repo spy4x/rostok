@@ -2,6 +2,8 @@ import { assertEquals, assertStringIncludes, assertThrows } from "@std/assert"
 import { UserError } from "../errors.ts"
 import {
   assertNoBareDollar,
+  assertRequiredStackKeys,
+  composeNeedsKey,
   expandEnvRefs,
   resolveDeployEnv,
   resolvePathApps,
@@ -615,4 +617,103 @@ Deno.test("resolveDeployEnv: a sibling VOLUMES_PATH is accepted, even one sharin
     "servers/home/.env",
     ROOT_ENV_PATH,
   )
+})
+
+Deno.test("composeNeedsKey: true only when a use of the key has no fallback", () => {
+  const cases: [string, boolean][] = [
+    ["a: ${APP_KEY}", true],
+    ["a: $APP_KEY", true],
+    ["a: ${APP_KEY:?must be set}", true],
+    ["a: ${APP_KEY:+x}", true],
+    ["a: ${APP_KEY:-x}\nb: ${APP_KEY}", true],
+    ["a: ${APP_KEY:-x}", false],
+    ["a: ${APP_KEY-x}", false],
+    ["a: ${APP_KEY:-}", false],
+    ["a: ${APP_KEY:-${OTHER}}\nb: ${APP_KEY:-y}", false],
+    // Never mentioned: only a hook can read it, and hooks check their own keys.
+    ["a: ${OTHER}", false],
+    ["", false],
+    // Another key that only starts with the same letters is not a use.
+    ["a: ${APP_KEY_TWO}\nb: $APP_KEY_TWO", false],
+    ["a: ${APP_KEY_TWO:-x}\nb: ${APP_KEY}", true],
+    // `$$` is compose's escape for a literal `$`: not a use.
+    ["a: $${APP_KEY}\nb: ${APP_KEY:-x}", false],
+  ]
+  for (const [compose, expected] of cases) {
+    assertEquals(composeNeedsKey(compose, "APP_KEY"), expected, compose)
+  }
+})
+
+Deno.test("assertRequiredStackKeys: lists every missing key under its stack and names both env files", () => {
+  const err = assertThrows(
+    () =>
+      assertRequiredStackKeys(
+        { ONE_TOKEN: "set", TWO_URL: "set" },
+        [
+          {
+            stack: "one",
+            keys: ["ONE_TOKEN", "ONE_SECRET", "ONE_USER"],
+            compose: "a: ${ONE_TOKEN}\nb: ${ONE_SECRET}\nc: $ONE_USER",
+          },
+          { stack: "two", keys: ["TWO_URL"], compose: "a: ${TWO_URL}" },
+          { stack: "three", keys: ["THREE_KEY"], compose: "a: ${THREE_KEY:?set it}" },
+        ],
+        "/p/servers/s/.env",
+        "/p/.env.root",
+      ),
+    UserError,
+  )
+  assertStringIncludes(err.message, "\n  one: ONE_SECRET, ONE_USER\n  three: THREE_KEY\n")
+  assertEquals(err.message.includes("two:"), false, err.message)
+  assertEquals(err.message.includes("ONE_TOKEN"), false, err.message)
+  assertStringIncludes(err.message, "/p/servers/s/.env")
+  assertStringIncludes(err.message, "/p/.env.root")
+})
+
+Deno.test("assertRequiredStackKeys: a key with a blank or whitespace-only value counts as missing", () => {
+  for (const value of ["", "   "]) {
+    assertThrows(
+      () =>
+        assertRequiredStackKeys(
+          { APP_KEY: value },
+          [{ stack: "app", keys: ["APP_KEY"], compose: "a: ${APP_KEY}" }],
+          "/p/servers/s/.env",
+          "/p/.env.root",
+        ),
+      UserError,
+      "app: APP_KEY",
+    )
+  }
+})
+
+Deno.test("assertRequiredStackKeys: a missing key that the compose file always gives a fallback, or never uses, is not reported", () => {
+  assertRequiredStackKeys(
+    {},
+    [{
+      stack: "app",
+      keys: ["APP_CPU_LIMIT", "APP_HOOK_USER"],
+      compose: "cpus: ${APP_CPU_LIMIT:-0.5}",
+    }],
+    "/p/servers/s/.env",
+    "/p/.env.root",
+  )
+})
+
+Deno.test("assertRequiredStackKeys: a key set in the stack's own config.json envs is not reported, for that stack only", () => {
+  const compose = "a: ${SITE_NAME}"
+  const err = assertThrows(
+    () =>
+      assertRequiredStackKeys(
+        {},
+        [
+          { stack: "site", keys: ["SITE_NAME"], compose, envs: { SITE_NAME: "one" } },
+          { stack: "site-two", keys: ["SITE_NAME"], compose },
+        ],
+        "/p/servers/s/.env",
+        "/p/.env.root",
+      ),
+    UserError,
+  )
+  assertStringIncludes(err.message, "\n  site-two: SITE_NAME\n")
+  assertEquals(err.message.includes("\n  site: "), false, err.message)
 })

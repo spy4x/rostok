@@ -1003,3 +1003,84 @@ Deno.test("runDeploy: a not-yet-created local PATH_APPS under a symlink into the
     await teardownRunDeployFixture(f)
   }
 })
+
+/** A project stack `needy` whose +meta.ts marks NEEDY_TOKEN and NEEDY_PORT required; returns its hook marker's path. */
+async function writeNeedyStack(projectDir: string): Promise<string> {
+  const stackDir = join(projectDir, "stacks", "needy")
+  await Deno.mkdir(stackDir, { recursive: true })
+  await Deno.writeTextFile(
+    join(stackDir, "compose.yml"),
+    "name: ${PROJECT}\nservices:\n  needy:\n    image: busybox\n    environment:\n" +
+      "      TOKEN: ${NEEDY_TOKEN}\n      PORT: ${NEEDY_PORT:-80}\n      EXTRA: ${NEEDY_EXTRA}\n",
+  )
+  await Deno.writeTextFile(
+    join(stackDir, "+meta.ts"),
+    `export default { name: "needy", description: "d", variables: [\n` +
+      `  { key: "NEEDY_TOKEN", required: true },\n` +
+      `  { key: "NEEDY_PORT", default: "80", required: true },\n` +
+      `  { key: "NEEDY_EXTRA", required: false },\n` +
+      `] }\n`,
+  )
+  // A before-hook can change the server, so the refusal must come before it.
+  const marker = join(projectDir, "before-hook-ran")
+  await Deno.writeTextFile(
+    join(stackDir, "before.deploy.ts"),
+    `await Deno.writeTextFile(${JSON.stringify(marker)}, "ran")\n`,
+  )
+  return marker
+}
+
+Deno.test("runDeploy: a missing required key stops the deploy before any hook, sync or remote script, and names the key and the stack (#383)", async () => {
+  const f = await setupRunDeployFixture()
+  try {
+    const marker = await writeNeedyStack(f.projectDir)
+    await writeLocalStack(f.projectDir, "plain")
+    await writeRunDeployServer(f.projectDir, ["plain", "needy"])
+
+    const err = await assertRejects(
+      () => runDeploy({ cwd: f.projectDir, server: "test" }, f.io),
+      UserError,
+    )
+    assertStringIncludes(err.message, "\n  needy: NEEDY_TOKEN\n")
+    // NEEDY_PORT has a fallback in compose.yml, NEEDY_EXTRA is optional, `plain` has no +meta.ts.
+    assertEquals(/NEEDY_PORT|NEEDY_EXTRA|plain/.test(err.message), false, err.message)
+    assertEquals(f.remote.calls, ["docker-group", "sudo", "readlink"])
+    assertEquals(f.remote.shellScripts, [])
+    assertEquals(f.remote.rsyncCalls, [])
+    assertEquals(await Deno.stat(marker).then(() => true).catch(() => false), false)
+  } finally {
+    await teardownRunDeployFixture(f)
+  }
+})
+
+Deno.test("runDeploy: a required key set only in .env.root lets the deploy through (#383)", async () => {
+  const f = await setupRunDeployFixture()
+  try {
+    await writeNeedyStack(f.projectDir)
+    await writeRunDeployServer(f.projectDir, ["needy"])
+    await Deno.writeTextFile(join(f.projectDir, ".env.root"), "NEEDY_TOKEN=abc\n")
+
+    const result = await runDeploy({ cwd: f.projectDir, server: "test" }, f.io)
+    assertEquals(result.deployedStacks, ["needy"])
+    assert(f.remote.calls.includes("deploy-script"), f.remote.calls.join(", "))
+  } finally {
+    await teardownRunDeployFixture(f)
+  }
+})
+
+Deno.test("runDeploy: a catalog stack is checked against the bundled +meta.ts when the project has none of its own (#383)", async () => {
+  const f = await setupRunDeployFixture()
+  try {
+    await writeRunDeployServer(f.projectDir, ["vaultwarden"])
+
+    const err = await assertRejects(
+      () => runDeploy({ cwd: f.projectDir, server: "test" }, f.io),
+      UserError,
+    )
+    assertStringIncludes(err.message, "\n  vaultwarden: VAULTWARDEN_DOMAIN")
+    assertEquals(f.remote.shellScripts, [])
+    assertEquals(f.remote.rsyncCalls, [])
+  } finally {
+    await teardownRunDeployFixture(f)
+  }
+})
