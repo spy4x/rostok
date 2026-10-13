@@ -35,7 +35,7 @@ Deno.test("syncthing compose.yml: refuses to start without the GUI login variabl
   assert(compose.includes("SYNCTHING_GUI_PASSWORD=${SYNCTHING_GUI_PASSWORD:?}"))
 })
 
-Deno.test("syncthing compose.yml: sets the GUI login before Syncthing serves, only when none is set", () => {
+Deno.test("syncthing compose.yml: the start script sets the login only in its no-password branch, then starts Syncthing last", () => {
   const entrypoint = (parseYaml(compose) as {
     services: { syncthing: { entrypoint: string[] } }
   }).services.syncthing.entrypoint

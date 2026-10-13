@@ -91,7 +91,7 @@ Deno.test("the hook exits 1 and writes nothing when the password is missing", as
   }
 })
 
-Deno.test("compose.yml makes the registry ask for the login the hook writes", () => {
+Deno.test("compose.yml turns the htpasswd login on and mounts the hook's auth/ folder read-only", () => {
   const registry = compose.services["docker-registry"]
   assert(registry.environment.includes("REGISTRY_AUTH=htpasswd"))
   assert(registry.environment.includes("REGISTRY_AUTH_HTPASSWD_PATH=/auth/htpasswd"))
