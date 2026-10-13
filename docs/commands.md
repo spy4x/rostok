@@ -74,6 +74,13 @@ How a pin is chosen, under `pinned`:
 - A registry that cannot be reached, or that rate-limits you, does not
   stop `stack add`. You get one warning that names the image, its
   variable stays unset, and running the same `stack add` again pins it.
+- A rostok installed from JSR downloads the stack's compose file to
+  learn its tag variables. When that download fails (no connection, no
+  answer within 10 seconds, or any answer but 200), `stack add` still
+  adds the stack. You get one warning that names the stack, and no
+  default is written for a variable named `*_IMAGE_TAG`, so it stays
+  unset and running the same `stack add` again pins it. A tag variable
+  with another name keeps the default from the stack's `+meta.ts`.
 
 Only images whose tag is a variable in the compose file
 (`image: name:${SOME_IMAGE_TAG:-latest}`) are pinned; an image with a
@@ -89,7 +96,10 @@ compared with newer tags of the same form (`v` prefix, suffix such as
 `-alpine`, and number of parts); pre-releases are skipped. When the
 compose default is a version, only the pin's own major version counts.
 A digest pin is compared with the digest its tag has now. It changes
-nothing.
+nothing. A registry that cannot be asked is shown on that pin's line.
+When a stack's compose file cannot be downloaded (see above), this
+command and `images update` stop with an error that names the stack,
+before anything is written.
 
 ### `rostok images update <server> [stack]`
 

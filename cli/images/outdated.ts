@@ -8,7 +8,7 @@ import { serverNotFoundMessage, UserError } from "../errors.ts"
 import { reencryptAfterWrite } from "../reencrypt.ts"
 import { serverDirFor } from "../server-keys.ts"
 import { readServerConfig } from "../stack-add.ts"
-import { stackImages } from "./compose-images.ts"
+import { type ComposeSource, stackImages } from "./compose-images.ts"
 import { parseImageRef, type RegistryClient, registryPageUrl } from "./registry.ts"
 import { compareVersions, newestInFamily, parseVersionTag } from "./version.ts"
 
@@ -64,6 +64,7 @@ export async function checkPins(
   server: string,
   client: RegistryClient,
   stack?: string,
+  source: ComposeSource = {},
 ): Promise<PinRow[]> {
   const serverDir = serverDirFor(cwd, server)
   const envPath = join(serverDir, ".env")
@@ -78,7 +79,7 @@ export async function checkPins(
 
   const rows: PinRow[] = []
   for (const name of stack === undefined ? stacks : [stack]) {
-    for (const { image, variable, defaultTag } of await stackImages(cwd, name)) {
+    for (const { image, variable, defaultTag } of await stackImages(cwd, name, source)) {
       const current = env.get(variable) || undefined
       const row: PinRow = { server, stack: name, variable, image, current, state: "floating" }
       rows.push(row)
@@ -122,8 +123,9 @@ export async function updatePins(
   server: string,
   client: RegistryClient,
   stack?: string,
+  source: ComposeSource = {},
 ): Promise<PinRow[]> {
-  const rows = await checkPins(cwd, server, client, stack)
+  const rows = await checkPins(cwd, server, client, stack, source)
   const moved = rows.filter((r) => r.state === "outdated" && r.newest !== undefined)
   if (moved.length === 0) return rows
   await writeEnvFilePreservingFormat(

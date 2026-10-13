@@ -4,10 +4,13 @@ import { Command } from "@cliffy/command"
 import { stripControlChars } from "../deploy/exec.ts"
 import { checkPins, listServers, type PinRow, updatePins } from "../images/outdated.ts"
 import { createRegistryClient } from "../images/registry.ts"
+import type { resolveStackFiles } from "../deploy/stack-files.ts"
 
 /** Test injection point: the `fetch` every registry request goes through. */
+/** Test injection points: the `fetch` for every request, and where shipped stack files are. */
 export interface ImagesCommandOverrides {
   fetch?: typeof fetch
+  resolveFiles?: typeof resolveStackFiles
 }
 
 function describe(row: PinRow): string {
@@ -45,7 +48,7 @@ export async function runImagesOutdated(
   if (servers.length === 0) console.log("No servers in this project yet.")
   const all: PinRow[] = []
   for (const name of servers) {
-    const rows = await checkPins(cwd, name, client)
+    const rows = await checkPins(cwd, name, client, undefined, overrides)
     all.push(...rows)
     console.log(name)
     if (rows.length === 0) console.log("  no images with a tag variable")
@@ -66,7 +69,7 @@ export async function runImagesUpdate(
   overrides: ImagesCommandOverrides = {},
 ): Promise<PinRow[]> {
   const client = createRegistryClient({ fetch: overrides.fetch })
-  const rows = await updatePins(cwd, server, client, stack)
+  const rows = await updatePins(cwd, server, client, stack, overrides)
   const moved = rows.filter((r) => r.state === "outdated")
   for (const row of rows.filter((r) => r.state === "unknown")) {
     console.warn(`rostok: could not check ${row.image} (${stripControlChars(row.detail ?? "")}).`)

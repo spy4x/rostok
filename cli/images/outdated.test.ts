@@ -251,3 +251,21 @@ Deno.test("images commands refuse a server that does not exist and a stack that 
     )
   })
 })
+
+Deno.test("images outdated stops with an error naming the stack when its shipped compose file cannot be downloaded", async () => {
+  await withProject(async (dir) => {
+    // No project copy of this stack: the CLI's shipped file is used, here an https URL.
+    await Deno.remove(join(dir, "stacks", "gatus"), { recursive: true })
+    const resolveFiles = () =>
+      Promise.resolve({
+        files: new Map([["compose.yml", "https://packages.example.com/stacks/gatus/compose.yml"]]),
+        origin: "shipped" as const,
+      })
+    const fetchFn = (() => Promise.reject(new TypeError("connection refused"))) as typeof fetch
+    await assertRejects(
+      () => runImagesOutdated("home", dir, { fetch: fetchFn, resolveFiles }),
+      UserError,
+      "could not read the compose file of stack 'gatus' (packages.example.com unreachable)",
+    )
+  })
+})

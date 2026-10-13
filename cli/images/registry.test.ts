@@ -160,3 +160,19 @@ Deno.test("sourceUrl gives nothing for a missing label, a label that is no web l
   assertEquals(await client.sourceUrl(ref("ghcr.io/twin/gatus"), "v5.2.0"), undefined)
   assertEquals(await client.sourceUrl(ref("ghcr.io/twin/gatus"), "v9.9.9"), undefined)
 })
+
+Deno.test("digest refuses a digest header that is not a sha256 digest", async () => {
+  // What the registry sends here ends up in the server's .env as `tag@<digest>`.
+  const fetchFn = (() =>
+    Promise.resolve(
+      new Response(null, {
+        headers: { "docker-content-digest": `sha256:${"a".repeat(64)} EVIL=1` },
+      }),
+    )) as typeof fetch
+  const client = createRegistryClient({ fetch: fetchFn })
+  await assertRejects(
+    () => client.digest(ref("ghcr.io/twin/gatus"), "latest"),
+    RegistryError,
+    "ghcr.io returned no digest",
+  )
+})

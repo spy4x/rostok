@@ -42,21 +42,43 @@ export function parseComposeImages(composeText: string): ComposeImage[] {
   return images
 }
 
+/** The stack has a compose file, but it could not be downloaded. The message names the stack. */
+export class ComposeReadError extends UserError {
+  constructor(message: string) {
+    super(message)
+    this.name = "ComposeReadError"
+  }
+}
+
+/** Where `stackImages` reads from. Everything is optional; tests inject all four. */
+export interface ComposeSource {
+  /** `--catalog`: read `<catalogDir>/<stack>/compose.yml` and nothing else. */
+  catalogDir?: string
+  /** Used when the CLI is installed from a package host and the file is an https URL. */
+  fetch?: typeof fetch
+  /** Timeout of that download. */
+  timeoutMs?: number
+  /** Defaults to the resolver `rostok deploy` uses. */
+  resolveFiles?: typeof resolveStackFiles
+}
+
 /**
  * The variable-tagged images of `stackName`, or [] when the stack has no
  * compose file. With `catalogDir` (`--catalog`) the compose file is the
  * one next to that catalog's `+meta.ts`; otherwise it is the file
  * `rostok deploy` would use (the project's own `stacks/<name>/`, then
- * the one shipped with the CLI).
+ * the one shipped with the CLI). A CLI installed from a package host
+ * downloads the shipped file; when that fails (no connection, no answer
+ * in time, any status but 200) this throws a ComposeReadError.
  */
 export async function stackImages(
   cwd: string,
   stackName: string,
-  catalogDir?: string,
+  source: ComposeSource = {},
 ): Promise<ComposeImage[]> {
-  const text = catalogDir
-    ? await readLocal(join(catalogDir, stackName, "compose.yml"))
-    : await readResolved(cwd, stackName)
+  const text = source.catalogDir
+    ? await readLocal(join(source.catalogDir, stackName, "compose.yml"))
+    : await readResolved(cwd, stackName, source)
   return text === undefined ? [] : parseComposeImages(text)
 }
 
@@ -69,10 +91,16 @@ async function readLocal(path: string | URL): Promise<string | undefined> {
   }
 }
 
-async function readResolved(cwd: string, stackName: string): Promise<string | undefined> {
+async function readResolved(
+  cwd: string,
+  stackName: string,
+  source: ComposeSource,
+): Promise<string | undefined> {
   let url: string | undefined
   try {
-    url = (await resolveStackFiles(cwd, stackName)).files.get("compose.yml")
+    url = (await (source.resolveFiles ?? resolveStackFiles)(cwd, stackName)).files.get(
+      "compose.yml",
+    )
   } catch (error) {
     // Neither in the project nor shipped: a stack without files.
     if (error instanceof UserError) return undefined
@@ -81,10 +109,28 @@ async function readResolved(cwd: string, stackName: string): Promise<string | un
   if (!url) return undefined
   if (url.startsWith("file:")) return await readLocal(new URL(url))
   // A JSR install serves the shipped files over https.
-  const response = await fetch(url)
-  if (!response.ok) {
-    await response.body?.cancel()
-    return undefined
+  const timeoutMs = source.timeoutMs ?? 10_000
+  const host = new URL(url).host
+  const fail = (reason: string) =>
+    new ComposeReadError(`could not read the compose file of stack '${stackName}' (${reason})`)
+  let response: Response
+  try {
+    response = await (source.fetch ?? fetch)(url, { signal: AbortSignal.timeout(timeoutMs) })
+  } catch (error) {
+    const name = error instanceof Error ? error.name : ""
+    throw fail(
+      name === "TimeoutError" || name === "AbortError"
+        ? `no answer within ${timeoutMs / 1000}s from ${host}`
+        : `${host} unreachable`,
+    )
   }
-  return await response.text()
+  if (response.status !== 200) {
+    await response.body?.cancel()
+    throw fail(`${host} answered HTTP ${response.status}`)
+  }
+  try {
+    return await response.text()
+  } catch {
+    throw fail(`the download from ${host} broke off`)
+  }
 }

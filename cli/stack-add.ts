@@ -42,7 +42,8 @@ import {
 } from "./prompts.ts"
 import { hasReservedStackKeyPrefix, serverDirFor, stackKeyPrefix } from "./server-keys.ts"
 import { serverNotFoundMessage, UserError } from "./errors.ts"
-import { stackImages } from "./images/compose-images.ts"
+import type { resolveStackFiles } from "./deploy/stack-files.ts"
+import { type ComposeImage, ComposeReadError, stackImages } from "./images/compose-images.ts"
 import { pinImages } from "./images/pin.ts"
 import { resolveImagePolicy } from "./images/policy.ts"
 import { createRegistryClient } from "./images/registry.ts"
@@ -83,8 +84,10 @@ export interface StackAddOptions {
   promptFn?: PromptFn
   /** Test injection point for the "add this required stack now?" yes/no prompt. Defaults to cliffy's Confirm.prompt. */
   confirmFn?: ConfirmFn
-  /** Test injection point for the registry lookups that pin image tags. Defaults to the global `fetch`. */
+  /** Test injection point for the registry lookups and the compose download that pin image tags. Defaults to the global `fetch`. */
   fetch?: typeof fetch
+  /** Test injection point: where a shipped stack's files are. Defaults to the resolver `rostok deploy` uses. */
+  resolveStackFiles?: typeof resolveStackFiles
   /**
    * Internal — used by stackAdd's own `requires` recursion to detect a
    * cycle (`a` requires `b`, `b` requires `a`). Names of stacks already
@@ -202,7 +205,25 @@ export async function stackAdd(
   // after the variable loop. Read before anything is resolved, so a bad
   // IMAGE_POLICY value fails before any prompt.
   const pinned = await resolveImagePolicy(cwd, serverName) === "pinned"
-  const images = pinned ? await stackImages(cwd, entry.name, opts.catalogDir) : []
+  let images: ComposeImage[] = []
+  /** True when the stack's compose file could not be downloaded, so its tag variables are unknown. */
+  let composeUnread = false
+  if (pinned) {
+    try {
+      images = await stackImages(cwd, entry.name, {
+        catalogDir: opts.catalogDir,
+        fetch: opts.fetch,
+        resolveFiles: opts.resolveStackFiles,
+      })
+    } catch (error) {
+      if (!(error instanceof ComposeReadError)) throw error
+      composeUnread = true
+      console.warn(
+        `rostok: ${error.message}, so its image versions are not pinned. ` +
+          `Run the same \`rostok stack add\` again to pin them.`,
+      )
+    }
+  }
   /** Tag variables this run filled from a `+meta.ts` default, not from the user. */
   const defaultedKeys = new Set<string>()
 
@@ -300,6 +321,18 @@ export async function stackAdd(
     !existingByKey.has(variable) && opts.providedVars?.[variable] === undefined &&
     (defaultedKeys.has(variable) || !writtenEntries.some((e) => e.key === variable))
   )
+  if (composeUnread) {
+    // Only the compose file says which variables are image tags. Without
+    // it, the catalog's naming rule stands in: a default this run filled
+    // for a variable named *_IMAGE_TAG is not written, so the variable
+    // stays unset and the next `stack add` can pin it.
+    for (const key of defaultedKeys) {
+      const at = key.endsWith("_IMAGE_TAG") ? writtenEntries.findIndex((e) => e.key === key) : -1
+      if (at === -1) continue
+      writtenEntries.splice(at, 1)
+      newCount--
+    }
+  }
   if (toPin.length > 0) {
     const pins = await pinImages(
       toPin,

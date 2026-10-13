@@ -850,3 +850,59 @@ Deno.test("an invalid IMAGE_POLICY stops stack add before it writes anything", a
     assertEquals(await serverEnvOf(dir), { DOMAIN: "example.com" })
   })
 })
+
+// A CLI installed from a package host downloads a shipped stack's compose
+// file. These two tests add the catalog's own traefik stack, with that
+// download failing in the two ways a host fails.
+for (
+  const [failure, reason, fetchFn] of [
+    [
+      "is unreachable",
+      "packages.example.com unreachable",
+      () => Promise.reject(new TypeError("connection refused")),
+    ],
+    [
+      "answers 404",
+      "packages.example.com answered HTTP 404",
+      () => Promise.resolve(new Response("not found", { status: 404 })),
+    ],
+  ] as const
+) {
+  Deno.test(`pinned policy: when the package host ${failure} for the compose file, stack add warns once, adds the stack and writes no floating image tag`, async () => {
+    await withTmpDir(async (dir) => {
+      await Deno.mkdir(join(dir, "servers", "home"), { recursive: true })
+      await Deno.writeTextFile(join(dir, "servers", "home", ".env"), "DOMAIN=example.com\n")
+      const warnings: string[] = []
+      const originalWarn = console.warn
+      console.warn = (...args: unknown[]) => warnings.push(args.join(" "))
+      try {
+        await stackAdd("traefik", "home", {
+          cwd: dir,
+          nonInteractive: true,
+          fetch: fetchFn as typeof fetch,
+          resolveStackFiles: () =>
+            Promise.resolve({
+              files: new Map([[
+                "compose.yml",
+                "https://packages.example.com/stacks/traefik/compose.yml",
+              ]]),
+              origin: "shipped",
+            }),
+        })
+      } finally {
+        console.warn = originalWarn
+      }
+      assertEquals(warnings.filter((w) => w.includes("compose file")), [
+        `rostok: could not read the compose file of stack 'traefik' (${reason}), so its image ` +
+        "versions are not pinned. Run the same `rostok stack add` again to pin them.",
+      ])
+      const env = await serverEnvOf(dir)
+      assertEquals(Object.keys(env).filter((key) => key.endsWith("_IMAGE_TAG")), [])
+      assertEquals(env.DOMAIN, "example.com")
+      const config = JSON.parse(
+        await Deno.readTextFile(join(dir, "servers", "home", "config.json")),
+      )
+      assertEquals(config.stacks, [{ name: "traefik" }])
+    })
+  })
+}
