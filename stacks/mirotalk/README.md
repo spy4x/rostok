@@ -95,6 +95,8 @@ host's network, so the compose file tells it to refuse these peers:
 - the private ranges (`10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`), which hold the Docker
   networks, and IPv6 unique-local (`fc00::/7`)
 - carrier-grade NAT (`100.64.0.0/10`)
+- two reserved blocks that are never routed on the internet, though a VPN or proxy tool may put
+  a host interface in one (`192.0.0.0/24`, `198.18.0.0/15`)
 - link-local (`169.254.0.0/16`, which holds the cloud provider's metadata address, and
   `fe80::/10`)
 - multicast, and IPv4 addresses written as IPv6 (`::ffff:0:0/96`)
