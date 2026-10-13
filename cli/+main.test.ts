@@ -251,6 +251,9 @@ Deno.test("wiring: `stack add` through buildCommand().parse() prints next steps 
     }
     try {
       Deno.chdir(tmp)
+      // Floating tags: this test is about the next-steps output, and a
+      // pinned project would ask the registries for versions (#340).
+      await Deno.writeTextFile(join(tmp, ".env.root"), "IMAGE_POLICY=latest\n")
       await buildCommand().parse([
         "server",
         "create",
@@ -518,6 +521,9 @@ function assertOneRostokLine(
 
 /** Creates a server (`home`) with valid, network-free `--var`s, non-interactively. */
 async function createFixtureServer(cwd: string): Promise<void> {
+  // Floating tags, so a later `stack add` in these tests never asks a
+  // registry for versions (#340): tests stay off the network.
+  await Deno.writeTextFile(join(cwd, ".env.root"), "IMAGE_POLICY=latest\n")
   const result = await runMainIn(cwd, [
     "server",
     "create",

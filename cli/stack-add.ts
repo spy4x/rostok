@@ -42,6 +42,10 @@ import {
 } from "./prompts.ts"
 import { hasReservedStackKeyPrefix, serverDirFor, stackKeyPrefix } from "./server-keys.ts"
 import { serverNotFoundMessage, UserError } from "./errors.ts"
+import { stackImages } from "./images/compose-images.ts"
+import { pinImages } from "./images/pin.ts"
+import { resolveImagePolicy } from "./images/policy.ts"
+import { createRegistryClient } from "./images/registry.ts"
 
 /** Result of a stack-add invocation. */
 export interface StackAddResult {
@@ -79,6 +83,8 @@ export interface StackAddOptions {
   promptFn?: PromptFn
   /** Test injection point for the "add this required stack now?" yes/no prompt. Defaults to cliffy's Confirm.prompt. */
   confirmFn?: ConfirmFn
+  /** Test injection point for the registry lookups that pin image tags. Defaults to the global `fetch`. */
+  fetch?: typeof fetch
   /**
    * Internal — used by stackAdd's own `requires` recursion to detect a
    * cycle (`a` requires `b`, `b` requires `a`). Names of stacks already
@@ -191,6 +197,15 @@ export async function stackAdd(
     ? null
     : { ...serverContextFromRoot(existing), SERVER_NAME: serverName }
 
+  // #340: under IMAGE_POLICY=pinned, the stack's tag variables get the
+  // exact version instead of their floating default — see the pin step
+  // after the variable loop. Read before anything is resolved, so a bad
+  // IMAGE_POLICY value fails before any prompt.
+  const pinned = await resolveImagePolicy(cwd, serverName) === "pinned"
+  const images = pinned ? await stackImages(cwd, entry.name, opts.catalogDir) : []
+  /** Tag variables this run filled from a `+meta.ts` default, not from the user. */
+  const defaultedKeys = new Set<string>()
+
   const writtenEntries: EnvEntry[] = []
   const skippedKeys: string[] = []
   let newCount = 0
@@ -239,6 +254,7 @@ export async function stackAdd(
 
     if (decision === "use-resolved" && resolved) {
       value = resolved.value
+      defaultedKeys.add(key)
     } else if (decision === "prompt") {
       fallback = typeof normalized.default === "function" ? undefined : normalized.default
       // #212: every prompt carries its --var key in parentheses. A
@@ -272,6 +288,36 @@ export async function stackAdd(
 
     writtenEntries.push({ key, value: encodeEnvValue(key, value) })
     newCount++
+  }
+
+  // #340 pin step. A tag variable the user set (already in .env, passed
+  // with --var, or typed at a prompt) is theirs and stays. Every other
+  // one gets the version the registry resolves; when the registry cannot
+  // be asked, pinImages warns and the variable stays unset, so the
+  // floating default this run would have written is dropped too and the
+  // next `stack add` can still pin it.
+  const toPin = images.filter(({ variable }) =>
+    !existingByKey.has(variable) && opts.providedVars?.[variable] === undefined &&
+    (defaultedKeys.has(variable) || !writtenEntries.some((e) => e.key === variable))
+  )
+  if (toPin.length > 0) {
+    const pins = await pinImages(
+      toPin,
+      createRegistryClient({ fetch: opts.fetch }),
+      (message) => console.warn(message),
+    )
+    for (const { variable } of toPin) {
+      const at = writtenEntries.findIndex((e) => e.key === variable)
+      if (at !== -1) {
+        writtenEntries.splice(at, 1)
+        newCount--
+      }
+      const pin = pins.find((p) => p.key === variable)
+      if (pin) {
+        writtenEntries.push(pin)
+        newCount++
+      }
+    }
   }
 
   // Write servers/<server>/.env. `existing` (read from disk again inside
