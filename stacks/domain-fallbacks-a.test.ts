@@ -12,8 +12,15 @@ const stacksDir = new URL("./", import.meta.url)
 // What a server's .env holds without any key this wave introduced.
 const OLD_ENV = { DOMAIN: "example.com", NGINX_CONTAINER_NAME: "hl-nginx" }
 
-// mirotalk's compose requires a JWT key (`${MIROTALK_JWT_KEY:?}`), so its .env always has one.
-const MIROTALK_ENV = { ...OLD_ENV, MIROTALK_JWT_KEY: "k".repeat(32) }
+// mirotalk's compose requires its keys and TURN credential (`${KEY:?}`), so its .env always has
+// them.
+const MIROTALK_ENV = {
+  ...OLD_ENV,
+  MIROTALK_JWT_KEY: "k".repeat(32),
+  MIROTALK_API_KEY_SECRET: "a".repeat(32),
+  MIROTALK_TURN_SERVER_USERNAME: "turn-user",
+  MIROTALK_TURN_SERVER_CREDENTIAL: "turn-credential",
+}
 
 const CASES: { stack: string; hosts: string[]; override: string; env?: typeof OLD_ENV }[] = [
   { stack: "adguard", hosts: ["dns.example.com"], override: "ADGUARD_DOMAIN" },

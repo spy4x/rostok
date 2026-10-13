@@ -21,10 +21,12 @@ services:
       - TZ=${TIMEZONE:-UTC}
       # Required: the image exits at start without a JWT key of at least 32 characters.
       - JWT_KEY=${MIROTALK_JWT_KEY:?}
+      # Required: without it the image uses a default API key that its documentation prints.
+      - API_KEY_SECRET=${MIROTALK_API_KEY_SECRET:?}
       - TURN_SERVER_ENABLED=true
       - TURN_SERVER_URL=turns:${MIROTALK_DOMAIN:-talk.${DOMAIN}}:5349
-      - TURN_SERVER_USERNAME=${MIROTALK_TURN_SERVER_USERNAME}
-      - TURN_SERVER_CREDENTIAL=${MIROTALK_TURN_SERVER_CREDENTIAL}
+      - TURN_SERVER_USERNAME=${MIROTALK_TURN_SERVER_USERNAME:?}
+      - TURN_SERVER_CREDENTIAL=${MIROTALK_TURN_SERVER_CREDENTIAL:?}
     restart: unless-stopped
     deploy:
       resources:
@@ -71,7 +73,7 @@ services:
       - --relay-ip=${MIROTALK_PUBLIC_IP}
       - --fingerprint
       - --lt-cred-mech
-      - --user=${MIROTALK_TURN_SERVER_USERNAME}:${MIROTALK_TURN_SERVER_CREDENTIAL}
+      - --user=${MIROTALK_TURN_SERVER_USERNAME:?}:${MIROTALK_TURN_SERVER_CREDENTIAL:?}
       - --total-quota=500
       - --stale-nonce=600
       - --cert=/certs/${MIROTALK_DOMAIN:-talk.${DOMAIN}}.crt
