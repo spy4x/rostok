@@ -22,9 +22,11 @@ services:
       - ${VOLUMES_PATH}/adguard/work:/opt/adguardhome/work:z
       - ${VOLUMES_PATH}/adguard/conf:/opt/adguardhome/conf:z
     ports:
-      - 53:53/tcp # DNS
-      - 53:53/udp # DNS
-      - 853:853/tcp # DNS-over-TLS
+      # DNS is published on ADGUARD_DNS_BIND only. The default, 127.0.0.1, answers this server and
+      # nobody else, so a fresh deploy is never an open resolver. See the README before changing it.
+      - ${ADGUARD_DNS_BIND:-127.0.0.1}:53:53/tcp # DNS
+      - ${ADGUARD_DNS_BIND:-127.0.0.1}:53:53/udp # DNS
+      - ${ADGUARD_DNS_BIND:-127.0.0.1}:853:853/tcp # DNS-over-TLS
       # First-run setup wizard. Loopback only: reach it through an SSH tunnel, see the README.
       - 127.0.0.1:3000:3000/tcp
     restart: unless-stopped
