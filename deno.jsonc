@@ -209,6 +209,7 @@
       "!stacks/traggo/compose.yml",
       "!stacks/docker-registry/+meta.ts",
       "!stacks/docker-registry/compose.yml",
+      "!stacks/docker-registry/before.deploy.ts",
       "!stacks/docker-sock-proxy/+meta.ts",
       "!stacks/docker-sock-proxy/compose.yml",
       "!stacks/caldav-mcp/+meta.ts",

@@ -7,8 +7,18 @@ services:
     container_name: hl-docker-registry
     image: registry:2
     environment:
+      # Deleting needs the login below, like every other request.
       - REGISTRY_STORAGE_DELETE_ENABLED=true
+      # The registry asks for a login itself, so it is closed whichever way a
+      # request arrives: through the web UI's /v2 proxy or on the proxy network.
+      - REGISTRY_AUTH=htpasswd
+      - REGISTRY_AUTH_HTPASSWD_REALM=Docker Registry
+      - REGISTRY_AUTH_HTPASSWD_PATH=/auth/htpasswd
     volumes:
+      # before.deploy.ts writes auth/htpasswd (a bcrypt hash) from
+      # DOCKER_REGISTRY_USER and DOCKER_REGISTRY_PASSWORD. The folder is mounted,
+      # not the file, so a changed password is read without a restart.
+      - ./auth/:/auth/:ro,z
       - ${VOLUMES_PATH}/docker-registry:/var/lib/registry:z
     restart: unless-stopped
     deploy:
@@ -29,6 +39,8 @@ services:
       - REGISTRY_URL=https://${DOCKER_REGISTRY_DOMAIN}
       - NGINX_PROXY_PASS_URL=http://hl-docker-registry:5000
       - SINGLE_REGISTRY=true
+      # The registry uses a login: the browser asks for it on the first /v2 request.
+      - REGISTRY_SECURED=true
     depends_on:
       - docker-registry
     restart: unless-stopped
