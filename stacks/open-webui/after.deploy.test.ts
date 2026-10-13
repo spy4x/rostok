@@ -2,7 +2,7 @@
 // (No shell interaction — that runs via the deploy script.)
 
 import { assertEquals, assertThrows } from "@std/assert"
-import { buildSshOptionArgs, targetHost } from "./after.deploy.ts"
+import { buildConnectScript, buildSshOptionArgs, targetHost } from "./after.deploy.ts"
 
 Deno.test("buildSshOptionArgs: -p then the standard options", () => {
   assertEquals(buildSshOptionArgs("22"), [
@@ -199,8 +199,12 @@ Deno.test("after.deploy.ts subprocess: every ssh call (cp, exec, restart) puts -
     // Each ssh invocation logged its own argv followed by a blank line.
     const calls = logged.split("\n\n").map((block) => block.split("\n").filter((l) => l.length > 0))
       .filter((block) => block.length > 0)
-    // docker cp, docker exec, docker restart — three separate ssh calls.
-    assertEquals(calls.length, 3, `expected 3 ssh calls, got ${calls.length}: ${logged}`)
+    // The playwright network connection, then docker cp, docker exec, docker restart.
+    assertEquals(calls.length, 4, `expected 4 ssh calls, got ${calls.length}: ${logged}`)
+    assertEquals(
+      calls[0].slice(8),
+      buildConnectScript("hl-playwright-mcp", "hl-open-webui").split("\n"),
+    )
     for (const argv of calls) {
       const dashDashIdx = argv.indexOf("--")
       assertEquals(dashDashIdx >= 0, true, `no -- found in call: ${JSON.stringify(argv)}`)
@@ -216,4 +220,113 @@ Deno.test("after.deploy.ts subprocess: every ssh call (cp, exec, restart) puts -
       ])
     }
   })
+})
+
+/** What the fake `docker` answers. */
+interface FakeDocker {
+  /** Whether `docker network inspect` finds the network. */
+  network: boolean
+  /** Whether `docker inspect <container>` finds the client. */
+  client: boolean
+  /** The networks the client is on already, as `docker inspect -f` prints them. */
+  clientNetworks: string
+}
+
+/**
+ * Runs `fn` with a fake `docker` first on PATH and returns what it was called with, one call per
+ * line. The fake never reaches a real Docker daemon and calls no other program by the name
+ * `docker`; its depth guard makes it exit 97 if it is ever entered from itself.
+ */
+async function withFakeDocker(
+  fake: FakeDocker,
+  fn: (env: Record<string, string>) => Promise<void>,
+): Promise<string[]> {
+  const binDir = await Deno.makeTempDir({ prefix: `rostok-fake-docker-` })
+  const logPath = `${binDir}/calls.log`
+  try {
+    const script = `#!/bin/sh
+[ -n "$FAKE_DOCKER_DEPTH" ] && exit 97
+export FAKE_DOCKER_DEPTH=1
+echo "$*" >> "${logPath}"
+case "$1 $2" in
+  "network inspect") exit ${fake.network ? 0 : 1} ;;
+  "network connect") exit 0 ;;
+  "inspect -f") echo "${fake.clientNetworks}" ;;
+  inspect*) exit ${fake.client ? 0 : 1} ;;
+  *) exit 98 ;;
+esac
+`
+    await Deno.writeTextFile(`${binDir}/docker`, script, { mode: 0o755 })
+    await Deno.writeTextFile(logPath, ``)
+    const env = Deno.env.toObject()
+    for (const key of [`SSH_HOST`, `SSH_PORT`, `SSH_USER`, `FAKE_DOCKER_DEPTH`]) delete env[key]
+    await fn({ ...env, PATH: `${binDir}:${env.PATH ?? ``}` })
+    return (await Deno.readTextFile(logPath)).split(`\n`).filter((line) => line.length > 0)
+  } finally {
+    await Deno.remove(binDir, { recursive: true })
+  }
+}
+
+/** Runs the hook's connect script with `sh -c`, as the hook does on a local server. */
+async function runConnectScript(env: Record<string, string>): Promise<number> {
+  const script = buildConnectScript(`hl-playwright-mcp`, `hl-open-webui`)
+  const output = await new Deno.Command(`sh`, {
+    args: [`-c`, script],
+    env,
+    clearEnv: true,
+    stdout: `null`,
+    stderr: `null`,
+  }).output()
+  return output.code
+}
+
+Deno.test("connect script: puts hl-open-webui on hl-playwright-mcp when that network exists (fake docker)", async () => {
+  let code = -1
+  const calls = await withFakeDocker(
+    { network: true, client: true, clientNetworks: `proxy ` },
+    async (env) => {
+      code = await runConnectScript(env)
+    },
+  )
+  assertEquals(code, 0)
+  assertEquals(calls.at(-1), `network connect hl-playwright-mcp hl-open-webui`)
+})
+
+Deno.test("connect script: does nothing when the server has no hl-playwright-mcp network (fake docker)", async () => {
+  let code = -1
+  const calls = await withFakeDocker(
+    { network: false, client: true, clientNetworks: `proxy ` },
+    async (env) => {
+      code = await runConnectScript(env)
+    },
+  )
+  assertEquals(code, 0)
+  assertEquals(calls, [`network inspect hl-playwright-mcp`])
+})
+
+Deno.test("connect script: does not connect a container that is on the network already (fake docker)", async () => {
+  const calls = await withFakeDocker(
+    { network: true, client: true, clientNetworks: `hl-playwright-mcp proxy ` },
+    async (env) => {
+      await runConnectScript(env)
+    },
+  )
+  assertEquals(calls.filter((call) => call.startsWith(`network connect`)), [])
+})
+
+Deno.test("after.deploy.ts subprocess: without SSH_HOST the connection is still made, through the local docker", async () => {
+  // The rest of this hook still needs SSH_HOST (spy4x/rostok#287), so it exits non-zero after.
+  const calls = await withFakeDocker(
+    { network: true, client: true, clientNetworks: `proxy ` },
+    async (env) => {
+      await new Deno.Command(Deno.execPath(), {
+        args: [`run`, `-A`, import.meta.resolve(`./after.deploy.ts`)],
+        env: { ...env, PATH_APPS: `/srv/apps` },
+        clearEnv: true,
+        stdout: `null`,
+        stderr: `null`,
+      }).output()
+    },
+  )
+  assertEquals(calls.at(-1), `network connect hl-playwright-mcp hl-open-webui`)
 })

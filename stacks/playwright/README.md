@@ -34,9 +34,12 @@ The second container, `hl-playwright-mcp`, serves the Playwright MCP tools at
 drives a browser inside your network. So it is not on the shared `proxy` network. It sits on a
 network of its own, `hl-playwright-mcp`, and its Chromium runs as the unprivileged `pwuser`.
 
-Open WebUI is the one client. `after.deploy.ts` connects the `hl-open-webui` container to that
-network after every `rostok deploy`; on a server without Open WebUI it does nothing. Open WebUI's
-tool server address stays the same.
+Open WebUI is the one client. Compose cannot attach another stack's container, so two deploy
+hooks connect `hl-open-webui` to that network: this stack's `after.deploy.ts` and Open WebUI's
+own. A deploy of the whole server runs both, `rostok deploy <server> playwright` runs the first
+and `rostok deploy <server> open-webui` the second, so each of these leaves Open WebUI connected.
+Each hook does nothing when the other stack is not on the server, and on a local server
+(`SSH_ADDRESS=local`) it uses the local `docker`. Open WebUI's tool server address stays the same.
 
 Two things to do by hand:
 
@@ -49,8 +52,8 @@ Two things to do by hand:
   # hl-playwright-mcp hl-open-webui
   ```
 
-- **After recreating `hl-open-webui` without a deploy** (`docker compose up` by hand), the
-  connection is gone and the browser tool fails. Run `rostok deploy` again, or
+- **After recreating `hl-open-webui` without `rostok deploy`** (`docker compose up` by hand), the
+  connection is gone and the browser tool fails. Deploy either stack, or run
   `docker network connect hl-playwright-mcp hl-open-webui`.
 
 To let another container use the MCP proxy, connect it the same way. Do not put
