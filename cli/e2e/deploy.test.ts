@@ -1160,7 +1160,8 @@ Deno.test("e2e: a declared file mount is checked before any write, and the volum
     // PATH_APPS/stacks mkdir, stale cleanup and the file sync.
     const at = (call: string) => remote.calls.indexOf(call)
     assert(at("file-mounts") >= 0, `no file-mount check in ${remote.calls.join(", ")}`)
-    for (const later of ["mkdir", "stale-cleanup", "rsync:root", "network", "deploy-script"]) {
+    // No "network" step here: acme-reader's compose file names no proxy network (#310).
+    for (const later of ["mkdir", "stale-cleanup", "rsync:root", "deploy-script"]) {
       assert(at("file-mounts") < at(later), `file-mount check after ${later}: ${remote.calls}`)
     }
     const volumeScript = remote.shellScripts.find((s) => s.includes("rostok_resolve '"))

@@ -652,15 +652,20 @@ export async function runDeploy(
       }
     }
 
-    console.log("Ensuring proxy network exists on remote server...")
-    const networkResult = await io.runRemoteShell(
-      SSH_ADDRESS,
-      `docker network inspect proxy >/dev/null 2>&1 || docker network create proxy`,
-    )
-    if (!networkResult.success) {
-      throw new UserError(
-        `failed to ensure the proxy network on ${SSH_ADDRESS}: ${networkResult.error.trim()}`,
+    // #310: only when a compose file deployed in this run names the
+    // network. A server without one (Home Assistant on the host network)
+    // gets no stray network, and needs no right to create one.
+    if (requiredKeys.some((stack) => namesProxyNetwork(stack.compose))) {
+      console.log("Ensuring proxy network exists on remote server...")
+      const networkResult = await io.runRemoteShell(
+        SSH_ADDRESS,
+        `docker network inspect proxy >/dev/null 2>&1 || docker network create proxy`,
       )
+      if (!networkResult.success) {
+        throw new UserError(
+          `failed to ensure the proxy network on ${SSH_ADDRESS}: ${networkResult.error.trim()}`,
+        )
+      }
     }
 
     let results: DeployResult[] = []
@@ -816,6 +821,22 @@ function removeStagingDirSync(dir: string): void {
       while (Date.now() < until) { /* brief synchronous pause before retrying */ }
     }
   }
+}
+
+/**
+ * Whether a stack's compose text (its `compose.yml` plus the server's
+ * override file) names the `proxy` network. Deliberately loose, with no
+ * YAML parsing: any line that is not a whole-line comment and holds
+ * `proxy` as a word of its own counts (`proxy:`, `- proxy`,
+ * `name: proxy`, `networks: [proxy]`, `traefik.docker.network=proxy`),
+ * while a longer name such as `hl-piped-proxy` or `docker-sock-proxy`
+ * does not. A wrong "yes" leaves an unused network behind; a wrong "no"
+ * would break `docker compose up`.
+ */
+export function namesProxyNetwork(compose: string): boolean {
+  return compose.split(`\n`).some((line) =>
+    !line.trimStart().startsWith(`#`) && /(^|[^\w.-])proxy($|[^\w.-])/.test(line)
+  )
 }
 
 /**

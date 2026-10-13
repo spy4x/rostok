@@ -9,6 +9,7 @@ import { dirname, join } from "@std/path"
 import {
   handleStagingSignal,
   installStagingSignalCleanup,
+  namesProxyNetwork,
   runDeploy,
   type RunDeployIO,
   STAGING_CLEANUP_SIGNALS,
@@ -1050,6 +1051,98 @@ Deno.test("runDeploy: a local PATH_APPS that does not exist yet passes the path 
   } finally {
     await Deno.remove(elsewhere, { recursive: true })
     await teardownRunDeployFixture(f)
+  }
+})
+
+// #310 — the proxy network is created only for a compose file that names it.
+
+Deno.test("runDeploy: a deploy whose only stack does not name the proxy network never creates it (#310)", async () => {
+  const f = await setupRunDeployFixture()
+  try {
+    const stackDir = join(f.projectDir, "stacks", "hostnet")
+    await Deno.mkdir(stackDir, { recursive: true })
+    await Deno.writeTextFile(
+      join(stackDir, "compose.yml"),
+      "# Add an override to put it on the proxy network.\nservices:\n  hostnet:\n" +
+        "    image: busybox\n    network_mode: host\n",
+    )
+    await writeRunDeployServer(f.projectDir, ["hostnet"])
+
+    const result = await runDeploy({ cwd: f.projectDir, server: "test" }, f.io)
+    assertEquals(result.deployedStacks, ["hostnet"])
+    assert(f.remote.calls.includes("deploy-script"))
+    assertEquals(f.remote.shellScripts.filter((s) => s.includes("docker network")), [])
+  } finally {
+    await teardownRunDeployFixture(f)
+  }
+})
+
+Deno.test("runDeploy: a stack that names the proxy network gets it created before docker compose up (#310)", async () => {
+  const f = await setupRunDeployFixture()
+  try {
+    await writeLocalStack(f.projectDir, "alpha")
+    await Deno.writeTextFile(
+      join(f.projectDir, "stacks", "alpha", "compose.yml"),
+      "name: ${PROJECT}\nnetworks:\n  proxy:\n    external: true\nservices:\n  alpha:\n" +
+        "    image: busybox\n    networks:\n      - proxy\n",
+    )
+    await writeRunDeployServer(f.projectDir, ["alpha"])
+
+    await runDeploy({ cwd: f.projectDir, server: "test" }, f.io)
+    const network = f.remote.calls.indexOf("network")
+    assert(network !== -1, "expected the proxy network step")
+    assert(network < f.remote.calls.indexOf("deploy-script"), "network must come before up")
+    assertStringIncludes(f.remote.shellScripts.join("\n"), "docker network create proxy")
+  } finally {
+    await teardownRunDeployFixture(f)
+  }
+})
+
+Deno.test("runDeploy: the proxy network is created when only the server's compose-override file names it (#310)", async () => {
+  const f = await setupRunDeployFixture()
+  try {
+    await writeLocalStack(f.projectDir, "alpha")
+    await writeRunDeployServer(f.projectDir, ["alpha"])
+    const overrideDir = join(f.projectDir, "servers", "test", "compose-override")
+    await Deno.mkdir(overrideDir, { recursive: true })
+    await Deno.writeTextFile(
+      join(overrideDir, "alpha.yml"),
+      "networks:\n  default:\n    external: true\n    name: proxy\n",
+    )
+
+    await runDeploy({ cwd: f.projectDir, server: "test" }, f.io)
+    assert(f.remote.calls.includes("network"), "expected the proxy network step")
+  } finally {
+    await teardownRunDeployFixture(f)
+  }
+})
+
+Deno.test("namesProxyNetwork: every way a compose file names the network counts, a comment or a longer name does not (#310)", () => {
+  for (
+    const line of [
+      "  proxy:",
+      "      - proxy",
+      "    name: proxy",
+      "    networks: [proxy]",
+      '    networks: ["proxy"]',
+      '      - "traefik.docker.network=proxy"',
+      "      - proxy # routed by Traefik",
+    ]
+  ) {
+    assert(namesProxyNetwork(`services:\n${line}\n`), line)
+  }
+  for (
+    const line of [
+      "  # joins the proxy network",
+      "  docker-sock-proxy:",
+      "    container_name: hl-piped-proxy",
+      "    image: 1337kavin/piped-proxy:latest",
+      "      - NTFY_BEHIND_PROXY=true",
+      "      dockerfile: Dockerfile.mcp-proxy",
+      "    network_mode: host",
+    ]
+  ) {
+    assert(!namesProxyNetwork(`services:\n${line}\n`), line)
   }
 })
 
