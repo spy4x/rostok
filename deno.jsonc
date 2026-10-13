@@ -7,6 +7,15 @@
     "hooks:pre-commit": "deno task check",
     // #endregion Git Hooks
 
+    // #region Real-server test
+    // Local only, never CI: it needs HETZNER_CLOUD_API_TOKEN, which can create servers.
+    // --allow-net names the API host, so `fetch` can send the token nowhere else.
+    "e2e:vps": {
+      "command": "deno run --allow-net=api.hetzner.cloud --allow-env --allow-run -R -W scripts/e2e-vps/+main.ts",
+      "description": "🚀 Deploy to a fresh Hetzner server, check it, delete it (local | <version>)"
+    },
+    // #endregion Real-server test
+
     // #region Checks
     "check": {
       "description": "✅ Run all checks (lint, fmt, types, tests)",
