@@ -2,9 +2,11 @@ name: ${PROJECT}
 networks:
   proxy:
     external: true
-  default:
-    external: true
-    name: proxy
+  # Only Umami and its database. A service that lists no network joins the project's default
+  # network, which every stack with `name: ${PROJECT}` shares, so the database gets its own.
+  # `internal`: the database needs no route to the outside.
+  umami-db:
+    internal: true
 
 services:
   # PostgreSQL for Umami
@@ -19,7 +21,7 @@ services:
     volumes:
       - ${VOLUMES_PATH}/umami/db:/var/lib/postgresql/data:z
     networks:
-      - default
+      - umami-db
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U umami"]
       interval: 10s
@@ -59,7 +61,7 @@ services:
       - no-new-privileges:true
     networks:
       - proxy
-      - default
+      - umami-db
     labels:
       - "traefik.enable=true"
       - "traefik.docker.network=proxy"
