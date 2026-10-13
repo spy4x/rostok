@@ -25,31 +25,50 @@ Web UI: `https://<MIROTALK_DOMAIN>`
 - `MIROTALK_IMAGE_TAG` — image tag, default `latest`
 - `MIROTALK_DOMAIN` — public host, default `talk.${DOMAIN}`. The TURN URL and the TLS
   certificate coturn serves use the same host.
-- `MIROTALK_TURN_SERVER_USERNAME` — long random string (coturn credential user), generated
-- `MIROTALK_TURN_SERVER_CREDENTIAL` — long random string (coturn credential password), generated
+- `MIROTALK_TURN_SERVER_USERNAME` — long random string (coturn credential user), generated.
+  Required: the deploy stops when it is missing.
+- `MIROTALK_TURN_SERVER_CREDENTIAL` — long random string (coturn credential password), generated.
+  Required in the same way.
 - `MIROTALK_JWT_KEY` — key MiroTalk signs its room and API tokens with, generated. Required: the
   image exits at start without one of at least 32 characters, so the deploy stops when it is
   missing.
+- `MIROTALK_API_KEY_SECRET` — key MiroTalk's REST API (`/api/v1/...`) asks for in the
+  `authorization` header, generated. Required: without it the image uses a default key that
+  MiroTalk's documentation prints, so the deploy stops when it is missing.
 - `MIROTALK_PUBLIC_IP` — host's external IPv4, asked for. coturn hardcodes this in `external-ip=`;
   required because cloud VPS interfaces don't carry the public IP directly.
 
 ## Upgrading an existing project
 
-MiroTalk 2.1 refuses to start without `JWT_KEY`. A project that added this stack before
-`MIROTALK_JWT_KEY` existed has no such line. Its next deploy does not start a container that
-restarts forever: it reports `mirotalk` as failed with
-`required variable MIROTALK_JWT_KEY is missing a value` and exits non-zero. A whole-server deploy
-still updates the other stacks, but runs none of their after-deploy hooks. Before that deploy, add
-the key in one of two ways:
+The compose file requires two keys that older versions of this stack did not write:
 
-- Run `rostok stack add mirotalk -s <server>` again. It generates only the missing key, keeps every
-  other value and re-encrypts the file.
-- Or by hand: generate a key of at least 32 characters with `openssl rand -hex 32`, add
-  `MIROTALK_JWT_KEY=<that value>` to the server's `.env`, and run `rostok env encrypt`.
+- `MIROTALK_JWT_KEY`: MiroTalk 2.1 refuses to start without `JWT_KEY`.
+- `MIROTALK_API_KEY_SECRET`: without `API_KEY_SECRET` the image uses a default key that MiroTalk's
+  documentation prints. A server deployed before this key existed answers its REST API
+  (`/api/v1/stats`, and the endpoints that create meeting links and join tokens) to anyone who
+  sends that default, until it is redeployed with a key of its own.
 
-Then commit the `.env.age` file and run `rostok deploy <server>`.
+A project that added this stack before one of them existed has no such line. Its next deploy does
+not start the container: it reports `mirotalk` as failed with
+`required variable MIROTALK_API_KEY_SECRET is missing a value` (or `MIROTALK_JWT_KEY`) and exits
+non-zero. A whole-server deploy still updates the other stacks, but runs none of their after-deploy
+hooks. Before that deploy, add what is missing in one of two ways:
 
-Changing the key later only ends the tokens MiroTalk has already handed out; they last an hour.
+- Run `rostok stack add mirotalk -s <server>` again. It generates only the missing keys, keeps
+  every other value and re-encrypts the file.
+- Or by hand: generate a value of at least 32 characters with `openssl rand -hex 32` for each
+  missing key, add `MIROTALK_API_KEY_SECRET=<that value>` (or `MIROTALK_JWT_KEY=<that value>`) to
+  the server's `.env`, and run `rostok env encrypt`.
+
+Then commit the `.env.age` file and run `rostok deploy <server>`. The deploy recreates the
+`mirotalk` container, which ends the calls in progress. To check the result, send the old default
+key to `https://<MIROTALK_DOMAIN>/api/v1/stats` in the `authorization` header: the answer is 403.
+
+Changing the JWT key later only ends the tokens MiroTalk has already handed out; they last an hour.
+Changing the API key later only affects your own scripts that call the API.
+
+The TURN username and credential are required in the same way. `rostok stack add` has always
+generated both, so only an `.env` edited by hand can lack them.
 
 ## Host firewall
 
