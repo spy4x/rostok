@@ -2,9 +2,12 @@ name: ${PROJECT}
 networks:
   proxy:
     external: true
-  default:
-    external: true
-    name: proxy
+  # Only Umami and its database. A named network stays private however the file is started:
+  # `rostok deploy` gives each stack its own project, but `docker compose up` by hand, without
+  # `-p`, takes `name: ${PROJECT}`, and the default network would then be shared with other stacks.
+  # `internal`: the database needs no route to the outside.
+  umami-db:
+    internal: true
 
 services:
   # PostgreSQL for Umami
@@ -19,7 +22,7 @@ services:
     volumes:
       - ${VOLUMES_PATH}/umami/db:/var/lib/postgresql/data:z
     networks:
-      - default
+      - umami-db
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U umami"]
       interval: 10s
@@ -59,7 +62,7 @@ services:
       - no-new-privileges:true
     networks:
       - proxy
-      - default
+      - umami-db
     labels:
       - "traefik.enable=true"
       - "traefik.docker.network=proxy"

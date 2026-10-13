@@ -31,6 +31,51 @@ blockers and Safari tracking prevention leave alone. It applies only to sites th
 Traefik serves. Point the two proxy variables at another host if your site is not on the apex
 domain.
 
+## Database network
+
+The database (`hl-umami-db`) sits on a network of its own, `umami-db`, which only Umami joins. It
+is not on the `proxy` network, so no other stack can open its port, and it has no route to the
+outside. A deploy of this version moves an existing install over by itself: both containers are
+recreated, the data stays.
+
+### Existing installs: check for a `trust` rule
+
+A database that was first started without a password accepts every connection without one, and
+setting `UMAMI_DB_PASSWORD` later does not change that. Check the last line of its access rules on
+the server:
+
+```sh
+docker exec hl-umami-db tail -n 1 /var/lib/postgresql/data/pg_hba.conf
+```
+
+`host all all all scram-sha-256` is fine. If it says `host all all all trust`, close it:
+
+1. Make sure `UMAMI_DB_PASSWORD` is set in the server's `.env` and deployed. This prints the
+   password's length plus one, never the password; `1` means it is empty, so stop and set it first.
+
+   ```sh
+   docker exec hl-umami-db printenv POSTGRES_PASSWORD | wc -c
+   ```
+
+2. Set that password inside the database:
+
+   ```sh
+   docker exec -i hl-umami-db psql -U umami -d umami <<'SQL'
+   \getenv pw POSTGRES_PASSWORD
+   ALTER USER umami PASSWORD :'pw';
+   SQL
+   ```
+
+3. Switch the rule to ask for the password, and reload:
+
+   ```sh
+   docker exec -u postgres hl-umami-db sed -i '$ s/trust$/scram-sha-256/' /var/lib/postgresql/data/pg_hba.conf
+   docker exec hl-umami-db psql -U umami -d umami -c 'SELECT pg_reload_conf()'
+   ```
+
+Run the check again, then open the dashboard: Umami signs in to the database with the same
+password, so it keeps working.
+
 ## Script Integration
 
 ```html
