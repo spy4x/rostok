@@ -1,10 +1,12 @@
 // Stack metadata for `open-webui`.
 //
-// Chat UI for local and hosted models at `ai.${DOMAIN}` behind Traefik. It talks to sibling
-// stacks by container name: `ollama`, `searxng` and `playwright` (web search and page loading),
-// plus the MCP servers `caldav-mcp`, `email-mcp`, `google-maps-mcp` and `github-mcp`. Add the
-// ones you want on the same server; a missing one only makes its tool fail. `after.deploy.ts`
-// writes the provider list below into Open WebUI's database after every deploy.
+// Chat UI for local and hosted models at `ai.${DOMAIN}` behind Traefik. With default answers it
+// needs nothing but one OpenAI-compatible provider: every model that provider returns is listed,
+// and documents and web pages go through Open WebUI's built-in extractor and loader. Each
+// sibling stack it can use (`ollama`, `searxng`, `playwright` and the MCP servers
+// `playwright`, `caldav-mcp`, `email-mcp`, `google-maps-mcp`, `github-mcp`) is off until its
+// variable below turns it on; the README has the table. `after.deploy.ts` writes the provider
+// list below into Open WebUI's database after every deploy.
 //
 // Variable shape:
 //   - OPEN_WEBUI_OPENAI_API_KEYS / OPEN_WEBUI_OPENAI_API_BASE_URLS: semicolon-separated lists,
@@ -23,6 +25,8 @@
 //     no default: a default reference would stop every deploy on a server without caldav-mcp.
 //     The reference line must sit below the CALDAV_MCP_TOKEN line: compose resolves a reference
 //     only to a key defined earlier, and above it the key is silently empty.
+//   - OPEN_WEBUI_OPENAI_API_CONFIGS / OPEN_WEBUI_DEFAULT_MODELS: optional model whitelist per
+//     provider (JSON) and the models preselected in a new chat. Empty lists every model.
 //   - the rest: same defaults as compose.
 //
 // Server-level vars (DOMAIN, VOLUMES_PATH, PATH_APPS) intentionally NOT declared here.
@@ -80,9 +84,40 @@ export default {
       secret: true,
     },
     {
+      key: "OPEN_WEBUI_OPENAI_API_CONFIGS",
+      question: "Model whitelist per provider, as JSON (empty = list every model)?",
+      required: false,
+    },
+    {
+      key: "OPEN_WEBUI_DEFAULT_MODELS",
+      question: "Models preselected in a new chat, comma-separated (may be empty)?",
+      required: false,
+    },
+    {
+      key: "OPEN_WEBUI_ENABLE_IMAGE_GENERATION",
+      question: "Enable image generation (needs a provider with an image model)?",
+      default: "false",
+      required: true,
+    },
+    {
+      key: "OPEN_WEBUI_IMAGE_GENERATION_MODEL",
+      question: "Image generation model (may be empty)?",
+      required: false,
+    },
+    {
+      key: "OPEN_WEBUI_WEB_LOADER_ENGINE",
+      question: "Web page loader (empty = built-in, playwright = the playwright stack)?",
+      required: false,
+    },
+    {
+      key: "OPEN_WEBUI_PLAYWRIGHT_WS_URL",
+      question: "Playwright URL for the playwright loader (may be empty)?",
+      required: false,
+    },
+    {
       key: "OPEN_WEBUI_ENABLE_WEB_SEARCH",
-      question: "Enable web search?",
-      default: "true",
+      question: "Enable web search (needs the searxng stack or another engine)?",
+      default: "false",
       required: true,
     },
     {
@@ -111,8 +146,8 @@ export default {
     },
     {
       key: "OPEN_WEBUI_ENABLE_OLLAMA_API",
-      question: "Enable the Ollama connection?",
-      default: "true",
+      question: "Enable the Ollama connection (needs the ollama stack)?",
+      default: "false",
       required: true,
     },
     {
@@ -125,6 +160,36 @@ export default {
       key: "OPEN_WEBUI_OLLAMA_BASE_URL",
       question: "Ollama base URL?",
       default: "http://ollama:11434",
+      required: true,
+    },
+    {
+      key: "OPEN_WEBUI_ENABLE_PLAYWRIGHT_MCP",
+      question: "Offer the browser tools (needs the playwright stack)?",
+      default: "false",
+      required: true,
+    },
+    {
+      key: "OPEN_WEBUI_ENABLE_CALDAV_MCP",
+      question: "Offer the calendar and task tools (needs the caldav-mcp stack)?",
+      default: "false",
+      required: true,
+    },
+    {
+      key: "OPEN_WEBUI_ENABLE_EMAIL_MCP",
+      question: "Offer the e-mail tools (needs the email-mcp stack)?",
+      default: "false",
+      required: true,
+    },
+    {
+      key: "OPEN_WEBUI_ENABLE_GOOGLE_MAPS_MCP",
+      question: "Offer the Google Maps tools (needs the google-maps-mcp stack)?",
+      default: "false",
+      required: true,
+    },
+    {
+      key: "OPEN_WEBUI_ENABLE_GITHUB_MCP",
+      question: "Offer the GitHub tools (needs the github-mcp stack)?",
+      default: "false",
       required: true,
     },
     {
@@ -147,15 +212,13 @@ export default {
     },
     {
       key: "OPEN_WEBUI_CONTENT_EXTRACTION_ENGINE",
-      question: "Document extraction engine?",
-      default: "tika",
-      required: true,
+      question: "Document extraction engine (empty = built-in, tika = your own Tika server)?",
+      required: false,
     },
     {
       key: "OPEN_WEBUI_TIKA_SERVER_URL",
-      question: "Tika server URL?",
-      default: "http://tika:9998",
-      required: true,
+      question: "Tika server URL for the tika engine (may be empty)?",
+      required: false,
     },
     {
       key: "OPEN_WEBUI_RAG_TOP_K",
