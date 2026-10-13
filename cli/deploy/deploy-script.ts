@@ -6,6 +6,7 @@
 // still let `$(...)`/backticks run inside it and broke outright on an
 // embedded `"` — single quotes suppress both.
 
+import { normalizeRemotePath } from "../server-keys.ts"
 import { runRemoteShell, shQuote, stripControlChars } from "./exec.ts"
 
 export interface StackConfig {
@@ -26,6 +27,12 @@ export interface DeployResult {
    * each failed container with its last log lines.
    */
   containerFailed?: boolean
+  /**
+   * Set when the deploy recreated the stack's containers because one of them
+   * was created from another folder: that container and its old folder, as
+   * the server reported them.
+   */
+  recreated?: string
 }
 
 /**
@@ -77,13 +84,23 @@ const CONTAINER_NAMES_AWK = [
   `svc && /^    container_name: / { v = $2; gsub(/["']/, "", v); print v }`,
 ].join(" ")
 
+/** Shell variable that is non-empty when this stack's `up` must recreate its containers. */
+const RECREATE_VAR = "rostok_recreate"
+
 /**
  * Generate a shell script that deploys all stacks in one SSH session and
  * prints structured `DEPLOY_START`/`DEPLOY_SUCCESS`/`DEPLOY_FAILED`
  * markers `parseDeployResults` reads back.
  *
  * It runs in two parts. The first starts every stack with `up -d`; a stack
- * whose `up` fails is marked failed there. The second waits
+ * whose `up` fails is marked failed there. A stack gets `up -d
+ * --force-recreate` instead when one of its containers was created from
+ * another folder than `<pathApps>/stacks/<stack>` (#384): compose leaves a
+ * container with an unchanged configuration as it is, so it would keep the
+ * old folder in its `com.docker.compose.project.working_dir` label, and the
+ * backup runner stops and starts a stack from the folder that label names.
+ * A `DEPLOY_RECREATE` line names the first such container and its old
+ * folder. The second waits
  * VERIFY_WAIT_SECONDS once and looks at the containers of every stack that
  * started (#383): `up -d` returns 0 as soon as the containers are created,
  * so a container that dies at start used to count as a success. A stack is
@@ -127,6 +144,12 @@ export function generateDeployScript(
     const verifyMarker = shQuote(`DEPLOY_VERIFY:${stackName}:${deployAs}`)
     const restartingMarker = shQuote(`RESTARTING:${stackName}:${deployAs}`)
     const restartDoneMarker = shQuote(`RESTART_DONE:${stackName}:${deployAs}`)
+    const recreateMarker = shQuote(`DEPLOY_RECREATE:${stackName}:${deployAs}`)
+    // What compose writes into the working_dir label of a container it
+    // creates here: the folder of the first -f file.
+    const stackDir = shQuote(`${normalizeRemotePath(pathApps)}/stacks/${stackName}`)
+    const compose =
+      `cd ${quotedPathApps} && docker compose ${projectFlag} --env-file=.env.root --env-file=.env "\$@"`
 
     stackCommands.push(`
 echo ${startMarker}
@@ -184,8 +207,32 @@ docker ps -a --format '{{.Names}}|{{.ID}}|{{.Label "com.docker.compose.project"}
     } "\$proj"
   fi
 done
+# A container of this project that was created from another folder (an older
+# checkout, a hand-run docker compose) and whose configuration is unchanged
+# is left as it is by \`up\`, old folder in its labels and all. So \`up\`
+# recreates the stack's containers when it finds one. Only a container that
+# \`up\` manages counts: its service is in this stack's compose files and it
+# is not a \`compose run\` one-off. An orphan of a removed service would
+# otherwise force a recreate on every deploy, because nothing ever gives it
+# the new folder. The services are asked for only when a folder differs.
+${RECREATE_VAR}=
+rostok_moved=\$(docker ps -a --filter ${
+      shQuote(`label=com.docker.compose.project=${deployAs}`)
+    } --format '{{.Names}}|{{.Label "com.docker.compose.service"}}|{{.Label "com.docker.compose.oneoff"}}|{{.Label "com.docker.compose.project.working_dir"}}' 2>/dev/null | while IFS='|' read -r rostok_name rostok_service rostok_oneoff rostok_dir; do
+  [ -n "\$rostok_service" ] && [ "\$rostok_oneoff" != True ] && [ "\$rostok_dir" != ${stackDir} ] || continue
+  printf '%s|%s|%s\\n' "\$rostok_name" "\$rostok_service" "\$rostok_dir"
+done)
+if [ -n "\$rostok_moved" ]; then
+  rostok_services=\$(${compose} config --services 2>/dev/null)
+  ${RECREATE_VAR}=\$(printf '%s\\n' "\$rostok_moved" | while IFS='|' read -r rostok_name rostok_service rostok_dir; do
+    printf '%s\\n' "\$rostok_services" | grep -qxF -- "\$rostok_service" || continue
+    printf '%s container %s was created from %s, not from %s\\n' ${recreateMarker} "\$rostok_name" "\$rostok_dir" ${stackDir}
+    break
+  done)
+  if [ -n "\$${RECREATE_VAR}" ]; then printf '%s\\n' "\$${RECREATE_VAR}"; fi
+fi
 ${startedVar}=\$(date -u +%Y-%m-%dT%H:%M:%S)
-cd ${quotedPathApps} && docker compose ${projectFlag} --env-file=.env.root --env-file=.env "\$@" up -d --build 2>&1
+${compose} up -d --build \${${RECREATE_VAR}:+--force-recreate} 2>&1
 if [ $? -eq 0 ]; then
   ${upVar}=1
 else
@@ -269,6 +316,10 @@ export function parseDeployResults(output: string, stacks: StackConfig[]): Deplo
     const successMarker = `DEPLOY_SUCCESS:${stackName}:${deployAs}`
     const failedMarker = `DEPLOY_FAILED:${stackName}:${deployAs}`
     const verifyMarker = `DEPLOY_VERIFY:${stackName}:${deployAs}`
+    // The space ends the marker: no stack or project name contains one.
+    const recreateMarker = `DEPLOY_RECREATE:${stackName}:${deployAs} `
+    const recreated = lines.find((line) => line.startsWith(recreateMarker))
+      ?.slice(recreateMarker.length)
 
     const isSuccess = lines.some((line) => line.startsWith(successMarker))
     const endIdx = lines.findIndex((line) => line.startsWith(failedMarker))
@@ -296,10 +347,21 @@ export function parseDeployResults(output: string, stacks: StackConfig[]): Deplo
       success: isSuccess && !isFailed,
       error: isFailed ? errorOutput : undefined,
       ...(containerFailed ? { containerFailed } : {}),
+      ...(recreated ? { recreated } : {}),
     })
   }
 
   return results
+}
+
+/**
+ * Says why a stack's running containers restarted. The text holds a
+ * container name and a folder as the server reported them, so control
+ * characters are stripped.
+ */
+function printRecreated(result: DeployResult): void {
+  if (!result.recreated) return
+  console.log(`     Recreated its containers: ${stripControlChars(result.recreated)}`)
 }
 
 /** Print a summary of deployment results. */
@@ -316,6 +378,7 @@ export function printDeploySummary(results: DeployResult[]): void {
         ? `${result.name} (as ${result.deployAs})`
         : result.name
       console.log(`   ✓ ${displayName}`)
+      printRecreated(result)
     }
   }
 
@@ -326,6 +389,7 @@ export function printDeploySummary(results: DeployResult[]): void {
         ? `${result.name} (as ${result.deployAs})`
         : result.name
       console.log(`   ✗ ${displayName}`)
+      printRecreated(result)
       if (result.error && result.containerFailed) {
         // Printed whole: the container's last log lines are how the owner
         // learns why it died. Container logs can carry escape sequences too.

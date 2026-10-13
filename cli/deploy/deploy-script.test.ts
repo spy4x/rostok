@@ -83,6 +83,14 @@ interface FakeDockerOptions {
   after?: string[]
   /** `docker logs` output per container ID. */
   logs?: Record<string, string>
+  /**
+   * Containers as `<project>|<name>|<service>|<one-off>|<folder>`: what `docker ps -a --filter
+   * label=com.docker.compose.project=<project>` answers. `@` in the folder stands for the
+   * PATH_APPS the script deploys from.
+   */
+  labels?: string[]
+  /** Printed by `docker compose ... config --services`, one service per line. */
+  services?: string[]
   /** Makes `docker compose ... up` exit 1. */
   upFails?: boolean
   /** The shell that runs the script (default `sh`). */
@@ -100,8 +108,10 @@ const LONG_AGO = "2000-01-01T00:00:00.000000000Z"
 /**
  * Run the deploy script generated for `stacks` through `sh` with a fake
  * `docker` and a fake `sleep` on PATH. `docker compose ... config` prints
- * `composeConfig`, `docker ps -a` prints `psLines` (the config files default
- * to the first stack's own compose file), `docker rm -f` records the ID,
+ * `composeConfig`, `docker compose ... config --services` prints `services`,
+ * `docker ps -a` prints `psLines` (the config files default to the first
+ * stack's own compose file), `docker ps -a --filter label=...project=<p>`
+ * prints the `labels` of project `<p>`, `docker rm -f` records the ID,
  * `docker ps -a -q --filter`, `docker inspect` and `docker logs` answer from
  * `before`, `after` and `logs`, and everything else succeeds silently. The
  * fake `sleep` returns at once, records its argument, and switches the fake
@@ -130,6 +140,10 @@ async function runScriptWithFakeDocker(
       return [name, id, project, files].map((f) => (f === "-" ? "" : f)).join("|") + "\n"
     })
     await Deno.writeTextFile(join(dir, "ps.txt"), ps.join(""))
+    const labels = (opts.labels ?? []).map((l) => `${l.replace("@", pathApps)}\n`)
+    await Deno.writeTextFile(join(dir, "labels.txt"), labels.join(""))
+    const services = (opts.services ?? []).map((l) => `${l}\n`)
+    await Deno.writeTextFile(join(dir, "services.txt"), services.join(""))
     const before = opts.before ?? []
     const asFile = (lines: string[]) => lines.map((l) => `${l}\n`).join("")
     await Deno.writeTextFile(join(dir, "before.txt"), asFile(before))
@@ -151,11 +165,15 @@ async function runScriptWithFakeDocker(
         `[ -f ${shQuote(slept)} ] && state=${shQuote(join(dir, "after.txt"))}`,
         'for last in "$@"; do :; done',
         'case " $* " in',
+        `  *" config --services "*) cat ${shQuote(join(dir, "services.txt"))} ;;`,
         `  *" config "*) cat ${shQuote(join(dir, "config.yml"))} ;;`,
         `  *" up "*) ${opts.upFails ? "echo 'up went wrong'; exit 1" : ":"} ;;`,
         `  " ps -a -q --filter "*) awk -F'|' -v p="\${last#label=com.docker.compose.project=}" '$1 == p { print $2 }' "$state" ;;`,
         `  " inspect "*) awk -F'|' -v id="$last" '$2 == id { sub(/^[^|]*[|]/, ""); print }' "$state" ;;`,
         `  " logs "*) cat ${shQuote(join(dir, "logs"))}/"$last" ;;`,
+        `  " ps -a --filter "*) awk -F'|' -v p="\${4#label=com.docker.compose.project=}" '$1 == p { sub(/^[^|]*[|]/, ""); print }' ${
+          shQuote(join(dir, "labels.txt"))
+        } ;;`,
         `  " ps -a "*) cat ${shQuote(join(dir, "ps.txt"))} ;;`,
         `  " rm -f "*) printf '%s\\n' "$3" >> ${shQuote(removedLog)} ;;`,
         "esac",
@@ -424,6 +442,129 @@ Deno.test("printDeploySummary prints every log line of a container that failed a
   assertStringIncludes(text, "Failed (1/1)")
   assertStringIncludes(text, "Container hl-foo exited with code 1.")
   for (const line of logLines) assertStringIncludes(text, line)
+})
+
+/** Every `docker compose ... up` the fake `docker` saw. */
+function upCalls(run: FakeDockerRun): string[] {
+  return run.calls.filter((c) => c.startsWith("compose ") && c.includes(" up "))
+}
+
+const UP_FOO = "compose -p foo --env-file=.env.root --env-file=.env -f stacks/foo/compose.yml up " +
+  "-d --build"
+
+for (const shell of SHELLS) {
+  Deno.test(`a stack with a container created from another folder is recreated once, and the summary names the container and its old folder (${shell})`, async () => {
+    const stacks: StackConfig[] = [{ name: "foo" }, { name: "bar" }]
+    const run = await runScriptWithFakeDocker(stacks, {
+      shell,
+      labels: [
+        "foo|hl-foo-db|db|False|@/stacks/foo",
+        "foo|hl-foo|foo|False|/srv/old/stacks/foo",
+        "foo|hl-foo-worker|worker|False|/srv/old/stacks/foo",
+        "bar|hl-bar|bar|False|@/stacks/bar",
+      ],
+      services: ["db", "foo", "worker"],
+    })
+    assertEquals(upCalls(run), [
+      `${UP_FOO} --force-recreate`,
+      "compose -p bar --env-file=.env.root --env-file=.env -f stacks/bar/compose.yml up -d --build",
+    ])
+    const results = parseDeployResults(run.stdout, stacks)
+    assertEquals(results.map((r) => r.success), [true, true])
+    assertEquals(
+      results[0].recreated?.startsWith(
+        "container hl-foo was created from /srv/old/stacks/foo, not from ",
+      ),
+      true,
+      run.stdout,
+    )
+    assertEquals(results[0].recreated?.endsWith("/apps/stacks/foo"), true, run.stdout)
+    assertEquals(results[1].recreated, undefined)
+    assertEquals(run.stdout.split("\n").filter((l) => l.startsWith("DEPLOY_RECREATE:")).length, 1)
+  })
+
+  Deno.test(`a stack whose containers were all created from the deploy folder is not recreated (${shell})`, async () => {
+    const run = await deployFoo({
+      shell,
+      labels: ["foo|hl-foo|foo|False|@/stacks/foo", "foo|hl-foo-db|db|False|@/stacks/foo"],
+      services: ["db", "foo"],
+    })
+    assertEquals(upCalls(run), [UP_FOO])
+    assertEquals(run.result.success, true)
+    assertEquals(run.result.recreated, undefined)
+    assertEquals(run.calls.filter((c) => c.endsWith(" config --services")), [])
+  })
+}
+
+Deno.test("a container of another compose project created from another folder does not recreate the stack", async () => {
+  const run = await deployFoo({
+    labels: ["hl|hl-foo|foo|False|/srv/old/stacks/foo"],
+    services: ["foo"],
+  })
+  assertEquals(upCalls(run), [UP_FOO])
+  assertEquals(run.result.recreated, undefined)
+})
+
+Deno.test("a container that up does not manage, of a removed service or from compose run, does not recreate the stack", async () => {
+  const run = await deployFoo({
+    labels: [
+      "foo|hl-foo|foo|False|@/stacks/foo",
+      "foo|hl-foo-gone|gone|False|/srv/old/stacks/foo",
+      "foo|foo-foo-run-1|foo|True|/srv/old/stacks/foo",
+    ],
+    services: ["foo"],
+  })
+  assertEquals(upCalls(run), [UP_FOO])
+  assertEquals(run.result.recreated, undefined)
+})
+
+Deno.test("an old folder with shell and printf syntax in it is reported as text and never run", async () => {
+  const tmp = await Deno.makeTempDir({ prefix: "rostok-recreate-inject-" })
+  try {
+    const oldDir = `/srv/$(touch ${tmp}/INJECTED)\`touch ${tmp}/INJECTED\`%s%d'";|"' a b`
+    const run = await deployFoo({ labels: [`foo|hl-foo|foo|False|${oldDir}`], services: ["foo"] })
+    assertEquals(await Deno.stat(join(tmp, "INJECTED")).catch(() => null), null)
+    assertEquals(upCalls(run), [`${UP_FOO} --force-recreate`])
+    assertStringIncludes(run.result.recreated ?? "", `container hl-foo was created from ${oldDir},`)
+  } finally {
+    await Deno.remove(tmp, { recursive: true })
+  }
+})
+
+Deno.test("parseDeployResults does not take the recreate line of a stack whose name only starts the same", () => {
+  const stacks: StackConfig[] = [{ name: "foo" }, { name: "foo", deployAs: "foo-two" }]
+  const output = [
+    "DEPLOY_START:foo:foo",
+    "DEPLOY_START:foo:foo-two",
+    "DEPLOY_RECREATE:foo:foo-two container hl-foo-two was created from /old, not from /new",
+  ].join("\n")
+  const results = parseDeployResults(output, stacks)
+  assertEquals(results[0].recreated, undefined)
+  assertEquals(results[1].recreated, "container hl-foo-two was created from /old, not from /new")
+})
+
+Deno.test("printDeploySummary says which container made a stack's containers restart, without its control characters", () => {
+  const printed: string[] = []
+  const original = console.log
+  console.log = (...args: unknown[]) => printed.push(args.join(" "))
+  try {
+    printDeploySummary([{
+      name: "foo",
+      deployAs: "foo",
+      success: true,
+      recreated: "container hl-foo was created from /srv/\x07old/stacks/foo, not from /srv/new",
+    }])
+  } finally {
+    console.log = original
+  }
+  assertEquals(
+    printed.includes(
+      "     Recreated its containers: container hl-foo was created from /srv/old/stacks/foo, " +
+        "not from /srv/new",
+    ),
+    true,
+    printed.join("\n"),
+  )
 })
 
 const FOO_CONFIG = [

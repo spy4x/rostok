@@ -139,7 +139,10 @@ files; `.env` files stay on disk.
        fallback, has no value in .env.root or the server .env
    └─▶ For each stack in servers/home/config.json:
        - rsync the stack to the remote host
-       - docker compose up -d
+       - docker compose up -d, with --force-recreate when a container
+         of the stack was created from another folder than
+         PATH_APPS/stacks/<stack>; the summary names that container
+         and its old folder
        - run before.deploy hooks
    └─▶ Waits 5 seconds once, then lists a stack under "Failed", with
        the container's last 20 log lines, when a container has exited
