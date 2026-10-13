@@ -82,6 +82,28 @@ Public-inbound ports required:
 On Hetzner Cloud, add these to the server's firewall in the Cloud Console (or
 via the API). On hosts running `firewalld`/`nftables`, allow the same.
 
+## What the relay refuses
+
+MiroTalk sends the TURN username and credential to every browser that joins a room, and a room
+needs no login. So treat that login as known to anyone who has opened a room: they can use the
+relay, also outside a call, to send traffic to public addresses.
+
+What they cannot do is reach addresses that only the server itself can reach. coturn runs on the
+host's network, so the compose file tells it to refuse these peers:
+
+- loopback (`127.0.0.0/8`, `::1`) and "this network" (`0.0.0.0/8`)
+- the private ranges (`10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`), which hold the Docker
+  networks, and IPv6 unique-local (`fc00::/7`)
+- carrier-grade NAT (`100.64.0.0/10`)
+- link-local (`169.254.0.0/16`, which holds the cloud provider's metadata address, and
+  `fe80::/10`)
+- multicast, and IPv4 addresses written as IPv6 (`::ffff:0:0/96`)
+
+A client that asks for one of them gets error 403, "Forbidden IP". The server's own public address
+stays allowed: two browsers that both need the relay reach each other through it. A service that
+listens on that public address is therefore reachable through the relay even when a firewall in
+front of the server blocks its port, so bind such a service to a private address or to loopback.
+
 ## TURN over TLS
 
 The browser advertises `turns://<MIROTALK_DOMAIN>:5349` to peers. The
