@@ -1,5 +1,5 @@
 import { assertEquals } from "@std/assert"
-import { isPrerelease, newestInFamily, parseVersionTag } from "./version.ts"
+import { newestInFamily, parseVersionTag } from "./version.ts"
 
 const version = (tag: string) => {
   const parsed = parseVersionTag(tag)
@@ -23,15 +23,6 @@ Deno.test("parseVersionTag reads v1.2.3, 1.2, 16, 2024.10.1 and a suffixed tag",
 Deno.test("parseVersionTag ignores latest, nightly, a commit tag and a date stamp", () => {
   for (const tag of ["latest", "nightly", "alpine", "sha-1a2b3c4", "20241013", "1.2.3.4.5", ""]) {
     assertEquals(parseVersionTag(tag), null, tag)
-  }
-})
-
-Deno.test("isPrerelease is true for rc, beta and nightly suffixes and false for alpine", () => {
-  for (const tag of ["1.2.3-rc1", "2.0.0-beta.2", "1.4-nightly", "3.0.0-alpine-rc.1"]) {
-    assertEquals(isPrerelease(version(tag)), true, tag)
-  }
-  for (const tag of ["1.2.3", "1.27.3-alpine", "5.4.1-ls250", "1.2.3-cuda"]) {
-    assertEquals(isPrerelease(version(tag)), false, tag)
   }
 })
 

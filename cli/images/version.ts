@@ -15,9 +15,6 @@ export interface VersionTag {
 
 const VERSION_TAG = /^(v?)(\d+(?:\.\d+){0,3})(?:-([A-Za-z0-9][A-Za-z0-9._-]*))?$/
 
-const PRERELEASE =
-  /(^|[._-])(alpha|beta|rc|preview|pre|dev|nightly|snapshot|canary|edge|unstable|next|test)[._-]?\d*($|[._-])/i
-
 /**
  * Read `tag` as a version, or return null. A lone number of five digits
  * or more (`20241013`, a build number) is a date or a counter, not a
@@ -29,11 +26,6 @@ export function parseVersionTag(tag: string): VersionTag | null {
   const parts = match[2].split(".").map(Number)
   if (parts.length === 1 && match[2].length >= 5) return null
   return { tag, prefix: match[1] as "" | "v", parts, suffix: match[3] ?? "" }
-}
-
-/** True for `1.2.3-rc1`, `2.0.0-beta.2`, `1.4-nightly`; false for `1.27-alpine`. */
-export function isPrerelease(version: VersionTag): boolean {
-  return PRERELEASE.test(version.suffix)
 }
 
 /**

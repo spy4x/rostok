@@ -5,7 +5,7 @@ import type { EnvEntry } from "../env-files.ts"
 import type { ComposeImage } from "./compose-images.ts"
 import { parseImageRef, type RegistryClient } from "./registry.ts"
 import type { ImageRef } from "./registry.ts"
-import { compareVersions, isPrerelease, parseVersionTag, type VersionTag } from "./version.ts"
+import { compareVersions, parseVersionTag, type VersionTag } from "./version.ts"
 
 /** How many version tags are compared with the default tag's digest before giving up. */
 const MAX_DIGEST_CHECKS = 25
@@ -33,7 +33,7 @@ export async function resolvePin(
   const candidates: VersionTag[] = []
   for (const tag of await client.tags(ref)) {
     const version = parseVersionTag(tag)
-    if (!version || isPrerelease(version)) continue
+    if (!version) continue
     const fits = line
       ? version.suffix === line.suffix && version.parts[0] === line.parts[0] &&
         version.parts.length > line.parts.length
