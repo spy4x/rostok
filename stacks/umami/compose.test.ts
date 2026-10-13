@@ -24,8 +24,8 @@ function resolved(key: string): Network & { key: string } {
 }
 
 Deno.test("umami: the database joins only the stack's own internal network", () => {
-  // A service without `networks` would join the project's default network, which every stack
-  // with `name: ${PROJECT}` shares: the list must be explicit.
+  // A service without `networks` would join the project's default network, which other stacks
+  // share when the file is started by hand without `-p`: the list must be explicit.
   assertEquals(compose.services["umami-db"].networks, ["umami-db"])
   // Not external and not renamed, so no other stack can declare it; internal, so no route out.
   assertEquals(resolved("umami-db"), { key: "umami-db", internal: true })
