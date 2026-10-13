@@ -652,6 +652,45 @@ Deno.test("generateVolumeCreationScript: a failed sudo fails the script and stop
   }
 })
 
+Deno.test("generateVolumeCreationScript: as non-root, the script for 200 folders stays under 64 KiB", () => {
+  // ssh gets the whole script as one argument, and Linux refuses an argument
+  // over 128 KiB ("Argument list too long"). Normal and keepOwner folders use
+  // different sudo scripts, so each kind is measured on its own.
+  const paths = Array.from({ length: 200 }, (_, i) => `/srv/volumes/stack-${i}/data`)
+  for (const keepOwner of [[], paths]) {
+    const script = generateVolumeCreationScript(
+      opts("/srv/volumes", paths, { keepOwner, needsSudo: true }),
+    )
+    const bytes = new TextEncoder().encode(script).length
+    assert(bytes < 64 * 1024, `${bytes} bytes with ${keepOwner.length} keepOwner folders`)
+  }
+})
+
+for (const shell of SHELLS) {
+  Deno.test(`generateVolumeCreationScript (${shell}): as non-root, two folders in one script each get the sudo check: the first is created and chowned, the second, behind a symlink out of VOLUMES_PATH, is refused`, async () => {
+    const root = await escapeFixture("rostok-volumes-shared-")
+    try {
+      const good = `${root}/volumes/good/data`
+      const bad = `${root}/volumes/app/data`
+      const script = generateVolumeCreationScript(
+        opts(`${root}/volumes`, [good, bad], { puid: "4242", pgid: "4343", needsSudo: true }),
+      )
+      const result = await runScript(script, shell)
+      assertEquals(result.success, false)
+      assertEquals(result.sudoCalls, [
+        `sh -c <script> sh ${good} 4242:4343 ${root}/volumes`,
+        `sh -c <script> sh ${bad} 4242:4343 ${root}/volumes`,
+      ])
+      assertEquals((await Deno.stat(good)).isDirectory, true)
+      assertEquals(result.chownCalls, [`-R 4242:4343 -- ${good}`])
+      assertStringIncludes(result.stderr, `resolves to ${root}/outside/data, outside VOLUMES_PATH`)
+      assertEquals(await exists(`${root}/outside/data`), false, "mkdir ran outside VOLUMES_PATH")
+    } finally {
+      await Deno.remove(root, { recursive: true })
+    }
+  })
+}
+
 Deno.test("generateVolumeCreationScript: a missing VOLUMES_PATH fails before anything is created", async () => {
   const root = await tempRoot("rostok-volumes-nobase-")
   try {

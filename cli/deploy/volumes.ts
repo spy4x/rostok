@@ -44,6 +44,12 @@
 // The paths reach that `sh -c` as positional arguments, never inside the
 // script text.
 //
+// (#266) That `sh -c` script is about 1,300 bytes. The remote script
+// assigns it once to a shell variable, single-quoted so nothing in it is
+// expanded, and every folder passes `"$variable"` to `sh -c`. Repeating
+// the text for every folder made the remote script pass 128 KiB, the
+// Linux limit for one argument, at about 90 folders, and ssh did not start.
+//
 // (#258) A stack's `+meta.ts` can declare `fileMounts`: volume paths
 // that are files, such as traefik's `acme.json`. The volume script never
 // targets them with mkdir or chown. `generateFileMountCheckScript`
@@ -355,7 +361,10 @@ export function generateFileMountCheckScript(
  * `chown -R` on its resolved path.
  *
  * Otherwise each folder is wrapped as `( [ -d P ] && [ "$(stat -c %u:%g
- * P)" = U:G ] || sudo -n sh -c SCRIPT sh P U:G V )`. The first half is the
+ * P)" = U:G ] || sudo -n sh -c "$rostok_sudo_folder" sh P U:G V )`. The
+ * script text is assigned to that variable once, at the top, so the remote
+ * script grows by a few hundred bytes per folder, not by the whole check
+ * script (#266). The first half is the
  * #249 fast path: a folder that already exists with the right owner
  * needs nothing privileged, so no check is needed either, and a user
  * without passwordless sudo can still deploy. Anything else runs the
@@ -382,23 +391,30 @@ export function generateVolumeCreationScript(opts: VolumeScriptOptions): string 
     }
     return `${RESOLVE_FUNCTIONS}\n${steps.join(" &&\n")}\n`
   }
-  const sudoScript = shQuote(SUDO_FOLDER_SCRIPT)
-  const sudoKeepScript = shQuote(SUDO_KEEP_SCRIPT)
-  const hasKeep = folders.some((p) => keep.has(pathKey(p)))
+  const isKept = (path: string) => keep.has(pathKey(path))
+  // Each sudo script is defined once, and only when a folder uses it. `shQuote`
+  // single-quotes the text, so the variable holds it byte for byte.
+  const head: string[] = []
+  if (folders.some(isKept)) {
+    head.push(RESOLVE_FUNCTIONS, `rostok_sudo_keep=${shQuote(SUDO_KEEP_SCRIPT)}`)
+  }
+  if (folders.some((p) => !isKept(p))) {
+    head.push(`rostok_sudo_folder=${shQuote(SUDO_FOLDER_SCRIPT)}`)
+  }
   const body = folders.map((path) => {
     const p = shQuote(path)
-    if (keep.has(pathKey(path))) {
+    if (isKept(path)) {
       // Never chowned, so an existing folder needs nothing privileged. The
       // resolve check still runs with the user's own rights: a symlinked
       // parent out of VOLUMES_PATH, or a folder the user cannot enter, falls
       // through to the sudo script, which refuses the first and handles the second.
       return `( [ -d ${p} ] && [ ! -L ${p} ] && rostok_base_init ${base} && ` +
-        `rostok_resolve ${p} || sudo -n sh -c ${sudoKeepScript} sh ${p} ${owner} ${base} )`
+        `rostok_resolve ${p} || sudo -n sh -c "$rostok_sudo_keep" sh ${p} ${owner} ${base} )`
     }
     // `[ ! -L ]`: `stat` without -L reads a symlink's own owner, so a
     // PUID-owned link to `/etc` would otherwise skip the sudo check.
     return `( [ -d ${p} ] && [ ! -L ${p} ] && [ "$(stat -c %u:%g -- ${p})" = ${owner} ] || ` +
-      `sudo -n sh -c ${sudoScript} sh ${p} ${owner} ${base} )`
+      `sudo -n sh -c "$rostok_sudo_folder" sh ${p} ${owner} ${base} )`
   }).join(" &&\n") + "\n"
-  return hasKeep ? `${RESOLVE_FUNCTIONS}\n${body}` : body
+  return [...head, body].join("\n")
 }
