@@ -1,7 +1,7 @@
 // after.deploy.ts — Sync OpenWebUI provider config + model whitelist from
-// .env into the SQLite `config` table. Ensures the 3rd provider slot
-// (MiniMax) stays registered after Watchtower auto-updates, schema
-// migrations, or fresh volumes that drop the DB-backed provider list.
+// .env into the SQLite `config` table. Ensures every provider stays
+// registered after Watchtower auto-updates, schema migrations, or fresh
+// volumes that drop the DB-backed provider list.
 //
 // Why this exists: OpenWebUI reads provider config from the SQLite
 // `config` table via `get_openai_runtime_config()` (openai.py:276-283),
@@ -16,8 +16,8 @@
 //   SSH_HOST, SSH_PORT, SSH_USER, PATH_APPS    from deploy context
 //   OPEN_WEBUI_OPENAI_API_KEYS, OPEN_WEBUI_OPENAI_API_BASE_URLS
 //                            from .env via --env-file=.env
-//   (OPENAI_API_CONFIGS is hardcoded directly in compose.yml, not read
-//   from .env — see the comment near its declaration below)
+//   (OPENAI_API_CONFIGS and DEFAULT_MODELS reach the script through the
+//   container's own env, which compose fills from .env)
 //
 // SSH_HOST/SSH_PORT/SSH_USER are contract keys parsed once from
 // SSH_ADDRESS by cli/deploy/hooks.ts's buildHookEnv (#229) — see its
@@ -185,9 +185,8 @@ if (import.meta.main) {
   // `ps` on the remote host for the lifetime of the exec, and in the argv of
   // the local ssh process. `read` in the container shell keeps them off both.
   //
-  // OPENAI_API_CONFIGS is deliberately not passed: it is hardcoded in
-  // compose.yml (servers/home/.env keeps it empty as a placeholder), so the
-  // script inherits the compose value from the container's own env.
+  // OPENAI_API_CONFIGS and DEFAULT_MODELS are deliberately not passed: neither
+  // is a secret, and the script inherits both from the container's own env.
   log(`Running ${SCRIPT_NAME} inside ${CONTAINER}...`)
 
   // One line per secret, in the order the reader below consumes them. Neither

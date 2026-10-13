@@ -7,18 +7,21 @@ Run after deploy to:
    into the SQLite `config` table. Required because OpenWebUI reads
    provider config from the DB, not container env vars, via
    `get_openai_runtime_config()` (openai.py:276-283). If a Watchtower
-   auto-update or schema migration wipes the DB-backed config, the
-   3rd provider slot (MiniMax) is silently lost and chat returns
-   the upstream's `insufficient balance (1008)` even though the key
-   in env is correct.
-2. Trim the model_order_list to the whitelisted models.
-3. Set capabilities on whitelisted models.
+   auto-update or schema migration wipes the DB-backed config, a
+   provider is silently lost and chat against it fails even though
+   the key in env is correct.
+2. Set ui.default_models to DEFAULT_MODELS.
+3. Set capabilities on those models and hide every other model record.
+Steps 2 and 3 are skipped when DEFAULT_MODELS is empty: nothing is
+preselected and no model is hidden.
 
 Environment (passed via `docker exec -e` or compose env):
   OPENAI_API_KEYS         semicolon-separated API keys
   OPENAI_API_BASE_URLS    semicolon-separated OpenAI-compatible base URLs
   OPENAI_API_CONFIGS      JSON object keyed by provider index:
-                          {"0": {"model_ids": [...]}, "2": {"model_ids": ["MiniMax-M3"]}}
+                          {"0": {"model_ids": [...]}, "2": {"model_ids": ["model-a"]}}
+                          (optional; empty lists every model)
+  DEFAULT_MODELS          comma-separated model ids (optional)
 
 Manual usage from host:
   ssh <server> "docker cp stacks/open-webui/init-models.py hl-open-webui:/tmp/ && \\
@@ -37,12 +40,8 @@ import time
 
 DB = "/app/backend/data/webui.db"
 
-# Models that appear in the model selector (UI + /api/v1/models)
-WHITELIST = [
-    "MiniMax-M3",
-    "gemma4:e4b",
-    "gpt-5.4-mini",
-]
+# Models preselected in a new chat; the only model records left active. From DEFAULT_MODELS.
+WHITELIST = [m.strip() for m in os.environ.get("DEFAULT_MODELS", "").split(",") if m.strip()]
 
 # Capabilities enabled on all whitelisted models
 CAPABILITIES = {
@@ -179,8 +178,11 @@ def main() -> None:
     cur = conn.cursor()
 
     sync_provider_config(cur)
-    sync_ui_model_order(cur)
-    sync_model_capabilities(conn, cur)
+    if WHITELIST:
+        sync_ui_model_order(cur)
+        sync_model_capabilities(conn, cur)
+    else:
+        print("  SKIP     model defaults: DEFAULT_MODELS not set")
 
     conn.commit()
     conn.close()

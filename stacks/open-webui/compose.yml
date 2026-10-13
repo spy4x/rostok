@@ -11,14 +11,16 @@ services:
     image: ghcr.io/open-webui/open-webui:latest
     restart: unless-stopped
     environment:
-      # --- Existing: Web loader via Playwright ---
-      - WEB_LOADER_ENGINE=playwright
-      - PLAYWRIGHT_WS_URL=ws://playwright:3000
+      # --- Web page loader ---
+      # Empty = Open WebUI's built-in loader. "playwright" needs the playwright stack and its URL.
+      - WEB_LOADER_ENGINE=${OPEN_WEBUI_WEB_LOADER_ENGINE:-}
+      - PLAYWRIGHT_WS_URL=${OPEN_WEBUI_PLAYWRIGHT_WS_URL:-}
       - PLAYWRIGHT_TIMEOUT=5000
       - ENABLE_RAG_LOCAL_WEB_FETCH=true
 
-      # --- Web Search via SearXNG ---
-      - ENABLE_WEB_SEARCH=${OPEN_WEBUI_ENABLE_WEB_SEARCH:-true}
+      # --- Web Search ---
+      # Off by default: the engine below is the searxng stack, which may not be on this server.
+      - ENABLE_WEB_SEARCH=${OPEN_WEBUI_ENABLE_WEB_SEARCH:-false}
       - WEB_SEARCH_ENGINE=${OPEN_WEBUI_WEB_SEARCH_ENGINE:-searxng}
       - SEARXNG_QUERY_URL=${OPEN_WEBUI_SEARXNG_QUERY_URL:-http://searxng:8080/search?format=json}
       - WEB_SEARCH_RESULT_COUNT=${OPEN_WEBUI_WEB_SEARCH_RESULT_COUNT:-3}
@@ -35,20 +37,23 @@ services:
       - ENABLE_MEMORIES=true
       - ENABLE_NOTES=true
 
-      # --- Image Generation (OpenAI gpt-image-2) ---
-      - ENABLE_IMAGE_GENERATION=true
+      # --- Image Generation (through an OpenAI-compatible API) ---
+      # Off by default: it needs a provider that serves an image model, named in the variable.
+      - ENABLE_IMAGE_GENERATION=${OPEN_WEBUI_ENABLE_IMAGE_GENERATION:-false}
       - IMAGE_GENERATION_ENGINE=openai
-      - IMAGE_GENERATION_MODEL=gpt-image-2
+      - IMAGE_GENERATION_MODEL=${OPEN_WEBUI_IMAGE_GENERATION_MODEL:-}
       - IMAGE_SIZE=1024x1024
       - "IMAGES_OPENAI_API_PARAMS={\"quality\":\"low\"}"
 
       # --- MCP + OpenAPI Tool Servers ---
-      # playwright-mcp provides browser automation (screenshots, web scraping)
-      # mcpo proxies stdio MCP servers → OpenAPI. Each tool gets its own route + OpenAPI spec
+      # mcpo (below, part of this stack) proxies stdio MCP servers → OpenAPI. Each tool gets its
+      # own route + OpenAPI spec, and both are always on.
+      # The other five entries are MCP servers of sibling stacks. Each is off ("enable":false)
+      # until its OPEN_WEBUI_ENABLE_<NAME>_MCP variable is "true", so nothing here points at a
+      # stack this server does not run.
       # Bearer keys: the mcpo routes send OPEN_WEBUI_MCPO_API_KEY, the caldav-mcp route sends
-      # OPEN_WEBUI_CALDAV_MCP_TOKEN (set to ${CALDAV_MCP_TOKEN} in the server's .env). Left empty,
-      # only the caldav-mcp tool fails.
-      - TOOL_SERVER_CONNECTIONS=[{"url":"http://hl-playwright-mcp:8099","path":"/mcp","type":"mcp","auth_type":"none","key":"","config":{"enable":true,"access_grants":[{"principal_type":"user","principal_id":"*","permission":"read"}]},"headers":{"Accept":"application/json, text/event-stream","Content-Type":"application/json"}},{"url":"http://mcpo:8000/youtube-transcript","path":"openapi.json","type":"openapi","spec_type":"url","auth_type":"bearer","key":"${OPEN_WEBUI_MCPO_API_KEY}","config":{"enable":true,"access_grants":[{"principal_type":"user","principal_id":"*","permission":"read"}]},"info":{"name":"YouTube Transcript","description":"Fetch YouTube video transcripts"}},{"url":"http://mcpo:8000/fetch","path":"openapi.json","type":"openapi","spec_type":"url","auth_type":"bearer","key":"${OPEN_WEBUI_MCPO_API_KEY}","config":{"enable":true,"access_grants":[{"principal_type":"user","principal_id":"*","permission":"read"}]},"info":{"name":"Web Fetch","description":"Fetch any URL as HTML, Markdown, or plain text"}},{"url":"http://hl-caldav-mcp:3000/mcp","type":"mcp","auth_type":"bearer","key":"${OPEN_WEBUI_CALDAV_MCP_TOKEN:-}","config":{"enable":true,"access_grants":[{"principal_type":"user","principal_id":"*","permission":"read"}]},"headers":{"Accept":"application/json, text/event-stream","Content-Type":"application/json"},"info":{"id":"caldav-mcp","name":"CalDAV MCP","description":"CalDAV MCP server - todos, events, calendars"}},{"url":"http://hl-email-mcp:9557/mcp","type":"mcp","auth_type":"none","config":{"enable":true,"access_grants":[{"principal_type":"user","principal_id":"*","permission":"read"}]},"headers":{"Accept":"application/json, text/event-stream","Content-Type":"application/json"},"info":{"id":"email-mcp","name":"Email MCP","description":"IMAP + SMTP via your own mailserver"}},{"url":"http://hl-google-maps-mcp:3000/mcp","type":"mcp","auth_type":"none","config":{"enable":true,"access_grants":[{"principal_type":"user","principal_id":"*","permission":"read"}]},"headers":{"Accept":"application/json, text/event-stream","Content-Type":"application/json"},"info":{"id":"google-maps-mcp","name":"Google Maps","description":"Places search, geocoding, directions, weather via Google Maps Platform"}},{"url":"http://hl-github-mcp:3000/mcp","type":"mcp","auth_type":"none","key":"","config":{"enable":true,"access_grants":[{"principal_type":"user","principal_id":"*","permission":"read"}]},"headers":{"Accept":"application/json, text/event-stream","Content-Type":"application/json"},"info":{"id":"github-mcp","name":"GitHub MCP","description":"GitHub API access — repos, issues, PRs, Actions, code search"}}]
+      # OPEN_WEBUI_CALDAV_MCP_TOKEN (set to ${CALDAV_MCP_TOKEN} in the server's .env).
+      - TOOL_SERVER_CONNECTIONS=[{"url":"http://hl-playwright-mcp:8099","path":"/mcp","type":"mcp","auth_type":"none","key":"","config":{"enable":${OPEN_WEBUI_ENABLE_PLAYWRIGHT_MCP:-false},"access_grants":[{"principal_type":"user","principal_id":"*","permission":"read"}]},"headers":{"Accept":"application/json, text/event-stream","Content-Type":"application/json"}},{"url":"http://mcpo:8000/youtube-transcript","path":"openapi.json","type":"openapi","spec_type":"url","auth_type":"bearer","key":"${OPEN_WEBUI_MCPO_API_KEY}","config":{"enable":true,"access_grants":[{"principal_type":"user","principal_id":"*","permission":"read"}]},"info":{"name":"YouTube Transcript","description":"Fetch YouTube video transcripts"}},{"url":"http://mcpo:8000/fetch","path":"openapi.json","type":"openapi","spec_type":"url","auth_type":"bearer","key":"${OPEN_WEBUI_MCPO_API_KEY}","config":{"enable":true,"access_grants":[{"principal_type":"user","principal_id":"*","permission":"read"}]},"info":{"name":"Web Fetch","description":"Fetch any URL as HTML, Markdown, or plain text"}},{"url":"http://hl-caldav-mcp:3000/mcp","type":"mcp","auth_type":"bearer","key":"${OPEN_WEBUI_CALDAV_MCP_TOKEN:-}","config":{"enable":${OPEN_WEBUI_ENABLE_CALDAV_MCP:-false},"access_grants":[{"principal_type":"user","principal_id":"*","permission":"read"}]},"headers":{"Accept":"application/json, text/event-stream","Content-Type":"application/json"},"info":{"id":"caldav-mcp","name":"CalDAV MCP","description":"CalDAV MCP server - todos, events, calendars"}},{"url":"http://hl-email-mcp:9557/mcp","type":"mcp","auth_type":"none","config":{"enable":${OPEN_WEBUI_ENABLE_EMAIL_MCP:-false},"access_grants":[{"principal_type":"user","principal_id":"*","permission":"read"}]},"headers":{"Accept":"application/json, text/event-stream","Content-Type":"application/json"},"info":{"id":"email-mcp","name":"Email MCP","description":"IMAP + SMTP via your own mailserver"}},{"url":"http://hl-google-maps-mcp:3000/mcp","type":"mcp","auth_type":"none","config":{"enable":${OPEN_WEBUI_ENABLE_GOOGLE_MAPS_MCP:-false},"access_grants":[{"principal_type":"user","principal_id":"*","permission":"read"}]},"headers":{"Accept":"application/json, text/event-stream","Content-Type":"application/json"},"info":{"id":"google-maps-mcp","name":"Google Maps","description":"Places search, geocoding, directions, weather via Google Maps Platform"}},{"url":"http://hl-github-mcp:3000/mcp","type":"mcp","auth_type":"none","key":"","config":{"enable":${OPEN_WEBUI_ENABLE_GITHUB_MCP:-false},"access_grants":[{"principal_type":"user","principal_id":"*","permission":"read"}]},"headers":{"Accept":"application/json, text/event-stream","Content-Type":"application/json"},"info":{"id":"github-mcp","name":"GitHub MCP","description":"GitHub API access — repos, issues, PRs, Actions, code search"}}]
       - USER_PERMISSIONS_FEATURES_DIRECT_TOOL_SERVERS=true
 
       # --- HuggingFace ---
@@ -57,25 +62,30 @@ services:
       # --- LLM Providers (OpenAI-compatible) ---
       - OPENAI_API_KEYS=${OPEN_WEBUI_OPENAI_API_KEYS}
       - OPENAI_API_BASE_URLS=${OPEN_WEBUI_OPENAI_API_BASE_URLS}
-      # Whitelist models per provider to keep the selector clean
-      # Index 0 = OpenAI, Index 1 = MiniMax (DeepSeek dropped)
-      - "OPENAI_API_CONFIGS={\"0\":{\"model_ids\":[\"gpt-5.4-mini\"]},\"1\":{\"model_ids\":[\"MiniMax-M3\"]}}"
+      # Optional whitelist of models per provider, as JSON keyed by the provider's position in the
+      # lists above. Empty = every model a provider returns is listed. See the README.
+      - OPENAI_API_CONFIGS=${OPEN_WEBUI_OPENAI_API_CONFIGS:-}
 
       # --- Ollama Local LLM ---
-      - ENABLE_OLLAMA_API=${OPEN_WEBUI_ENABLE_OLLAMA_API:-true}
+      # Off by default: the URLs below are the ollama stack, which may not be on this server.
+      - ENABLE_OLLAMA_API=${OPEN_WEBUI_ENABLE_OLLAMA_API:-false}
       - OLLAMA_API_BASE_URL=${OPEN_WEBUI_OLLAMA_API_BASE_URL:-http://ollama:11434}
       - OLLAMA_BASE_URL=${OPEN_WEBUI_OLLAMA_BASE_URL:-http://ollama:11434}
 
       # --- Default Model Settings ---
-      - DEFAULT_MODELS=MiniMax-M3,gemma4:e4b,gpt-5.4-mini
+      # Comma-separated model ids preselected in a new chat. Empty = the user picks. When set,
+      # init-models.py also hides every other model record of the workspace. See the README.
+      - DEFAULT_MODELS=${OPEN_WEBUI_DEFAULT_MODELS:-}
       - "DEFAULT_MODEL_METADATA={\"capabilities\":{\"vision\":true,\"file_upload\":true,\"file_context\":true,\"web_search\":true,\"image_generation\":true,\"code_interpreter\":true},\"defaultFeatureIds\":[\"image_generation\"]}"
       - DEFAULT_USER_ROLE=${OPEN_WEBUI_DEFAULT_USER_ROLE:-user}
       - ENABLE_SIGNUP=${OPEN_WEBUI_ENABLE_SIGNUP:-false}
       - ENABLE_LOGIN_FORM=${OPEN_WEBUI_ENABLE_LOGIN_FORM:-true}
 
       # --- RAG Document Extraction ---
-      - CONTENT_EXTRACTION_ENGINE=${OPEN_WEBUI_CONTENT_EXTRACTION_ENGINE:-tika}
-      - TIKA_SERVER_URL=${OPEN_WEBUI_TIKA_SERVER_URL:-http://tika:9998}
+      # Empty = Open WebUI's built-in extractor. "tika" needs a Tika server, which this catalog
+      # does not ship, and its URL.
+      - CONTENT_EXTRACTION_ENGINE=${OPEN_WEBUI_CONTENT_EXTRACTION_ENGINE:-}
+      - TIKA_SERVER_URL=${OPEN_WEBUI_TIKA_SERVER_URL:-}
       - RAG_TOP_K=${OPEN_WEBUI_RAG_TOP_K:-10}
       - RAG_FILE_MAX_COUNT=${OPEN_WEBUI_RAG_FILE_MAX_COUNT:-10}
       - RAG_FILE_MAX_SIZE=${OPEN_WEBUI_RAG_FILE_MAX_SIZE:-52428800}
