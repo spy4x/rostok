@@ -368,7 +368,7 @@ export interface StackRequiredKeys {
   keys: string[]
   /** The text of its compose file and of the server's override for it, joined. */
   compose: string
-  /** The stack's own `envs` from config.json, which the deploy adds to the server's `.env`. */
+  /** The stack's own `envs` from config.json, which the deploy adds to the `.env` every stack reads. */
   envs?: Record<string, string>
 }
 
@@ -397,7 +397,9 @@ export function composeNeedsKey(compose: string, key: string): boolean {
  * a stack without such a key used to deploy "successfully" and die at start.
  *
  * `env` is `.env.root` merged with the server `.env`. A key with a blank
- * value counts as missing. Only a key the stack's compose file uses
+ * value counts as missing. A key that any deployed stack sets in its
+ * config.json `envs` counts as set for every stack, because the deploy
+ * appends those to the one `.env` all of them read. Only a key the stack's compose file uses
  * without a fallback (`composeNeedsKey`) is checked. The others would
  * block servers that work today:
  *
@@ -414,9 +416,11 @@ export function assertRequiredStackKeys(
   rootEnvPath: string,
 ): void {
   const lines: string[] = []
-  for (const { stack, keys, compose, envs } of stacks) {
-    const values = { ...env, ...envs }
-    const missing = keys.filter((key) => !values[key]?.trim() && composeNeedsKey(compose, key))
+  // Every stack's `envs` land in the one `.env` that all compose files read.
+  const shared: Record<string, string> = Object.assign({}, ...stacks.map((s) => s.envs ?? {}))
+  const hasValue = (key: string) => Boolean(env[key]?.trim() || shared[key]?.trim())
+  for (const { stack, keys, compose } of stacks) {
+    const missing = keys.filter((key) => !hasValue(key) && composeNeedsKey(compose, key))
     if (missing.length > 0) lines.push(`  ${stack}: ${missing.join(", ")}`)
   }
   if (lines.length === 0) return

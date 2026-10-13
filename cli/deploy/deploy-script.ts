@@ -89,7 +89,12 @@ const CONTAINER_NAMES_AWK = [
  * so a container that dies at start used to count as a success. A stack is
  * marked failed when one of its containers
  *
- * - is restarting, or its restart count grew since `up`: a crash loop;
+ * - is restarting at the look, or was restarted by Docker two or more
+ *   times during the wait: a crash loop. One restart is not a failure: a
+ *   service that exits once because its database is not up yet, and then
+ *   stays up, is healthy. So a loop whose container runs longer than
+ *   about two seconds between crashes, and is running at the look, is
+ *   missed;
  * - has exited with a non-zero code since this stack's `up` began. An
  *   older exit is left alone: it is not this deploy's doing, and `up`
  *   leaves a container of a service that compose no longer lists as it is.
@@ -222,7 +227,7 @@ if [ -n "\$${upVar}" ]; then
     esac
     if [ -z "\$rostok_reason" ]; then
       rostok_was=\$(printf '%s\\n' "\$${beforeVar}" | awk -F'|' -v id="\$rostok_id" '\$1 == id { print \$5 }')
-      if [ -n "\$rostok_was" ] && [ "\$rostok_restarts" -gt "\$rostok_was" ] 2>/dev/null; then
+      if [ -n "\$rostok_was" ] && [ "\$rostok_restarts" -ge "\$((rostok_was + 2))" ] 2>/dev/null; then
         rostok_reason='keeps restarting'
       fi
     fi

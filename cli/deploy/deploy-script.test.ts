@@ -264,7 +264,7 @@ Deno.test("a stack with a restarting container is marked failed", async () => {
   assertStringIncludes(run.result.error ?? "", "Container hl-foo is restarting.")
 })
 
-Deno.test("a stack whose container was restarted by Docker during the wait is marked failed, though it is running at the look", async () => {
+Deno.test("a stack whose container was restarted twice by Docker during the wait is marked failed, though it is running at the look", async () => {
   const run = await deployFoo({
     shell: "zsh",
     before: [`foo|c1|/hl-foo|running|0|1|${LONG_AGO}`],
@@ -273,6 +273,17 @@ Deno.test("a stack whose container was restarted by Docker during the wait is ma
   })
   assertEquals(run.result.success, false)
   assertStringIncludes(run.result.error ?? "", "Container hl-foo keeps restarting.")
+})
+
+Deno.test("a stack whose container was restarted once during the wait and is running at the look is marked successful", async () => {
+  const run = await deployFoo({
+    shell: "zsh",
+    before: [`foo|c1|/hl-foo|running|0|1|${LONG_AGO}`],
+    after: [`foo|c1|/hl-foo|running|0|2|${AFTER_UP}`],
+    logs: { c1: "database is not ready\n" },
+  })
+  assertEquals(run.result.success, true)
+  assertEquals(run.result.error, undefined)
 })
 
 Deno.test("a running container with restarts from before the deploy does not fail the stack", async () => {
@@ -374,6 +385,20 @@ Deno.test("parseDeployResults ignores a marker inside a failed container's inden
   ].join("\n")
   const results = parseDeployResults(output, stacks)
   assertEquals(results.map((r) => r.success), [false, true])
+})
+
+Deno.test("parseDeployResults does not take another stack's success marker inside a log line as its own", () => {
+  const stacks: StackConfig[] = [{ name: "foo" }, { name: "bar" }]
+  const output = [
+    "DEPLOY_START:foo:foo",
+    "DEPLOY_START:bar:bar",
+    "DEPLOY_VERIFY:foo:foo",
+    "Container hl-foo exited with code 1. Its last log lines:",
+    "  DEPLOY_SUCCESS:bar:bar",
+    "DEPLOY_FAILED:foo:foo",
+  ].join("\n")
+  const results = parseDeployResults(output, stacks)
+  assertEquals(results.map((r) => r.success), [false, false])
 })
 
 Deno.test("printDeploySummary prints every log line of a container that failed after up -d", () => {

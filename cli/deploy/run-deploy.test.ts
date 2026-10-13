@@ -1068,6 +1068,30 @@ Deno.test("runDeploy: a required key set only in .env.root lets the deploy throu
   }
 })
 
+Deno.test("runDeploy: a required key used without a fallback only in the stack's compose-override file stops the deploy (#383)", async () => {
+  const f = await setupRunDeployFixture()
+  try {
+    await writeNeedyStack(f.projectDir)
+    await writeRunDeployServer(f.projectDir, ["needy"])
+    await Deno.writeTextFile(join(f.projectDir, ".env.root"), "NEEDY_TOKEN=abc\n")
+    const overrideDir = join(f.projectDir, "servers", "test", "compose-override")
+    await Deno.mkdir(overrideDir, { recursive: true })
+    await Deno.writeTextFile(
+      join(overrideDir, "needy.yml"),
+      "services:\n  needy:\n    ports:\n      - ${NEEDY_PORT}:80\n",
+    )
+
+    const err = await assertRejects(
+      () => runDeploy({ cwd: f.projectDir, server: "test" }, f.io),
+      UserError,
+    )
+    assertStringIncludes(err.message, "\n  needy: NEEDY_PORT\n")
+    assertEquals(f.remote.shellScripts, [])
+  } finally {
+    await teardownRunDeployFixture(f)
+  }
+})
+
 Deno.test("runDeploy: a catalog stack is checked against the bundled +meta.ts when the project has none of its own (#383)", async () => {
   const f = await setupRunDeployFixture()
   try {

@@ -699,21 +699,15 @@ Deno.test("assertRequiredStackKeys: a missing key that the compose file always g
   )
 })
 
-Deno.test("assertRequiredStackKeys: a key set in the stack's own config.json envs is not reported, for that stack only", () => {
+Deno.test("assertRequiredStackKeys: a key that any stack sets in its config.json envs is not reported for any stack, since all share one .env", () => {
   const compose = "a: ${SITE_NAME}"
-  const err = assertThrows(
-    () =>
-      assertRequiredStackKeys(
-        {},
-        [
-          { stack: "site", keys: ["SITE_NAME"], compose, envs: { SITE_NAME: "one" } },
-          { stack: "site-two", keys: ["SITE_NAME"], compose },
-        ],
-        "/p/servers/s/.env",
-        "/p/.env.root",
-      ),
-    UserError,
+  assertRequiredStackKeys(
+    {},
+    [
+      { stack: "site", keys: ["SITE_NAME"], compose, envs: { SITE_NAME: "one" } },
+      { stack: "site-two", keys: ["SITE_NAME"], compose },
+    ],
+    "/p/servers/s/.env",
+    "/p/.env.root",
   )
-  assertStringIncludes(err.message, "\n  site-two: SITE_NAME\n")
-  assertEquals(err.message.includes("\n  site: "), false, err.message)
 })
