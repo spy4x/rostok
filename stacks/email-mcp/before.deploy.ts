@@ -27,7 +27,9 @@ interface Account {
   password: string
 }
 
-function renderAccount(a: Account, host: string, verifySsl: boolean): string {
+// verify_ssl is always true (#143): with it off, anyone on the path to the mail host can present
+// their own certificate and read the password and the mail. No key of the .env turns it off.
+function renderAccount(a: Account, host: string): string {
   const login = (port: number, security: string) =>
     [
       `user_name = ${tomlString(a.user)}`,
@@ -35,7 +37,7 @@ function renderAccount(a: Account, host: string, verifySsl: boolean): string {
       `host = ${tomlString(host)}`,
       `port = ${port}`,
       security,
-      `verify_ssl = ${verifySsl}`,
+      `verify_ssl = true`,
     ].join("\n")
   return [
     `[[emails]]`,
@@ -63,7 +65,6 @@ export function renderConfig(env: Record<string, string | undefined>): string {
   if (missing.length) throw new Error(`missing env vars: ${missing.join(", ")}`)
 
   const host = get("EMAIL_MCP_HOST")
-  const verifySsl = get("EMAIL_MCP_VERIFY_SSL") === "true"
   const accounts: Account[] = [{
     name: get("EMAIL_MCP_ACCOUNT_NAME") || "main",
     fullName: get("EMAIL_MCP_FULL_NAME") || get("EMAIL_MCP_USER"),
@@ -84,7 +85,7 @@ export function renderConfig(env: Record<string, string | undefined>): string {
     `# Top-level keys come first: after a [table] header they would belong to that table.`,
     `enable_attachment_download = false`,
     ``,
-    ...accounts.map((a) => renderAccount(a, host, verifySsl)),
+    ...accounts.map((a) => renderAccount(a, host)),
   ].join("\n")
 }
 

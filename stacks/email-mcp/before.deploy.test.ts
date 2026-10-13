@@ -38,10 +38,15 @@ Deno.test("email-mcp config: enable_attachment_download comes before the first t
   assert(key < lines.indexOf("[[emails]]"), "a key after a [table] header belongs to that table")
 })
 
-Deno.test("email-mcp config: verify_ssl follows EMAIL_MCP_VERIFY_SSL", () => {
-  assertEquals(linesOf(base).filter((l) => l === "verify_ssl = false").length, 2)
-  const on = linesOf({ ...base, EMAIL_MCP_VERIFY_SSL: "true" })
-  assertEquals(on.filter((l) => l === "verify_ssl = true").length, 2)
+Deno.test("email-mcp config: IMAP and SMTP verify the certificate, whatever EMAIL_MCP_VERIFY_SSL says", () => {
+  // An .env written before #143 still holds EMAIL_MCP_VERIFY_SSL=false: it must not switch the
+  // check off for either connection of either account.
+  const two = { ...base, EMAIL_MCP_USER_2: "you@example.org", EMAIL_MCP_PASSWORD_2: "pw2" }
+  for (const value of [undefined, "false", "0", "no", "true"]) {
+    const lines = linesOf(value === undefined ? two : { ...two, EMAIL_MCP_VERIFY_SSL: value })
+    const verify = lines.filter((l) => l.startsWith("verify_ssl"))
+    assertEquals(verify, Array(4).fill("verify_ssl = true"), `EMAIL_MCP_VERIFY_SSL=${value}`)
+  }
 })
 
 Deno.test("email-mcp config: quotes, backslashes and newlines in a password are escaped", () => {

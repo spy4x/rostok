@@ -8,9 +8,8 @@
 // `stacks/email-mcp/config.toml`, which the container mounts. One account is required, a second
 // is optional. Passwords come from outside, so they have no default: `stack add` asks for them.
 //
-// EMAIL_MCP_VERIFY_SSL defaults to `false` because the default host is the server's own mail
-// stack, often behind a certificate the container does not trust. Set `true` for an external
-// mail host.
+// The mail server's TLS certificate is always verified (#143), so there is no key for it: the
+// host must present a certificate the container trusts for the name in EMAIL_MCP_HOST.
 
 import type { StackMeta } from "@rostok/cli"
 
@@ -67,12 +66,6 @@ export default {
       key: "EMAIL_MCP_ACCOUNT_NAME_2",
       question: "Name the assistant sees for the second account?",
       default: "second",
-      required: true,
-    },
-    {
-      key: "EMAIL_MCP_VERIFY_SSL",
-      question: "Verify the mail server's TLS certificate (true or false)?",
-      default: "false",
       required: true,
     },
   ],
