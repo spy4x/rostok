@@ -14,6 +14,7 @@ const ENV = {
   MIROTALK_API_KEY_SECRET: "api-key-of-this-server",
   MIROTALK_TURN_SERVER_USERNAME: "turn-user",
   MIROTALK_TURN_SERVER_CREDENTIAL: "turn-credential",
+  MIROTALK_PUBLIC_IP: "198.51.100.7",
 }
 
 /** `ENV` with one key left out, and with that key blank. */
@@ -104,3 +105,60 @@ for (const key of ["MIROTALK_TURN_SERVER_USERNAME", "MIROTALK_TURN_SERVER_CREDEN
     }
   })
 }
+
+/** An IPv4 or IPv6 address as a number; an IPv4 address gets its IPv4-mapped IPv6 value. */
+function addressValue(address: string): bigint {
+  const v4 = address.match(/^(.*:)?(\d+)\.(\d+)\.(\d+)\.(\d+)$/)
+  if (v4) {
+    const [hi, lo] = [(+v4[2] << 8) | +v4[3], (+v4[4] << 8) | +v4[5]]
+    address = `${v4[1] ?? "::ffff:"}${hi.toString(16)}:${lo.toString(16)}`
+  }
+  const [head, tail] = address.split("::").map((part) => part ? part.split(":") : [])
+  const groups = tail === undefined
+    ? head
+    : [...head, ...Array(8 - head.length - tail.length).fill("0"), ...tail]
+  assertEquals(groups.length, 8, `not an IP address: ${address}`)
+  return groups.reduce((sum, group) => (sum << 16n) | BigInt(parseInt(group, 16)), 0n)
+}
+
+/** Whether the rendered coturn command refuses `peer`, by a denied range or the multicast flag. */
+function relayRefuses(rendered: string, peer: string): boolean {
+  const multicast = /^(22[4-9]|23\d)\.|^ff/i.test(peer)
+  if (multicast && rendered.includes("      - --no-multicast-peers\n")) return true
+  const value = addressValue(peer)
+  const family = peer.includes(":")
+  return [...rendered.matchAll(/^ +- --denied-peer-ip=(.+)$/gm)].some((match) => {
+    const [first, last = first] = match[1].split("-")
+    // coturn 4.18 takes a range that starts at `::` as one that holds every peer of both families.
+    if (first.includes(":") && addressValue(first) === 0n) return true
+    return first.includes(":") === family && addressValue(first) <= value &&
+      value <= addressValue(last)
+  })
+}
+
+Deno.test("mirotalk compose: the coturn command denies every peer range that is not public", async () => {
+  // Every joiner of a room gets the TURN login, and coturn runs on the host's own network: without
+  // these ranges a stranger reaches the Docker networks and the private network through the relay
+  // (spy4x/rostok#409).
+  const rendered = await renderCompose("mirotalk", ENV)
+  const notPublic = [
+    ...["0.0.0.0", "0.255.255.255", "10.0.0.0", "10.255.255.255", "100.64.0.0", "100.127.255.255"],
+    ...["127.0.0.1", "127.255.255.255", "169.254.169.254", "172.16.0.0", "172.31.255.255"],
+    ...["192.168.0.0", "192.168.255.255", "224.0.0.1", "239.255.255.255"],
+    ...["::1", "fc00::", "fdff:ffff:ffff:ffff:ffff:ffff:ffff:ffff", "fe80::"],
+    ...["febf:ffff:ffff:ffff:ffff:ffff:ffff:ffff", "ff02::1", "::ffff:10.0.0.1"],
+  ]
+  assertEquals(notPublic.filter((peer) => !relayRefuses(rendered, peer)), [])
+})
+
+Deno.test("mirotalk compose: the coturn command denies no public peer, nor the server's own address", async () => {
+  // Two browsers that both need the relay talk from one relay address to the other, and both are
+  // the server's public address: refusing it would end every such call.
+  const rendered = await renderCompose("mirotalk", ENV)
+  // The IPv4 samples are the ones stacks/neutral-examples.test.ts lets a catalog file name.
+  const isPublic = [
+    ...[ENV.MIROTALK_PUBLIC_IP, "1.1.1.1", "8.8.8.8", "9.9.9.9", "192.0.2.1", "203.0.113.1"],
+    ...["2001:4860:4860::8888", "fbff:ffff:ffff:ffff:ffff:ffff:ffff:ffff", "fe00::", "fec0::"],
+  ]
+  assertEquals(isPublic.filter((peer) => relayRefuses(rendered, peer)), [])
+})

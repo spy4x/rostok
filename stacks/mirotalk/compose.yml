@@ -74,6 +74,25 @@ services:
       - --fingerprint
       - --lt-cred-mech
       - --user=${MIROTALK_TURN_SERVER_USERNAME:?}:${MIROTALK_TURN_SERVER_CREDENTIAL:?}
+      # Every joiner of a room gets the TURN login, so the relay must not forward to addresses
+      # only this host can reach. coturn 4.18 already refuses loopback, 0.0.0.0, link-local and
+      # IPv6 unique-local peers; the private IPv4 ranges, carrier-grade NAT and multicast it
+      # relays to unless told otherwise. All are listed, so an older or newer image refuses
+      # them too. Never add the server's public address: two browsers that both use the relay
+      # reach each other through it. Never add `::` or a range that starts at it either: coturn
+      # 4.18 then refuses every peer, public ones too (it refuses `::` itself without a range).
+      - --no-multicast-peers
+      - --denied-peer-ip=0.0.0.0-0.255.255.255
+      - --denied-peer-ip=10.0.0.0-10.255.255.255
+      - --denied-peer-ip=100.64.0.0-100.127.255.255
+      - --denied-peer-ip=127.0.0.0-127.255.255.255
+      - --denied-peer-ip=169.254.0.0-169.254.255.255
+      - --denied-peer-ip=172.16.0.0-172.31.255.255
+      - --denied-peer-ip=192.168.0.0-192.168.255.255
+      - --denied-peer-ip=::1
+      - --denied-peer-ip=::ffff:0.0.0.0-::ffff:255.255.255.255
+      - --denied-peer-ip=fc00::-fdff:ffff:ffff:ffff:ffff:ffff:ffff:ffff
+      - --denied-peer-ip=fe80::-febf:ffff:ffff:ffff:ffff:ffff:ffff:ffff
       - --total-quota=500
       - --stale-nonce=600
       - --cert=/certs/${MIROTALK_DOMAIN:-talk.${DOMAIN}}.crt
