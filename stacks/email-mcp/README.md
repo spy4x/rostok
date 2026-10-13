@@ -122,14 +122,19 @@ That key is now ignored; delete the line. Before the next deploy, check that
 the mail host presents a valid certificate for its name:
 
 ```bash
-openssl s_client -connect "$EMAIL_MCP_HOST:993" -verify_return_error </dev/null
-openssl s_client -connect "$EMAIL_MCP_HOST:587" -starttls smtp -verify_return_error </dev/null
+EMAIL_MCP_HOST=mail.example.com # the value from the server's .env
+openssl s_client -connect "$EMAIL_MCP_HOST:993" \
+  -verify_return_error -verify_hostname "$EMAIL_MCP_HOST" </dev/null
+openssl s_client -connect "$EMAIL_MCP_HOST:587" -starttls smtp \
+  -verify_return_error -verify_hostname "$EMAIL_MCP_HOST" </dev/null
 ```
 
-Both must end with `Verify return code: 0 (ok)`. If one does not, every mail
-tool fails with `CERTIFICATE_VERIFY_FAILED` after the deploy: give the mail
-host a certificate for that name, or point `EMAIL_MCP_HOST` at the name its
-certificate covers.
+Both must exit with status 0 and print `Verification: OK`. Without
+`-verify_hostname` the command checks only the chain, and passes for a
+certificate issued to another name. If one fails, every mail tool fails with
+`CERTIFICATE_VERIFY_FAILED` after the deploy: give the mail host a certificate
+for that name, or point `EMAIL_MCP_HOST` at the name its certificate covers. A
+self-signed certificate, or one from a private authority, fails too.
 
 ## Attachment downloads (optional)
 
