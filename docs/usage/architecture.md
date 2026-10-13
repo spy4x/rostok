@@ -134,10 +134,16 @@ files; `.env` files stay on disk.
    └─▶ Encrypts .env → .env.age (once a key exists)
 
 2. User runs `rostok deploy home`
+   └─▶ Stops, before anything is copied, when a key that a stack's
+       +meta.ts marks required, and its compose.yml uses without a
+       fallback, has no value in .env.root or the server .env
    └─▶ For each stack in servers/home/config.json:
        - rsync the stack to the remote host
        - docker compose up -d
        - run before.deploy hooks
+   └─▶ Waits 5 seconds once, then lists a stack under "Failed", with
+       the container's last 20 log lines, when a container has exited
+       with an error or is restarting
    └─▶ Run cross-server health checks (Gatus)
 
 3. Git workflow
