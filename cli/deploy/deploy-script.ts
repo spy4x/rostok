@@ -20,7 +20,46 @@ export interface DeployResult {
   deployAs: string
   success: boolean
   error?: string
+  /**
+   * True when `docker compose up -d` succeeded and the stack failed the look
+   * at its containers afterwards. `error` is then the report of that look:
+   * each failed container with its last log lines.
+   */
+  containerFailed?: boolean
 }
+
+/**
+ * Seconds between the last stack's `up -d` and the look at every stack's
+ * containers. One wait per deploy, not per stack, and none when no stack
+ * has a container.
+ */
+export const VERIFY_WAIT_SECONDS = 5
+
+/** How many of a failed container's last log lines the deploy prints. */
+export const VERIFY_LOG_LINES = 20
+
+/** Shell function that prints one line per container of a compose project. */
+const CONTAINERS_FN = "rostok_containers"
+
+/** Shell variable that is set once a started stack has a container to look at. */
+const VERIFY_WAIT_VAR = "rostok_verify_wait"
+
+/**
+ * Defines the shell function `rostok_containers <project>`: one line per
+ * container of the compose project, `id|name|status|exit code|restart
+ * count|finished at`. A `while read` loop rather than one `docker inspect`
+ * over all IDs: the remote login shell can be zsh, which does not split an
+ * unquoted expansion into words.
+ */
+const VERIFY_PREAMBLE = `
+${CONTAINERS_FN}() {
+  docker ps -a -q --filter "label=com.docker.compose.project=\$1" 2>/dev/null | while read -r rostok_id; do
+    [ -n "\$rostok_id" ] || continue
+    docker inspect --format '{{.Id}}|{{.Name}}|{{.State.Status}}|{{.State.ExitCode}}|{{.RestartCount}}|{{.State.FinishedAt}}' "\$rostok_id" 2>/dev/null
+  done
+}
+${VERIFY_WAIT_VAR}=
+`
 
 /** Shell variable holding the stack's container names, one per line. */
 const STALE_NAMES_VAR = "rostok_container_names"
@@ -39,18 +78,39 @@ const CONTAINER_NAMES_AWK = [
 ].join(" ")
 
 /**
- * Generate a bash script that deploys all stacks in one SSH session and
+ * Generate a shell script that deploys all stacks in one SSH session and
  * prints structured `DEPLOY_START`/`DEPLOY_SUCCESS`/`DEPLOY_FAILED`
  * markers `parseDeployResults` reads back.
+ *
+ * It runs in two parts. The first starts every stack with `up -d`; a stack
+ * whose `up` fails is marked failed there. The second waits
+ * VERIFY_WAIT_SECONDS once and looks at the containers of every stack that
+ * started (#383): `up -d` returns 0 as soon as the containers are created,
+ * so a container that dies at start used to count as a success. A stack is
+ * marked failed when one of its containers
+ *
+ * - is restarting, or its restart count grew since `up`: a crash loop;
+ * - has exited with a non-zero code since this stack's `up` began. An
+ *   older exit is left alone: it is not this deploy's doing, and `up`
+ *   leaves a container of a service that compose no longer lists as it is.
+ *
+ * The failed container's last VERIFY_LOG_LINES log lines follow, indented,
+ * after a `DEPLOY_VERIFY` marker. A one-shot container that exited 0, and
+ * one whose health check is still starting or failing, do not fail the
+ * stack. A container that dies later than the wait is not seen.
  */
 export function generateDeployScript(
   stacks: StackConfig[],
   pathApps: string,
   restartStacks: Set<string>,
 ): string {
-  const stackCommands: string[] = []
+  const stackCommands: string[] = [VERIFY_PREAMBLE]
+  const verifyCommands: string[] = []
 
-  for (const stackConfig of stacks) {
+  for (const [index, stackConfig] of stacks.entries()) {
+    const upVar = `rostok_up_${index}`
+    const startedVar = `rostok_started_${index}`
+    const beforeVar = `rostok_before_${index}`
     const stackName = stackConfig.name
     const deployAs = stackConfig.deployAs || stackName
     const projectFlag = `-p ${shQuote(deployAs)}`
@@ -59,6 +119,7 @@ export function generateDeployScript(
     const startMarker = shQuote(`DEPLOY_START:${stackName}:${deployAs}`)
     const successMarker = shQuote(`DEPLOY_SUCCESS:${stackName}:${deployAs}`)
     const failedMarker = shQuote(`DEPLOY_FAILED:${stackName}:${deployAs}`)
+    const verifyMarker = shQuote(`DEPLOY_VERIFY:${stackName}:${deployAs}`)
     const restartingMarker = shQuote(`RESTARTING:${stackName}:${deployAs}`)
     const restartDoneMarker = shQuote(`RESTART_DONE:${stackName}:${deployAs}`)
 
@@ -118,10 +179,12 @@ docker ps -a --format '{{.Names}}|{{.ID}}|{{.Label "com.docker.compose.project"}
     } "\$proj"
   fi
 done
+${startedVar}=\$(date -u +%Y-%m-%dT%H:%M:%S)
 cd ${quotedPathApps} && docker compose ${projectFlag} --env-file=.env.root --env-file=.env "\$@" up -d --build 2>&1
 if [ $? -eq 0 ]; then
-  echo ${successMarker}
+  ${upVar}=1
 else
+  ${upVar}=
   echo ${failedMarker}
 fi
 ${
@@ -133,13 +196,62 @@ echo ${restartDoneMarker}
 `
         : ""
     }
+# The restart counts to compare with after the wait, taken after the restart above.
+if [ -n "\$${upVar}" ]; then
+  ${beforeVar}=\$(${CONTAINERS_FN} ${shQuote(deployAs)})
+  if [ -n "\$${beforeVar}" ]; then ${VERIFY_WAIT_VAR}=1; fi
+fi
+`)
+
+    // Every variable is prefixed: zsh, a possible remote login shell, keeps
+    // `status` and others for itself. The loop runs in a subshell, so what
+    // it finds comes back as its output.
+    verifyCommands.push(`
+if [ -n "\$${upVar}" ]; then
+  echo ${verifyMarker}
+  rostok_report=\$(${CONTAINERS_FN} ${
+      shQuote(deployAs)
+    } | while IFS='|' read -r rostok_id rostok_name rostok_status rostok_code rostok_restarts rostok_finished; do
+    rostok_reason=
+    case "\$rostok_status" in
+      restarting) rostok_reason='is restarting' ;;
+      exited|dead)
+        if [ "\$rostok_code" != 0 ] && LC_ALL=C expr "x\$rostok_finished" '>=' "x\$${startedVar}" >/dev/null; then
+          rostok_reason="exited with code \$rostok_code"
+        fi ;;
+    esac
+    if [ -z "\$rostok_reason" ]; then
+      rostok_was=\$(printf '%s\\n' "\$${beforeVar}" | awk -F'|' -v id="\$rostok_id" '\$1 == id { print \$5 }')
+      if [ -n "\$rostok_was" ] && [ "\$rostok_restarts" -gt "\$rostok_was" ] 2>/dev/null; then
+        rostok_reason='keeps restarting'
+      fi
+    fi
+    [ -n "\$rostok_reason" ] || continue
+    printf 'Container %s %s. Its last log lines:\\n' "\${rostok_name#/}" "\$rostok_reason"
+    docker logs --tail ${VERIFY_LOG_LINES} "\$rostok_id" 2>&1 | sed 's/^/  /'
+  done)
+  if [ -n "\$rostok_report" ]; then
+    printf '%s\\n' "\$rostok_report"
+    echo ${failedMarker}
+  else
+    echo ${successMarker}
+  fi
+fi
 `)
   }
 
-  return stackCommands.join("\n")
+  return [
+    ...stackCommands,
+    `if [ -n "\$${VERIFY_WAIT_VAR}" ]; then sleep ${VERIFY_WAIT_SECONDS}; fi`,
+    ...verifyCommands,
+  ].join("\n")
 }
 
-/** Parse the deploy output to extract results for each stack. */
+/**
+ * Parse the deploy output to extract results for each stack. A marker
+ * counts only at the start of a line: the log lines of a failed container
+ * are printed into the same output, indented, and must not be read as one.
+ */
 export function parseDeployResults(output: string, stacks: StackConfig[]): DeployResult[] {
   const results: DeployResult[] = []
   const lines = output.split("\n")
@@ -148,18 +260,28 @@ export function parseDeployResults(output: string, stacks: StackConfig[]): Deplo
     const stackName = stackConfig.name
     const deployAs = stackConfig.deployAs || stackName
 
+    const startMarker = `DEPLOY_START:${stackName}:${deployAs}`
     const successMarker = `DEPLOY_SUCCESS:${stackName}:${deployAs}`
     const failedMarker = `DEPLOY_FAILED:${stackName}:${deployAs}`
+    const verifyMarker = `DEPLOY_VERIFY:${stackName}:${deployAs}`
 
-    const isSuccess = lines.some((line) => line.includes(successMarker))
-    const isFailed = lines.some((line) => line.includes(failedMarker))
+    const isSuccess = lines.some((line) => line.startsWith(successMarker))
+    const endIdx = lines.findIndex((line) => line.startsWith(failedMarker))
+    const isFailed = endIdx !== -1
 
+    // The error is what the stack printed last before it failed: the
+    // report on its containers when `up` had succeeded, else `up`'s output.
     let errorOutput = ""
+    let containerFailed = false
     if (isFailed) {
-      const startIdx = lines.findIndex((l) => l.includes(`DEPLOY_START:${stackName}:${deployAs}`))
-      const endIdx = lines.findIndex((l) => l.includes(failedMarker))
-      if (startIdx !== -1 && endIdx !== -1) {
-        errorOutput = lines.slice(startIdx + 1, endIdx).join("\n")
+      const before = lines.slice(0, endIdx)
+      const verifyIdx = before.findLastIndex((line) => line.startsWith(verifyMarker))
+      containerFailed = verifyIdx !== -1
+      const startIdx = containerFailed
+        ? verifyIdx
+        : before.findLastIndex((line) => line.startsWith(startMarker))
+      if (startIdx !== -1) {
+        errorOutput = before.slice(startIdx + 1).join("\n")
       }
     }
 
@@ -168,6 +290,7 @@ export function parseDeployResults(output: string, stacks: StackConfig[]): Deplo
       deployAs,
       success: isSuccess && !isFailed,
       error: isFailed ? errorOutput : undefined,
+      ...(containerFailed ? { containerFailed } : {}),
     })
   }
 
@@ -198,7 +321,14 @@ export function printDeploySummary(results: DeployResult[]): void {
         ? `${result.name} (as ${result.deployAs})`
         : result.name
       console.log(`   ✗ ${displayName}`)
-      if (result.error) {
+      if (result.error && result.containerFailed) {
+        // Printed whole: the container's last log lines are how the owner
+        // learns why it died. Container logs can carry escape sequences too.
+        console.log("     Started, then failed:")
+        for (const line of stripControlChars(result.error).split("\n")) {
+          console.log(`     ${line}`)
+        }
+      } else if (result.error) {
         // The error is raw `docker compose` output from the server, so
         // anyone there could plant terminal escape sequences in it (#250).
         const error = stripControlChars(result.error)
