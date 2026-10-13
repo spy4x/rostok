@@ -275,6 +275,13 @@ After the version-bump PR merges to `main`. No need to ask first:
 4. `rostok --version` must print the new version. If it prints an
    older one, the install used a stale cache or the tag build did not
    publish: read the tag's Woodpecker log.
+5. Run the real-server test from your own machine, twice: before
+   step 1 as `deno task e2e:vps local` (the merged `main`), and after
+   step 4 as `deno task e2e:vps <version>` (the published package).
+   It deploys to a fresh Hetzner Cloud server and deletes it; see
+   "Real-server test" in `docs/contributing/contributing.md`. It never
+   runs in Woodpecker, whose logs are public. A failed run: tell the
+   owner what failed, and tag nothing until `local` passes.
 
 ### The publish token
 

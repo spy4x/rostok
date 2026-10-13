@@ -71,6 +71,40 @@ rostok --non-interactive --server=test --stacks=your-new-stack
 For more thorough testing, run `deno task check` and verify the type
 checker walks through `stacks/<name>/compose.yml` references.
 
+## Real-server test
+
+`deno task e2e:vps` does what a new user does, on a real machine: it
+creates the cheapest x86 Hetzner Cloud server with a throwaway SSH
+key, installs rostok, runs the wizard, adds traefik, gatus, librespeed
+and piped, deploys, and then checks that every container is healthy,
+that each service answers over HTTPS, that the `.env` files are mode
+600 and that a second deploy changes nothing. Then it deletes the
+server and the key, also when it fails or you press Ctrl-C. A run
+takes about ten minutes and costs under one cent.
+
+```bash
+# rostok from this checkout — before a release
+T="$(sed -n 's/^HETZNER_CLOUD_API_TOKEN=//p' <your env file>)" && \
+  HETZNER_CLOUD_API_TOKEN="$T" deno task e2e:vps local
+
+# rostok from JSR at a version — after it is published
+T="$(sed -n 's/^HETZNER_CLOUD_API_TOKEN=//p' <your env file>)" && \
+  HETZNER_CLOUD_API_TOKEN="$T" deno task e2e:vps 1.11.0
+```
+
+- It needs a Hetzner Cloud API token with read and write access, and
+  `ssh`, `ssh-keygen`, `rsync` and `curl` on your machine. Give it the
+  token for that one command, as above; do not export it.
+- It runs on your machine only, never in CI: the build logs are
+  public, and the token can create servers on the account.
+- It deletes only servers and SSH keys labelled `rostok-e2e`. Every
+  run also deletes labelled ones older than two hours, which a killed
+  run may have left.
+- It uses its own key, ssh config and `known_hosts` in a temp folder,
+  and deletes the folder at the end. Your `~/.ssh` is not touched.
+- The exit code is 0 only when every check passed and nothing is left
+  behind. The last lines list each failed check.
+
 ## Style
 
 - TypeScript: `deno fmt` defaults. No bikeshedding.
