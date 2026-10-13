@@ -59,7 +59,6 @@ rendered file. The deploy stops if a required key is missing.
 | `EMAIL_MCP_PASSWORD_2`     | none, secret     | Password of the second account (required with a user)       |
 | `EMAIL_MCP_FULL_NAME_2`    | its address      | Display name of the second account                          |
 | `EMAIL_MCP_ACCOUNT_NAME_2` | `second`         | Account name the assistant sees for the second account      |
-| `EMAIL_MCP_VERIFY_SSL`     | `false`          | `true` verifies the mail server's certificate               |
 
 The stack has no Traefik route, so it needs no domain and no `traefik` stack.
 
@@ -110,10 +109,27 @@ In Open WebUI chat:
 
 ## TLS
 
-`EMAIL_MCP_VERIFY_SSL` defaults to `false` because the default host is your
-own mail stack, often behind a certificate the container does not trust
-([#143](https://github.com/spy4x/rostok/issues/143) tracks a safer default).
-Set it to `true` for a mail host with a public certificate.
+The connection to the mail server always verifies its certificate: IMAP on 993
+(TLS) and SMTP on 587 (STARTTLS). `EMAIL_MCP_HOST` must be a name the
+certificate covers, and the certificate must chain to a public authority the
+container trusts (Let's Encrypt works). There is no setting to turn the check
+off: without it, anyone on the path to the mail server could read the password
+and the mail.
+
+**Upgrading a server deployed before this check was enforced.** Older versions
+wrote `EMAIL_MCP_VERIFY_SSL=false` to the server's `.env` and did not verify.
+That key is now ignored; delete the line. Before the next deploy, check that
+the mail host presents a valid certificate for its name:
+
+```bash
+openssl s_client -connect "$EMAIL_MCP_HOST:993" -verify_return_error </dev/null
+openssl s_client -connect "$EMAIL_MCP_HOST:587" -starttls smtp -verify_return_error </dev/null
+```
+
+Both must end with `Verify return code: 0 (ok)`. If one does not, every mail
+tool fails with `CERTIFICATE_VERIFY_FAILED` after the deploy: give the mail
+host a certificate for that name, or point `EMAIL_MCP_HOST` at the name its
+certificate covers.
 
 ## Attachment downloads (optional)
 
@@ -144,6 +160,6 @@ from the TOML file, not from env vars).
 | ------------------------------------ | -------------------------------------- | ----------------------------------------------------------------- |
 | `535 Authentication failed`          | Wrong password or missing account      | `setup email update you@example.com`                              |
 | `Connection refused` on port 993/587 | Firewall blocks home → cloud           | Check cloud security group                                        |
-| `CERTIFICATE_VERIFY_FAILED`          | Wrong cert or clock skew               | Verify `mail.${DOMAIN}` resolves to cloud, check `date`           |
+| `CERTIFICATE_VERIFY_FAILED`          | Certificate not valid for the host     | See "TLS" above; also check the server clock with `date`          |
 | Tools not showing in Open WebUI      | TOOL_SERVER_CONNECTIONS misconfigured  | Check JSON syntax; restart Open WebUI container                   |
 | 403 from MCP                         | DNS rebinding protection blocks origin | Add host to `MCP_ALLOWED_HOSTS` / origin to `MCP_ALLOWED_ORIGINS` |
