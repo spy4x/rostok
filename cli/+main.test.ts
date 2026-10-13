@@ -8,6 +8,7 @@ import {
   assertEquals,
   assertExists,
   assertNotStrictEquals,
+  assertRejects,
   assertStringIncludes,
   assertThrows,
 } from "@std/assert"
@@ -55,6 +56,15 @@ Deno.test("--help: lists subcommands server/stack/deploy/env", () => {
   assertStringIncludes(help, "deploy")
   assertStringIncludes(help, "env")
   assertStringIncludes(help, NAME)
+})
+
+Deno.test("`rostok images` is registered with its outdated and update subcommands", async () => {
+  const imagesCmd = buildCommand().getCommand("images")
+  assertExists(imagesCmd)
+  assertEquals(imagesCmd.hasCommand("outdated"), true)
+  assertEquals(imagesCmd.hasCommand("update"), true)
+  // `update` needs a server; `outdated` does not.
+  await assertRejects(() => buildCommand().parse(["images", "update"]), Error, "server")
 })
 
 Deno.test("--help: nested subcommands are registered with descriptions", () => {
