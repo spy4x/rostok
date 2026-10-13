@@ -82,6 +82,7 @@ export const SHIPPED_STACK_FILES: Record<string, readonly string[]> = {
   ],
   playwright: [
     "Dockerfile.mcp-proxy",
+    "after.deploy.ts",
     "compose.yml",
   ],
   searxng: [

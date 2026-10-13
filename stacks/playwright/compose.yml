@@ -4,6 +4,9 @@ networks:
   default:
     external: true
     name: proxy
+  # Only the MCP proxy and its client (Open WebUI, connected by after.deploy.ts) are on this one.
+  mcp:
+    name: hl-playwright-mcp
 
 services:
   playwright:
@@ -37,4 +40,4 @@ services:
           memory: 768M
           cpus: "0.5"
     networks:
-      - proxy
+      - mcp

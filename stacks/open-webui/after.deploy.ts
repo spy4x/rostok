@@ -66,7 +66,64 @@ export function targetHost(host: string, user: string | undefined): string {
   return user ? `${user}@${host}` : host
 }
 
+/** The playwright stack's network for its MCP proxy (`networks.mcp.name` in its compose.yml). */
+const NETWORK = `hl-playwright-mcp`
+/** The one container allowed to reach the MCP proxy. */
+const CLIENT = `hl-open-webui`
+
+/** A Docker container or network name: safe to put into a shell command unquoted. */
+function isDockerName(name: string): boolean {
+  return /^[a-zA-Z0-9][a-zA-Z0-9_.-]*$/.test(name)
+}
+
+/**
+ * The shell script that connects `client` to `network`, for the server's shell.
+ *
+ * It exits 0 when the network or the client container does not exist (that stack is not deployed
+ * there) and when the client is already connected, and non-zero when the connection could not be
+ * made. Throws on a name that is not a plain Docker name. Exported for tests; no I/O.
+ * A copy of the one in stacks/playwright/after.deploy.ts: a hook cannot import from another stack.
+ */
+export function buildConnectScript(network: string, client: string): string {
+  for (const name of [network, client]) {
+    if (!isDockerName(name)) throw new Error(`invalid Docker name "${name}"`)
+  }
+  const connected =
+    `docker inspect -f '{{range $k, $v := .NetworkSettings.Networks}}{{$k}} {{end}}' ` +
+    `${client} | tr ' ' '\\n' | grep -qx ${network}`
+  return [
+    `docker network inspect ${network} >/dev/null 2>&1 || { echo "no ${network} network on this server: nothing to connect"; exit 0; }`,
+    `docker inspect ${client} >/dev/null 2>&1 || { echo "${client} is not on this server: nothing to connect"; exit 0; }`,
+    `if ${connected}; then echo "${client} is already on ${network}"; exit 0; fi`,
+    `docker network connect ${network} ${client} && echo "${client} connected to ${network}"`,
+  ].join(`\n`)
+}
+
 if (import.meta.main) {
+  // The playwright stack keeps its MCP proxy on a network of its own (spy4x/rostok#338), and a
+  // recreated hl-open-webui has lost its place on it. Runs first and without SSH_HOST too, so a
+  // local server gets it before the SSH_HOST check below stops this hook.
+  {
+    const script = buildConnectScript(NETWORK, CLIENT)
+    const host = Deno.env.get("SSH_HOST")
+    const connect = await runCommand(
+      host
+        ? [
+          "ssh",
+          ...buildSshOptionArgs(Deno.env.get("SSH_PORT") || undefined),
+          "--",
+          targetHost(host, Deno.env.get("SSH_USER") || undefined),
+          script,
+        ]
+        : ["sh", "-c", script],
+    )
+    if (!connect.success) {
+      error(`could not connect ${CLIENT} to ${NETWORK}: ${connect.error || connect.output}`)
+      Deno.exit(1)
+    }
+    log(connect.output.trim())
+  }
+
   const SSH_HOST = Deno.env.get("SSH_HOST")
   const SSH_PORT = Deno.env.get("SSH_PORT") || undefined
   const SSH_USER = Deno.env.get("SSH_USER") || undefined
