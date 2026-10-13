@@ -26,7 +26,8 @@
 // `-p <port>` instead of being read as part of an unresolvable
 // "host:port" hostname. SSH_PORT is set ONLY when SSH_ADDRESS carried an
 // explicit port — never a default — so `-p` is added only when it's
-// non-empty.
+// non-empty. A local server (SSH_ADDRESS=local) has no SSH_HOST: every
+// command then runs on this machine, without ssh.
 //
 // On failure: exit non-zero so deploy fails loudly. Provider sync is
 // not optional — without it, the service is functionally broken.
@@ -66,6 +67,33 @@ export function targetHost(host: string, user: string | undefined): string {
   return user ? `${user}@${host}` : host
 }
 
+/** One argument for a POSIX shell: as it is when plain, in single quotes otherwise. */
+function shellQuote(arg: string): string {
+  return /^[A-Za-z0-9_.\/:=@%+,-]+$/.test(arg) ? arg : `'${arg.replaceAll(`'`, `'\\''`)}'`
+}
+
+/**
+ * The program and its arguments that run `argv` on the deploy target. Without `host` (a local
+ * server, SSH_ADDRESS=local) that is `argv` itself, run on this machine with no shell. With a
+ * host it is ssh, and because the server's shell reads the command, every argument is quoted for
+ * it. Throws like buildSshOptionArgs on a bad `port`. Exported for tests; no I/O.
+ */
+export function buildTargetCommand(
+  argv: string[],
+  host: string | undefined,
+  port: string | undefined,
+  user: string | undefined,
+): string[] {
+  if (!host) return argv
+  return [
+    "ssh",
+    ...buildSshOptionArgs(port),
+    "--",
+    targetHost(host, user),
+    argv.map(shellQuote).join(" "),
+  ]
+}
+
 /** The playwright stack's network for its MCP proxy (`networks.mcp.name` in its compose.yml). */
 const NETWORK = `hl-playwright-mcp`
 /** The one container allowed to reach the MCP proxy. */
@@ -101,8 +129,8 @@ export function buildConnectScript(network: string, client: string): string {
 
 if (import.meta.main) {
   // The playwright stack keeps its MCP proxy on a network of its own (spy4x/rostok#338), and a
-  // recreated hl-open-webui has lost its place on it. Runs first and without SSH_HOST too, so a
-  // local server gets it before the SSH_HOST check below stops this hook.
+  // recreated hl-open-webui has lost its place on it. A local server (SSH_ADDRESS=local) has no
+  // SSH_HOST: every command of this hook then runs on this machine.
   {
     const script = buildConnectScript(NETWORK, CLIENT)
     const host = Deno.env.get("SSH_HOST")
@@ -124,7 +152,7 @@ if (import.meta.main) {
     log(connect.output.trim())
   }
 
-  const SSH_HOST = Deno.env.get("SSH_HOST")
+  const SSH_HOST = Deno.env.get("SSH_HOST") || undefined
   const SSH_PORT = Deno.env.get("SSH_PORT") || undefined
   const SSH_USER = Deno.env.get("SSH_USER") || undefined
   const PATH_APPS = Deno.env.get("PATH_APPS")
@@ -134,19 +162,19 @@ if (import.meta.main) {
   const OPENAI_API_KEYS = Deno.env.get("OPEN_WEBUI_OPENAI_API_KEYS")
   const OPENAI_API_BASE_URLS = Deno.env.get("OPEN_WEBUI_OPENAI_API_BASE_URLS")
 
-  if (!SSH_HOST || !PATH_APPS) {
-    error("after.deploy.ts: SSH_HOST and PATH_APPS must be set")
+  if (!PATH_APPS) {
+    error("after.deploy.ts: PATH_APPS must be set")
     Deno.exit(1)
   }
 
-  const SSH_TARGET = targetHost(SSH_HOST, SSH_USER)
-  let SSH_OPTION_ARGS: string[]
   try {
-    SSH_OPTION_ARGS = buildSshOptionArgs(SSH_PORT)
+    buildSshOptionArgs(SSH_PORT)
   } catch (err) {
     error("after.deploy.ts:", err instanceof Error ? err.message : String(err))
     Deno.exit(1)
   }
+  /** `argv` as the command that runs it on the deploy target. */
+  const onTarget = (argv: string[]) => buildTargetCommand(argv, SSH_HOST, SSH_PORT, SSH_USER)
   if (!OPENAI_API_KEYS || !OPENAI_API_BASE_URLS) {
     error(
       "after.deploy.ts: OPEN_WEBUI_OPENAI_API_KEYS and OPEN_WEBUI_OPENAI_API_BASE_URLS must be set in .env",
@@ -155,21 +183,17 @@ if (import.meta.main) {
   }
 
   const SCRIPT_NAME = "init-models.py"
-  // After rsync, the script lives on the remote under PATH_APPS/stacks/open-webui/.
-  // Use the absolute path on the remote so `docker cp` finds it (the remote
-  // user's cwd is $HOME, not the deploy target root).
+  // After the deploy's copy, the script lives on the target under
+  // PATH_APPS/stacks/open-webui/. Use the absolute path so `docker cp` finds it
+  // (over ssh the user's cwd is $HOME, not the deploy target root).
   const REMOTE_SCRIPT_SRC = `${PATH_APPS}/stacks/open-webui/${SCRIPT_NAME}`
   const REMOTE_SCRIPT_TMP = `/tmp/${SCRIPT_NAME}`
   const CONTAINER = "hl-open-webui"
 
   log(`Copying ${REMOTE_SCRIPT_SRC} → ${CONTAINER}:${REMOTE_SCRIPT_TMP}...`)
-  const cpResult = await runCommand([
-    "ssh",
-    ...SSH_OPTION_ARGS,
-    "--",
-    SSH_TARGET,
-    `docker cp ${REMOTE_SCRIPT_SRC} ${CONTAINER}:${REMOTE_SCRIPT_TMP}`,
-  ])
+  const cpResult = await runCommand(
+    onTarget(["docker", "cp", REMOTE_SCRIPT_SRC, `${CONTAINER}:${REMOTE_SCRIPT_TMP}`]),
+  )
   if (!cpResult.success) {
     error(`docker cp failed: ${cpResult.error || cpResult.output}`)
     Deno.exit(1)
@@ -182,8 +206,8 @@ if (import.meta.main) {
   //
   // The keys are fed over stdin, NOT via `docker exec -e KEY=value`. An -e
   // argument is part of the command line, so the API keys would be visible in
-  // `ps` on the remote host for the lifetime of the exec, and in the argv of
-  // the local ssh process. `read` in the container shell keeps them off both.
+  // `ps` on the target for the lifetime of the exec, and over ssh in the argv
+  // of the local ssh process too. `read` in the container shell keeps them off both.
   //
   // OPENAI_API_CONFIGS and DEFAULT_MODELS are deliberately not passed: neither
   // is a secret, and the script inherits both from the container's own env.
@@ -200,13 +224,13 @@ if (import.meta.main) {
   const stdinPayload = `${OPENAI_API_KEYS}\n${OPENAI_API_BASE_URLS}\n`
 
   // IFS= and -r so whitespace and backslashes survive verbatim.
-  const remoteScript = `docker exec -i ${CONTAINER} sh -c '` +
-    `IFS= read -r k; IFS= read -r u; ` +
+  const containerScript = `IFS= read -r k; IFS= read -r u; ` +
     `export OPENAI_API_KEYS="$k" OPENAI_API_BASE_URLS="$u"; ` +
-    `exec python3 ${REMOTE_SCRIPT_TMP}'`
+    `exec python3 ${REMOTE_SCRIPT_TMP}`
+  const execCommand = onTarget(["docker", "exec", "-i", CONTAINER, "sh", "-c", containerScript])
 
-  const execProc = new Deno.Command("ssh", {
-    args: [...SSH_OPTION_ARGS, "--", SSH_TARGET, remoteScript],
+  const execProc = new Deno.Command(execCommand[0], {
+    args: execCommand.slice(1),
     stdin: "piped",
     stdout: "piped",
     stderr: "piped",
@@ -236,13 +260,7 @@ if (import.meta.main) {
   // guarantees the new state is loaded before any user request, and
   // makes the deploy behaviour predictable.
   log(`Restarting ${CONTAINER} to flush in-memory model cache...`)
-  const restartResult = await runCommand([
-    "ssh",
-    ...SSH_OPTION_ARGS,
-    "--",
-    SSH_TARGET,
-    `docker restart ${CONTAINER}`,
-  ])
+  const restartResult = await runCommand(onTarget(["docker", "restart", CONTAINER]))
   if (!restartResult.success) {
     error(`Restart failed: ${restartResult.error || restartResult.output}`)
     Deno.exit(1)

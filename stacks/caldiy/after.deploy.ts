@@ -1,7 +1,8 @@
 // after.deploy.ts — Ensure Cal.diy booking confirmation workflow exists.
-// Runs after docker compose up. SSHs into the server and uses psql to
-// create the Workflow + WorkflowStep + WorkflowsOnEventTypes records if
-// they don't already exist. This avoids manual SQL steps.
+// Runs after docker compose up. Uses psql in the hl-caldiy-db container
+// (over ssh, or with the local docker on a local server, which has no
+// SSH_HOST) to create the Workflow + WorkflowStep + WorkflowsOnEventTypes
+// records if they don't already exist. This avoids manual SQL steps.
 //
 // Environment: SSH_HOST, SSH_PORT, SSH_USER, PATH_APPS from deploy
 // context. SSH_HOST/SSH_PORT/SSH_USER are contract keys parsed once from
@@ -52,25 +53,51 @@ export function buildSshArgs(
   ]
 }
 
-const SSH_HOST = Deno.env.get("SSH_HOST") ?? ""
+/**
+ * The program and argv that run psql in the hl-caldiy-db container on the
+ * deploy target, reading SQL from stdin: `docker exec` on this machine
+ * when `host` is unset (a local server), the same command over ssh
+ * otherwise. Throws like buildSshArgs on a bad `port`. Exported for
+ * tests — no I/O.
+ */
+export function buildPsqlCommand(
+  host: string | undefined,
+  port: string | undefined,
+  user: string | undefined,
+): { cmd: string; args: string[] } {
+  const psql = [
+    "docker",
+    "exec",
+    "-i",
+    "hl-caldiy-db",
+    "psql",
+    "-U",
+    "caldiy",
+    "-d",
+    "caldiy",
+    "-t",
+    "-A",
+  ]
+  if (!host) return { cmd: psql[0], args: psql.slice(1) }
+  return { cmd: "ssh", args: buildSshArgs(host, port, user, psql.join(" ")) }
+}
+
+// A local server (SSH_ADDRESS=local) has no SSH_HOST.
+const SSH_HOST = Deno.env.get("SSH_HOST") || undefined
 const SSH_PORT = Deno.env.get("SSH_PORT") || undefined
 const SSH_USER = Deno.env.get("SSH_USER") || undefined
 const APPS = Deno.env.get("PATH_APPS") ?? ""
 
-if (import.meta.main && (!SSH_HOST || !APPS)) {
-  console.error("after.deploy.ts: SSH_HOST and PATH_APPS must be set")
+if (import.meta.main && !APPS) {
+  console.error("after.deploy.ts: PATH_APPS must be set")
   Deno.exit(1)
 }
 
-/** Run SQL via psql on the remote caldiy-db container, return stdout */
+/** Run SQL via psql in the caldiy-db container on the deploy target, return stdout */
 async function psql(sql: string): Promise<string> {
-  const proc = new Deno.Command("ssh", {
-    args: buildSshArgs(
-      SSH_HOST,
-      SSH_PORT,
-      SSH_USER,
-      "docker exec -i hl-caldiy-db psql -U caldiy -d caldiy -t -A",
-    ),
+  const { cmd, args } = buildPsqlCommand(SSH_HOST, SSH_PORT, SSH_USER)
+  const proc = new Deno.Command(cmd, {
+    args,
     stdin: "piped",
     stdout: "piped",
     stderr: "piped",

@@ -28,19 +28,16 @@ const DOMAIN = Deno.env.get("DOMAIN") ?? ""
 // is what lets a non-default port reach ssh as `-p <port>` instead of
 // being read as part of an unresolvable "host:port" hostname. SSH_PORT
 // is set ONLY when SSH_ADDRESS carried an explicit port — never a
-// default — so `-p` is added only when it's non-empty.
-const SSH_HOST = Deno.env.get("SSH_HOST") ?? ""
+// default — so `-p` is added only when it's non-empty. A local server
+// (SSH_ADDRESS=local) has no SSH_HOST: `docker stop` then runs on this
+// machine.
+const SSH_HOST = Deno.env.get("SSH_HOST") || undefined
 const SSH_PORT = Deno.env.get("SSH_PORT") || undefined
 const SSH_USER = Deno.env.get("SSH_USER") || undefined
 const INITIAL_DEPLOY = Deno.env.get("STALWART_INITIAL_DEPLOY") === "true"
 
-if (
-  import.meta.main &&
-  (!PASSWORD || !DOMAIN || !SSH_HOST)
-) {
-  console.error(
-    "after.deploy.ts: STALWART_ADMIN_PASSWORD, DOMAIN and SSH_HOST must be set",
-  )
+if (import.meta.main && (!PASSWORD || !DOMAIN)) {
+  console.error("after.deploy.ts: STALWART_ADMIN_PASSWORD and DOMAIN must be set")
   Deno.exit(1)
 }
 
@@ -81,6 +78,22 @@ export function buildSshArgs(
     target,
     ...command,
   ]
+}
+
+/**
+ * The program and argv that stop the hl-stalwart container on the deploy
+ * target: `docker stop` on this machine when `host` is unset (a local
+ * server), the same command over ssh otherwise. Throws like buildSshArgs
+ * on a bad `port`. Exported for tests — no I/O.
+ */
+export function buildStopCommand(
+  host: string | undefined,
+  port: string | undefined,
+  user: string | undefined,
+): { cmd: string; args: string[] } {
+  const stop = ["docker", "stop", "hl-stalwart"]
+  if (!host) return { cmd: stop[0], args: stop.slice(1) }
+  return { cmd: "ssh", args: buildSshArgs(host, port, user, stop) }
 }
 
 const SUBNET = "172.18.0.0/16"
@@ -305,8 +318,9 @@ async function stopStalwartAfterDkimFailure(): Promise<void> {
   // (cli/deploy/hooks.ts) — no re-validation needed here, unlike the old
   // inline regex this replaced (which also rejected the "host:port" form
   // outright, the bug #229 reported).
-  const result = await new Deno.Command("ssh", {
-    args: buildSshArgs(SSH_HOST, SSH_PORT, SSH_USER, ["docker", "stop", "hl-stalwart"]),
+  const { cmd, args } = buildStopCommand(SSH_HOST, SSH_PORT, SSH_USER)
+  const result = await new Deno.Command(cmd, {
+    args,
     stdout: "null",
     stderr: "piped",
   }).output()

@@ -1,8 +1,13 @@
-// Tests for stacks/open-webui/after.deploy.ts's pure ssh argv helpers.
-// (No shell interaction — that runs via the deploy script.)
+// Tests for stacks/open-webui/after.deploy.ts: its pure command helpers, then the hook as a
+// subprocess with a fake `ssh` or a fake `docker` on PATH.
 
 import { assertEquals, assertThrows } from "@std/assert"
-import { buildConnectScript, buildSshOptionArgs, targetHost } from "./after.deploy.ts"
+import {
+  buildConnectScript,
+  buildSshOptionArgs,
+  buildTargetCommand,
+  targetHost,
+} from "./after.deploy.ts"
 
 Deno.test("buildSshOptionArgs: -p then the standard options", () => {
   assertEquals(buildSshOptionArgs("22"), [
@@ -315,7 +320,7 @@ Deno.test("connect script: does not connect a container that is on the network a
 })
 
 Deno.test("after.deploy.ts subprocess: without SSH_HOST the connection is still made, through the local docker", async () => {
-  // The rest of this hook still needs SSH_HOST (spy4x/rostok#287), so it exits non-zero after.
+  // No provider settings are passed, so the hook exits non-zero after the connection.
   const calls = await withFakeDocker(
     { network: true, client: true, clientNetworks: `proxy ` },
     async (env) => {
@@ -329,4 +334,124 @@ Deno.test("after.deploy.ts subprocess: without SSH_HOST the connection is still 
     },
   )
   assertEquals(calls.at(-1), `network connect hl-playwright-mcp hl-open-webui`)
+})
+
+Deno.test("buildTargetCommand: no host — the command itself, for this machine, with no shell", () => {
+  const argv = ["docker", "cp", "/srv/my apps/init-models.py", "hl-open-webui:/tmp/init-models.py"]
+  assertEquals(buildTargetCommand(argv, undefined, undefined, "root"), argv)
+})
+
+Deno.test("buildTargetCommand: with a host — ssh, with the command as one argument for the server's shell", () => {
+  assertEquals(
+    buildTargetCommand(["docker", "restart", "hl-open-webui"], "192.0.2.1", "2222", "root"),
+    [
+      "ssh",
+      "-p",
+      "2222",
+      "-o",
+      "ConnectTimeout=10",
+      "-o",
+      "BatchMode=yes",
+      "--",
+      "root@192.0.2.1",
+      "docker restart hl-open-webui",
+    ],
+  )
+})
+
+Deno.test("buildTargetCommand: over ssh an argument with shell syntax reaches the server's shell quoted", async () => {
+  const hostile = "/srv/a b/$(echo x)/it's;id"
+  const command = buildTargetCommand(["printf", "%s", hostile], "homelab", undefined, undefined)
+  // What sshd does with the command: hand it to the user's shell.
+  const output = await new Deno.Command("sh", { args: ["-c", command.at(-1)!] }).output()
+  assertEquals(new TextDecoder().decode(output.stdout), hostile)
+})
+
+/**
+ * Runs the whole hook with a fake `docker` and a fake `ssh` first on PATH. Returns its exit code,
+ * what the fakes were called with (one call per line, each starting with the program's name, a
+ * newline inside an argument shown as `;`) and
+ * what the hook wrote to their stdin. Both fakes exit 0, except that `docker network inspect`
+ * exits 1: a server without the playwright stack. Neither calls any program by the name `docker`
+ * or `ssh`, and a depth guard makes each exit 97 if it is ever entered from itself.
+ */
+async function runHookWithFakes(
+  hookEnv: Record<string, string>,
+): Promise<{ code: number; calls: string[]; stdin: string }> {
+  const binDir = await Deno.makeTempDir({ prefix: "rostok-fake-open-webui-" })
+  const logPath = `${binDir}/calls.log`
+  const stdinPath = `${binDir}/stdin.log`
+  try {
+    for (const name of ["docker", "ssh"]) {
+      const script = `#!/bin/sh\n` +
+        `[ -n "$FAKE_TOOL_DEPTH" ] && exit 97\n` +
+        `export FAKE_TOOL_DEPTH=1\n` +
+        `printf "%s" "${name} $*" | tr "\\n" ";" >> "${logPath}"\n` +
+        `echo >> "${logPath}"\n` +
+        `cat >> "${stdinPath}"\n` +
+        `[ "${name} $1 $2" = "docker network inspect" ] && exit 1\n` +
+        `exit 0\n`
+      await Deno.writeTextFile(`${binDir}/${name}`, script, { mode: 0o755 })
+    }
+    await Deno.writeTextFile(logPath, "")
+    await Deno.writeTextFile(stdinPath, "")
+    const env = Deno.env.toObject()
+    for (const key of ["SSH_ADDRESS", "SSH_HOST", "SSH_PORT", "SSH_USER", "FAKE_TOOL_DEPTH"]) {
+      delete env[key]
+    }
+    const output = await new Deno.Command(Deno.execPath(), {
+      args: ["run", "-A", import.meta.resolve("./after.deploy.ts")],
+      env: {
+        ...env,
+        PATH_APPS: "/srv/apps",
+        OPEN_WEBUI_OPENAI_API_KEYS: "sk-test",
+        OPEN_WEBUI_OPENAI_API_BASE_URLS: "https://example.com/v1",
+        ...hookEnv,
+        PATH: `${binDir}:${env.PATH ?? ""}`,
+      },
+      clearEnv: true,
+      stdout: "null",
+      stderr: "null",
+    }).output()
+    const calls = (await Deno.readTextFile(logPath)).split("\n").filter((line) => line.length > 0)
+    return { code: output.code, calls, stdin: await Deno.readTextFile(stdinPath) }
+  } finally {
+    await Deno.remove(binDir, { recursive: true })
+  }
+}
+
+/** The script the hook runs inside the container; it reads the two settings from stdin. */
+const CONTAINER_SCRIPT = `IFS= read -r k; IFS= read -r u; ` +
+  `export OPENAI_API_KEYS="$k" OPENAI_API_BASE_URLS="$u"; exec python3 /tmp/init-models.py`
+
+Deno.test("after.deploy.ts subprocess: on a local server (no SSH_HOST) it copies, runs and restarts with the local docker and exits 0", async () => {
+  // What deploy sets for a local server: SSH_ADDRESS=local, and no SSH_HOST or SSH_PORT.
+  const { code, calls, stdin } = await runHookWithFakes({ SSH_ADDRESS: "local", SSH_USER: "root" })
+  assertEquals(calls, [
+    "docker network inspect hl-playwright-mcp",
+    "docker cp /srv/apps/stacks/open-webui/init-models.py hl-open-webui:/tmp/init-models.py",
+    `docker exec -i hl-open-webui sh -c ${CONTAINER_SCRIPT}`,
+    "docker restart hl-open-webui",
+  ])
+  assertEquals(stdin, "sk-test\nhttps://example.com/v1\n")
+  assertEquals(code, 0)
+})
+
+Deno.test("after.deploy.ts subprocess: with SSH_HOST it copies, runs and restarts over ssh and exits 0", async () => {
+  const { code, calls, stdin } = await runHookWithFakes({
+    SSH_ADDRESS: "root@192.0.2.1:2222",
+    SSH_HOST: "192.0.2.1",
+    SSH_PORT: "2222",
+    SSH_USER: "root",
+  })
+  const ssh = "ssh -p 2222 -o ConnectTimeout=10 -o BatchMode=yes -- root@192.0.2.1"
+  assertEquals(calls.slice(1), [
+    `${ssh} docker cp /srv/apps/stacks/open-webui/init-models.py hl-open-webui:/tmp/init-models.py`,
+    `${ssh} docker exec -i hl-open-webui sh -c '${CONTAINER_SCRIPT}'`,
+    `${ssh} docker restart hl-open-webui`,
+  ])
+  // The first call is the connect script, which an earlier test covers.
+  assertEquals(calls.length, 4)
+  assertEquals(stdin, "sk-test\nhttps://example.com/v1\n")
+  assertEquals(code, 0)
 })

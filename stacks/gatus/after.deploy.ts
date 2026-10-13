@@ -18,6 +18,9 @@
 // omitting it otherwise lets ssh consult ~/.ssh/config for a bare alias
 // (see cli/deploy/hooks.ts's module comment for why a default-22 would
 // have broken an alias with its own non-default Port).
+//
+// A local server (SSH_ADDRESS=local) has no SSH_HOST: the hook then runs
+// `docker restart` on this machine, with no ssh and no shell.
 
 /** `[user@]host` — no brackets: ssh gets host and -p <port> as separate argv slots. */
 function targetHost(host: string, user: string | undefined): string {
@@ -69,25 +72,37 @@ export function buildRestartCommand(
   ]
 }
 
+/**
+ * The program and argv that restart `container` on the deploy target:
+ * `docker restart` on this machine when `host` is unset (a local server),
+ * `ssh ... docker restart` otherwise. Throws like buildRestartCommand on a
+ * bad `port`. Exported for tests — no I/O.
+ */
+export function buildTargetRestart(
+  host: string | undefined,
+  port: string | undefined,
+  user: string | undefined,
+  container: string,
+): { cmd: string; args: string[] } {
+  if (!host) return { cmd: "docker", args: ["restart", container] }
+  return { cmd: "ssh", args: buildRestartCommand(host, port, user, container) }
+}
+
 if (import.meta.main) {
-  const SSH_HOST = Deno.env.get("SSH_HOST")
+  const SSH_HOST = Deno.env.get("SSH_HOST") || undefined
   const SSH_PORT = Deno.env.get("SSH_PORT") || undefined
   const SSH_USER = Deno.env.get("SSH_USER") || undefined
-  if (!SSH_HOST) {
-    console.error("after.deploy.ts FAILED: SSH_HOST not set")
-    Deno.exit(1)
-  }
 
-  let args: string[]
+  let restart: { cmd: string; args: string[] }
   try {
-    args = buildRestartCommand(SSH_HOST, SSH_PORT, SSH_USER, "hl-gatus")
+    restart = buildTargetRestart(SSH_HOST, SSH_PORT, SSH_USER, "hl-gatus")
   } catch (err) {
     console.error("after.deploy.ts FAILED:", err instanceof Error ? err.message : String(err))
     Deno.exit(1)
   }
 
-  const result = await new Deno.Command("ssh", {
-    args,
+  const result = await new Deno.Command(restart.cmd, {
+    args: restart.args,
     stdin: "null",
     stdout: "inherit",
     stderr: "inherit",
