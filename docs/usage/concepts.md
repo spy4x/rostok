@@ -64,7 +64,8 @@ laptop` deploys locally without a flag. What changes:
   local `rsync` into `PATH_APPS` with the same flags as a remote deploy.
   ssh is never started.
 - Stack hooks get `SSH_ADDRESS=local` and no `SSH_HOST` or `SSH_PORT`.
-  syncthing's hook then runs its commands locally. The after-deploy
+  The hooks of syncthing and playwright then run their commands
+  locally. The after-deploy
   hooks of traefik, gatus, caldiy, open-webui and stalwart still need
   `SSH_HOST` and fail on a local server for now
   ([#287](https://github.com/spy4x/rostok/issues/287)).
