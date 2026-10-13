@@ -10,6 +10,10 @@
 //     it verbatim as STGUIAPIKEY, and `before.deploy.ts` refuses a missing,
 //     placeholder or short (< 16 chars) key. `generatePassword(32)` is
 //     URL-safe base64, so it passes and needs no quoting in `.env`.
+//   - SYNCTHING_GUI_USER / SYNCTHING_GUI_PASSWORD: the GUI login. compose.yml
+//     sets it before Syncthing starts when the config has no GUI password
+//     yet, so a first deploy never serves an open GUI. A password already
+//     set in the GUI is kept.
 //   - SYNCTHING_CPU_LIMIT / SYNCTHING_MEM_LIMIT: same defaults as compose.
 //
 // Server-level vars (PUID, PGID) intentionally NOT declared here — same
@@ -35,6 +39,19 @@ export default {
     {
       key: "SYNCTHING_API_KEY",
       question: "Syncthing API key (auto-generated at deploy time)?",
+      default: () => generatePassword(32),
+      required: true,
+      secret: true,
+    },
+    {
+      key: "SYNCTHING_GUI_USER",
+      question: "Syncthing web UI login user name?",
+      default: "admin",
+      required: true,
+    },
+    {
+      key: "SYNCTHING_GUI_PASSWORD",
+      question: "Syncthing web UI login password?",
       default: () => generatePassword(32),
       required: true,
       secret: true,

@@ -7,6 +7,8 @@
 # Required env (in server .env):
 #   SYNCTHING_API_KEY     — STGUIAPIKEY, the API key the deploy hooks use
 #   SYNCTHING_DOMAIN      — full host for the Traefik rule (e.g. sync.${DOMAIN})
+#   SYNCTHING_GUI_USER, SYNCTHING_GUI_PASSWORD — the GUI login, set at start
+#     when the config has no GUI password yet (see `entrypoint` below)
 #
 # ── First deploy ────────────────────────────────────────────────────
 # `rostok stack add syncthing` generates SYNCTHING_API_KEY and writes it to
@@ -41,6 +43,27 @@ services:
       timeout: 10s
       retries: 3
       start_period: 40s
+    # Traefik publishes the GUI, and Syncthing serves it with no login until a
+    # password is set. So before Syncthing starts, a config without a GUI
+    # password gets the login from the two variables: a first start never
+    # serves an open GUI, and an older deployment that never set a password
+    # gets one at its next start. A config that already has a password, set in
+    # the GUI by hand, is left as it is. `generate` changes the login only and
+    # keeps the keys, device id, folders and devices. Then the image's own
+    # entrypoint runs unchanged.
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+          set -eu
+          if grep -q '<password>..*</password>' /var/syncthing/config/config.xml 2>/dev/null; then
+            echo "[rostok] The GUI already has a password. It is kept; SYNCTHING_GUI_USER and SYNCTHING_GUI_PASSWORD are not applied."
+          else
+            printf '%s' "$$SYNCTHING_GUI_PASSWORD" |
+              /bin/entrypoint.sh /bin/syncthing generate --gui-user="$$SYNCTHING_GUI_USER" --gui-password=-
+            echo "[rostok] The GUI had no password. Set its login from SYNCTHING_GUI_USER and SYNCTHING_GUI_PASSWORD."
+          fi
+          exec /bin/entrypoint.sh /bin/syncthing
     environment:
       - PUID=${PUID:-1000}
       - PGID=${PGID:-1000}
@@ -48,6 +71,8 @@ services:
       # Syncthing overrides whatever is in config.xml.
       - STGUIAPIKEY=${SYNCTHING_API_KEY:?}
       - STHOMEDIR=/var/syncthing/config
+      - SYNCTHING_GUI_USER=${SYNCTHING_GUI_USER:?}
+      - SYNCTHING_GUI_PASSWORD=${SYNCTHING_GUI_PASSWORD:?}
     # Volumes are NOT defined here — bind mounts live in the committed
     # per-server override at:
     #   servers/<server>/compose-override/syncthing.yml
