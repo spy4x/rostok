@@ -257,6 +257,12 @@ Semver:
 
 After the version-bump PR merges to `main`. No need to ask first:
 
+Before step 1, run the real-server test on the merged `main` from
+your own machine: `deno task e2e:vps local`. It deploys to a fresh
+Hetzner Cloud server and deletes it; see "Real-server test" in
+`docs/contributing/contributing.md`. It never runs in Woodpecker,
+whose logs are public. A failed run: tell the owner what failed.
+
 1. Tag the merge commit and push the tag:
    `git tag v1.0.4 <merge commit> && git push origin v1.0.4`.
 2. Woodpecker runs `check` on the tag, then the `publish` step:
@@ -275,13 +281,8 @@ After the version-bump PR merges to `main`. No need to ask first:
 4. `rostok --version` must print the new version. If it prints an
    older one, the install used a stale cache or the tag build did not
    publish: read the tag's Woodpecker log.
-5. Run the real-server test from your own machine, twice: before
-   step 1 as `deno task e2e:vps local` (the merged `main`), and after
-   step 4 as `deno task e2e:vps <version>` (the published package).
-   It deploys to a fresh Hetzner Cloud server and deletes it; see
-   "Real-server test" in `docs/contributing/contributing.md`. It never
-   runs in Woodpecker, whose logs are public. A failed run: tell the
-   owner what failed, and tag nothing until `local` passes.
+5. Run the real-server test again, on the published package:
+   `deno task e2e:vps <version>`.
 
 ### The publish token
 
