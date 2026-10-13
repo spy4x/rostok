@@ -126,6 +126,7 @@ export const SHIPPED_STACK_FILES: Record<string, readonly string[]> = {
   ],
   "docker-registry": [
     "compose.yml",
+    "before.deploy.ts",
   ],
   "docker-sock-proxy": [
     "compose.yml",
