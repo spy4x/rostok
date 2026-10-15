@@ -76,6 +76,18 @@ Runs `lint + fmt + type-check + tests`. All must pass before commit.
 
 ---
 
+## 💸 Tests on a fresh VPS
+
+A test that needs a fresh server runs on a Hetzner Cloud server you
+create for it and delete as soon as the test ends, whether it passed or
+failed. Watch the budget: pick the cheapest server type that runs the
+test, keep it no longer than the test needs, and leave no server, SSH
+key or volume behind. `deno task e2e:vps` does all of this for you
+(see "Real-server test" in `docs/contributing/contributing.md`);
+prefer it to creating a server by hand.
+
+---
+
 ## 🔄 PR discipline
 
 A PR MUST exist for any task. Create it immediately after the first
