@@ -202,6 +202,7 @@ export const SHIPPED_STACK_FILES: Record<string, readonly string[]> = {
     "dkim.ts",
     "mta-sts/html/.well-known/mta-sts.txt.template",
     "mta-sts/nginx.conf",
+    "reports.ts",
   ],
   pangolin: [
     "before.deploy.ts",

@@ -10,6 +10,9 @@
 - **CalDAV/CardDAV** — calendars, tasks, contacts via JMAP + WebDAV
 - **Built-in Webmail** at `/admin` (port 8080, proxied via Traefik)
 - **DKIM/ARC/DMARC/SPF** signing and verification
+- **No outbound reports** — the deploy hook turns off the DMARC, TLS, DKIM and SPF reports
+  Stalwart would mail to every domain that writes to you. Reports other servers send you still
+  arrive at `postmaster@`. Logic: `reports.ts`.
 - **Built-in anti-spam** (Bayesian, DNSBL, rate limiting)
 - **ACME** (Let's Encrypt) native — no external cert management needed
 - **Single binary** — no Postfix/Dovecot/Rspamd/Redis complexity
