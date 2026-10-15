@@ -97,7 +97,7 @@
   // `stacks/*/+meta.ts` are statically imported from cli/catalog.ts,
   // so they ride along with the published binary.
   "name": "@rostok/cli",
-  "version": "1.13.0",
+  "version": "1.13.1",
   "license": "MIT",
   "exports": {
     ".": "./cli/+main.ts",
@@ -266,6 +266,7 @@
       "!stacks/stalwart/dkim.ts",
       "!stacks/stalwart/mta-sts/html/.well-known/mta-sts.txt.template",
       "!stacks/stalwart/mta-sts/nginx.conf",
+      "!stacks/stalwart/reports.ts",
       "!stacks/pangolin/+meta.ts",
       "!stacks/pangolin/before.deploy.ts",
       "!stacks/pangolin/compose.yml",

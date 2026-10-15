@@ -7,6 +7,8 @@
 //    "Access denied - Invalid HELO name".
 // 3. Keeps DKIM management manual while Cloudflare DNS publication is manual.
 //    Automatic key rotation without automatic DNS publication breaks DKIM.
+// 4. Turns off the DMARC, TLS, DKIM and SPF reports Stalwart mails to other domains
+//    (see reports.ts).
 // Uses JMAP management API via admin credentials from .env.
 
 import {
@@ -19,6 +21,7 @@ import {
 } from "./dkim.ts"
 import type { JmapCall, JmapResponse } from "./dkim.ts"
 import { resolveExtraDomains } from "./before.deploy.ts"
+import { ensureNoOutboundReports } from "./reports.ts"
 
 const PASSWORD = Deno.env.get("STALWART_ADMIN_PASSWORD") ?? ""
 const DOMAIN = Deno.env.get("DOMAIN") ?? ""
@@ -400,6 +403,14 @@ async function main() {
     else console.log("✓ DKIM signatures already cover the required headers")
   } catch (err) {
     console.warn("DKIM signed headers not updated:", err instanceof Error ? err.message : err)
+  }
+
+  try {
+    const reports = await ensureNoOutboundReports(jmap)
+    if (reports > 0) console.log(`✓ Turned off ${reports} outbound report setting(s)`)
+    else console.log("✓ Outbound reports already off")
+  } catch (err) {
+    console.warn("Outbound reports not turned off:", err instanceof Error ? err.message : err)
   }
 }
 
