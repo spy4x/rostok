@@ -14,6 +14,10 @@ services:
       - WOODPECKER_OPEN=false
       - WOODPECKER_HOST=https://${WOODPECKER_DOMAIN}
       - WOODPECKER_AGENT_SECRET=${WOODPECKER_AGENT_SECRET}
+      # SQLite in WAL mode with a busy timeout. The default (rollback journal, no timeout) fails
+      # writes with "database is locked" when several pipelines run, and the agent then loses or
+      # re-runs workflows. The "no sqlite3 file found" warning at start is harmless.
+      - WOODPECKER_DATABASE_DATASOURCE=file:/var/lib/woodpecker/woodpecker.sqlite?_busy_timeout=30000&_journal_mode=WAL&_txlock=immediate
       # GitHub integration (comment out if using Gitea/GitLab)
       - WOODPECKER_GITHUB=true
       - WOODPECKER_GITHUB_CLIENT=${WOODPECKER_GITHUB_CLIENT}
