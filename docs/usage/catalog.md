@@ -60,7 +60,7 @@ The catalog is what the `rostok` CLI bundles. Users browse it with
 - [caldav-mcp](../../stacks/caldav-mcp/README.md) — CalDAV/cardDAV
   bridge for AI agents
 - [email-mcp](../../stacks/email-mcp/README.md) — email bridge for AI
-  agents
+  agents, behind a guard that asks for a token and allows no delete
 
 ### Dev
 

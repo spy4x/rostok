@@ -31,6 +31,9 @@
 //     no default: a default reference would stop every deploy on a server without caldav-mcp.
 //     The reference line must sit below the CALDAV_MCP_TOKEN line: compose resolves a reference
 //     only to a key defined earlier, and above it the key is silently empty.
+//   - OPEN_WEBUI_EMAIL_MCP_TOKEN: the bearer token Open WebUI sends to the email-mcp guard, the
+//     same way: `OPEN_WEBUI_EMAIL_MCP_TOKEN=${EMAIL_MCP_TOKEN}`, below the EMAIL_MCP_TOKEN line.
+//     Empty, the guard refuses every call.
 //   - OPEN_WEBUI_OPENAI_API_CONFIGS / OPEN_WEBUI_DEFAULT_MODELS: optional model whitelist per
 //     provider (JSON) and the models preselected in a new chat. Empty lists every model.
 //   - the rest: same defaults as compose.
@@ -96,6 +99,12 @@ export default {
     {
       key: "OPEN_WEBUI_CALDAV_MCP_TOKEN",
       question: "Bearer token for caldav-mcp (the value of CALDAV_MCP_TOKEN, or empty)?",
+      required: false,
+      secret: true,
+    },
+    {
+      key: "OPEN_WEBUI_EMAIL_MCP_TOKEN",
+      question: "Bearer token for email-mcp (the value of EMAIL_MCP_TOKEN, or empty)?",
       required: false,
       secret: true,
     },

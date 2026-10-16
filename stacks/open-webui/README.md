@@ -41,7 +41,7 @@ Each needs something else to exist first. Set the variables in the server's `.en
 | Pages loaded in a real browser   | the `playwright` stack             | `OPEN_WEBUI_WEB_LOADER_ENGINE=playwright`, `OPEN_WEBUI_PLAYWRIGHT_WS_URL=ws://playwright:3000` |
 | Browser tools                    | the `playwright` stack             | `OPEN_WEBUI_ENABLE_PLAYWRIGHT_MCP=true`                                                        |
 | Calendar and task tools          | the `caldav-mcp` stack             | `OPEN_WEBUI_ENABLE_CALDAV_MCP=true` and `OPEN_WEBUI_CALDAV_MCP_TOKEN` (below)                  |
-| E-mail tools                     | the `email-mcp` stack              | `OPEN_WEBUI_ENABLE_EMAIL_MCP=true`                                                             |
+| E-mail tools (admins only)       | the `email-mcp` stack              | `OPEN_WEBUI_ENABLE_EMAIL_MCP=true` and `OPEN_WEBUI_EMAIL_MCP_TOKEN` (below)                    |
 | Google Maps tools                | the `google-maps-mcp` stack        | `OPEN_WEBUI_ENABLE_GOOGLE_MAPS_MCP=true`                                                       |
 | GitHub tools                     | the `github-mcp` stack             | `OPEN_WEBUI_ENABLE_GITHUB_MCP=true`                                                            |
 | Image generation                 | a provider with an image model     | `OPEN_WEBUI_ENABLE_IMAGE_GENERATION=true`, `OPEN_WEBUI_IMAGE_GENERATION_MODEL=<model id>`      |
@@ -62,6 +62,12 @@ in the chat. Turn it on only when you need pages from your own network and trust
 reference and both stacks share one token. Compose resolves a reference only to a key defined
 earlier in the file; above it, the key is silently empty and the caldav tool gets 401.
 
+**email-mcp token.** The same for the e-mail tools: write
+`OPEN_WEBUI_EMAIL_MCP_TOKEN=${EMAIL_MCP_TOKEN}` below the `EMAIL_MCP_TOKEN` line. Without it the
+email-mcp guard answers 401 and the e-mail tools fail. The e-mail tools are offered to admin
+accounts only, and only the accounts listed in the email-mcp stack's `EMAIL_MCP_ALLOWED_USERS` may
+send, move or archive mail; see that stack's README.
+
 **A shorter model list.** To list only some of a provider's models, set
 `OPEN_WEBUI_OPENAI_API_CONFIGS` to JSON keyed by the provider's position in
 `OPEN_WEBUI_OPENAI_API_BASE_URLS`, in single quotes:
@@ -80,8 +86,9 @@ Declared in `+meta.ts`; `rostok stack add open-webui` writes them to the server'
 the `traefik` stack. `after.deploy.ts` copies the provider list into Open WebUI's database on
 every deploy. It also connects `hl-open-webui` to the private network of each MCP server stack
 (`hl-playwright-mcp`, `hl-email-mcp`, `hl-github-mcp`, `hl-google-maps-mcp`) that exists on the
-server. Those servers ask callers for no credential, so they are on no shared network, and Open
-WebUI is the only other container that can reach them. `rostok deploy <server>` runs this hook
+server. Most of those servers ask callers for no credential (email-mcp's guard asks for a token),
+so they are on no shared network, and Open WebUI is the only other container that can reach
+them. `rostok deploy <server>` runs this hook
 every time; after `rostok deploy <server> <mcp stack>` of a newly added MCP stack alone, run
 `rostok deploy <server> open-webui` too, so the new network is connected.
 
@@ -94,6 +101,7 @@ every time; after `rostok deploy <server> <mcp stack>` of a newly added MCP stac
 | `OPEN_WEBUI_HF_TOKEN`                                  | none, secret                             | Optional Hugging Face token                                         |
 | `OPEN_WEBUI_MCPO_API_KEY`                              | generated, secret                        | API key Open WebUI sends to mcpo                                    |
 | `OPEN_WEBUI_CALDAV_MCP_TOKEN`                          | none, secret                             | Bearer token sent to caldav-mcp, normally `${CALDAV_MCP_TOKEN}`     |
+| `OPEN_WEBUI_EMAIL_MCP_TOKEN`                           | none, secret                             | Bearer token sent to email-mcp, normally `${EMAIL_MCP_TOKEN}`       |
 | `OPEN_WEBUI_OPENAI_API_CONFIGS`                        | none                                     | Optional model whitelist per provider, as JSON                      |
 | `OPEN_WEBUI_DEFAULT_MODELS`                            | none                                     | Models preselected in a new chat, comma-separated                   |
 | `OPEN_WEBUI_ENABLE_IMAGE_GENERATION`                   | `false`                                  | Enable image generation                                             |

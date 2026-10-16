@@ -14,7 +14,8 @@ interface ToolServerConnection {
   url: string
   auth_type: string
   key?: string
-  config: { enable: boolean }
+  config: { enable: boolean; access_grants?: unknown[] }
+  headers?: Record<string, string>
 }
 
 /** What `stack add` always writes: compose refuses to render without the mcpo key. */
@@ -51,10 +52,11 @@ Deno.test("mcpo: compose requires OPEN_WEBUI_MCPO_API_KEY instead of running una
   assertEquals(keys, [`\${OPEN_WEBUI_MCPO_API_KEY:?}`])
 })
 
-Deno.test("open-webui: sends mcpo and caldav-mcp each their own bearer key, none hardcoded", async () => {
+Deno.test("open-webui: sends mcpo, caldav-mcp and email-mcp each their own bearer key, none hardcoded", async () => {
   const env = await environmentWith({
     OPEN_WEBUI_MCPO_API_KEY: "mcpo-key",
     OPEN_WEBUI_CALDAV_MCP_TOKEN: "caldav-token",
+    OPEN_WEBUI_EMAIL_MCP_TOKEN: "email-token",
   })
   const connections = JSON.parse(env.TOOL_SERVER_CONNECTIONS) as ToolServerConnection[]
   const bearerKeys = Object.fromEntries(
@@ -64,7 +66,19 @@ Deno.test("open-webui: sends mcpo and caldav-mcp each their own bearer key, none
     "http://mcpo:8000/youtube-transcript": "mcpo-key",
     "http://mcpo:8000/fetch": "mcpo-key",
     "http://hl-caldav-mcp:3000/mcp": "caldav-token",
+    "http://hl-email-mcp:9557/mcp": "email-token",
   })
+})
+
+Deno.test("open-webui: offers the e-mail tools to admins only and tells the guard who is asking", async () => {
+  // Open WebUI reads an empty grant list as admins only (spy4x/rostok#143); the guard lets only
+  // EMAIL_MCP_ALLOWED_USERS change mail, by the address in this header.
+  const connections = JSON.parse(
+    (await environmentWith(DEFAULT_ANSWERS)).TOOL_SERVER_CONNECTIONS,
+  ) as ToolServerConnection[]
+  const email = connections.find((c) => c.url === "http://hl-email-mcp:9557/mcp")
+  assertEquals(email?.config.access_grants, [])
+  assertEquals(email?.headers?.["X-OpenWebUI-User-Email"], "{{USER_EMAIL}}")
 })
 
 Deno.test("open-webui: with default answers no model is named and every sibling-stack integration is off", async () => {
