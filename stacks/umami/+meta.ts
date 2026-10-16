@@ -24,6 +24,11 @@ export default {
       required: false,
     },
     {
+      key: "UMAMI_DB_IMAGE_TAG",
+      default: "16-alpine",
+      required: false,
+    },
+    {
       key: "UMAMI_DOMAIN",
       question: "Public domain for the Umami dashboard?",
       default: "stats.${DOMAIN}",

@@ -13,7 +13,7 @@ services:
   # PostgreSQL for Umami
   umami-db:
     container_name: hl-umami-db
-    image: postgres:16-alpine
+    image: postgres:${UMAMI_DB_IMAGE_TAG:-16-alpine}
     restart: unless-stopped
     environment:
       - POSTGRES_DB=umami

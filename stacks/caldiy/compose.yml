@@ -5,7 +5,7 @@ networks:
 services:
   caldiy-db:
     container_name: hl-caldiy-db
-    image: postgres:16-alpine
+    image: postgres:${CALDIY_DB_IMAGE_TAG:-16-alpine}
     environment:
       POSTGRES_USER: caldiy
       POSTGRES_PASSWORD: ${CALDIY_DB_PASSWORD}
@@ -28,7 +28,7 @@ services:
 
   caldiy-redis:
     container_name: hl-caldiy-redis
-    image: redis:7-alpine
+    image: redis:${CALDIY_REDIS_IMAGE_TAG:-7-alpine}
     volumes:
       - ${VOLUMES_PATH}/caldiy/redis:/data:z
     restart: unless-stopped
@@ -101,7 +101,7 @@ services:
   # requires external infra. Polling is simpler for a homelab.
   caldiy-cron:
     container_name: hl-caldiy-cron
-    image: alpine/curl:latest
+    image: alpine/curl:${CALDIY_CRON_IMAGE_TAG:-latest}
     environment:
       - CRON_API_KEY=${CALDIY_CRON_API_KEY}
       - TZ=${TIMEZONE}

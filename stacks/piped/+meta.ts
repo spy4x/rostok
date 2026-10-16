@@ -24,6 +24,31 @@ export default {
   keepOwner: ["piped/postgres"],
   variables: [
     {
+      key: "PIPED_FRONTEND_IMAGE_TAG",
+      default: "latest",
+      required: false,
+    },
+    {
+      key: "PIPED_BACKEND_IMAGE_TAG",
+      default: "latest",
+      required: false,
+    },
+    {
+      key: "PIPED_PROXY_IMAGE_TAG",
+      default: "latest",
+      required: false,
+    },
+    {
+      key: "PIPED_BG_HELPER_IMAGE_TAG",
+      default: "latest",
+      required: false,
+    },
+    {
+      key: "PIPED_DB_IMAGE_TAG",
+      default: "16-alpine",
+      required: false,
+    },
+    {
       key: "PIPED_DOMAIN",
       question: "Public domain for the Piped frontend?",
       default: "piped.${DOMAIN}",

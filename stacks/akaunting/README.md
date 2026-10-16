@@ -49,3 +49,14 @@ The router uses the Traefik middleware `authelia@file`. The stack therefore need
 file-provider middleware named `authelia` (forward-auth to Authelia). No catalog stack provides
 it yet, see https://github.com/spy4x/rostok/issues/301. Without it Traefik disables the router
 and the site answers 404.
+
+## Image tags
+
+Each image takes its tag from its own variable; unset, compose uses the default below.
+Under `IMAGE_POLICY=pinned`, `rostok stack add` writes the exact version, and
+`rostok images update` moves it (see [commands](../../docs/commands.md)).
+
+| Variable                 | Default  | Image                                       |
+| ------------------------ | -------- | ------------------------------------------- |
+| `AKAUNTING_DB_IMAGE_TAG` | `11`     | `mariadb` (service `akaunting-db`)          |
+| `AKAUNTING_IMAGE_TAG`    | `latest` | `akaunting/akaunting` (service `akaunting`) |

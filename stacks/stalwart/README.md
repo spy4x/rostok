@@ -269,3 +269,15 @@ refused script upload fails the run, and an account that another active Sieve
 script already filters (an owner's own mailbox) is refused, not overwritten.
 Stalwart only lets an account send from its own addresses, so the app's `From`
 is the new address; a display name (`Jane Doe <hello@example.com>`) is fine.
+
+## Image tags
+
+Each image takes its tag from its own variable; unset, compose uses the default below.
+Under `IMAGE_POLICY=pinned`, `rostok stack add` writes the exact version, and
+`rostok images update` moves it (see [commands](../../docs/commands.md)).
+
+| Variable                       | Default    | Image                                        |
+| ------------------------------ | ---------- | -------------------------------------------- |
+| `STALWART_IMAGE_TAG`           | `v0.16.11` | `stalwartlabs/stalwart` (service `stalwart`) |
+| `STALWART_MTA_STS_IMAGE_TAG`   | `alpine`   | `nginx` (service `mta-sts`)                  |
+| `STALWART_CERT_SYNC_IMAGE_TAG` | `3-alpine` | `python` (service `cert-sync`)               |

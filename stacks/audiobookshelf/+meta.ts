@@ -13,6 +13,11 @@ export default {
   requires: ["traefik"],
   variables: [
     {
+      key: "AUDIOBOOKSHELF_IMAGE_TAG",
+      default: "latest",
+      required: false,
+    },
+    {
       key: "AUDIOBOOKSHELF_DOMAIN",
       question: "Public domain for Audiobookshelf?",
       default: "books.${DOMAIN}",

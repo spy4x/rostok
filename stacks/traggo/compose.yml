@@ -12,7 +12,7 @@ services:
   # https://github.com/traggo/traggo
   traggo:
     container_name: hl-traggo
-    image: traggo/server:latest
+    image: traggo/server:${TRAGGO_IMAGE_TAG:-latest}
     environment:
       - TZ=${TIMEZONE:-UTC}
       - TRAGGO_PORT=3030

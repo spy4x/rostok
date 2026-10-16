@@ -5,7 +5,7 @@ networks:
 services:
   gitea-db:
     container_name: hl-gitea-db
-    image: postgres:16-alpine
+    image: postgres:${GITEA_DB_IMAGE_TAG:-16-alpine}
     environment:
       POSTGRES_DB: gitea
       POSTGRES_USER: gitea
@@ -28,7 +28,7 @@ services:
 
   gitea:
     container_name: hl-gitea
-    image: gitea/gitea:latest
+    image: gitea/gitea:${GITEA_IMAGE_TAG:-latest}
     environment:
       - USER_UID=${PUID:-1000}
       - USER_GID=${PGID:-1000}

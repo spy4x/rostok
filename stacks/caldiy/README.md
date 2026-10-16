@@ -22,6 +22,9 @@
 | `CALDIY_ENCRYPTION_KEY`  | Cal.com credential encryption key. `openssl rand -hex 32`                                                                           |
 | `CALDIY_CRON_API_KEY`    | Shared secret for cron endpoints (`scheduleEmailReminders`, etc.). `openssl rand -hex 24`                                           |
 | `CALDIY_VERSION`         | Image tag (default: `latest`)                                                                                                       |
+| `CALDIY_DB_IMAGE_TAG`    | Image tag of `postgres` in `caldiy-db` (default: `16-alpine`)                                                                       |
+| `CALDIY_REDIS_IMAGE_TAG` | Image tag of `redis` in `caldiy-redis` (default: `7-alpine`)                                                                        |
+| `CALDIY_CRON_IMAGE_TAG`  | Image tag of `alpine/curl` in `caldiy-cron` (default: `latest`)                                                                     |
 
 `rostok stack add caldiy` generates the four secrets. The rest:
 

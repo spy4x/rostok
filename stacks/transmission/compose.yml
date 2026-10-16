@@ -9,7 +9,7 @@ services:
   # Transmission is a BitTorrent client with a web interface.
   # It is a lightweight, works on the server in background and has zero configuration.
   transmission:
-    image: linuxserver/transmission
+    image: linuxserver/transmission:${TRANSMISSION_IMAGE_TAG:-latest}
     container_name: hl-transmission
     environment:
       - PUID=${PUID:-1000}

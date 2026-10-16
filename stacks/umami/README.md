@@ -17,14 +17,15 @@ Web UI: `https://<UMAMI_DOMAIN>`
 
 ## Configuration
 
-| Variable                 | Default           | Meaning                                   |
-| ------------------------ | ----------------- | ----------------------------------------- |
-| `UMAMI_IMAGE_TAG`        | `latest`          | Image tag                                 |
-| `UMAMI_DOMAIN`           | `stats.${DOMAIN}` | Dashboard host                            |
-| `UMAMI_PROXY_DOMAIN`     | `${DOMAIN}`       | Site host that proxies `/umami/` to Umami |
-| `UMAMI_PROXY_WWW_DOMAIN` | `www.${DOMAIN}`   | The www host of that site                 |
-| `UMAMI_DB_PASSWORD`      | generated         | PostgreSQL password                       |
-| `UMAMI_APP_SECRET`       | generated         | Umami session secret                      |
+| Variable                 | Default           | Meaning                                      |
+| ------------------------ | ----------------- | -------------------------------------------- |
+| `UMAMI_IMAGE_TAG`        | `latest`          | Image tag                                    |
+| `UMAMI_DB_IMAGE_TAG`     | `16-alpine`       | Image tag of `postgres` (service `umami-db`) |
+| `UMAMI_DOMAIN`           | `stats.${DOMAIN}` | Dashboard host                               |
+| `UMAMI_PROXY_DOMAIN`     | `${DOMAIN}`       | Site host that proxies `/umami/` to Umami    |
+| `UMAMI_PROXY_WWW_DOMAIN` | `www.${DOMAIN}`   | The www host of that site                    |
+| `UMAMI_DB_PASSWORD`      | generated         | PostgreSQL password                          |
+| `UMAMI_APP_SECRET`       | generated         | Umami session secret                         |
 
 The `/umami/` path lets the tracking script load from the tracked site's own domain, which ad
 blockers and Safari tracking prevention leave alone. It applies only to sites that this server's

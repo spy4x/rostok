@@ -10,7 +10,7 @@ services:
   # It allows you to download videos from YouTube and other supported sites.
   metube:
     container_name: hl-metube
-    image: ghcr.io/alexta69/metube
+    image: ghcr.io/alexta69/metube:${METUBE_IMAGE_TAG:-latest}
     healthcheck:
       test: ["CMD", "curl", "-sf", "http://localhost:8081/"]
       interval: 30s

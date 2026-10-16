@@ -44,3 +44,13 @@ fails to start when that device does not exist.
 
 - [Home Assistant Documentation](https://www.home-assistant.io/docs/)
 - [Docker Installation](https://www.home-assistant.io/installation/linux#docker-compose)
+
+## Image tags
+
+Each image takes its tag from its own variable; unset, compose uses the default below.
+Under `IMAGE_POLICY=pinned`, `rostok stack add` writes the exact version, and
+`rostok images update` moves it (see [commands](../../docs/commands.md)).
+
+| Variable                   | Default  | Image                                                              |
+| -------------------------- | -------- | ------------------------------------------------------------------ |
+| `HOME_ASSISTANT_IMAGE_TAG` | `stable` | `ghcr.io/home-assistant/home-assistant` (service `home-assistant`) |

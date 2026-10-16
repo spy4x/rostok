@@ -7,7 +7,7 @@ networks:
 services:
   searxng-redis:
     container_name: hl-searxng-redis
-    image: redis:7-alpine
+    image: redis:${SEARXNG_REDIS_IMAGE_TAG:-7-alpine}
     restart: unless-stopped
     volumes:
       - ${VOLUMES_PATH}/searxng/redis:/data:z
@@ -22,7 +22,7 @@ services:
 
   searxng:
     container_name: hl-searxng
-    image: searxng/searxng:latest
+    image: searxng/searxng:${SEARXNG_IMAGE_TAG:-latest}
     healthcheck:
       test: ["CMD", "wget", "--spider", "http://localhost:8080/"]
       interval: 30s

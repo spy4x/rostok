@@ -13,7 +13,7 @@
 services:
   home-assistant:
     container_name: hl-home-assistant
-    image: ghcr.io/home-assistant/home-assistant:stable
+    image: ghcr.io/home-assistant/home-assistant:${HOME_ASSISTANT_IMAGE_TAG:-stable}
     volumes:
       # Absolute path: docker compose v2 sets the project's working dir to
       # the first compose file's directory, so any relative path here would

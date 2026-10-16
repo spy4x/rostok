@@ -32,17 +32,20 @@ Declared in `+meta.ts`; `rostok stack add immich` writes them to the server's `.
 
 The two API keys can only be created in Immich (Account settings, API keys) after the first deploy: leave them empty, deploy, create the keys, add them to `.env`, deploy again.
 
-| Key                            | Default                  | Meaning                                                    |
-| ------------------------------ | ------------------------ | ---------------------------------------------------------- |
-| `IMMICH_DOMAIN`                | `photos.${DOMAIN}`       | Public host of the web UI                                  |
-| `IMMICH_KIOSK_DOMAIN`          | `kiosk.${DOMAIN}`        | Public host of the kiosk slideshow                         |
-| `IMMICH_VERSION`               | `release`                | Image tag                                                  |
-| `IMMICH_DB_PASSWORD`           | generated, secret        | Postgres password                                          |
-| `IMMICH_KIOSK_PASSWORD`        | generated, secret        | Password of the kiosk page                                 |
-| `IMMICH_MCP_API_KEY`           | none, secret             | API key added to thumbnail requests, so inline images load |
-| `IMMICH_KIOSK_API_KEY`         | none, secret             | API key the kiosk uses to read photos                      |
-| `PATH_PHOTOS`                  | `${VOLUMES_PATH}/photos` | Host folder of the photo library                           |
-| `IMMICH_KIOSK_EXCLUDED_PEOPLE` | none                     | Comma-separated Immich person IDs the kiosk never shows    |
+| Key                            | Default                              | Meaning                                                       |
+| ------------------------------ | ------------------------------------ | ------------------------------------------------------------- |
+| `IMMICH_DOMAIN`                | `photos.${DOMAIN}`                   | Public host of the web UI                                     |
+| `IMMICH_KIOSK_DOMAIN`          | `kiosk.${DOMAIN}`                    | Public host of the kiosk slideshow                            |
+| `IMMICH_VERSION`               | `release`                            | Image tag of the server, and of machine-learning with `-cuda` |
+| `IMMICH_KV_IMAGE_TAG`          | `8-bookworm@sha256:ff21…`            | Image tag of `valkey` (service `kv`), pinned by digest        |
+| `IMMICH_DB_IMAGE_TAG`          | `14-vectorchord0.3.0-pgvectors0.2.0` | Image tag of Immich's `postgres` (service `db`)               |
+| `IMMICH_KIOSK_IMAGE_TAG`       | `latest`                             | Image tag of `immich-kiosk`                                   |
+| `IMMICH_DB_PASSWORD`           | generated, secret                    | Postgres password                                             |
+| `IMMICH_KIOSK_PASSWORD`        | generated, secret                    | Password of the kiosk page                                    |
+| `IMMICH_MCP_API_KEY`           | none, secret                         | API key added to thumbnail requests, so inline images load    |
+| `IMMICH_KIOSK_API_KEY`         | none, secret                         | API key the kiosk uses to read photos                         |
+| `PATH_PHOTOS`                  | `${VOLUMES_PATH}/photos`             | Host folder of the photo library                              |
+| `IMMICH_KIOSK_EXCLUDED_PEOPLE` | none                                 | Comma-separated Immich person IDs the kiosk never shows       |
 
 ## Resources
 

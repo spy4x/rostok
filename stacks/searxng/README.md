@@ -34,3 +34,14 @@ Declared in `+meta.ts`; `rostok stack add searxng` writes them to the server's `
 | -------------------- | ------------------ | ------------------------------------------------- |
 | `SEARXNG_DOMAIN`     | `search.${DOMAIN}` | Public host of the search page                    |
 | `SEARXNG_SECRET_KEY` | generated, secret  | Written into `settings.yml` by `before.deploy.ts` |
+
+## Image tags
+
+Each image takes its tag from its own variable; unset, compose uses the default below.
+Under `IMAGE_POLICY=pinned`, `rostok stack add` writes the exact version, and
+`rostok images update` moves it (see [commands](../../docs/commands.md)).
+
+| Variable                  | Default    | Image                                 |
+| ------------------------- | ---------- | ------------------------------------- |
+| `SEARXNG_REDIS_IMAGE_TAG` | `7-alpine` | `redis` (service `searxng-redis`)     |
+| `SEARXNG_IMAGE_TAG`       | `latest`   | `searxng/searxng` (service `searxng`) |

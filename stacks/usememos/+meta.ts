@@ -14,6 +14,11 @@ export default {
   keepOwner: ["memos"],
   variables: [
     {
+      key: "USEMEMOS_IMAGE_TAG",
+      default: "stable",
+      required: false,
+    },
+    {
       key: "USEMEMOS_DOMAIN",
       question: "Public domain for Memos?",
       default: "notes.${DOMAIN}",

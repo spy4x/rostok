@@ -49,3 +49,14 @@ Declared in `+meta.ts`. Requires the `traefik` stack. Ships `compose.yml` and `p
 | `GITEA_SMTP_USERNAME` | asked             | SMTP login                               |
 | `GITEA_SMTP_PASSWORD` | asked, secret     | SMTP password                            |
 | `GITEA_SMTP_FROM`     | asked             | Sender address of outgoing mail          |
+
+## Image tags
+
+Each image takes its tag from its own variable; unset, compose uses the default below.
+Under `IMAGE_POLICY=pinned`, `rostok stack add` writes the exact version, and
+`rostok images update` moves it (see [commands](../../docs/commands.md)).
+
+| Variable             | Default     | Image                           |
+| -------------------- | ----------- | ------------------------------- |
+| `GITEA_DB_IMAGE_TAG` | `16-alpine` | `postgres` (service `gitea-db`) |
+| `GITEA_IMAGE_TAG`    | `latest`    | `gitea/gitea` (service `gitea`) |

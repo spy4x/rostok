@@ -40,3 +40,13 @@ Declared in `+meta.ts`; `rostok stack add transmission` writes them to the serve
 ## Resources
 
 - [Transmission Wiki](https://github.com/transmission/transmission/wiki)
+
+## Image tags
+
+Each image takes its tag from its own variable; unset, compose uses the default below.
+Under `IMAGE_POLICY=pinned`, `rostok stack add` writes the exact version, and
+`rostok images update` moves it (see [commands](../../docs/commands.md)).
+
+| Variable                 | Default  | Image                                               |
+| ------------------------ | -------- | --------------------------------------------------- |
+| `TRANSMISSION_IMAGE_TAG` | `latest` | `linuxserver/transmission` (service `transmission`) |

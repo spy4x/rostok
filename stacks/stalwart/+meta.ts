@@ -37,6 +37,21 @@ export default {
   keepOwner: ["stalwart/data", "stalwart/config", "stalwart/lib"],
   variables: [
     {
+      key: "STALWART_IMAGE_TAG",
+      default: "v0.16.11",
+      required: false,
+    },
+    {
+      key: "STALWART_MTA_STS_IMAGE_TAG",
+      default: "alpine",
+      required: false,
+    },
+    {
+      key: "STALWART_CERT_SYNC_IMAGE_TAG",
+      default: "3-alpine",
+      required: false,
+    },
+    {
       key: "STALWART_DOMAIN",
       question: "Public domain for the Stalwart web UI and JMAP?",
       default: "mail.${DOMAIN}",
