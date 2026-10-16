@@ -60,7 +60,7 @@ Deno.test("targetHost: bare host with no user", () => {
 })
 
 /**
- * Install a fake `ssh` on PATH that appends its own argv (one per line,
+ * Install a fake `ssh` on PATH (beside a fake `docker`: a call to it fails the test) that appends its own argv (one per line,
  * plus a blank separator line) to `logPath`, then exits 1.
  */
 async function withFakeSsh<T>(fn: (logPath: string) => Promise<T>): Promise<T> {
@@ -70,13 +70,22 @@ async function withFakeSsh<T>(fn: (logPath: string) => Promise<T>): Promise<T> {
     const script =
       `#!/bin/sh\nfor a in "$@"; do printf '%s\\n' "$a" >> "${logPath}"; done\nprintf '\\n' >> "${logPath}"\nexit 1\n`
     await Deno.writeTextFile(`${binDir}/ssh`, script, { mode: 0o755 })
+    // A fake docker too: a hook that wrongly takes the local path fails here instead of reaching
+    // the real Docker daemon.
+    await Deno.writeTextFile(
+      `${binDir}/docker`,
+      `#!/bin/sh\necho "docker $*" >> "${binDir}/docker.log"\nexit 1\n`,
+      { mode: 0o755 },
+    )
     const previousPath = Deno.env.get("PATH") ?? ""
     Deno.env.set("PATH", `${binDir}:${previousPath}`)
-    try {
-      return await fn(logPath)
-    } finally {
-      Deno.env.set("PATH", previousPath)
-    }
+    // Settled first, so a docker call is reported even when `fn` fails on the missing ssh log.
+    const [outcome] = await Promise.allSettled([fn(logPath)])
+    Deno.env.set("PATH", previousPath)
+    const docker = await Deno.readTextFile(`${binDir}/docker.log`).catch(() => "")
+    if (docker) throw new Error(`the hook ran docker on this machine, not over ssh: ${docker}`)
+    if (outcome.status === "rejected") throw outcome.reason
+    return outcome.value
   } finally {
     await Deno.remove(binDir, { recursive: true })
   }
@@ -152,7 +161,7 @@ Deno.test("after.deploy.ts subprocess: no SSH_PORT — omits -p entirely (fake s
 })
 
 /**
- * Install a fake `ssh` on PATH that appends its own argv (one call's
+ * Install a fake `ssh` on PATH (beside a fake `docker`: a call to it fails the test) that appends its own argv (one call's
  * worth of lines, then a blank separator) to `logPath`, drains any
  * stdin, and exits 0 — so the hook's full flow runs to completion and
  * every one of its ssh calls (docker cp, exec, restart) actually fires,
@@ -168,13 +177,22 @@ async function withSucceedingFakeSsh<T>(fn: (logPath: string) => Promise<T>): Pr
       `cat > /dev/null\n` + // drain stdin so a piped writer never sees EPIPE
       `exit 0\n`
     await Deno.writeTextFile(`${binDir}/ssh`, script, { mode: 0o755 })
+    // A fake docker too: a hook that wrongly takes the local path fails here instead of reaching
+    // the real Docker daemon.
+    await Deno.writeTextFile(
+      `${binDir}/docker`,
+      `#!/bin/sh\necho "docker $*" >> "${binDir}/docker.log"\nexit 1\n`,
+      { mode: 0o755 },
+    )
     const previousPath = Deno.env.get("PATH") ?? ""
     Deno.env.set("PATH", `${binDir}:${previousPath}`)
-    try {
-      return await fn(logPath)
-    } finally {
-      Deno.env.set("PATH", previousPath)
-    }
+    // Settled first, so a docker call is reported even when `fn` fails on the missing ssh log.
+    const [outcome] = await Promise.allSettled([fn(logPath)])
+    Deno.env.set("PATH", previousPath)
+    const docker = await Deno.readTextFile(`${binDir}/docker.log`).catch(() => "")
+    if (docker) throw new Error(`the hook ran docker on this machine, not over ssh: ${docker}`)
+    if (outcome.status === "rejected") throw outcome.reason
+    return outcome.value
   } finally {
     await Deno.remove(binDir, { recursive: true })
   }
@@ -267,7 +285,18 @@ esac
     await Deno.writeTextFile(`${binDir}/docker`, script, { mode: 0o755 })
     await Deno.writeTextFile(logPath, ``)
     const env = Deno.env.toObject()
-    for (const key of [`SSH_HOST`, `SSH_PORT`, `SSH_USER`, `FAKE_DOCKER_DEPTH`]) delete env[key]
+    for (
+      const key of [
+        `SSH_ADDRESS`,
+        `SSH_LOCAL`,
+        `SSH_HOST`,
+        `SSH_PORT`,
+        `SSH_USER`,
+        `FAKE_DOCKER_DEPTH`,
+      ]
+    ) {
+      delete env[key]
+    }
     await fn({ ...env, PATH: `${binDir}:${env.PATH ?? ``}` })
     return (await Deno.readTextFile(logPath)).split(`\n`).filter((line) => line.length > 0)
   } finally {
@@ -329,7 +358,8 @@ Deno.test("after.deploy.ts subprocess: without SSH_HOST it connects hl-open-webu
     async (env) => {
       await new Deno.Command(Deno.execPath(), {
         args: [`run`, `-A`, import.meta.resolve(`./after.deploy.ts`)],
-        env: { ...env, PATH_APPS: `/srv/apps` },
+        // What deploy sets for a local server: SSH_LOCAL=true, and no SSH_HOST.
+        env: { ...env, SSH_ADDRESS: `local`, SSH_LOCAL: `true`, PATH_APPS: `/srv/apps` },
         clearEnv: true,
         stdout: `null`,
         stderr: `null`,
@@ -407,7 +437,16 @@ async function runHookWithFakes(
     await Deno.writeTextFile(logPath, "")
     await Deno.writeTextFile(stdinPath, "")
     const env = Deno.env.toObject()
-    for (const key of ["SSH_ADDRESS", "SSH_HOST", "SSH_PORT", "SSH_USER", "FAKE_TOOL_DEPTH"]) {
+    for (
+      const key of [
+        "SSH_ADDRESS",
+        "SSH_LOCAL",
+        "SSH_HOST",
+        "SSH_PORT",
+        "SSH_USER",
+        "FAKE_TOOL_DEPTH",
+      ]
+    ) {
       delete env[key]
     }
     const output = await new Deno.Command(Deno.execPath(), {
@@ -441,8 +480,13 @@ const CONTAINER_SCRIPT = `IFS= read -r k; IFS= read -r u; ` +
   `export OPENAI_API_KEYS="$k" OPENAI_API_BASE_URLS="$u"; exec python3 /tmp/init-models.py`
 
 Deno.test("after.deploy.ts subprocess: on a local server (no SSH_HOST) it copies, runs and restarts with the local docker and exits 0", async () => {
-  // What deploy sets for a local server: SSH_ADDRESS=local, and no SSH_HOST or SSH_PORT.
-  const { code, calls, stdin } = await runHookWithFakes({ SSH_ADDRESS: "local", SSH_USER: "root" })
+  // What deploy sets for a local server: SSH_ADDRESS=local, SSH_LOCAL=true, and no SSH_HOST or
+  // SSH_PORT.
+  const { code, calls, stdin } = await runHookWithFakes({
+    SSH_ADDRESS: "local",
+    SSH_LOCAL: "true",
+    SSH_USER: "root",
+  })
   assertEquals(calls, [
     "docker network inspect hl-playwright-mcp",
     "docker network inspect hl-email-mcp",
@@ -475,6 +519,14 @@ Deno.test("after.deploy.ts subprocess: with SSH_HOST it copies, runs and restart
   assertEquals(code, 0)
 })
 
+Deno.test("after.deploy.ts subprocess: without SSH_HOST and without SSH_LOCAL it refuses to run and calls no docker or ssh", async () => {
+  // A hook run by hand, outside a deploy: nothing says the server is this machine.
+  const { code, calls, stderr } = await runHookWithFakes({ SSH_USER: "root" })
+  assertEquals(calls, [])
+  assertEquals(code, 1)
+  assertStringIncludes(stderr, "SSH_LOCAL is not true")
+})
+
 Deno.test("invalidEnableKeys: accepts true, false, empty and unset", () => {
   assertEquals(
     invalidEnableKeys({
@@ -502,6 +554,8 @@ Deno.test("after.deploy.ts subprocess: an MCP switch that is not true or false f
 
 Deno.test("after.deploy.ts subprocess: with no OpenAI-compatible provider (Ollama only) it still runs and exits 0", async () => {
   const { code, calls, stdin } = await runHookWithFakes({
+    SSH_ADDRESS: "local",
+    SSH_LOCAL: "true",
     OPEN_WEBUI_OPENAI_API_KEYS: "",
     OPEN_WEBUI_OPENAI_API_BASE_URLS: "",
   })
@@ -511,7 +565,11 @@ Deno.test("after.deploy.ts subprocess: with no OpenAI-compatible provider (Ollam
 })
 
 Deno.test("after.deploy.ts subprocess: provider keys without base URLs fail the deploy before any docker cp", async () => {
-  const { code, calls, stderr } = await runHookWithFakes({ OPEN_WEBUI_OPENAI_API_BASE_URLS: "" })
+  const { code, calls, stderr } = await runHookWithFakes({
+    SSH_ADDRESS: "local",
+    SSH_LOCAL: "true",
+    OPEN_WEBUI_OPENAI_API_BASE_URLS: "",
+  })
   assertEquals(code, 1)
   assertEquals(calls.filter((call) => call.startsWith("docker cp")), [])
   assertStringIncludes(stderr, "or neither")

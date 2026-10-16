@@ -269,6 +269,20 @@ function targetHost(): string {
   return user ? `${user}@${host}` : host
 }
 
+/**
+ * The deploy target's ssh host, or undefined on a local server. The local path is taken only when
+ * deploy says the server is local (SSH_LOCAL=true, set by cli/deploy/hooks.ts, #450): a missing
+ * SSH_HOST alone is an error, so a hook run by hand without it never acts on this machine.
+ * Exported for tests — no I/O.
+ */
+export function deployTargetHost(env: (key: string) => string | undefined): string | undefined {
+  const host = env("SSH_HOST") || undefined
+  if (host !== undefined || env("SSH_LOCAL") === "true") return host
+  throw new Error(
+    "SSH_HOST is not set and SSH_LOCAL is not true: run this hook through rostok deploy",
+  )
+}
+
 /** Digits only, 1-65535 — the same range cli/server-keys.ts's parseSshAddress enforces. */
 function isValidPort(port: string): boolean {
   if (!/^\d+$/.test(port)) return false
@@ -300,8 +314,8 @@ export function sshOptionArgs(): string[] {
 }
 
 /**
- * Run a command on the remote host (or locally if SSH_HOST is unset —
- * used by this hook's own tests), passing arguments via argv. NEVER
+ * Run a command on the remote host, or on this machine for a local server
+ * (SSH_LOCAL=true; see deployTargetHost), passing arguments via argv. NEVER
  * compose a shell command string from user-controlled paths — that
  * allows command injection if a path contains spaces, quotes, or
  * backticks.
@@ -313,7 +327,7 @@ export function sshOptionArgs(): string[] {
 export async function runRemote(
   argv: string[],
 ): Promise<{ code: number; stdout: string; stderr: string }> {
-  const host = Deno.env.get("SSH_HOST")
+  const host = deployTargetHost((key) => Deno.env.get(key))
   const cmd0 = argv[0]
   const cmdArgs = argv.slice(1)
   const proc = host
@@ -359,7 +373,7 @@ async function runRemoteScript(
   script: string,
   args: string[] = [],
 ): Promise<{ code: number; stdout: string; stderr: string }> {
-  const host = Deno.env.get("SSH_HOST")
+  const host = deployTargetHost((key) => Deno.env.get(key))
   const proc = host
     ? new Deno.Command("ssh", {
       args: buildRunRemoteScriptArgs(args),

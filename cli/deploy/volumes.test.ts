@@ -11,6 +11,8 @@ import {
   type VolumeScriptOptions,
 } from "./volumes.ts"
 import { UserError } from "../errors.ts"
+import { runRemoteShell } from "./exec.ts"
+import { LOCAL_SSH_ADDRESS } from "../server-keys.ts"
 
 Deno.test("extractVolumePaths finds VOLUMES_PATH references", () => {
   const composeContents = [
@@ -652,18 +654,74 @@ Deno.test("generateVolumeCreationScript: a failed sudo fails the script and stop
   }
 })
 
-Deno.test("generateVolumeCreationScript: as non-root, the script for 200 folders stays under 64 KiB", () => {
-  // ssh gets the whole script as one argument, and Linux refuses an argument
-  // over 128 KiB ("Argument list too long"). Normal and keepOwner folders use
-  // different sudo scripts, so each kind is measured on its own.
-  const paths = Array.from({ length: 200 }, (_, i) => `/srv/volumes/stack-${i}/data`)
-  for (const keepOwner of [[], paths]) {
+/**
+ * Run `script` the way deploy does for a local server (exec.ts's runRemoteShell: `sh -s`, the
+ * script on stdin) with a fake `sudo` first on PATH. The fake never runs anything: it logs a
+ * `sudo -n sh -c SCRIPT sh ARGS...` call as `sh -c <script> sh ARGS...` and exits 0, and fails with
+ * 95 for any other call. No real sudo can run.
+ */
+async function runViaRemoteShell(
+  script: string,
+): Promise<{ success: boolean; error: string; sudoCalls: string[] }> {
+  const binDir = await Deno.makeTempDir({ prefix: "rostok-fake-sudo-" })
+  const sudoLog = join(binDir, "sudo.log")
+  const previousPath = Deno.env.get("PATH") ?? ""
+  try {
+    await Deno.writeTextFile(
+      join(binDir, "sudo"),
+      `#!/bin/sh
+[ "$1 $2 $3" = "-n sh -c" ] || exit 95
+shift 4
+printf 'sh -c <script> %s\\n' "$*" >> ${JSON.stringify(sudoLog)}
+`,
+      { mode: 0o755 },
+    )
+    Deno.env.set("PATH", `${binDir}:${previousPath}`)
+    const result = await runRemoteShell(LOCAL_SSH_ADDRESS, script)
+    const log = await Deno.readTextFile(sudoLog).catch(() => "")
+    return {
+      success: result.success,
+      error: result.error,
+      sudoCalls: log.split("\n").filter((l) => l !== ""),
+    }
+  } finally {
+    Deno.env.set("PATH", previousPath)
+    await Deno.remove(binDir, { recursive: true })
+  }
+}
+
+Deno.test("generateVolumeCreationScript: as non-root, a deploy with 2,000 volume folders runs to the last folder, past the 128 KiB argument limit", async () => {
+  // Linux refuses one argument over 128 KiB ("Argument list too long"), which is what stopped ssh
+  // when the script was an argument. This script is larger than that, and must still run whole.
+  const root = await tempRoot("rostok-volumes-2000-")
+  try {
+    const { uid, gid } = await ownerOf(root)
+    const paths = Array.from({ length: 2000 }, (_, i) => `${root}/stack-${i}`)
+    // Every folder but the last exists with the right owner and needs no sudo; the last one is
+    // missing, so the one sudo call shows the script ran to its end.
+    for (const path of paths.slice(0, -1)) await Deno.mkdir(path)
+    const last = paths[paths.length - 1]
     const script = generateVolumeCreationScript(
-      opts("/srv/volumes", paths, { keepOwner, needsSudo: true }),
+      opts(root, paths, { puid: uid, pgid: gid, needsSudo: true }),
     )
     const bytes = new TextEncoder().encode(script).length
-    assert(bytes < 64 * 1024, `${bytes} bytes with ${keepOwner.length} keepOwner folders`)
+    assert(bytes > 128 * 1024, `the test needs a script over 128 KiB, got ${bytes} bytes`)
+    const result = await runViaRemoteShell(script)
+    assertEquals(result.success, true, result.error)
+    assertEquals(result.sudoCalls, [`sh -c <script> sh ${last} ${uid}:${gid} ${root}`])
+  } finally {
+    await Deno.remove(root, { recursive: true })
   }
+})
+
+Deno.test("generateFileMountCheckScript: as non-root, the sudo check script is written once, not once per file mount", () => {
+  const mounts = Array.from({ length: 50 }, (_, i) => `/srv/volumes/stack-${i}/acme.json`)
+  const script = generateFileMountCheckScript({
+    volumePaths: mounts,
+    fileMounts: mounts,
+    needsSudo: true,
+  })
+  assertEquals(script.split("rostok_file()").length - 1, 1, script)
 })
 
 for (const shell of SHELLS) {

@@ -9,8 +9,9 @@
 //   ENTITLED TO from `.env.root` and the server `.env` (parsed by
 //   rostok, no `$` expansion; compose's `$$` escape and one quote layer
 //   are decoded, #313) — see the allowlist below — plus
-//   SSH_ADDRESS, SSH_HOST, SSH_PORT, SSH_USER, PATH_APPS and DEPLOY_AS
-//   (SSH_HOST/SSH_PORT: #229, see the module comment further down).
+//   SSH_ADDRESS, SSH_HOST, SSH_PORT, SSH_LOCAL, SSH_USER, PATH_APPS and
+//   DEPLOY_AS (SSH_HOST/SSH_PORT: #229, see the module comment further
+//   down; SSH_LOCAL: #450, in buildHookEnv).
 //
 // `-A` means a hook is FULLY TRUSTED CODE: read/write/net/run/env, no
 // sandbox. rostok runs it exactly the way it would run any other script
@@ -356,10 +357,15 @@ export function buildHookEnv(
   // on this machine, and a hook that requires SSH_HOST fails with its own
   // "SSH_HOST not set" error instead of ssh-ing to a host named "local".
   const target = isLocalSshAddress(ctx.sshAddress) ? undefined : parseSshAddress(ctx.sshAddress)
+  // #450: SSH_LOCAL=true says so explicitly. A catalog hook takes its local path only with it, and
+  // refuses to run with neither SSH_HOST nor SSH_LOCAL, so a hook started by hand without SSH_HOST
+  // never acts on this machine. Deleted for a remote server, so no `.env` value reaches a hook.
   if (target === undefined) {
     delete resolved.SSH_HOST
+    resolved.SSH_LOCAL = "true"
   } else {
     resolved.SSH_HOST = target.host
+    delete resolved.SSH_LOCAL
   }
   // Set only for an explicit port — never a default. Deleted rather than
   // left unset so an ambient SSH_PORT in the deploying process's own

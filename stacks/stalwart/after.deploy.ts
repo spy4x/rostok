@@ -33,8 +33,7 @@ const DOMAIN = Deno.env.get("DOMAIN") ?? ""
 // is set ONLY when SSH_ADDRESS carried an explicit port — never a
 // default — so `-p` is added only when it's non-empty. A local server
 // (SSH_ADDRESS=local) has no SSH_HOST: `docker stop` then runs on this
-// machine.
-const SSH_HOST = Deno.env.get("SSH_HOST") || undefined
+// machine. Neither SSH_HOST nor SSH_LOCAL stops the hook at start (deployTargetHost).
 const SSH_PORT = Deno.env.get("SSH_PORT") || undefined
 const SSH_USER = Deno.env.get("SSH_USER") || undefined
 const INITIAL_DEPLOY = Deno.env.get("STALWART_INITIAL_DEPLOY") === "true"
@@ -42,6 +41,32 @@ const INITIAL_DEPLOY = Deno.env.get("STALWART_INITIAL_DEPLOY") === "true"
 if (import.meta.main && (!PASSWORD || !DOMAIN)) {
   console.error("after.deploy.ts: STALWART_ADMIN_PASSWORD and DOMAIN must be set")
   Deno.exit(1)
+}
+
+// Checked at start, so a hook run by hand without SSH_HOST or SSH_LOCAL=true stops before it
+// changes anything, instead of stopping a container on this machine later.
+let SSH_HOST: string | undefined
+if (import.meta.main) {
+  try {
+    SSH_HOST = deployTargetHost((key) => Deno.env.get(key))
+  } catch (err) {
+    console.error("after.deploy.ts:", err instanceof Error ? err.message : String(err))
+    Deno.exit(1)
+  }
+}
+
+/**
+ * The deploy target's ssh host, or undefined on a local server. The local path is taken only when
+ * deploy says the server is local (SSH_LOCAL=true, set by cli/deploy/hooks.ts, #450): a missing
+ * SSH_HOST alone is an error, so a hook run by hand without it never acts on this machine.
+ * Exported for tests — no I/O.
+ */
+export function deployTargetHost(env: (key: string) => string | undefined): string | undefined {
+  const host = env("SSH_HOST") || undefined
+  if (host !== undefined || env("SSH_LOCAL") === "true") return host
+  throw new Error(
+    "SSH_HOST is not set and SSH_LOCAL is not true: run this hook through rostok deploy",
+  )
 }
 
 /** Digits only, 1-65535 — the same range cli/server-keys.ts's parseSshAddress enforces. */
@@ -341,23 +366,24 @@ export function dkimDomains(getEnv: (key: string) => string | undefined): string
   return [getEnv("DOMAIN") ?? "", ...resolveExtraDomains(getEnv)]
 }
 
-async function main() {
-  const expectedDkimDomains = dkimDomains((key) => Deno.env.get(key))
-  console.log("Waiting for Stalwart to become healthy...")
-  await waitHealthy()
-  console.log("✓ Stalwart healthy")
-
+/**
+ * Run the DKIM checks in `check`. A failure that must not leave Stalwart sending mail (a
+ * DkimInvariantError, or any failure on an initial deploy) stops the container with `stop`, then
+ * throws a message that says whether the stop worked. Any other failure is thrown as it is.
+ * Exported for tests.
+ */
+export async function checkDkimOrStop(
+  check: () => Promise<void>,
+  initialDeploy: boolean,
+  stop: () => Promise<void>,
+): Promise<void> {
   try {
-    const manualDkim = await ensureManualDkimManagement(DOMAIN, PASSWORD, expectedDkimDomains)
-    if (manualDkim > 0) console.log(`✓ Set manual DKIM management for ${manualDkim} domain(s)`)
-    else console.log("✓ DKIM management already manual")
-    const verifiedDkim = await verifyActiveDkimDns(DOMAIN, PASSWORD, expectedDkimDomains)
-    console.log(`✓ Verified ${verifiedDkim} active DKIM key(s) in public DNS`)
+    await check()
   } catch (err) {
     const errorMessage = err instanceof Error ? err.message : String(err)
-    if (err instanceof DkimInvariantError || INITIAL_DEPLOY) {
+    if (err instanceof DkimInvariantError || initialDeploy) {
       try {
-        await stopStalwartAfterDkimFailure()
+        await stop()
       } catch (stopError) {
         throw new Error(
           `${errorMessage}; failed to stop Stalwart: ${
@@ -369,6 +395,50 @@ async function main() {
     }
     throw err
   }
+}
+
+/**
+ * The message for a failed hook run. On an initial deploy whose Stalwart is still running
+ * (`stopped` false), `stop` stops it first, and the message says whether that worked. Exported for
+ * tests.
+ */
+export async function failureMessage(
+  err: unknown,
+  initialDeploy: boolean,
+  stopped: boolean,
+  stop: () => Promise<void>,
+): Promise<string> {
+  let errorMessage = err instanceof Error ? err.message : String(err)
+  if (initialDeploy && !stopped) {
+    try {
+      await stop()
+      errorMessage += "; stopped initial Stalwart deployment before DKIM verification"
+    } catch (stopError) {
+      errorMessage += `; failed to stop initial Stalwart deployment: ${
+        stopError instanceof Error ? stopError.message : String(stopError)
+      }`
+    }
+  }
+  return errorMessage
+}
+
+async function main() {
+  const expectedDkimDomains = dkimDomains((key) => Deno.env.get(key))
+  console.log("Waiting for Stalwart to become healthy...")
+  await waitHealthy()
+  console.log("✓ Stalwart healthy")
+
+  await checkDkimOrStop(
+    async () => {
+      const manualDkim = await ensureManualDkimManagement(DOMAIN, PASSWORD, expectedDkimDomains)
+      if (manualDkim > 0) console.log(`✓ Set manual DKIM management for ${manualDkim} domain(s)`)
+      else console.log("✓ DKIM management already manual")
+      const verifiedDkim = await verifyActiveDkimDns(DOMAIN, PASSWORD, expectedDkimDomains)
+      console.log(`✓ Verified ${verifiedDkim} active DKIM key(s) in public DNS`)
+    },
+    INITIAL_DEPLOY,
+    stopStalwartAfterDkimFailure,
+  )
 
   try {
     const cleared = await clearBlockedIps()
@@ -418,17 +488,12 @@ if (import.meta.main) {
   try {
     await main()
   } catch (err) {
-    let errorMessage = err instanceof Error ? err.message : String(err)
-    if (INITIAL_DEPLOY && !stalwartStopped) {
-      try {
-        await stopStalwartAfterDkimFailure()
-        errorMessage += "; stopped initial Stalwart deployment before DKIM verification"
-      } catch (stopError) {
-        errorMessage += `; failed to stop initial Stalwart deployment: ${
-          stopError instanceof Error ? stopError.message : String(stopError)
-        }`
-      }
-    }
+    const errorMessage = await failureMessage(
+      err,
+      INITIAL_DEPLOY,
+      stalwartStopped,
+      stopStalwartAfterDkimFailure,
+    )
     console.error("after.deploy.ts FAILED:", errorMessage)
     Deno.exit(1)
   }

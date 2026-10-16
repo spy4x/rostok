@@ -42,7 +42,18 @@ esac
     await Deno.writeTextFile(`${binDir}/docker`, script, { mode: 0o755 })
     await Deno.writeTextFile(logPath, ``)
     const env = Deno.env.toObject()
-    for (const key of [`SSH_HOST`, `SSH_PORT`, `SSH_USER`, `FAKE_DOCKER_DEPTH`]) delete env[key]
+    for (
+      const key of [
+        `SSH_ADDRESS`,
+        `SSH_LOCAL`,
+        `SSH_HOST`,
+        `SSH_PORT`,
+        `SSH_USER`,
+        `FAKE_DOCKER_DEPTH`,
+      ]
+    ) {
+      delete env[key]
+    }
     await fn({ ...env, PATH: `${binDir}:${env.PATH ?? ``}` })
     return (await Deno.readTextFile(logPath)).split(`\n`).filter((line) => line.length > 0)
   } finally {
@@ -50,11 +61,14 @@ esac
   }
 }
 
-/** Runs the hook as deploy does on a local server: no SSH_HOST. Returns its exit code. */
-async function runHookLocally(env: Record<string, string>): Promise<number> {
+/**
+ * Runs the hook as deploy does on a local server: SSH_LOCAL=true and no SSH_HOST, unless `local`
+ * is false. Returns its exit code.
+ */
+async function runHookLocally(env: Record<string, string>, local = true): Promise<number> {
   const output = await new Deno.Command(Deno.execPath(), {
     args: [`run`, `-A`, import.meta.resolve(`./after.deploy.ts`)],
-    env,
+    env: local ? { ...env, SSH_ADDRESS: `local`, SSH_LOCAL: `true` } : env,
     clearEnv: true,
     stdout: `null`,
     stderr: `null`,
@@ -84,6 +98,18 @@ Deno.test("after.deploy.ts subprocess: on a local server without Open WebUI it c
   )
   assertEquals(code, 0)
   assertEquals(calls, [`network inspect hl-playwright-mcp`, `inspect hl-open-webui`])
+})
+
+Deno.test("after.deploy.ts subprocess: without SSH_HOST and without SSH_LOCAL it refuses to run and calls no docker", async () => {
+  let code = -1
+  const calls = await withFakeDocker(
+    { network: true, client: true, clientNetworks: `proxy ` },
+    async (env) => {
+      code = await runHookLocally(env, false)
+    },
+  )
+  assertEquals(calls, [])
+  assertEquals(code, 1)
 })
 
 Deno.test("buildConnectScript: skips a server without the network or the client, then connects the client", () => {

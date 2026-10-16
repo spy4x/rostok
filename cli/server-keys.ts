@@ -38,6 +38,9 @@ export const SERVER_KEYS = [
   // check.
   "SSH_HOST",
   "SSH_PORT",
+  // SSH_LOCAL: set to "true" by buildHookEnv for a local server only (#450), never written to
+  // .env; listed for the same reason as SSH_HOST.
+  "SSH_LOCAL",
   "SSH_USER",
   "SERVER_NAME",
   "DOMAIN",

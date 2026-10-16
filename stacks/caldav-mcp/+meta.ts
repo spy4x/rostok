@@ -2,9 +2,10 @@
 //
 // spy4x/caldav-mcp built from the stack's own Dockerfile: a CalDAV MCP server (events and tasks)
 // over HTTP on port 3000. Internal by default: the Traefik route is off unless the server sets
-// CALDAV_MCP_PUBLIC=true (README "Public with OAuth"), so there is no domain question. It still
-// requires traefik, which creates the `proxy` network. Other containers on that network reach it
-// as `http://hl-caldav-mcp:3000`.
+// CALDAV_MCP_PUBLIC=true (README "Public with OAuth"), so there is no domain question. It joins
+// the `proxy` network, which `rostok deploy` creates when a deployed compose file names it, and
+// still requires traefik for the optional route. Other containers on that network reach it as
+// `http://hl-caldav-mcp:3000`.
 //
 // The three CALDAV_MCP_* keys point at the CalDAV server the operator already runs, so they have
 // no default: `stack add` asks for them. The password is secret.

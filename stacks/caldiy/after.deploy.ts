@@ -1,7 +1,7 @@
 // after.deploy.ts — Ensure Cal.diy booking confirmation workflow exists.
 // Runs after docker compose up. Uses psql in the hl-caldiy-db container
-// (over ssh, or with the local docker on a local server, which has no
-// SSH_HOST) to create the Workflow + WorkflowStep + WorkflowsOnEventTypes
+// (over ssh, or with the local docker on a local server: SSH_LOCAL=true
+// and no SSH_HOST) to create the Workflow + WorkflowStep + WorkflowsOnEventTypes
 // records if they don't already exist. This avoids manual SQL steps.
 //
 // Environment: SSH_HOST, SSH_PORT, SSH_USER, PATH_APPS from deploy
@@ -13,6 +13,20 @@
 // "host:port" hostname. SSH_PORT is set ONLY when SSH_ADDRESS carried an
 // explicit port — never a default — so `-p` is added only when it's
 // non-empty.
+
+/**
+ * The deploy target's ssh host, or undefined on a local server. The local path is taken only when
+ * deploy says the server is local (SSH_LOCAL=true, set by cli/deploy/hooks.ts, #450): a missing
+ * SSH_HOST alone is an error, so a hook run by hand without it never acts on this machine.
+ * Exported for tests — no I/O.
+ */
+export function deployTargetHost(env: (key: string) => string | undefined): string | undefined {
+  const host = env("SSH_HOST") || undefined
+  if (host !== undefined || env("SSH_LOCAL") === "true") return host
+  throw new Error(
+    "SSH_HOST is not set and SSH_LOCAL is not true: run this hook through rostok deploy",
+  )
+}
 
 /** Digits only, 1-65535 — the same range cli/server-keys.ts's parseSshAddress enforces. */
 function isValidPort(port: string): boolean {
@@ -82,8 +96,6 @@ export function buildPsqlCommand(
   return { cmd: "ssh", args: buildSshArgs(host, port, user, psql.join(" ")) }
 }
 
-// A local server (SSH_ADDRESS=local) has no SSH_HOST.
-const SSH_HOST = Deno.env.get("SSH_HOST") || undefined
 const SSH_PORT = Deno.env.get("SSH_PORT") || undefined
 const SSH_USER = Deno.env.get("SSH_USER") || undefined
 const APPS = Deno.env.get("PATH_APPS") ?? ""
@@ -95,7 +107,8 @@ if (import.meta.main && !APPS) {
 
 /** Run SQL via psql in the caldiy-db container on the deploy target, return stdout */
 async function psql(sql: string): Promise<string> {
-  const { cmd, args } = buildPsqlCommand(SSH_HOST, SSH_PORT, SSH_USER)
+  const host = deployTargetHost((key) => Deno.env.get(key))
+  const { cmd, args } = buildPsqlCommand(host, SSH_PORT, SSH_USER)
   const proc = new Deno.Command(cmd, {
     args,
     stdin: "piped",

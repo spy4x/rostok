@@ -16,7 +16,8 @@
 // (written by an earlier `stack add`, or by `server create`) is kept
 // unless the caller passes `--var` for that key — so re-running never
 // clobbers another stack's key and never rotates an existing secret
-// (`() => generatePassword()` only runs when the key is absent).
+// (`() => generatePassword()` only runs when the key is absent or
+// blank: #450 treats `KEY=` like a missing key).
 
 import { join } from "@std/path"
 import { reencryptAfterWrite } from "./reencrypt.ts"
@@ -190,7 +191,11 @@ export async function stackAdd(
   }
 
   const existing = await readEnvFile(envPath)
-  const existingByKey = new Map(existing.map((e) => [e.key, e.value]))
+  // #450: a key that is present but blank (`KEY=`, `KEY=""`) counts as
+  // missing, so its default fills it as it would fill an absent key.
+  const existingByKey = new Map(
+    existing.filter((e) => decodeEnvValue(e.value).trim() !== "").map((e) => [e.key, e.value]),
+  )
 
   // Build server context from `servers/<server>/.env` (per-server vars),
   // for `${DOMAIN}`-style substitution in string defaults. SERVER_NAME

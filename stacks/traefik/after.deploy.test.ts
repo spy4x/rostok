@@ -197,6 +197,7 @@ async function runHookWithFakes(
     for (
       const key of [
         "SSH_ADDRESS",
+        "SSH_LOCAL",
         "SSH_HOST",
         "SSH_PORT",
         "SSH_USER",
@@ -224,8 +225,13 @@ async function runHookWithFakes(
 }
 
 Deno.test("after.deploy.ts subprocess: on a local server (no SSH_HOST) it restarts hl-traefik with the local docker and exits 0", async () => {
-  // What deploy sets for a local server: SSH_ADDRESS=local, and no SSH_HOST or SSH_PORT.
-  const { code, calls } = await runHookWithFakes({ SSH_ADDRESS: "local", SSH_USER: "user" })
+  // What deploy sets for a local server: SSH_ADDRESS=local, SSH_LOCAL=true, and no SSH_HOST or
+  // SSH_PORT.
+  const { code, calls } = await runHookWithFakes({
+    SSH_ADDRESS: "local",
+    SSH_LOCAL: "true",
+    SSH_USER: "user",
+  })
   assertEquals(calls, ["docker restart hl-traefik"])
   assertEquals(code, 0)
 })
@@ -243,6 +249,13 @@ Deno.test("after.deploy.ts subprocess: with SSH_HOST it restarts hl-traefik over
   assertEquals(code, 0)
 })
 
+Deno.test("after.deploy.ts subprocess: without SSH_HOST and without SSH_LOCAL it refuses to run and calls no docker or ssh", async () => {
+  // A hook run by hand, outside a deploy: nothing says the server is this machine.
+  const { code, calls } = await runHookWithFakes({ SSH_USER: "user" })
+  assertEquals(calls, [])
+  assertEquals(code, 1)
+})
+
 /** A server folder (PATH_APPS) holding the file hl-traefik's restart depends on. */
 async function makeServer(): Promise<string> {
   const pathApps = await Deno.makeTempDir({ prefix: "rostok-server-traefik-" })
@@ -256,6 +269,7 @@ Deno.test("an unchanged file on a local server leaves hl-traefik running", async
   try {
     const { code, calls } = await runHookWithFakes({
       SSH_ADDRESS: "local",
+      SSH_LOCAL: "true",
       PATH_APPS: pathApps,
       FAKE_STARTED: "2999-01-01T00:00:00.5Z",
     })
@@ -271,6 +285,7 @@ Deno.test("a file changed after hl-traefik started restarts it on a local server
   try {
     const { code, calls } = await runHookWithFakes({
       SSH_ADDRESS: "local",
+      SSH_LOCAL: "true",
       PATH_APPS: pathApps,
       FAKE_STARTED: "2000-01-01T00:00:00Z",
     })
@@ -289,6 +304,7 @@ Deno.test("a missing file restarts hl-traefik on a local server", async () => {
   try {
     const { calls } = await runHookWithFakes({
       SSH_ADDRESS: "local",
+      SSH_LOCAL: "true",
       PATH_APPS: pathApps,
       FAKE_STARTED: "2999-01-01T00:00:00Z",
     })

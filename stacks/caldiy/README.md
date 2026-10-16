@@ -113,7 +113,7 @@ ssh home "docker exec hl-caldiy-db psql -U caldiy -d caldiy -c 'SELECT type, sch
 
 ### 9. Create workflow via after.deploy.ts (automatic)
 
-`stacks/caldiy/after.deploy.ts` runs during `deno task deploy`. It checks if a
+`stacks/caldiy/after.deploy.ts` runs during `rostok deploy <server>`. It checks if a
 `NEW_EVENT` workflow exists and creates one if missing — no manual SQL needed.
 
 ## Common Failures

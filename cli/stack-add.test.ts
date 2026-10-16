@@ -395,6 +395,31 @@ Deno.test("re-running stack add keeps an existing generated secret", async () =>
   })
 })
 
+Deno.test("stack add fills a key that is present but blank, as it fills a missing one (#450)", async () => {
+  await withTmpDir(async (dir) => {
+    const catalogDir = join(dir, "catalog")
+    await writeCatalog(catalogDir, { secretstack: SECRET_STACK_META })
+    await seedServer(dir, "test", {
+      PROJECT: "hl",
+      DOMAIN: "example.com",
+      SECRETSTACK_PASSWORD: "",
+    })
+
+    const result = await stackAdd("secretstack", "test", {
+      cwd: dir,
+      catalogDir,
+      nonInteractive: true,
+    })
+    const entries = (await readEnvFile(join(dir, "servers", "test", ".env")))
+      .filter((e) => e.key === "SECRETSTACK_PASSWORD")
+
+    assertEquals(entries.length, 1, "the blank line is replaced, not duplicated")
+    assertEquals(entries[0].value.length, 16)
+    assertEquals(result.newCount, 1)
+    assertEquals(result.keptCount, 0)
+  })
+})
+
 Deno.test("an explicit --var still overrides an existing value", async () => {
   await withTmpDir(async (dir) => {
     const catalogDir = join(dir, "catalog")

@@ -49,6 +49,10 @@
 // expanded, and every folder passes `"$variable"` to `sh -c`. Repeating
 // the text for every folder made the remote script pass 128 KiB, the
 // Linux limit for one argument, at about 90 folders, and ssh did not start.
+// The file mount check does the same (#450). Since #436 the remote script
+// itself travels on ssh's stdin (exec.ts's runRemoteShell), so its size no
+// longer depends on any argument limit; only each `sudo -n sh -c` call is
+// an argument list, and that stays the same size whatever the folder count.
 //
 // (#258) A stack's `+meta.ts` can declare `fileMounts`: volume paths
 // that are files, such as traefik's `acme.json`. The volume script never
@@ -342,10 +346,13 @@ export function generateFileMountCheckScript(
   if (!opts.needsSudo) {
     return `${FILE_FUNCTION}\n${mounts.map((p) => `rostok_file ${shQuote(p)}`).join(" &&\n")}\n`
   }
-  const sudoScript = shQuote(`${FILE_FUNCTION}\nrostok_file "$1"`)
-  return mounts
-    .map((p) => `( [ -f ${shQuote(p)} ] || sudo -n sh -c ${sudoScript} sh ${shQuote(p)} )`)
-    .join(" &&\n") + "\n"
+  // The sudo script is assigned once, like the volume script's (#266), so each mount adds only
+  // its own line.
+  const head = `rostok_sudo_file=${shQuote(`${FILE_FUNCTION}\nrostok_file "$1"`)}`
+  const body = mounts
+    .map((p) => `( [ -f ${shQuote(p)} ] || sudo -n sh -c "$rostok_sudo_file" sh ${shQuote(p)} )`)
+    .join(" &&\n")
+  return `${head}\n${body}\n`
 }
 
 /**

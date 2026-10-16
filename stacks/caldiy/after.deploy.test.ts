@@ -55,7 +55,7 @@ Deno.test("buildSshArgs: rejects a port outside 1-65535", () => {
 })
 
 /**
- * Install a fake `ssh` on PATH that appends its own argv (one per line,
+ * Install a fake `ssh` on PATH (beside a fake `docker`: a call to it fails the test) that appends its own argv (one per line,
  * plus a blank separator line) to `logPath`, then exits 1 — the hook's
  * own stdout/stderr pipes stay reserved for its own I/O (psql() pipes
  * the fake's stdout internally, so a real caller never sees anything
@@ -68,13 +68,22 @@ async function withFakeSsh<T>(fn: (logPath: string) => Promise<T>): Promise<T> {
     const script =
       `#!/bin/sh\nfor a in "$@"; do printf '%s\\n' "$a" >> "${logPath}"; done\nprintf '\\n' >> "${logPath}"\nexit 1\n`
     await Deno.writeTextFile(`${binDir}/ssh`, script, { mode: 0o755 })
+    // A fake docker too: a hook that wrongly takes the local path fails here instead of reaching
+    // the real Docker daemon.
+    await Deno.writeTextFile(
+      `${binDir}/docker`,
+      `#!/bin/sh\necho "docker $*" >> "${binDir}/docker.log"\nexit 1\n`,
+      { mode: 0o755 },
+    )
     const previousPath = Deno.env.get("PATH") ?? ""
     Deno.env.set("PATH", `${binDir}:${previousPath}`)
-    try {
-      return await fn(logPath)
-    } finally {
-      Deno.env.set("PATH", previousPath)
-    }
+    // Settled first, so a docker call is reported even when `fn` fails on the missing ssh log.
+    const [outcome] = await Promise.allSettled([fn(logPath)])
+    Deno.env.set("PATH", previousPath)
+    const docker = await Deno.readTextFile(`${binDir}/docker.log`).catch(() => "")
+    if (docker) throw new Error(`the hook ran docker on this machine, not over ssh: ${docker}`)
+    if (outcome.status === "rejected") throw outcome.reason
+    return outcome.value
   } finally {
     await Deno.remove(binDir, { recursive: true })
   }
@@ -183,7 +192,16 @@ async function runHookWithFakes(
     }
     await Deno.writeTextFile(logPath, "")
     const env = Deno.env.toObject()
-    for (const key of ["SSH_ADDRESS", "SSH_HOST", "SSH_PORT", "SSH_USER", "FAKE_TOOL_DEPTH"]) {
+    for (
+      const key of [
+        "SSH_ADDRESS",
+        "SSH_LOCAL",
+        "SSH_HOST",
+        "SSH_PORT",
+        "SSH_USER",
+        "FAKE_TOOL_DEPTH",
+      ]
+    ) {
       delete env[key]
     }
     const output = await new Deno.Command(Deno.execPath(), {
@@ -201,9 +219,11 @@ async function runHookWithFakes(
 }
 
 Deno.test("after.deploy.ts subprocess: on a local server (no SSH_HOST) it runs psql with the local docker and exits 0", async () => {
-  // What deploy sets for a local server: SSH_ADDRESS=local, and no SSH_HOST or SSH_PORT.
+  // What deploy sets for a local server: SSH_ADDRESS=local, SSH_LOCAL=true, and no SSH_HOST or
+  // SSH_PORT.
   const { code, calls } = await runHookWithFakes({
     SSH_ADDRESS: "local",
+    SSH_LOCAL: "true",
     SSH_USER: "root",
     PATH_APPS: "/srv/apps",
   })
@@ -223,4 +243,11 @@ Deno.test("after.deploy.ts subprocess: with SSH_HOST it runs the same psql over 
   const overSsh = `ssh -p 2222 -o ConnectTimeout=10 -o BatchMode=yes -- root@192.0.2.1 ${PSQL}`
   assertEquals(calls, [overSsh, overSsh])
   assertEquals(code, 0)
+})
+
+Deno.test("after.deploy.ts subprocess: without SSH_HOST and without SSH_LOCAL it refuses to run and calls no docker or ssh", async () => {
+  // A hook run by hand, outside a deploy: nothing says the server is this machine.
+  const { code, calls } = await runHookWithFakes({ SSH_USER: "root", PATH_APPS: "/srv/apps" })
+  assertEquals(calls, [])
+  assertEquals(code, 1)
 })
