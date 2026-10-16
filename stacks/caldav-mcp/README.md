@@ -206,8 +206,7 @@ mkdir -p ~/sync/code/mcps/caldav
 # Copy the launcher from another machine's synced copy (or write it per
 # stacks/caldav-mcp/README.md pattern), then edit .env with your creds.
 
-# 3. Restart opencode-web to pick up the new MCP
-systemctl --user restart opencode-web
+# 3. Restart your MCP client (OpenCode, say) so it picks up the new MCP
 ```
 
 ## Resources
