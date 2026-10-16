@@ -65,16 +65,16 @@ the checkout knows it only once its `+meta.ts` is registered in
 
 ```bash
 # In a fresh test folder
-mkdir /tmp/rostok-test && cd /tmp/rostok-test
+cd "$(mktemp -d)"
 deno run -A <checkout>/cli/+main.ts server create test -n \
   --var SSH_ADDRESS=local --var DOMAIN=example.com --var CONTACT_EMAIL=a@example.com
-deno run -A <checkout>/cli/+main.ts stack add your-new-stack -s test
+deno run -A <checkout>/cli/+main.ts stack add your-new-stack -s test -n
 ```
 
 The CLI's own tests sit next to their code under `cli/` (`*.test.ts`).
 
-For more thorough testing, run `deno task check` and verify the type
-checker walks through `stacks/<name>/compose.yml` references.
+`deno task check` also runs `cli/catalog.test.ts`, which checks that
+every stack's `+meta.ts` agrees with its `compose.yml` and hooks.
 
 ## Real-server test
 
@@ -84,7 +84,8 @@ key, installs rostok, runs the wizard, adds traefik, gatus, librespeed
 and piped, deploys, and then checks that every container is healthy,
 that each service answers over HTTPS, that the `.env` files are mode
 600 and that a second deploy changes nothing. Then it deletes the
-server and the key, also when it fails or you press Ctrl-C. A run
+server and the key, also when it fails, you press Ctrl-C or you
+close the terminal. A run
 takes about ten minutes and costs under one cent.
 
 ```bash

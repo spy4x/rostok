@@ -365,8 +365,9 @@ request and `v*` tag. A failing check blocks merge.
 
 For visual review, add the stack to a throwaway rostok project with
 the CLI from your checkout (`deno run -A <checkout>/cli/+main.ts stack
-add <name>`) and inspect the `.env` it writes (don't commit it — it's
-gitignored).
+add <name> -s <server> -n`; the steps are under "Local stack testing" in
+[contributing.md](contributing.md)) and inspect the `.env` it writes
+(don't commit it — it's gitignored).
 
 ---
 
