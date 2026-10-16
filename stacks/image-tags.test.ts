@@ -9,16 +9,6 @@ import { parseComposeImages } from "../cli/images/compose-images.ts"
 
 const stacksDir = new URL("./", import.meta.url)
 
-// Being edited by other lanes of the same wave; checked once those lanes merge.
-const SKIPPED = new Set([
-  "adguard",
-  "email-mcp",
-  "github-mcp",
-  "google-maps-mcp",
-  "open-webui",
-  "playwright",
-])
-
 // Tag variables named before the `_IMAGE_TAG` convention. Renaming them would drop the value a
 // user already set in a server's `.env`, and the next deploy would switch image.
 const LEGACY_NAMES = new Set(["CALDIY_VERSION", "IMMICH_VERSION"])
@@ -109,11 +99,10 @@ Deno.test("image tags: a hardcoded, missing or shared tag is reported", () => {
 const stacks = stacksWithCompose()
 
 Deno.test("image tags: the catalog has compose files to check", () => {
-  assert(stacks.filter((s) => !SKIPPED.has(s)).length > 10)
+  assert(stacks.length > 10)
 })
 
 for (const stack of stacks) {
-  if (SKIPPED.has(stack)) continue
   Deno.test(`${stack} compose.yml: every image tag is its own variable`, async () => {
     const text = await Deno.readTextFile(new URL(`./${stack}/compose.yml`, stacksDir))
     assertEquals(tagProblems(stack, text), [])
