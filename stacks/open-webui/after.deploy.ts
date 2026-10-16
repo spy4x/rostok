@@ -94,9 +94,18 @@ export function buildTargetCommand(
   ]
 }
 
-/** The playwright stack's network for its MCP proxy (`networks.mcp.name` in its compose.yml). */
-const NETWORK = `hl-playwright-mcp`
-/** The one container allowed to reach the MCP proxy. */
+/**
+ * The private networks of the MCP servers this stack can use, each `networks.mcp.name` in that
+ * stack's compose.yml. None of these servers asks for a credential, so each stays off the shared
+ * `proxy` network (spy4x/rostok#338, #398, #143) and only Open WebUI joins it.
+ */
+export const MCP_NETWORKS = [
+  `hl-playwright-mcp`,
+  `hl-email-mcp`,
+  `hl-github-mcp`,
+  `hl-google-maps-mcp`,
+] as const
+/** The one container allowed to reach the MCP servers. */
 const CLIENT = `hl-open-webui`
 
 /** A Docker container or network name: safe to put into a shell command unquoted. */
@@ -128,11 +137,12 @@ export function buildConnectScript(network: string, client: string): string {
 }
 
 if (import.meta.main) {
-  // The playwright stack keeps its MCP proxy on a network of its own (spy4x/rostok#338), and a
-  // recreated hl-open-webui has lost its place on it. A local server (SSH_ADDRESS=local) has no
-  // SSH_HOST: every command of this hook then runs on this machine.
-  {
-    const script = buildConnectScript(NETWORK, CLIENT)
+  // Each MCP server stack keeps its server on a network of its own, and a recreated
+  // hl-open-webui has lost its place on them. A network that does not exist is a stack this server
+  // does not run, and is skipped. A local server (SSH_ADDRESS=local) has no SSH_HOST: every command
+  // of this hook then runs on this machine.
+  for (const network of MCP_NETWORKS) {
+    const script = buildConnectScript(network, CLIENT)
     const host = Deno.env.get("SSH_HOST")
     const connect = await runCommand(
       host
@@ -146,7 +156,7 @@ if (import.meta.main) {
         : ["sh", "-c", script],
     )
     if (!connect.success) {
-      error(`could not connect ${CLIENT} to ${NETWORK}: ${connect.error || connect.output}`)
+      error(`could not connect ${CLIENT} to ${network}: ${connect.error || connect.output}`)
       Deno.exit(1)
     }
     log(connect.output.trim())

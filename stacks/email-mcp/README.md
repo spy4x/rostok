@@ -70,34 +70,14 @@ rostok deploy <server>
 
 ### 4. Wire into Open WebUI
 
-Add to `TOOL_SERVER_CONNECTIONS` in `stacks/open-webui/compose.yml`:
-
-```json
-{
-  "url": "http://hl-email-mcp:9557/mcp",
-  "type": "mcp",
-  "auth_type": "none",
-  "headers": {
-    "Accept": "application/json, text/event-stream",
-    "Content-Type": "application/json"
-  },
-  "info": {
-    "id": "email-mcp",
-    "name": "Email MCP",
-    "description": "IMAP + SMTP via mail.example.com"
-  },
-  "config": {
-    "enable": true,
-    "access_grants": [{ "principal_type": "user", "principal_id": "*", "permission": "read" }]
-  }
-}
-```
-
-Then restart Open WebUI:
+The `open-webui` stack already lists this server among its tool servers, switched off. Set
+`OPEN_WEBUI_ENABLE_EMAIL_MCP=true` in the server's `.env` and deploy both stacks:
 
 ```bash
 rostok deploy <server>
 ```
+
+Open WebUI's `after.deploy.ts` connects `hl-open-webui` to this stack's `hl-email-mcp` network.
 
 ### 5. Verify
 
@@ -136,12 +116,11 @@ certificate issued to another name. If one fails, every mail tool fails with
 for that name, or point `EMAIL_MCP_HOST` at the name its certificate covers. A
 self-signed certificate, or one from a private authority, fails too.
 
-## Attachment downloads (optional)
+## Attachment downloads
 
-Disabled by default for safety. To enable, set
-`MCP_EMAIL_SERVER_ENABLE_ATTACHMENT_DOWNLOAD=true` in `compose.yml`.
-The LLM can then call `download_attachment` to save files to a path inside
-the container. Mount a volume if you need files on the host.
+Off. `before.deploy.ts` writes `enable_attachment_download = false` into
+`config.toml` on every deploy, and no key of the `.env` turns it on, so the
+assistant cannot save received attachments inside the container.
 
 ## Second account
 
@@ -154,7 +133,12 @@ from the TOML file, not from env vars).
 
 - DNS rebinding protection is enabled. Allowed hosts/origins are restricted
   to the email-mcp container, Open WebUI, and localhost.
-- No Traefik labels — the MCP is only reachable from the proxy Docker network.
+- No Traefik labels, and the container is on no shared Docker network: only its own
+  `hl-email-mcp` network, which only Open WebUI joins. The endpoint asks for no credential, so
+  other containers on the server must not reach it.
+- Every signed-in Open WebUI user gets the mail tools once they are switched on, and the server
+  can attach any file it can read to a message it sends, including its own config with the
+  password. Switch the tools on only for accounts you trust (spy4x/rostok#143).
 - Container has `no-new-privileges:true` and a 256M memory limit.
 - The MCP holds your plaintext password in env. Rotate via
   `setup email update` on the mailserver if leaked.
@@ -166,5 +150,5 @@ from the TOML file, not from env vars).
 | `535 Authentication failed`          | Wrong password or missing account      | `setup email update you@example.com`                              |
 | `Connection refused` on port 993/587 | Firewall blocks home → cloud           | Check cloud security group                                        |
 | `CERTIFICATE_VERIFY_FAILED`          | Certificate not valid for the host     | See "TLS" above; also check the server clock with `date`          |
-| Tools not showing in Open WebUI      | TOOL_SERVER_CONNECTIONS misconfigured  | Check JSON syntax; restart Open WebUI container                   |
+| Tools not showing in Open WebUI      | Switch off, or not on the network      | `OPEN_WEBUI_ENABLE_EMAIL_MCP=true`, then `rostok deploy <server>` |
 | 403 from MCP                         | DNS rebinding protection blocks origin | Add host to `MCP_ALLOWED_HOSTS` / origin to `MCP_ALLOWED_ORIGINS` |

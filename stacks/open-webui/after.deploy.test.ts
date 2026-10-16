@@ -6,6 +6,7 @@ import {
   buildConnectScript,
   buildSshOptionArgs,
   buildTargetCommand,
+  MCP_NETWORKS,
   targetHost,
 } from "./after.deploy.ts"
 
@@ -204,11 +205,11 @@ Deno.test("after.deploy.ts subprocess: every ssh call (cp, exec, restart) puts -
     // Each ssh invocation logged its own argv followed by a blank line.
     const calls = logged.split("\n\n").map((block) => block.split("\n").filter((l) => l.length > 0))
       .filter((block) => block.length > 0)
-    // The playwright network connection, then docker cp, docker exec, docker restart.
-    assertEquals(calls.length, 4, `expected 4 ssh calls, got ${calls.length}: ${logged}`)
+    // One network connection per MCP stack, then docker cp, docker exec, docker restart.
+    assertEquals(calls.length, 7, `expected 7 ssh calls, got ${calls.length}: ${logged}`)
     assertEquals(
-      calls[0].slice(8),
-      buildConnectScript("hl-playwright-mcp", "hl-open-webui").split("\n"),
+      calls.slice(0, 4).map((argv) => argv.slice(8).join("\n")),
+      MCP_NETWORKS.map((network) => buildConnectScript(network, "hl-open-webui")),
     )
     for (const argv of calls) {
       const dashDashIdx = argv.indexOf("--")
@@ -319,8 +320,8 @@ Deno.test("connect script: does not connect a container that is on the network a
   assertEquals(calls.filter((call) => call.startsWith(`network connect`)), [])
 })
 
-Deno.test("after.deploy.ts subprocess: without SSH_HOST the connection is still made, through the local docker", async () => {
-  // No provider settings are passed, so the hook exits non-zero after the connection.
+Deno.test("after.deploy.ts subprocess: without SSH_HOST it connects hl-open-webui to every MCP stack's network, through the local docker", async () => {
+  // No provider settings are passed, so the hook exits non-zero after the connections.
   const calls = await withFakeDocker(
     { network: true, client: true, clientNetworks: `proxy ` },
     async (env) => {
@@ -333,7 +334,15 @@ Deno.test("after.deploy.ts subprocess: without SSH_HOST the connection is still 
       }).output()
     },
   )
-  assertEquals(calls.at(-1), `network connect hl-playwright-mcp hl-open-webui`)
+  assertEquals(
+    calls.filter((call) => call.startsWith(`network connect`)),
+    [
+      `network connect hl-playwright-mcp hl-open-webui`,
+      `network connect hl-email-mcp hl-open-webui`,
+      `network connect hl-github-mcp hl-open-webui`,
+      `network connect hl-google-maps-mcp hl-open-webui`,
+    ],
+  )
 })
 
 Deno.test("buildTargetCommand: no host — the command itself, for this machine, with no shell", () => {
@@ -429,6 +438,9 @@ Deno.test("after.deploy.ts subprocess: on a local server (no SSH_HOST) it copies
   const { code, calls, stdin } = await runHookWithFakes({ SSH_ADDRESS: "local", SSH_USER: "root" })
   assertEquals(calls, [
     "docker network inspect hl-playwright-mcp",
+    "docker network inspect hl-email-mcp",
+    "docker network inspect hl-github-mcp",
+    "docker network inspect hl-google-maps-mcp",
     "docker cp /srv/apps/stacks/open-webui/init-models.py hl-open-webui:/tmp/init-models.py",
     `docker exec -i hl-open-webui sh -c ${CONTAINER_SCRIPT}`,
     "docker restart hl-open-webui",
@@ -445,13 +457,13 @@ Deno.test("after.deploy.ts subprocess: with SSH_HOST it copies, runs and restart
     SSH_USER: "root",
   })
   const ssh = "ssh -p 2222 -o ConnectTimeout=10 -o BatchMode=yes -- root@192.0.2.1"
-  assertEquals(calls.slice(1), [
+  assertEquals(calls.slice(4), [
     `${ssh} docker cp /srv/apps/stacks/open-webui/init-models.py hl-open-webui:/tmp/init-models.py`,
     `${ssh} docker exec -i hl-open-webui sh -c '${CONTAINER_SCRIPT}'`,
     `${ssh} docker restart hl-open-webui`,
   ])
-  // The first call is the connect script, which an earlier test covers.
-  assertEquals(calls.length, 4)
+  // The first four calls are the connect scripts, which an earlier test covers.
+  assertEquals(calls.length, 7)
   assertEquals(stdin, "sk-test\nhttps://example.com/v1\n")
   assertEquals(code, 0)
 })

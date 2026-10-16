@@ -1,8 +1,8 @@
 // Stack metadata for `email-mcp`.
 //
 // mcp-email-server (IMAP + SMTP) over Streamable HTTP. Internal only: no Traefik route, so no
-// domain and no `requires: ["traefik"]`. Other containers on the `proxy` network reach it as
-// `http://hl-email-mcp:9557/mcp`.
+// domain and no `requires: ["traefik"]`. Only Open WebUI reaches it, as
+// `http://hl-email-mcp:9557/mcp` on this stack's own `hl-email-mcp` network (spy4x/rostok#143).
 //
 // compose.yml reads none of these keys: `before.deploy.ts` renders them into
 // `stacks/email-mcp/config.toml`, which the container mounts. One account is required, a second

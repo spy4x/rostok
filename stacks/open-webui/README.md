@@ -63,8 +63,12 @@ leave it empty to keep them all.
 
 Declared in `+meta.ts`; `rostok stack add open-webui` writes them to the server's `.env`. Requires
 the `traefik` stack. `after.deploy.ts` copies the provider list into Open WebUI's database on
-every deploy. It also connects `hl-open-webui` to the playwright stack's `hl-playwright-mcp` network
-when that network exists.
+every deploy. It also connects `hl-open-webui` to the private network of each MCP server stack
+(`hl-playwright-mcp`, `hl-email-mcp`, `hl-github-mcp`, `hl-google-maps-mcp`) that exists on the
+server. Those servers ask callers for no credential, so they are on no shared network, and Open
+WebUI is the only other container that can reach them. `rostok deploy <server>` runs this hook
+every time; after `rostok deploy <server> <mcp stack>` of a newly added MCP stack alone, run
+`rostok deploy <server> open-webui` too, so the new network is connected.
 
 | Key                                                    | Default                                  | Meaning                                                            |
 | ------------------------------------------------------ | ---------------------------------------- | ------------------------------------------------------------------ |

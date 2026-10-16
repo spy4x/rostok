@@ -7,7 +7,7 @@ and the Go binary's stdio with session management).
 ## What it does
 
 Provides AI assistants with GitHub API access: repositories, issues, pull requests,
-Actions, code search, users, and more. Used by OpenWebUI and OpenCode Web.
+Actions, code search, users, and more. Used by Open WebUI.
 
 ## Setup
 
@@ -43,3 +43,14 @@ Default (`*`) enables all tool groups.
 | Consumer  | Connection                                                    |
 | --------- | ------------------------------------------------------------- |
 | OpenWebUI | `http://hl-github-mcp:3000/mcp` (via TOOL_SERVER_CONNECTIONS) |
+
+To switch it on, set `OPEN_WEBUI_ENABLE_GITHUB_MCP=true` in the server's `.env` and run
+`rostok deploy <server>`.
+
+## Security
+
+The endpoint asks callers for no credential and acts with your token, so the container is on no
+shared Docker network: only its own `hl-github-mcp` network, which Open WebUI's `after.deploy.ts`
+connects `hl-open-webui` to. No other container on the server can reach it. Every signed-in Open
+WebUI user gets the GitHub tools once they are switched on; narrow the token's scopes and
+`GITHUB_MCP_TOOLSETS` to what those users may do.

@@ -1,6 +1,9 @@
 networks:
-  proxy:
-    external: true
+  # The endpoint asks callers for no credential, so it stays off the shared `proxy` network.
+  # Only this server and its one client, Open WebUI (connected by that stack's after.deploy.ts),
+  # are on this one.
+  mcp:
+    name: hl-email-mcp
 
 services:
   # Email MCP — IMAP + SMTP for AI assistants (OpenWebUI).
@@ -16,7 +19,7 @@ services:
       # --- HTTP transport ---
       - MCP_HOST=0.0.0.0
       - MCP_PORT=9557
-      # Allow connections from OpenWebUI container on the proxy network.
+      # Allow connections from the Open WebUI container on this stack's own network.
       # DNS rebinding protection enabled (default). Bare host entries allow any port.
       - MCP_ALLOWED_HOSTS=hl-email-mcp:*,hl-open-webui:*,localhost:*,127.0.0.1:*
       - MCP_ALLOWED_ORIGINS=http://hl-email-mcp:*,http://hl-open-webui:*,http://localhost:*,http://127.0.0.1:*
@@ -26,6 +29,10 @@ services:
       - MCP_EMAIL_SERVER_CONFIG_PATH=/config.toml
     volumes:
       # Rendered by before.deploy.ts; mode 0600 on disk.
+      # Keep this a single-file mount, never the folder: upstream's add_email_account saves by
+      # renaming a temporary file over the config file, which cannot work on a mounted file. That
+      # failure is what stops any caller from adding an account with a mail host of its own
+      # choice (spy4x/rostok#143).
       - ./config.toml:/config.toml:ro
     deploy:
       resources:
@@ -35,7 +42,7 @@ services:
     security_opt:
       - no-new-privileges:true
     networks:
-      - proxy
+      - mcp
     labels:
       # Internal MCP — no Traefik exposure. OpenWebUI reaches it via Docker DNS.
       - "traefik.enable=false"

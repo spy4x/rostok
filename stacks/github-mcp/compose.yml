@@ -1,6 +1,9 @@
 networks:
-  proxy:
-    external: true
+  # The endpoint asks callers for no credential, so it stays off the shared `proxy` network.
+  # Only this server and its one client, Open WebUI (connected by that stack's after.deploy.ts),
+  # are on this one.
+  mcp:
+    name: hl-github-mcp
 
 services:
   # GitHub MCP — wraps github-mcp-server (Go stdio binary) in Streamable HTTP
@@ -34,7 +37,7 @@ services:
     security_opt:
       - no-new-privileges:true
     networks:
-      - proxy
+      - mcp
     labels:
       # Internal MCP — no Traefik exposure. OpenWebUI reaches it via Docker DNS.
       - "traefik.enable=false"
