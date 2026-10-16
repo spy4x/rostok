@@ -158,7 +158,7 @@ Deno.test("pinImages: a registry answer with control characters is warned about 
   )
   assertEquals(entries, [])
   assertEquals(warnings.length, 1)
-  assertStringIncludes(warnings[0], "owned")
+  assertStringIncludes(warnings[0], "is not valid JSON")
   const sent = ["\x1b", "\x07", "\x9b"].filter((c) => warnings[0].includes(c))
   assertEquals(sent, [], JSON.stringify(warnings[0]))
 })

@@ -507,7 +507,7 @@ Deno.test("runDeploy: control characters in the stale-stack cleanup's output nev
     await runDeploy({ cwd: f.projectDir, server: "test" }, f.io)
 
     const line = logged.find((l) => l.includes("unsafe name"))
-    assertEquals(line, "skipped 'x]0;PWNED[31mRED': unsafe name")
+    assertEquals(line, "skipped 'xRED': unsafe name")
   } finally {
     console.log = originalLog
     await teardownRunDeployFixture(f)
@@ -526,7 +526,7 @@ Deno.test("runDeploy: a failed stale-stack cleanup's error message carries no co
       () => runDeploy({ cwd: f.projectDir, server: "test" }, f.io),
       UserError,
     )
-    assertStringIncludes(err.message, "docker: bad label 'x[2J'")
+    assertStringIncludes(err.message, "docker: bad label 'x'")
     assertEquals(err.message.includes("\x1b"), false, err.message)
   } finally {
     await teardownRunDeployFixture(f)

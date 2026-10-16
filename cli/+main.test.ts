@@ -411,11 +411,11 @@ Deno.test("formatCliError: strips control characters from a UserError's message 
   // at the point where the message is built — this is the single,
   // central point that must catch every one of those instead.
   const lines = formatCliError(new UserError("bad path: x\x1b]0;PWNED\x07ume"), false)
-  assertEquals(lines, ["rostok: bad path: x]0;PWNEDume"])
+  assertEquals(lines, ["rostok: bad path: xume"])
 })
 
 Deno.test("formatCliError: strips C1 control characters too", () => {
-  const lines = formatCliError(new UserError("bad path: x\x9bPWNED\x9c"), false)
+  const lines = formatCliError(new UserError("bad path: x\x9b2JPWNED\x9c"), false)
   assertEquals(lines, ["rostok: bad path: xPWNED"])
 })
 
@@ -763,6 +763,6 @@ Deno.test({
 Deno.test("formatCliError: strips control characters from the debug stack trace too (#243 security review)", () => {
   const lines = formatCliError(new Error("x\x1b]0;PWNED\x07\u009b31m"), true)
   assertEquals(lines.length, 3)
-  assertStringIncludes(lines[2], "x]0;PWNED31m")
+  assertStringIncludes(lines[2], "Error: x\n")
   for (const c of ["\x1b", "\x07", "\u009b"]) assert(!lines[2].includes(c), lines[2])
 })
