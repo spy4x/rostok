@@ -62,8 +62,9 @@ services:
       - HF_TOKEN=${OPEN_WEBUI_HF_TOKEN}
 
       # --- LLM Providers (OpenAI-compatible) ---
-      - OPENAI_API_KEYS=${OPEN_WEBUI_OPENAI_API_KEYS}
-      - OPENAI_API_BASE_URLS=${OPEN_WEBUI_OPENAI_API_BASE_URLS}
+      # Both empty on a server that only uses Ollama.
+      - OPENAI_API_KEYS=${OPEN_WEBUI_OPENAI_API_KEYS:-}
+      - OPENAI_API_BASE_URLS=${OPEN_WEBUI_OPENAI_API_BASE_URLS:-}
       # Optional whitelist of models per provider, as JSON keyed by the provider's position in the
       # lists above. Empty = every model a provider returns is listed. See the README.
       - OPENAI_API_CONFIGS=${OPEN_WEBUI_OPENAI_API_CONFIGS:-}

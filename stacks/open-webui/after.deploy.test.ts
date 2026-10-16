@@ -1,11 +1,13 @@
 // Tests for stacks/open-webui/after.deploy.ts: its pure command helpers, then the hook as a
 // subprocess with a fake `ssh` or a fake `docker` on PATH.
 
-import { assertEquals, assertThrows } from "@std/assert"
+import { assertEquals, assertStringIncludes, assertThrows } from "@std/assert"
 import {
   buildConnectScript,
   buildSshOptionArgs,
   buildTargetCommand,
+  invalidEnableKeys,
+  MCP_ENABLE_KEYS,
   MCP_NETWORKS,
   targetHost,
 } from "./after.deploy.ts"
@@ -321,7 +323,7 @@ Deno.test("connect script: does not connect a container that is on the network a
 })
 
 Deno.test("after.deploy.ts subprocess: without SSH_HOST it connects hl-open-webui to every MCP stack's network, through the local docker", async () => {
-  // No provider settings are passed, so the hook exits non-zero after the connections.
+  // This fake docker refuses `docker cp`, so the hook exits non-zero after the connections.
   const calls = await withFakeDocker(
     { network: true, client: true, clientNetworks: `proxy ` },
     async (env) => {
@@ -386,7 +388,7 @@ Deno.test("buildTargetCommand: over ssh an argument with shell syntax reaches th
  */
 async function runHookWithFakes(
   hookEnv: Record<string, string>,
-): Promise<{ code: number; calls: string[]; stdin: string }> {
+): Promise<{ code: number; calls: string[]; stdin: string; stderr: string }> {
   const binDir = await Deno.makeTempDir({ prefix: "rostok-fake-open-webui-" })
   const logPath = `${binDir}/calls.log`
   const stdinPath = `${binDir}/stdin.log`
@@ -420,10 +422,15 @@ async function runHookWithFakes(
       },
       clearEnv: true,
       stdout: "null",
-      stderr: "null",
+      stderr: "piped",
     }).output()
     const calls = (await Deno.readTextFile(logPath)).split("\n").filter((line) => line.length > 0)
-    return { code: output.code, calls, stdin: await Deno.readTextFile(stdinPath) }
+    return {
+      code: output.code,
+      calls,
+      stdin: await Deno.readTextFile(stdinPath),
+      stderr: new TextDecoder().decode(output.stderr),
+    }
   } finally {
     await Deno.remove(binDir, { recursive: true })
   }
@@ -466,4 +473,46 @@ Deno.test("after.deploy.ts subprocess: with SSH_HOST it copies, runs and restart
   assertEquals(calls.length, 7)
   assertEquals(stdin, "sk-test\nhttps://example.com/v1\n")
   assertEquals(code, 0)
+})
+
+Deno.test("invalidEnableKeys: accepts true, false, empty and unset", () => {
+  assertEquals(
+    invalidEnableKeys({
+      OPEN_WEBUI_ENABLE_PLAYWRIGHT_MCP: "true",
+      OPEN_WEBUI_ENABLE_CALDAV_MCP: "false",
+      OPEN_WEBUI_ENABLE_EMAIL_MCP: "",
+    }),
+    [],
+  )
+})
+
+Deno.test("invalidEnableKeys: names every MCP switch whose value would break the JSON", () => {
+  for (const bad of ["yes", "True", "1", "true,", `true}],"x":{`]) {
+    const env = Object.fromEntries(MCP_ENABLE_KEYS.map((key) => [key, bad]))
+    assertEquals(invalidEnableKeys(env), [...MCP_ENABLE_KEYS], bad)
+  }
+})
+
+Deno.test("after.deploy.ts subprocess: an MCP switch that is not true or false fails the deploy, naming the key, before any docker call", async () => {
+  const { code, calls, stderr } = await runHookWithFakes({ OPEN_WEBUI_ENABLE_EMAIL_MCP: "yes" })
+  assertEquals(code, 1)
+  assertEquals(calls, [])
+  assertStringIncludes(stderr, "OPEN_WEBUI_ENABLE_EMAIL_MCP must be true or false")
+})
+
+Deno.test("after.deploy.ts subprocess: with no OpenAI-compatible provider (Ollama only) it still runs and exits 0", async () => {
+  const { code, calls, stdin } = await runHookWithFakes({
+    OPEN_WEBUI_OPENAI_API_KEYS: "",
+    OPEN_WEBUI_OPENAI_API_BASE_URLS: "",
+  })
+  assertEquals(calls.at(-1), "docker restart hl-open-webui")
+  assertEquals(stdin, "\n\n")
+  assertEquals(code, 0)
+})
+
+Deno.test("after.deploy.ts subprocess: provider keys without base URLs fail the deploy before any docker cp", async () => {
+  const { code, calls, stderr } = await runHookWithFakes({ OPEN_WEBUI_OPENAI_API_BASE_URLS: "" })
+  assertEquals(code, 1)
+  assertEquals(calls.filter((call) => call.startsWith("docker cp")), [])
+  assertStringIncludes(stderr, "or neither")
 })

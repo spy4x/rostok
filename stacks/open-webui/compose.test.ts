@@ -140,3 +140,8 @@ Deno.test("open-webui: OPEN_WEBUI_ENABLE_RAG_LOCAL_WEB_FETCH=true turns local we
   })
   assertEquals(env.ENABLE_RAG_LOCAL_WEB_FETCH, "true")
 })
+
+Deno.test("open-webui: with no OpenAI-compatible provider the provider lists are empty", async () => {
+  const env = await environmentWith(DEFAULT_ANSWERS)
+  assertEquals([env.OPENAI_API_KEYS, env.OPENAI_API_BASE_URLS], ["", ""])
+})
