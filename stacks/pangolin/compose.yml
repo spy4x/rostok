@@ -76,7 +76,7 @@ services:
   # the global deploy filter `name=hl-traefik` doesn't accidentally match and
   # remove it when deploying the main traefik stack.
   traefik:
-    image: traefik:${PANGOLIN_TRAEFIK_IMAGE_TAG:-v3.7.6}
+    image: traefik:${PANGOLIN_TRAEFIK_IMAGE_TAG:-v3.7.15}
     container_name: ${PANGOLIN_TRAEFIK_CONTAINER_NAME:-hl-pangolin-traefik}
     restart: unless-stopped
     network_mode: service:gerbil
