@@ -904,14 +904,18 @@ Deno.test("STAGING_CLEANUP_SIGNALS: exit codes follow the shell's 128 + signal n
 
 // #282 — a local server (SSH_ADDRESS=local) runs two guards before any step.
 
-async function writeLocalServer(projectDir: string, pathApps: string): Promise<void> {
+async function writeLocalServer(
+  projectDir: string,
+  pathApps: string,
+  volumesPath = "/srv/volumes",
+): Promise<void> {
   const serverDir = join(projectDir, "servers", "test")
   await Deno.mkdir(serverDir, { recursive: true })
   const envLines = [
     "SSH_ADDRESS=local",
     "SSH_USER=deploy",
     `PATH_APPS=${pathApps}`,
-    "VOLUMES_PATH=/srv/volumes",
+    `VOLUMES_PATH=${volumesPath}`,
     "PUID=1000",
     "PGID=1000",
     "DOCKER_GROUP_ID=988",
@@ -1048,6 +1052,28 @@ Deno.test("runDeploy: a local PATH_APPS that does not exist yet passes the path 
     }
     await runDeploy({ cwd: f.projectDir, server: "test" }, io)
     assertEquals(endpointChecks, ["local"])
+  } finally {
+    await Deno.remove(elsewhere, { recursive: true })
+    await teardownRunDeployFixture(f)
+  }
+})
+
+Deno.test("runDeploy: a local VOLUMES_PATH under a file is refused with a UserError that names VOLUMES_PATH, not PATH_APPS (#291)", async () => {
+  const f = await setupRunDeployFixture()
+  const elsewhere = await Deno.makeTempDir({ prefix: "rostok-rundeploy-elsewhere-" })
+  try {
+    const dir = await Deno.realPath(elsewhere)
+    const file = join(dir, "a-file")
+    await Deno.writeTextFile(file, "")
+    const volumesPath = `${file}/volumes`
+    await writeLocalServer(f.projectDir, join(dir, "apps"), volumesPath)
+    const io: RunDeployIO = { ...f.io, checkLocalDockerEndpoint: async () => {} }
+    const err = await assertRejects(
+      () => runDeploy({ cwd: f.projectDir, server: "test" }, io),
+      UserError,
+    )
+    assertStringIncludes(err.message, `cannot resolve VOLUMES_PATH (${volumesPath})`)
+    assertEquals(f.remote.calls, [])
   } finally {
     await Deno.remove(elsewhere, { recursive: true })
     await teardownRunDeployFixture(f)
