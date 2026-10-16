@@ -117,4 +117,6 @@ stack's, when you name it), re-encrypts, and prints for each moved pin
 the image's source link (its `org.opencontainers.image.source` label)
 or, when it has none, its registry page, so you can read what changed.
 It does not deploy: run `rostok deploy <server>` afterwards. Floating
-tags and unset variables are not touched.
+tags and unset variables are not touched. A new version tag is written only when the
+registry serves its manifest; one it lists but cannot serve gets a
+warning, and its pin stays as it was.

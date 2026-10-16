@@ -126,6 +126,23 @@ export async function updatePins(
   source: ComposeSource = {},
 ): Promise<PinRow[]> {
   const rows = await checkPins(cwd, server, client, stack, source)
+  // #425: a tag in the registry's list can still lack a manifest. Write
+  // only a version tag whose digest the registry serves now; a digest
+  // pin's new value was just read from the registry.
+  for (const row of rows) {
+    if (row.state !== "outdated" || row.newest === undefined || DIGEST_PIN.test(row.newest)) {
+      continue
+    }
+    try {
+      await client.digest(parseImageRef(row.image)!, row.newest)
+    } catch (error) {
+      row.state = "unknown"
+      row.detail = `${row.newest} is listed but cannot be pulled: ${
+        error instanceof Error ? error.message : String(error)
+      }`
+      row.newest = undefined
+    }
+  }
   const moved = rows.filter((r) => r.state === "outdated" && r.newest !== undefined)
   if (moved.length === 0) return rows
   await writeEnvFilePreservingFormat(

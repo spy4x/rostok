@@ -236,6 +236,32 @@ Deno.test("images update warns about an image it could not check and still moves
   })
 })
 
+// #425: a tag can be in the registry's tag list and still not be
+// pullable (its manifest is gone). update writes only a tag whose
+// manifest the registry serves.
+Deno.test("images update writes only a tag the registry confirms, and warns about the one it cannot", async () => {
+  await withProject(async (dir) => {
+    const registry = registryFixture()
+    const fetchWithoutV6 = ((input: string | URL | Request, init?: RequestInit) =>
+      String(input).endsWith("/twin/gatus/manifests/v6.0.0")
+        ? Promise.resolve(new Response(null, { status: 404 }))
+        : registry.fetch(input, init)) as typeof fetch
+    const { lines } = await capture(() =>
+      runImagesUpdate("home", "gatus", dir, { fetch: fetchWithoutV6 })
+    )
+    const env = await Deno.readTextFile(serverEnvPath(dir))
+    assertStringIncludes(env, "GATUS_IMAGE_TAG=v5.11.0")
+    assertStringIncludes(env, "GATUS_DB_IMAGE_TAG=16.9")
+    const text = lines.join("\n")
+    assertStringIncludes(
+      text,
+      "rostok: could not check ghcr.io/twin/gatus (v6.0.0 is listed but cannot be pulled: " +
+        "ghcr.io answered HTTP 404).",
+    )
+    assertStringIncludes(text, "Updated 1 pin in servers/home/.env.")
+  })
+})
+
 Deno.test("images commands refuse a server that does not exist and a stack that is not on the server", async () => {
   await withProject(async (dir) => {
     const fetchFn = registryFixture().fetch
