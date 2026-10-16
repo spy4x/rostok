@@ -12,7 +12,7 @@
 [Commands](docs/commands.md) · [How it works](docs/how-it-works.md) ·
 [Catalog](docs/usage/catalog.md) · [All docs](docs/README.md)
 
-![A terminal runs "rostok stack list", which lists seven stacks by category, then "rostok": the wizard creates the project, generates an encryption key, asks for the server's name, SSH address, domain and email, keeps the defaults for the rest, adds librespeed and traefik, and prints the next step, "rostok deploy home".](docs/screenshots/demo.gif)
+![A terminal runs "rostok stack list", which lists the 49 catalog stacks by category, then "rostok": the wizard creates the project, generates an encryption key, keeps pinned image versions, asks for the server's name, SSH address, domain and email, keeps the defaults for the rest, adds librespeed and traefik, and prints the next step, "rostok deploy home".](docs/screenshots/demo.gif)
 
 </div>
 

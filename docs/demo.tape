@@ -7,6 +7,10 @@
 # /tmp/homelab and stops if that folder already exists; it deletes the folder when it is done.
 # Placeholder data only: jane@example.com, example.com hosts, Europe/Berlin. The SSH probe fails
 # fast because home.example.com does not resolve, so nothing leaves the machine.
+#
+# vhs writes about 4 MB. To shrink it to about 3 MB without losing the colours, re-encode it:
+#   ffmpeg -i docs/screenshots/demo.gif -vf "mpdecimate,split[a][b];[a]palettegen=max_colors=64[p];[b][p]paletteuse=dither=none:diff_mode=rectangle" -fps_mode vfr /tmp/demo.gif
+# then move /tmp/demo.gif over docs/screenshots/demo.gif.
 
 Output docs/screenshots/demo.gif
 
@@ -42,6 +46,9 @@ Sleep 400ms
 Enter
 Wait+Screen /generate one now/
 Sleep 1s
+Enter
+Wait+Screen /IMAGE_POLICY/
+Sleep 800ms
 Enter
 Wait+Screen /SERVER_NAME/
 Sleep 800ms
@@ -85,14 +92,15 @@ Wait+Screen /PATH_APPS/
 Sleep 400ms
 Enter
 
-# Pick librespeed and traefik from the catalog.
+# Pick librespeed and traefik from the catalog. The picker lists the stacks by name, so the moves
+# below depend on the catalog: librespeed is the 23rd stack and traefik the 39th.
 Wait+Screen /Pick stacks/
 Sleep 1500ms
-Down 4
+Down 22
 Sleep 400ms
 Space
 Sleep 400ms
-Down
+Down 16
 Sleep 400ms
 Space
 Sleep 1s
