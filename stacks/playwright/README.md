@@ -86,6 +86,10 @@ Nothing is routed through Traefik. Only Open WebUI, and any container you connec
 | ---------------------- | --------------- | ------------------------------------------------------------------ |
 | `PLAYWRIGHT_IMAGE_TAG` | `v1.60.0-noble` | Image tag of `mcr.microsoft.com/playwright` (service `playwright`) |
 
+`PLAYWRIGHT_IMAGE_TAG` must stay on the same Playwright version as the `playwright@` command in
+`compose.yml` and the base image in `Dockerfile.mcp-proxy` (1.60.0 today): the browsers in the
+image belong to that version. Change all three together.
+
 The MCP proxy (service `playwright-mcp`) is built from `Dockerfile.mcp-proxy`, whose base image
 is pinned there, so it has no tag variable.
 
