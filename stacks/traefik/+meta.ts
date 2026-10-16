@@ -26,7 +26,7 @@ export default {
   variables: [
     {
       key: "TRAEFIK_IMAGE_TAG",
-      default: "3.7.6",
+      default: "3.7.15",
       required: false,
     },
     {
