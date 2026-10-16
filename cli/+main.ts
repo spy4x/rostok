@@ -53,6 +53,10 @@ Examples:
     rostok offline status                 # backup drive: settings, disks, tools
     rostok offline backup --drive sdb -n  # copy the backups to an external drive`
 
+/**
+ * Build the `rostok` command tree: the root command (which runs the setup wizard) with its global
+ * options, and every subcommand. Errors are thrown, not printed, so {@link runCli} formats them.
+ */
 // deno-lint-ignore no-explicit-any
 export function buildCommand(): any {
   const cmd = new Command()
