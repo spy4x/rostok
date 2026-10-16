@@ -65,6 +65,7 @@ export async function verifyBackups(
   backupPaths: BackupPath[],
   resticPassword: string,
   fullVerification = false,
+  interactive = true,
 ): Promise<VerifyResults> {
   const verificationType = fullVerification
     ? "100% data verification"
@@ -84,7 +85,7 @@ export async function verifyBackups(
     console.log("   Backup verification is HIGHLY RECOMMENDED for data integrity.")
     console.log("   Install restic: https://restic.net/")
     console.log("   Without verification, corrupted backups may go undetected.")
-    const skip = prompt("\n❓ Skip verification anyway? (yes/no) [no]: ")
+    const skip = interactive ? prompt("\n❓ Skip verification anyway? (yes/no) [no]: ") : "no"
     if (skip?.toLowerCase() !== "yes") {
       console.log("\n❌ Verification cancelled. Please install restic and try again.")
       throw new Error("Restic verification required but restic not installed")

@@ -1,8 +1,10 @@
 import type { BackupPath } from "./types.ts"
+import { choose, type Options } from "./options.ts"
 
 export async function checkDeletedRepos(
   backupPaths: BackupPath[],
   mountPoint: string,
+  options: Options,
 ): Promise<boolean> {
   for (const backupPath of backupPaths) {
     const expanded = backupPath.source.replace(/^~/, Deno.env.get("HOME") || "~")
@@ -30,9 +32,19 @@ export async function checkDeletedRepos(
         console.log("   They will be DELETED from the drive:\n")
         driveRepos.forEach((repo) => console.log(`     - ${repo}`))
 
-        const confirm = prompt("\n❓ Continue and delete these repositories? (yes/no) [yes]: ") ||
-          "yes"
-        if (confirm?.toLowerCase() !== "yes") {
+        // Deleting is irreversible: an unattended run deletes only with
+        // --delete-missing and otherwise stops, keeping the drive as it is.
+        if (!options.interactive && !options.deleteMissing) {
+          console.log("   Not deleted: pass --delete-missing to allow it.")
+          return false
+        }
+        const confirm = choose(
+          options,
+          options.deleteMissing ? "yes" : undefined,
+          "\n❓ Continue and delete these repositories? (yes/no) [yes]: ",
+          "yes",
+        )
+        if (confirm.toLowerCase() !== "yes") {
           return false
         }
       }

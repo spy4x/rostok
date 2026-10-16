@@ -11,8 +11,9 @@ import {
 } from "./drive.ts"
 import { parseBackupPaths } from "./helpers.ts"
 import { verifyBackups } from "./verify.ts"
+import { choose, chooseDrive, confirmRestore, type Options, USAGE_EXIT_CODE } from "./options.ts"
 
-export async function restore(envVars: Record<string, string>): Promise<void> {
+export async function restore(envVars: Record<string, string>, options: Options): Promise<void> {
   const backupPathsJson = envVars.BACKUP_PATHS
   const resticPassword = envVars.BACKUPS_PASSWORD
 
@@ -47,13 +48,13 @@ export async function restore(envVars: Record<string, string>): Promise<void> {
     console.log(`  ${i + 1}. ${d.name} - ${d.size} - ${d.model}`)
   })
 
-  const driveInput = prompt("\n🔍 Enter drive name (e.g., 'sda'): ")
+  const driveInput = chooseDrive(options)
   if (!driveInput) {
     console.log("❌ No drive selected")
     Deno.exit(0)
   }
 
-  const driveName = driveInput.trim()
+  const driveName = driveInput
   const device = `/dev/${driveName}`
   const partition = `${device}1`
 
@@ -69,8 +70,13 @@ export async function restore(envVars: Record<string, string>): Promise<void> {
       const currentMount = await getMountPoint(partition)
       if (currentMount) {
         console.log(`   Current mount point: ${currentMount}`)
-        const useExisting = prompt("Use this mount point? (yes/no) [no]: ")
-        if (useExisting?.toLowerCase() === "yes") {
+        const useExisting = choose(
+          options,
+          options.useMounted ? "yes" : undefined,
+          "Use this mount point? (yes/no) [no]: ",
+          "no",
+        )
+        if (useExisting.toLowerCase() === "yes") {
           MOUNT_POINT = currentMount
         } else {
           await unmountDrive(partition, currentMount)
@@ -112,14 +118,14 @@ export async function restore(envVars: Record<string, string>): Promise<void> {
       console.log("\nℹ️  No README found\n")
     }
 
-    const confirm = prompt(
-      "\n⚠️  Type 'RESTORE' to restore all backups to local folders: ",
-    )
-    if (confirm !== "RESTORE") {
+    if (!confirmRestore(options)) {
       console.log("❌ Restore cancelled")
+      if (!options.interactive && !options.overwriteLocal) {
+        console.log("   Pass --overwrite-local to restore without a terminal.")
+      }
       await unmountDrive(partition, MOUNT_POINT)
       await ejectDrive(device)
-      Deno.exit(0)
+      Deno.exit(options.interactive ? 0 : USAGE_EXIT_CODE)
     }
 
     for (const bp of backupPaths) {
@@ -160,7 +166,7 @@ export async function restore(envVars: Record<string, string>): Promise<void> {
     console.log("\n✅ All restores completed")
 
     console.log("\n🔍 Verifying restored backups...")
-    await verifyBackups(MOUNT_POINT, backupPaths, resticPassword)
+    await verifyBackups(MOUNT_POINT, backupPaths, resticPassword, false, options.interactive)
 
     console.log("\n✅ Restore completed successfully!")
     console.log("\nBackups restored to:")
