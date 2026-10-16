@@ -75,6 +75,14 @@ Deno.test("resolvePin: a full version default is already exact and is written wi
   assertEquals(registry.calls, [])
 })
 
+Deno.test("resolvePin: a default already pinned by digest is exact and is written without asking the registry (#437)", async () => {
+  const registry = fakeRegistry({})
+  const client = createRegistryClient({ fetch: registry.fetch })
+  const pinned = `8-bookworm@${sha("a1")}`
+  assertEquals(await resolvePin(client, ref("docker.io/valkey/valkey"), pinned), pinned)
+  assertEquals(registry.calls, [])
+})
+
 Deno.test("pinImages: an unreachable registry gives one warning naming the image and no entry, others still pin", async () => {
   const registry = fakeRegistry({
     "ghcr.io/twin/gatus": { tags: { latest: sha("b1"), "v5.12.1": sha("b1") } },

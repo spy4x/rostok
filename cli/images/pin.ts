@@ -17,8 +17,9 @@ const MAX_DIGEST_CHECKS = 25
  * `<defaultTag>@sha256:…` when no version tag shares it.
  *
  * When `defaultTag` is itself a version, a pin never crosses its major
- * version. A full version (`3.7.6`, three numbers or more) is already
- * exact and is returned as it is, without asking the registry. A
+ * version. A full version (`3.7.6`, three numbers or more) or a tag
+ * already pinned by digest (`8-bookworm@sha256:…`) is already exact and
+ * is returned as it is, without asking the registry. A
  * shorter one (`16`, `1.29`) moves with every release, so only more
  * exact tags with the same first number are considered (`16.9`), and
  * the digest form keeps the default tag's own line.
@@ -28,6 +29,7 @@ export async function resolvePin(
   ref: ImageRef,
   defaultTag: string,
 ): Promise<string> {
+  if (defaultTag.includes("@sha256:")) return defaultTag
   const line = parseVersionTag(defaultTag)
   if (line && line.parts.length >= 3) return defaultTag
   const digest = await client.digest(ref, defaultTag)
@@ -53,12 +55,14 @@ export async function resolvePin(
 /**
  * Resolve a pin for each of `images`. An image whose registry is not
  * supported, unreachable or rate-limited gets one warning that names it
- * and no entry: its variable stays unset. Never throws. Warnings carry no control characters.
+ * and no entry: its variable keeps the value `held` names for it, or
+ * stays unset. Never throws. Warnings carry no control characters.
  */
 export async function pinImages(
   images: ComposeImage[],
   client: RegistryClient,
   warn: (message: string) => void,
+  held: ReadonlyMap<string, string> = new Map(),
 ): Promise<EnvEntry[]> {
   const entries: EnvEntry[] = []
   for (const { image, variable, defaultTag } of images) {
@@ -68,10 +72,14 @@ export async function pinImages(
       entries.push({ key: variable, value: await resolvePin(client, ref, defaultTag) })
     } catch (error) {
       const reason = error instanceof Error ? error.message : String(error)
+      const value = held.get(variable)
+      const stays = value === undefined
+        ? `stays unset, so the image follows "${defaultTag}"`
+        : `stays "${value}"`
       // The reason can quote the registry's own answer: strip it (#425).
       warn(stripControlChars(
-        `rostok: could not pin ${image}:${defaultTag} (${reason}). ${variable} stays unset, so ` +
-          `the image follows "${defaultTag}". Run the same \`rostok stack add\` again to pin it.`,
+        `rostok: could not pin ${image}:${defaultTag} (${reason}). ${variable} ${stays}. ` +
+          `Run the same \`rostok stack add\` again to pin it.`,
       ))
     }
   }

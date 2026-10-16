@@ -807,6 +807,34 @@ Deno.test("pinned policy: a tag variable that is latest in .env is pinned, and s
   )
 })
 
+Deno.test("pinned policy: when a latest in .env cannot be pinned, the warning says it stays latest (#437)", async () => {
+  await withGatusProject(
+    { rootEnv: "IMAGE_POLICY=pinned\n", serverEnv: "GATUS_IMAGE_TAG=latest\n" },
+    async (dir, catalogDir) => {
+      const registry = gatusRegistry()
+      registry.down.add("ghcr.io")
+      const warnings: string[] = []
+      const originalWarn = console.warn
+      console.warn = (...args: unknown[]) => warnings.push(args.join(" "))
+      try {
+        await stackAdd("gatus", "home", {
+          cwd: dir,
+          catalogDir,
+          nonInteractive: true,
+          fetch: registry.fetch,
+        })
+      } finally {
+        console.warn = originalWarn
+      }
+      assertEquals((await serverEnvOf(dir)).GATUS_IMAGE_TAG, "latest")
+      const pinWarnings = warnings.filter((w) => w.includes("could not pin"))
+      assertEquals(pinWarnings.length, 1)
+      assertStringIncludes(pinWarnings[0], `GATUS_IMAGE_TAG stays "latest"`)
+      assertEquals(pinWarnings[0].includes("unset"), false)
+    },
+  )
+})
+
 Deno.test("pinned policy: an unreachable registry warns once per image, leaves its variable unset and still adds the stack", async () => {
   await withGatusProject({}, async (dir, catalogDir) => {
     const registry = gatusRegistry()
