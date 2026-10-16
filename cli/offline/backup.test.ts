@@ -104,6 +104,19 @@ Deno.test("backup: at a terminal, answering no to the delete question stops befo
   }
 })
 
+Deno.test("backup: a drive owned by another user is handed to this user by numeric id", async () => {
+  const fake = await makeFake()
+  try {
+    // Cron often leaves $USER unset; the ownership fix must not depend on it.
+    const owner = (await Deno.stat(fake.mountDir)).uid!
+    fake.deps.uid = owner + 1
+    await runBackup(fake.deps, NIGHTLY)
+    assert(ran(fake, `sudo chown -R ${owner + 1} ${fake.mountDir}`), fake.calls.join("\n"))
+  } finally {
+    await cleanup(fake)
+  }
+})
+
 Deno.test("backup: an already-mounted partition is reused and left mounted", async () => {
   const fake = await makeFake({
     devices: (_, mountDir) => backupDrive({ mountpoints: [mountDir] }),

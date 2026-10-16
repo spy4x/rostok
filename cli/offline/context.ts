@@ -40,8 +40,6 @@ export interface OfflineDeps {
   /** The project root: `.env.root` is read from here. */
   cwd: string
   home: string
-  /** Login name, for the ownership fix on the drive. */
-  user: string
   /** Numeric user id, or null where the platform has none. */
   uid: number | null
   /** `Deno.build.os`. */
@@ -138,7 +136,6 @@ export function defaultDeps(cwd: string): OfflineDeps {
   return {
     cwd,
     home: Deno.env.get("HOME") ?? "",
-    user: Deno.env.get("USER") ?? "",
     uid: Deno.uid(),
     os: Deno.build.os,
     runner: denoRunner,

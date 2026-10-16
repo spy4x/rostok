@@ -30,10 +30,12 @@ export async function prepareDrive(
     if (!(await ensureSudo(deps, out, interactive, "making the drive writable"))) {
       throw new UserError(
         `${mountPoint} belongs to another user and sudo needs a password: run at a terminal, ` +
-          `or once by hand: sudo chown -R ${deps.user} ${mountPoint}`,
+          `or once by hand: sudo chown -R ${deps.uid} ${mountPoint}`,
       )
     }
-    const chown = await deps.runner.run(["chown", "-R", deps.user, mountPoint], { sudo: true })
+    const chown = await deps.runner.run(["chown", "-R", String(deps.uid), mountPoint], {
+      sudo: true,
+    })
     if (!chown.success) {
       throw new UserError(`could not take ownership of ${mountPoint}: ${chown.error.trim()}`)
     }

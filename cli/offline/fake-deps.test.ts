@@ -154,7 +154,6 @@ export async function makeFake(
   const deps: OfflineDeps = {
     cwd: project,
     home,
-    user: "me",
     // The temp folder's owner is this process's user; Deno.uid() would need --allow-sys.
     uid: (await Deno.stat(root)).uid,
     os: opts.os ?? "linux",
