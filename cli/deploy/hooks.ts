@@ -71,6 +71,11 @@
 // operators to ignore deploy warnings. A key matching no installed stack
 // and no catalog stack (a typo, or a removed project-local stack) still
 // gets one warning line naming it.
+// A key that is not allowed and comes from `.env.root` is dropped
+// silently too: that file holds project-wide settings for rostok itself
+// (BACKUPS_PASSWORD, BACKUP_PATHS), never for a hook, so every deploy
+// warned about them once per hook. A denied key still warns from either
+// file.
 //
 // DENIED_ENV_KEY_NAMES/PREFIXES is a backstop that runs BEFORE the
 // allowlist check: a stack whose own prefix happens to collide with a
@@ -318,7 +323,11 @@ export function buildHookEnv(
       // IMAGE_POLICY is rostok's own setting in the same files: no hook
       // gets it, and it is no stray key to warn about.
       const rostokSetting = key === IMAGE_POLICY_KEY
-      if (!(key in processEnv) && !ownedByAnotherStack && !rostokSetting) {
+      // `.env.root` is project-wide: rostok's own settings (BACKUPS_PASSWORD
+      // for `rostok offline`, say), meant for no hook. Only a stray key in
+      // the server `.env`, where stack keys live, is worth a warning.
+      const projectWide = !(key in ctx.serverEnv)
+      if (!(key in processEnv) && !ownedByAnotherStack && !rostokSetting && !projectWide) {
         const list = droppedByFile.get(source) ?? []
         list.push(sanitizeForLog(key))
         droppedByFile.set(source, list)

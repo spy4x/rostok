@@ -666,6 +666,28 @@ Deno.test("buildHookEnv: rostok's own IMAGE_POLICY setting is dropped silently, 
   assertEquals(env.IMAGE_POLICY, undefined)
 })
 
+Deno.test("buildHookEnv: a project-wide .env.root key no stack declares is dropped silently", () => {
+  // `.env.root` holds settings for rostok itself (BACKUPS_PASSWORD for
+  // `rostok offline`, say), not for any hook: warning about them on every
+  // deploy, once per hook, only taught operators to ignore warnings.
+  const ctx: HookContext = {
+    ...BASE_CTX,
+    rootEnv: { ...BASE_CTX.rootEnv, BACKUPS_PASSWORD: "x", BACKUP_PATHS: "/srv" },
+  }
+  const { env, warnings } = buildHookEnv(ctx, STACK_NAME, {})
+  assertEquals(warnings, [])
+  // Only the warning is gone: the keys still never reach the hook.
+  assertEquals(env.BACKUPS_PASSWORD, undefined)
+  assertEquals(env.BACKUP_PATHS, undefined)
+})
+
+Deno.test("buildHookEnv: a denied key from .env.root still warns", () => {
+  const ctx: HookContext = { ...BASE_CTX, rootEnv: { BASH_ENV: "/tmp/evil.sh" } }
+  const { env, warnings } = buildHookEnv(ctx, STACK_NAME, {})
+  assertEquals(env.BASH_ENV, undefined)
+  assertEquals(warnings, ["Warning: dropping BASH_ENV from .env.root — always denied."])
+})
+
 Deno.test("buildHookEnv: a key of a catalog stack that is not installed is dropped silently (#256)", () => {
   // `stack remove librespeed -n` keeps librespeed's values in .env; every
   // later deploy must not warn about them from every remaining hook.

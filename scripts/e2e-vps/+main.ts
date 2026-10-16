@@ -87,10 +87,10 @@ const HTTP_CHECKS: HttpCheck[] = [
   { host: `pipedapi.${DOMAIN}`, path: "/healthcheck" },
 ]
 
-interface Ctx {
+export interface Ctx {
   /** The run's own `mktemp -d` folder: key, ssh config, rostok install and the project. */
   dir: string
-  /** Aborted by the run deadline, SIGINT or SIGTERM. */
+  /** Aborted by the run deadline or one of {@link SIGNALS}. */
   signal: AbortSignal
   /** Environment of every command the run starts. It never holds the API token. */
   env: Record<string, string>
@@ -99,9 +99,17 @@ interface Ctx {
   start: number
 }
 
+/**
+ * Prints one progress line. It never throws: once the terminal is closed (SIGHUP), every write
+ * fails with an I/O error, and a throwing log would stop the cleanup before it deletes the server.
+ */
 function log(ctx: { start: number }, message: string) {
   const s = Math.round((Date.now() - ctx.start) / 1000)
-  console.log(`[e2e ${String(s).padStart(4)}s] ${message}`)
+  try {
+    console.log(`[e2e ${String(s).padStart(4)}s] ${message}`)
+  } catch {
+    // Nobody is left to read it.
+  }
 }
 
 function fail(ctx: Ctx, message: string) {
@@ -528,39 +536,42 @@ async function cleanup(call: Call, runId: string, dir: string, start: number): P
   return problems
 }
 
-/** Runs the whole test and returns the process exit code. */
-async function main(args: string[]): Promise<number> {
-  const target = parseTarget(args)
-  const call = createCall(tokenFromEnv((key) => Deno.env.get(key)), fetch)
-  const start = Date.now()
-  const runId = runIdFrom(new Date(start))
-  const dir = await Deno.makeTempDir({ prefix: "rostok-e2e-" })
+/** Signals that stop the run early; each still deletes the server. SIGHUP: the terminal closed. */
+export const SIGNALS = ["SIGHUP", "SIGINT", "SIGTERM"] as const
 
+/** What {@link run} takes from outside, so a test can drive a run without a server. */
+export interface RunDeps {
+  call: Call
+  runId: string
+  /** The run's own temp folder; cleanup deletes it. */
+  dir: string
+  start: number
+  /** Environment of every command the run starts. */
+  env: Record<string, string>
+  /** `Deno.addSignalListener` outside tests. */
+  onSignal: (signal: (typeof SIGNALS)[number], handler: () => void) => void
+}
+
+/**
+ * Runs `journey` until it ends, fails, passes the deadline or gets one of {@link SIGNALS}, then
+ * always runs the cleanup.
+ *
+ * @returns The process exit code: 0 only when every check passed and nothing is left behind.
+ */
+export async function run(deps: RunDeps, journey: (ctx: Ctx) => Promise<void>): Promise<number> {
+  const { call, runId, dir, start, env } = deps
   const abort = new AbortController()
   const deadline = setTimeout(
     () => abort.abort(new Error("the whole run passed its 20 minute deadline")),
     RUN_DEADLINE_MS,
   )
-  for (const sig of ["SIGINT", "SIGTERM"] as const) {
-    Deno.addSignalListener(sig, () => abort.abort(new Error(`interrupted by ${sig}`)))
-  }
-
-  const env: Record<string, string> = { PATH: `${join(dir, "bin")}:${Deno.env.get("PATH")}` }
-  for (const key of ["HOME", "USER", "LOGNAME", "LANG", "TMPDIR", "DENO_DIR", "XDG_CACHE_HOME"]) {
-    const value = Deno.env.get(key)
-    if (value !== undefined) env[key] = value
+  for (const sig of SIGNALS) {
+    deps.onSignal(sig, () => abort.abort(new Error(`interrupted by ${sig}`)))
   }
   const ctx: Ctx = { dir, signal: abort.signal, env, failures: [], start }
-  log(
-    ctx,
-    `run ${runId}: rostok ${target.kind === "local" ? "from this checkout" : target.version}`,
-  )
 
   try {
-    const publicKey = await prepareSsh(ctx, runId)
-    const ip = await createMachine(ctx, call, runId, publicKey)
-    await waitForDocker(ctx, ip)
-    await userJourney(ctx, target, ip)
+    await journey(ctx)
   } catch (err) {
     fail(ctx, (err as Error).message)
   } finally {
@@ -574,8 +585,35 @@ async function main(args: string[]): Promise<number> {
     return 0
   }
   log(ctx, `FAILED: ${ctx.failures.length} failure(s), ${leftBehind.length} cleanup problem(s)`)
-  ctx.failures.forEach((failure, i) => console.log(`  ${i + 1}. ${failure}`))
+  ctx.failures.forEach((failure, i) => log(ctx, `  ${i + 1}. ${failure}`))
   return 1
+}
+
+/** Runs the whole test and returns the process exit code. */
+async function main(args: string[]): Promise<number> {
+  const target = parseTarget(args)
+  const call = createCall(tokenFromEnv((key) => Deno.env.get(key)), fetch)
+  const start = Date.now()
+  const runId = runIdFrom(new Date(start))
+  const dir = await Deno.makeTempDir({ prefix: "rostok-e2e-" })
+
+  const env: Record<string, string> = { PATH: `${join(dir, "bin")}:${Deno.env.get("PATH")}` }
+  for (const key of ["HOME", "USER", "LOGNAME", "LANG", "TMPDIR", "DENO_DIR", "XDG_CACHE_HOME"]) {
+    const value = Deno.env.get(key)
+    if (value !== undefined) env[key] = value
+  }
+  log(
+    { start },
+    `run ${runId}: rostok ${target.kind === "local" ? "from this checkout" : target.version}`,
+  )
+  const onSignal = (sig: (typeof SIGNALS)[number], handler: () => void) =>
+    Deno.addSignalListener(sig, handler)
+  return await run({ call, runId, dir, start, env, onSignal }, async (ctx) => {
+    const publicKey = await prepareSsh(ctx, runId)
+    const ip = await createMachine(ctx, call, runId, publicKey)
+    await waitForDocker(ctx, ip)
+    await userJourney(ctx, target, ip)
+  })
 }
 
 if (import.meta.main) {
