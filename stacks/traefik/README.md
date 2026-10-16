@@ -121,15 +121,19 @@ A router then uses it as `app-cors@file`.
 
 The entrypoint middleware is now `security-headers-base`, which sends no `X-Frame-Options`, and
 `frame-deny` sends it per router (spy4x/rostok#318). Every catalog router lists `frame-deny@file`
-or `security-headers@file`, so nothing changes for them. A chain that names
+or `security-headers@file`, but a router gets it only when its own stack is deployed with this
+version. Run a full `rostok deploy <server>`: deploying `traefik` alone leaves every other stack's
+routers without `X-Frame-Options` until each of those stacks is deployed. A chain that names
 `security-headers@file`, such as a `MIG_MIDDLEWARES` or `CALDAV_*_MIDDLEWARES` override, keeps
 `X-Frame-Options: DENY` too.
 
 A router of your own loses `X-Frame-Options: DENY` on the first deploy of this version unless
 its chain names one of the two: a router in `servers/<server>/configs/traefik/dynamic/`, a label
 in a `compose-override` file that sets a router's middlewares, or a container outside rostok on
-the `proxy` network. Add `frame-deny@file` to
-each, then deploy. Check with `curl -sI https://<host>/ | grep -i x-frame-options`.
+the `proxy` network, such as a website run by its own compose project. Add `frame-deny@file` to
+each after the new traefik stack is deployed (before that, Traefik does not know the middleware
+and switches the router off), or accept that the site relies on its own `frame-ancestors` policy
+alone. Check with `curl -sI https://<host>/ | grep -i x-frame-options`.
 
 ## Resources
 
