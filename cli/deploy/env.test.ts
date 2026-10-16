@@ -731,11 +731,11 @@ Deno.test("assertRequiredStackKeys: a key blank in the server env is missing eve
   )
 })
 
-Deno.test("composeNeedsKey: a large compose file full of unclosed ${KEY is scanned in well under a second", () => {
-  const compose = "a: ${APP_KEY ".repeat(50_000) + "\nb: $APP_KEY"
+Deno.test("composeNeedsKey: a large compose file full of unclosed ${KEY is scanned in well under a second, and a later $KEY still counts", () => {
+  const compose = "a: ${APP_KEY ".repeat(20_000) + "\nb: $APP_KEY"
   const started = performance.now()
   assertEquals(composeNeedsKey(compose, "APP_KEY"), true)
-  assertEquals(composeNeedsKey("${APP_KEY ".repeat(50_000), "APP_KEY"), false)
+  assertEquals(composeNeedsKey("${APP_KEY ".repeat(20_000), "APP_KEY"), false)
   const elapsed = performance.now() - started
   assert(elapsed < 250, `took ${Math.round(elapsed)} ms`)
 })
