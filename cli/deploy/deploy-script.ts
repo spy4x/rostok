@@ -33,6 +33,11 @@ export interface DeployResult {
    * the server reported them.
    */
   recreated?: string
+  /**
+   * What the stale-container cleanup did before `up`, one line each: a
+   * container it removed, or one it kept although it looks like this stack's.
+   */
+  stale?: string[]
 }
 
 /**
@@ -45,18 +50,46 @@ export const VERIFY_WAIT_SECONDS = 5
 /** How many of a failed container's last log lines the deploy prints. */
 export const VERIFY_LOG_LINES = 20
 
+/**
+ * The bytes of each of those log lines the deploy keeps, so one container
+ * that logs a huge line (a JSON blob, a binary dump) adds at most
+ * VERIFY_LOG_LINES times this to the summary.
+ */
+export const VERIFY_LOG_LINE_BYTES = 300
+
 /** Shell function that prints one line per container of a compose project. */
 const CONTAINERS_FN = "rostok_containers"
 
 /** Shell variable that is set once a started stack has a container to look at. */
 const VERIFY_WAIT_VAR = "rostok_verify_wait"
 
+/** Shell variable that is set once a stack needs the second look. */
+const RECHECK_VAR = "rostok_recheck"
+
+/** What the look reports for a container restarted exactly once during the wait. */
+const RESTARTED_ONCE = "restarted"
+
 /**
- * Defines the shell function `rostok_containers <project>`: one line per
- * container of the compose project, `id|name|status|exit code|restart
- * count|finished at`. A `while read` loop rather than one `docker inspect`
- * over all IDs: the remote login shell can be zsh, which does not split an
- * unquoted expansion into words.
+ * Defines three shell functions.
+ *
+ * `rostok_containers <project>` prints one line per container of the
+ * compose project, `id|name|status|exit code|restart count|finished at`.
+ * A `while read` loop rather than one `docker inspect` over all IDs: the
+ * remote login shell can be zsh, which does not split an unquoted
+ * expansion into words.
+ *
+ * `rostok_look <project> <started> <before>` prints `id|name|reason` for
+ * each container that failed since `<started>` (the time this stack's
+ * `up` began), comparing restart counts with the `rostok_containers`
+ * lines in `<before>`. A container restarted exactly once gets the reason
+ * RESTARTED_ONCE: not a failure yet, but worth a second look. A restart
+ * count that is not a plain number is never used in arithmetic: the shell
+ * would evaluate it as an expression.
+ *
+ * `rostok_finish <verify marker> <failed marker> <success marker>
+ * <findings>` prints the verify marker, then either each finding with its
+ * container's last log lines, each cut to VERIFY_LOG_LINE_BYTES, and the
+ * failed marker, or the success marker when there is none.
  */
 const VERIFY_PREAMBLE = `
 ${CONTAINERS_FN}() {
@@ -65,7 +98,49 @@ ${CONTAINERS_FN}() {
     docker inspect --format '{{.Id}}|{{.Name}}|{{.State.Status}}|{{.State.ExitCode}}|{{.RestartCount}}|{{.State.FinishedAt}}' "\$rostok_id" 2>/dev/null
   done
 }
+rostok_look() {
+  rostok_look_started=\$2
+  rostok_look_before=\$3
+  ${CONTAINERS_FN} "\$1" | while IFS='|' read -r rostok_id rostok_name rostok_status rostok_code rostok_restarts rostok_finished; do
+    rostok_reason=
+    case "\$rostok_status" in
+      restarting) rostok_reason='is restarting' ;;
+      exited|dead)
+        if [ "\$rostok_code" != 0 ] && LC_ALL=C expr "x\$rostok_finished" '>=' "x\$rostok_look_started" >/dev/null; then
+          rostok_reason="exited with code \$rostok_code"
+        fi ;;
+    esac
+    if [ -z "\$rostok_reason" ]; then
+      rostok_was=\$(printf '%s\\n' "\$rostok_look_before" | awk -F'|' -v id="\$rostok_id" '\$1 == id { print \$5 }')
+      case "\$rostok_was" in ''|*[!0-9]*|0?*) rostok_was= ;; esac
+      case "\$rostok_restarts" in ''|*[!0-9]*|0?*) rostok_was= ;; esac
+      if [ -z "\$rostok_was" ]; then
+        :
+      elif [ "\$rostok_restarts" -ge "\$((rostok_was + 2))" ]; then
+        rostok_reason='keeps restarting'
+      elif [ "\$rostok_restarts" -gt "\$rostok_was" ]; then
+        rostok_reason=${RESTARTED_ONCE}
+      fi
+    fi
+    [ -n "\$rostok_reason" ] || continue
+    printf '%s|%s|%s\\n' "\$rostok_id" "\$rostok_name" "\$rostok_reason"
+  done
+}
+rostok_finish() {
+  printf '%s\\n' "\$1"
+  if [ -z "\$4" ]; then
+    printf '%s\\n' "\$3"
+    return 0
+  fi
+  printf '%s\\n' "\$4" | while IFS='|' read -r rostok_id rostok_name rostok_reason; do
+    [ -n "\$rostok_id" ] || continue
+    printf 'Container %s %s. Its last log lines:\\n' "\${rostok_name#/}" "\$rostok_reason"
+    docker logs --tail ${VERIFY_LOG_LINES} "\$rostok_id" 2>&1 | cut -c 1-${VERIFY_LOG_LINE_BYTES} | sed 's/^/  /'
+  done
+  printf '%s\\n' "\$2"
+}
 ${VERIFY_WAIT_VAR}=
+${RECHECK_VAR}=
 `
 
 /** Shell variable holding the stack's container names, one per line. */
@@ -107,19 +182,22 @@ const RECREATE_VAR = "rostok_recreate"
  * marked failed when one of its containers
  *
  * - is restarting at the look, or was restarted by Docker two or more
- *   times during the wait: a crash loop. One restart is not a failure: a
+ *   times since `up`: a crash loop. One restart is not a failure: a
  *   service that exits once because its database is not up yet, and then
- *   stays up, is healthy. So a loop whose container runs longer than
- *   about two seconds between crashes, and is running at the look, is
- *   missed;
+ *   stays up, is healthy. A stack with a container restarted exactly once,
+ *   and nothing else wrong, gets a second look after another
+ *   VERIFY_WAIT_SECONDS, so a loop slower than the first wait is caught
+ *   when it restarts again by then;
  * - has exited with a non-zero code since this stack's `up` began. An
  *   older exit is left alone: it is not this deploy's doing, and `up`
  *   leaves a container of a service that compose no longer lists as it is.
  *
- * The failed container's last VERIFY_LOG_LINES log lines follow, indented,
- * after a `DEPLOY_VERIFY` marker. A one-shot container that exited 0, and
- * one whose health check is still starting or failing, do not fail the
- * stack. A container that dies later than the wait is not seen.
+ * The failed container's last VERIFY_LOG_LINES log lines follow, indented
+ * and each cut to VERIFY_LOG_LINE_BYTES, after a `DEPLOY_VERIFY` marker. A
+ * one-shot container that exited 0, and one whose health check is still
+ * starting or failing, do not fail the stack. A container that dies later
+ * than the last look is not seen. Each line of the stale-container cleanup
+ * starts with a `DEPLOY_STALE` marker, so the summary can show it.
  */
 export function generateDeployScript(
   stacks: StackConfig[],
@@ -128,11 +206,13 @@ export function generateDeployScript(
 ): string {
   const stackCommands: string[] = [VERIFY_PREAMBLE]
   const verifyCommands: string[] = []
+  const recheckCommands: string[] = []
 
   for (const [index, stackConfig] of stacks.entries()) {
     const upVar = `rostok_up_${index}`
     const startedVar = `rostok_started_${index}`
     const beforeVar = `rostok_before_${index}`
+    const suspectVar = `rostok_suspect_${index}`
     const stackName = stackConfig.name
     const deployAs = stackConfig.deployAs || stackName
     const projectFlag = `-p ${shQuote(deployAs)}`
@@ -145,6 +225,14 @@ export function generateDeployScript(
     const restartingMarker = shQuote(`RESTARTING:${stackName}:${deployAs}`)
     const restartDoneMarker = shQuote(`RESTART_DONE:${stackName}:${deployAs}`)
     const recreateMarker = shQuote(`DEPLOY_RECREATE:${stackName}:${deployAs}`)
+    const staleMarker = shQuote(`DEPLOY_STALE:${stackName}:${deployAs}`)
+    // The instances of this stack in this deploy, as a case pattern. It
+    // holds this one's own deployAs too, which the loop skips before, so it
+    // is never empty.
+    const siblingPattern = stacks
+      .filter((s) => s.name === stackName)
+      .map((s) => shQuote(s.deployAs || s.name))
+      .join("|")
     // What compose writes into the working_dir label of a container it
     // creates here: the folder of the first -f file.
     const stackDir = shQuote(`${normalizeRemotePath(pathApps)}/stacks/${stackName}`)
@@ -189,22 +277,36 @@ set -- -f ${shQuote(`stacks/${stackName}/compose.yml`)}
 ${STALE_NAMES_VAR}=\$(cd ${quotedPathApps} && docker compose ${projectFlag} --env-file=.env.root --env-file=.env "\$@" config 2>/dev/null | awk ${
       shQuote(CONTAINER_NAMES_AWK)
     })
+#
+# A container of another compose project that was created from this stack's
+# compose file but has none of its container_names (a service without one)
+# is only reported: it may be another instance of this stack under its own
+# deployAs, which a single-stack deploy does not list. The instances this
+# deploy does list are skipped.
 docker ps -a --format '{{.Names}}|{{.ID}}|{{.Label "com.docker.compose.project"}}|{{.Label "com.docker.compose.project.config_files"}}' 2>/dev/null | while IFS='|' read -r cname id proj files; do
-  printf '%s\\n' "\$${STALE_NAMES_VAR}" | grep -qxF -- "\$cname" || continue
   [ "\$proj" != ${shQuote(deployAs)} ] && [ -n "\$id" ] || continue
   case ",\$files," in
     *${shQuote(`/stacks/${stackName}/compose.yml,`)}*) own=1 ;;
     *) own= ;;
   esac
-  if [ -n "\$proj" ] && [ -n "\$own" ]; then
-    printf '  removing stale container %s (project=%s, expected=%s)\\n' "\$cname" "\$proj" ${
+  if printf '%s\\n' "\$${STALE_NAMES_VAR}" | grep -qxF -- "\$cname"; then
+    if [ -n "\$proj" ] && [ -n "\$own" ]; then
+      printf '%s removing stale container %s (project=%s, expected=%s)\\n' ${staleMarker} "\$cname" "\$proj" ${
       shQuote(deployAs)
     }
-    docker rm -f "\$id" >/dev/null 2>&1 || true
-  else
-    printf '  keeping container %s: it has this stack'"'"'s name but was not created from stacks/%s/compose.yml (project=%s)\\n' "\$cname" ${
+      docker rm -f "\$id" >/dev/null 2>&1 || true
+    else
+      printf '%s keeping container %s: it has this stack'"'"'s name but was not created from stacks/%s/compose.yml (project=%s)\\n' ${staleMarker} "\$cname" ${
       shQuote(stackName)
     } "\$proj"
+    fi
+  elif [ -n "\$proj" ] && [ -n "\$own" ]; then
+    case "\$proj" in
+      ${siblingPattern}) continue ;;
+    esac
+    printf '%s keeping container %s of project %s: it was created from stacks/%s/compose.yml too; remove it with docker rm -f if it is an old copy of this stack\\n' ${staleMarker} "\$cname" "\$proj" ${
+      shQuote(stackName)
+    }
   fi
 done
 # A container of this project that was created from another folder (an older
@@ -256,38 +358,30 @@ fi
 `)
 
     // Every variable is prefixed: zsh, a possible remote login shell, keeps
-    // `status` and others for itself. The loop runs in a subshell, so what
-    // it finds comes back as its output.
+    // `status` and others for itself. A stack with a container restarted
+    // once, and nothing else wrong, gets its result after the second look.
+    const finishArgs = `${verifyMarker} ${failedMarker} ${successMarker}`
     verifyCommands.push(`
 if [ -n "\$${upVar}" ]; then
-  echo ${verifyMarker}
-  rostok_report=\$(${CONTAINERS_FN} ${
-      shQuote(deployAs)
-    } | while IFS='|' read -r rostok_id rostok_name rostok_status rostok_code rostok_restarts rostok_finished; do
-    rostok_reason=
-    case "\$rostok_status" in
-      restarting) rostok_reason='is restarting' ;;
-      exited|dead)
-        if [ "\$rostok_code" != 0 ] && LC_ALL=C expr "x\$rostok_finished" '>=' "x\$${startedVar}" >/dev/null; then
-          rostok_reason="exited with code \$rostok_code"
-        fi ;;
-    esac
-    if [ -z "\$rostok_reason" ]; then
-      rostok_was=\$(printf '%s\\n' "\$${beforeVar}" | awk -F'|' -v id="\$rostok_id" '\$1 == id { print \$5 }')
-      if [ -n "\$rostok_was" ] && [ "\$rostok_restarts" -ge "\$((rostok_was + 2))" ] 2>/dev/null; then
-        rostok_reason='keeps restarting'
-      fi
-    fi
-    [ -n "\$rostok_reason" ] || continue
-    printf 'Container %s %s. Its last log lines:\\n' "\${rostok_name#/}" "\$rostok_reason"
-    docker logs --tail ${VERIFY_LOG_LINES} "\$rostok_id" 2>&1 | sed 's/^/  /'
-  done)
-  if [ -n "\$rostok_report" ]; then
-    printf '%s\\n' "\$rostok_report"
-    echo ${failedMarker}
+  rostok_found=\$(rostok_look ${shQuote(deployAs)} "\$${startedVar}" "\$${beforeVar}")
+  ${suspectVar}=\$(printf '%s\\n' "\$rostok_found" | awk -F'|' '\$3 == "${RESTARTED_ONCE}" { printf "%s ", \$1 }')
+  rostok_failed=\$(printf '%s\\n' "\$rostok_found" | awk -F'|' 'NF && \$3 != "${RESTARTED_ONCE}"')
+  if [ -n "\$rostok_failed" ] || [ -z "\$${suspectVar}" ]; then
+    ${suspectVar}=
+    rostok_finish ${finishArgs} "\$rostok_failed"
   else
-    echo ${successMarker}
+    ${RECHECK_VAR}=1
   fi
+fi
+`)
+    // The second look counts only the containers that restarted once: one
+    // that restarted again since is a crash loop slower than the first wait.
+    recheckCommands.push(`
+if [ -n "\$${suspectVar}" ]; then
+  rostok_found=\$(rostok_look ${
+      shQuote(deployAs)
+    } "\$${startedVar}" "\$${beforeVar}" | awk -F'|' -v ids="\$${suspectVar}" 'BEGIN { n = split(ids, a, " "); for (i = 1; i <= n; i++) s[a[i]] = 1 } s[\$1] && \$3 != "${RESTARTED_ONCE}"')
+  rostok_finish ${finishArgs} "\$rostok_found"
 fi
 `)
   }
@@ -296,13 +390,17 @@ fi
     ...stackCommands,
     `if [ -n "\$${VERIFY_WAIT_VAR}" ]; then sleep ${VERIFY_WAIT_SECONDS}; fi`,
     ...verifyCommands,
+    `if [ -n "\$${RECHECK_VAR}" ]; then sleep ${VERIFY_WAIT_SECONDS}; fi`,
+    ...recheckCommands,
   ].join("\n")
 }
 
 /**
  * Parse the deploy output to extract results for each stack. A marker
- * counts only at the start of a line: the log lines of a failed container
- * are printed into the same output, indented, and must not be read as one.
+ * counts only as a whole line, or followed by a space where it carries
+ * text: the log lines of a failed container are printed into the same
+ * output, indented, and must not be read as one, and a stack deployed as
+ * `blog` must never take the line of the one deployed as `blog2`.
  */
 export function parseDeployResults(output: string, stacks: StackConfig[]): DeployResult[] {
   const results: DeployResult[] = []
@@ -318,26 +416,31 @@ export function parseDeployResults(output: string, stacks: StackConfig[]): Deplo
     const verifyMarker = `DEPLOY_VERIFY:${stackName}:${deployAs}`
     // The space ends the marker: no stack or project name contains one.
     const recreateMarker = `DEPLOY_RECREATE:${stackName}:${deployAs} `
+    const staleMarker = `DEPLOY_STALE:${stackName}:${deployAs} `
     const recreated = lines.find((line) => line.startsWith(recreateMarker))
       ?.slice(recreateMarker.length)
+    const stale = lines.filter((line) => line.startsWith(staleMarker))
+      .map((line) => line.slice(staleMarker.length))
 
-    const isSuccess = lines.some((line) => line.startsWith(successMarker))
-    const endIdx = lines.findIndex((line) => line.startsWith(failedMarker))
+    const isSuccess = lines.includes(successMarker)
+    const endIdx = lines.indexOf(failedMarker)
     const isFailed = endIdx !== -1
 
     // The error is what the stack printed last before it failed: the
     // report on its containers when `up` had succeeded, else `up`'s output.
+    // The recreate and stale-container lines are left out of it: the
+    // summary prints them on their own.
     let errorOutput = ""
     let containerFailed = false
     if (isFailed) {
       const before = lines.slice(0, endIdx)
-      const verifyIdx = before.findLastIndex((line) => line.startsWith(verifyMarker))
+      const verifyIdx = before.lastIndexOf(verifyMarker)
       containerFailed = verifyIdx !== -1
-      const startIdx = containerFailed
-        ? verifyIdx
-        : before.findLastIndex((line) => line.startsWith(startMarker))
+      const startIdx = containerFailed ? verifyIdx : before.lastIndexOf(startMarker)
       if (startIdx !== -1) {
-        errorOutput = before.slice(startIdx + 1).join("\n")
+        errorOutput = before.slice(startIdx + 1)
+          .filter((line) => !line.startsWith(recreateMarker) && !line.startsWith(staleMarker))
+          .join("\n")
       }
     }
 
@@ -348,6 +451,7 @@ export function parseDeployResults(output: string, stacks: StackConfig[]): Deplo
       error: isFailed ? errorOutput : undefined,
       ...(containerFailed ? { containerFailed } : {}),
       ...(recreated ? { recreated } : {}),
+      ...(stale.length > 0 ? { stale } : {}),
     })
   }
 
@@ -355,11 +459,13 @@ export function parseDeployResults(output: string, stacks: StackConfig[]): Deplo
 }
 
 /**
- * Says why a stack's running containers restarted. The text holds a
- * container name and a folder as the server reported them, so control
- * characters are stripped.
+ * Says which stale containers the deploy removed or kept, and why a
+ * stack's running containers restarted. The text holds container names
+ * and folders as the server reported them, so control characters are
+ * stripped.
  */
-function printRecreated(result: DeployResult): void {
+function printStackNotes(result: DeployResult): void {
+  for (const line of result.stale ?? []) console.log(`     ${stripControlChars(line)}`)
   if (!result.recreated) return
   console.log(`     Recreated its containers: ${stripControlChars(result.recreated)}`)
 }
@@ -378,7 +484,7 @@ export function printDeploySummary(results: DeployResult[]): void {
         ? `${result.name} (as ${result.deployAs})`
         : result.name
       console.log(`   ✓ ${displayName}`)
-      printRecreated(result)
+      printStackNotes(result)
     }
   }
 
@@ -389,7 +495,7 @@ export function printDeploySummary(results: DeployResult[]): void {
         ? `${result.name} (as ${result.deployAs})`
         : result.name
       console.log(`   ✗ ${displayName}`)
-      printRecreated(result)
+      printStackNotes(result)
       if (result.error && result.containerFailed) {
         // Printed whole: the container's last log lines are how the owner
         // learns why it died. Container logs can carry escape sequences too.
