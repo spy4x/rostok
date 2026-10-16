@@ -366,7 +366,10 @@ export interface StackRequiredKeys {
   stack: string
   /** The keys its `+meta.ts` marks `required: true`. */
   keys: string[]
-  /** The text of its compose file and of the server's override for it, joined. */
+  /**
+   * The text of its compose file and of the server's override for it, each
+   * with the files it includes, joined.
+   */
   compose: string
   /** The stack's own `envs` from config.json, which the deploy adds to the `.env` every stack reads. */
   envs?: Record<string, string>

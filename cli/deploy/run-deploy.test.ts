@@ -1143,6 +1143,51 @@ Deno.test("runDeploy: the proxy network is created when only the server's compos
   }
 })
 
+Deno.test("runDeploy: a stack that names the network only as ${PROXY_NETWORK:-proxy} gets it created (#449)", async () => {
+  const f = await setupRunDeployFixture()
+  try {
+    await writeLocalStack(f.projectDir, "alpha")
+    await Deno.writeTextFile(
+      join(f.projectDir, "stacks", "alpha", "compose.yml"),
+      "name: ${PROJECT}\nnetworks:\n  default:\n    external: true\n" +
+        "    name: ${PROXY_NETWORK:-proxy}\nservices:\n  alpha:\n    image: busybox\n",
+    )
+    await writeRunDeployServer(f.projectDir, ["alpha"])
+
+    await runDeploy({ cwd: f.projectDir, server: "test" }, f.io)
+    assert(f.remote.calls.includes("network"), "expected the proxy network step")
+  } finally {
+    await teardownRunDeployFixture(f)
+  }
+})
+
+Deno.test("runDeploy: a stack whose compose file names the network only in a file it includes gets it created (#449)", async () => {
+  const f = await setupRunDeployFixture()
+  try {
+    await writeLocalStack(f.projectDir, "alpha")
+    const stackDir = join(f.projectDir, "stacks", "alpha")
+    await Deno.writeTextFile(
+      join(stackDir, "compose.yml"),
+      "name: ${PROJECT}\ninclude:\n  - path: [parts/web.yml]\n",
+    )
+    await Deno.mkdir(join(stackDir, "parts"))
+    await Deno.writeTextFile(
+      join(stackDir, "parts", "web.yml"),
+      "include:\n  - net.yml\nservices:\n  alpha:\n    image: busybox\n",
+    )
+    await Deno.writeTextFile(
+      join(stackDir, "parts", "net.yml"),
+      "networks:\n  proxy:\n    external: true\n",
+    )
+    await writeRunDeployServer(f.projectDir, ["alpha"])
+
+    await runDeploy({ cwd: f.projectDir, server: "test" }, f.io)
+    assert(f.remote.calls.includes("network"), "expected the proxy network step")
+  } finally {
+    await teardownRunDeployFixture(f)
+  }
+})
+
 Deno.test("namesProxyNetwork: every way a compose file names the network counts, a comment or a longer name does not (#310)", () => {
   for (
     const line of [
@@ -1153,6 +1198,8 @@ Deno.test("namesProxyNetwork: every way a compose file names the network counts,
       '    networks: ["proxy"]',
       '      - "traefik.docker.network=proxy"',
       "      - proxy # routed by Traefik",
+      "    name: ${PROXY_NETWORK:-proxy}",
+      "    name: ${PROXY_NETWORK-proxy}",
     ]
   ) {
     assert(namesProxyNetwork(`services:\n${line}\n`), line)
