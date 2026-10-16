@@ -11,6 +11,13 @@ import { compareVersions, parseVersionTag, type VersionTag } from "./version.ts"
 /** How many version tags are compared with the default tag's digest before giving up. */
 const MAX_DIGEST_CHECKS = 25
 
+/** A full version (`3.7.6`, three numbers or more) or a tag already pinned by digest. */
+function isExact(tag: string): boolean {
+  if (tag.includes("@sha256:")) return true
+  const version = parseVersionTag(tag)
+  return version !== null && version.parts.length >= 3
+}
+
 /**
  * The value to write for an image whose compose default tag is
  * `defaultTag`: the most exact version tag that has the same digest, or
@@ -29,9 +36,8 @@ export async function resolvePin(
   ref: ImageRef,
   defaultTag: string,
 ): Promise<string> {
-  if (defaultTag.includes("@sha256:")) return defaultTag
+  if (isExact(defaultTag)) return defaultTag
   const line = parseVersionTag(defaultTag)
-  if (line && line.parts.length >= 3) return defaultTag
   const digest = await client.digest(ref, defaultTag)
   const candidates: VersionTag[] = []
   for (const tag of await client.tags(ref)) {
@@ -53,8 +59,10 @@ export async function resolvePin(
 }
 
 /**
- * Resolve a pin for each of `images`. An image whose registry is not
- * supported, unreachable or rate-limited gets one warning that names it
+ * Resolve a pin for each of `images`. An exact default (a full version
+ * or a digest) is written as it is, on any registry. Any other image
+ * whose registry is not supported, unreachable or rate-limited gets one
+ * warning that names it
  * and no entry: its variable keeps the value `held` names for it, or
  * stays unset. Never throws. Warnings carry no control characters.
  */
@@ -66,6 +74,11 @@ export async function pinImages(
 ): Promise<EnvEntry[]> {
   const entries: EnvEntry[] = []
   for (const { image, variable, defaultTag } of images) {
+    // Exact already: written as it is, whatever registry hosts the image.
+    if (isExact(defaultTag)) {
+      entries.push({ key: variable, value: defaultTag })
+      continue
+    }
     try {
       const ref = parseImageRef(image)
       if (!ref) throw new Error("only Docker Hub, GHCR and Quay are supported")

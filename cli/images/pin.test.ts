@@ -103,6 +103,30 @@ Deno.test("pinImages: an unreachable registry gives one warning naming the image
   assertStringIncludes(warnings[0], "NGINX_IMAGE_TAG stays unset")
 })
 
+Deno.test("pinImages: an exact default on an unsupported registry is written as it is, with no warning (#437)", async () => {
+  const registry = fakeRegistry({})
+  const warnings: string[] = []
+  const pinned = `9-alpine@${sha("c1")}`
+  const entries = await pinImages(
+    [
+      {
+        image: "mcr.microsoft.com/playwright",
+        variable: "PW_IMAGE_TAG",
+        defaultTag: "v1.60.0-noble",
+      },
+      { image: "registry.example.com/team/db", variable: "DB_IMAGE_TAG", defaultTag: pinned },
+    ],
+    createRegistryClient({ fetch: registry.fetch }),
+    (message) => warnings.push(message),
+  )
+  assertEquals(entries, [
+    { key: "PW_IMAGE_TAG", value: "v1.60.0-noble" },
+    { key: "DB_IMAGE_TAG", value: pinned },
+  ])
+  assertEquals(warnings, [])
+  assertEquals(registry.calls, [])
+})
+
 Deno.test("pinImages: an image on an unsupported registry is warned about and left unset", async () => {
   const registry = fakeRegistry({})
   const warnings: string[] = []
