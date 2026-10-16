@@ -16,7 +16,9 @@ services:
       - WEB_LOADER_ENGINE=${OPEN_WEBUI_WEB_LOADER_ENGINE:-}
       - PLAYWRIGHT_WS_URL=${OPEN_WEBUI_PLAYWRIGHT_WS_URL:-}
       - PLAYWRIGHT_TIMEOUT=5000
-      - ENABLE_RAG_LOCAL_WEB_FETCH=true
+      # Off by default: when on, any signed-in user can have Open WebUI fetch a private address
+      # (another container, a device on the LAN) and read the answer in the chat.
+      - ENABLE_RAG_LOCAL_WEB_FETCH=${OPEN_WEBUI_ENABLE_RAG_LOCAL_WEB_FETCH:-false}
 
       # --- Web Search ---
       # Off by default: the engine below is the searxng stack, which may not be on this server.
@@ -60,8 +62,9 @@ services:
       - HF_TOKEN=${OPEN_WEBUI_HF_TOKEN}
 
       # --- LLM Providers (OpenAI-compatible) ---
-      - OPENAI_API_KEYS=${OPEN_WEBUI_OPENAI_API_KEYS}
-      - OPENAI_API_BASE_URLS=${OPEN_WEBUI_OPENAI_API_BASE_URLS}
+      # Both empty on a server that only uses Ollama.
+      - OPENAI_API_KEYS=${OPEN_WEBUI_OPENAI_API_KEYS:-}
+      - OPENAI_API_BASE_URLS=${OPEN_WEBUI_OPENAI_API_BASE_URLS:-}
       # Optional whitelist of models per provider, as JSON keyed by the provider's position in the
       # lists above. Empty = every model a provider returns is listed. See the README.
       - OPENAI_API_CONFIGS=${OPEN_WEBUI_OPENAI_API_CONFIGS:-}

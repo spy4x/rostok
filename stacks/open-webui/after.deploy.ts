@@ -94,10 +94,37 @@ export function buildTargetCommand(
   ]
 }
 
-/** The playwright stack's network for its MCP proxy (`networks.mcp.name` in its compose.yml). */
-const NETWORK = `hl-playwright-mcp`
-/** The one container allowed to reach the MCP proxy. */
+/**
+ * The private networks of the MCP servers this stack can use, each `networks.mcp.name` in that
+ * stack's compose.yml. None of these servers asks for a credential, so each stays off the shared
+ * `proxy` network (spy4x/rostok#338, #398, #143) and only Open WebUI joins it.
+ */
+export const MCP_NETWORKS = [
+  `hl-playwright-mcp`,
+  `hl-email-mcp`,
+  `hl-github-mcp`,
+  `hl-google-maps-mcp`,
+] as const
+/** The one container allowed to reach the MCP servers. */
 const CLIENT = `hl-open-webui`
+
+/** The switches compose pastes unquoted into the JSON of TOOL_SERVER_CONNECTIONS. */
+export const MCP_ENABLE_KEYS = [
+  "OPEN_WEBUI_ENABLE_PLAYWRIGHT_MCP",
+  "OPEN_WEBUI_ENABLE_CALDAV_MCP",
+  "OPEN_WEBUI_ENABLE_EMAIL_MCP",
+  "OPEN_WEBUI_ENABLE_GOOGLE_MAPS_MCP",
+  "OPEN_WEBUI_ENABLE_GITHUB_MCP",
+] as const
+
+/**
+ * The keys of MCP_ENABLE_KEYS whose value in `env` is neither `true`, `false` nor empty (compose
+ * reads empty as `false`). Any other value makes TOOL_SERVER_CONNECTIONS invalid JSON, and Open
+ * WebUI then loads no tool server at all (spy4x/rostok#426). Exported for tests; no I/O.
+ */
+export function invalidEnableKeys(env: Record<string, string | undefined>): string[] {
+  return MCP_ENABLE_KEYS.filter((key) => ![undefined, "", "true", "false"].includes(env[key]))
+}
 
 /** A Docker container or network name: safe to put into a shell command unquoted. */
 function isDockerName(name: string): boolean {
@@ -128,11 +155,20 @@ export function buildConnectScript(network: string, client: string): string {
 }
 
 if (import.meta.main) {
-  // The playwright stack keeps its MCP proxy on a network of its own (spy4x/rostok#338), and a
-  // recreated hl-open-webui has lost its place on it. A local server (SSH_ADDRESS=local) has no
-  // SSH_HOST: every command of this hook then runs on this machine.
-  {
-    const script = buildConnectScript(NETWORK, CLIENT)
+  // Compose has already started the container by now, so this cannot stop the broken JSON; it
+  // fails the deploy with the key to fix instead of leaving Open WebUI silently without tools.
+  const invalid = invalidEnableKeys(Deno.env.toObject())
+  if (invalid.length > 0) {
+    error(`after.deploy.ts: ${invalid.join(", ")} must be true or false in .env`)
+    Deno.exit(1)
+  }
+
+  // Each MCP server stack keeps its server on a network of its own, and a recreated
+  // hl-open-webui has lost its place on them. A network that does not exist is a stack this server
+  // does not run, and is skipped. A local server (SSH_ADDRESS=local) has no SSH_HOST: every command
+  // of this hook then runs on this machine.
+  for (const network of MCP_NETWORKS) {
+    const script = buildConnectScript(network, CLIENT)
     const host = Deno.env.get("SSH_HOST")
     const connect = await runCommand(
       host
@@ -146,7 +182,7 @@ if (import.meta.main) {
         : ["sh", "-c", script],
     )
     if (!connect.success) {
-      error(`could not connect ${CLIENT} to ${NETWORK}: ${connect.error || connect.output}`)
+      error(`could not connect ${CLIENT} to ${network}: ${connect.error || connect.output}`)
       Deno.exit(1)
     }
     log(connect.output.trim())
@@ -159,8 +195,10 @@ if (import.meta.main) {
   // Container-side names (OPENAI_API_KEYS/OPENAI_API_BASE_URLS, exported
   // below into the container's own shell) are unaffected by the host .env
   // prefix — only the host-side read changes.
-  const OPENAI_API_KEYS = Deno.env.get("OPEN_WEBUI_OPENAI_API_KEYS")
-  const OPENAI_API_BASE_URLS = Deno.env.get("OPEN_WEBUI_OPENAI_API_BASE_URLS")
+  // Both empty is a server with no OpenAI-compatible provider (Ollama only): init-models.py then
+  // leaves the provider list alone.
+  const OPENAI_API_KEYS = Deno.env.get("OPEN_WEBUI_OPENAI_API_KEYS") ?? ""
+  const OPENAI_API_BASE_URLS = Deno.env.get("OPEN_WEBUI_OPENAI_API_BASE_URLS") ?? ""
 
   if (!PATH_APPS) {
     error("after.deploy.ts: PATH_APPS must be set")
@@ -175,9 +213,9 @@ if (import.meta.main) {
   }
   /** `argv` as the command that runs it on the deploy target. */
   const onTarget = (argv: string[]) => buildTargetCommand(argv, SSH_HOST, SSH_PORT, SSH_USER)
-  if (!OPENAI_API_KEYS || !OPENAI_API_BASE_URLS) {
+  if (!OPENAI_API_KEYS !== !OPENAI_API_BASE_URLS) {
     error(
-      "after.deploy.ts: OPEN_WEBUI_OPENAI_API_KEYS and OPEN_WEBUI_OPENAI_API_BASE_URLS must be set in .env",
+      "after.deploy.ts: set both OPEN_WEBUI_OPENAI_API_KEYS and OPEN_WEBUI_OPENAI_API_BASE_URLS in .env, or neither",
     )
     Deno.exit(1)
   }

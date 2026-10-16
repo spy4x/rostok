@@ -81,34 +81,15 @@ Subsequent deploys are fast (cached).
 
 ### 4. Wire into Open WebUI
 
-Add to `TOOL_SERVER_CONNECTIONS` in `stacks/open-webui/compose.yml`:
-
-```json
-{
-  "url": "http://hl-google-maps-mcp:3000/mcp",
-  "type": "mcp",
-  "auth_type": "none",
-  "headers": {
-    "Accept": "application/json, text/event-stream",
-    "Content-Type": "application/json"
-  },
-  "info": {
-    "id": "google-maps-mcp",
-    "name": "Google Maps",
-    "description": "Places, geocoding, directions, weather via Google Maps Platform"
-  },
-  "config": {
-    "enable": true,
-    "access_grants": [{ "principal_type": "user", "principal_id": "*", "permission": "read" }]
-  }
-}
-```
-
-Then restart Open WebUI:
+The `open-webui` stack already lists this server among its tool servers, switched off. Set
+`OPEN_WEBUI_ENABLE_GOOGLE_MAPS_MCP=true` in the server's `.env` and deploy both stacks:
 
 ```bash
-deno task deploy home open-webui
+rostok deploy <server>
 ```
+
+Open WebUI's `after.deploy.ts` connects `hl-open-webui` to this stack's `hl-google-maps-mcp`
+network.
 
 ### 5. Verify
 
@@ -142,7 +123,8 @@ For personal/agentic use (a few hundred queries/month), expect **$0/month**.
 ## Security
 
 - API key stored only in the server's `.env` (encrypted via age64 to `.env.age`)
-- No Traefik labels — MCP only reachable from `proxy` Docker network
+- No Traefik labels, and on no shared Docker network: only its own `hl-google-maps-mcp` network,
+  which only Open WebUI joins. The endpoint asks for no credential and spends your quota.
 - Container has `no-new-privileges:true` and 192M memory limit
 - Restrict the key in Google Cloud Console to only the APIs we use
 
@@ -153,5 +135,5 @@ For personal/agentic use (a few hundred queries/month), expect **$0/month**.
 | `REQUEST_DENIED` from API            | Billing not enabled or API not enabled | Enable in Google Cloud Console                              |
 | `API_KEY_INVALID`                    | Wrong/restricted key                   | Check `GOOGLE_MAPS_MCP_API_KEY` in .env, re-issue if needed |
 | `OVER_QUERY_LIMIT`                   | Free tier exhausted or quota too low   | Wait or increase quota in Cloud Console                     |
-| Tools not appearing in Open WebUI    | TOOL_SERVER_CONNECTIONS misconfigured  | Check JSON syntax; restart Open WebUI container             |
+| Tools not appearing in Open WebUI    | Switch off, or not on the network      | `OPEN_WEBUI_ENABLE_GOOGLE_MAPS_MCP=true`, then deploy       |
 | Container build fails on `git clone` | Network blocked                        | Pre-clone the repo, mount as volume, change Dockerfile      |

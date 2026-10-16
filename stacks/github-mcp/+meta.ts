@@ -2,7 +2,8 @@
 //
 // github-mcp-server behind a small HTTP wrapper (Streamable HTTP), built from the stack's own
 // Dockerfile. Internal only: no Traefik route, so no domain and no `requires: ["traefik"]`.
-// Other containers on the `proxy` network reach it as `http://hl-github-mcp:3000`.
+// Only Open WebUI reaches it, as `http://hl-github-mcp:3000` on this stack's own `hl-github-mcp`
+// network (spy4x/rostok#398).
 //
 // GITHUB_MCP_TOKEN comes from outside (a personal access token), so it has no default: `stack add`
 // asks for it. GITHUB_MCP_VERSION is the release tag the Dockerfile builds; its default equals

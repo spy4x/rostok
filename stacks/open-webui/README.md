@@ -15,15 +15,20 @@ Web UI: `https://${OPEN_WEBUI_DOMAIN}`
 
 ## What you get with default answers
 
-`rostok stack add open-webui` asks for one thing you must bring: the API key and base URL of at
-least one OpenAI-compatible provider. With every other answer left at its default:
+`rostok stack add open-webui` (with or without `-n`) needs nothing from you. It does not ask for
+a model provider: pass the API keys and base URLs of your OpenAI-compatible providers with
+`--var OPEN_WEBUI_OPENAI_API_KEYS=<keys> --var OPEN_WEBUI_OPENAI_API_BASE_URLS=<urls>`, or set
+both in the server's `.env`. Set both or neither; the deploy hook refuses one without the other.
+A server that only runs local models leaves both empty and sets
+`OPEN_WEBUI_ENABLE_OLLAMA_API=true`. With every other answer left at its default:
 
 - every model your providers return is listed, and none is preselected;
 - uploaded documents go through Open WebUI's built-in extractor, and web pages through its
   built-in loader;
 - the two tools this stack runs itself (YouTube transcript and web fetch, through `mcpo`) work;
 - web search, image generation, Ollama and the tools of other stacks are off, so nothing points
-  at a stack this server does not run.
+  at a stack this server does not run;
+- web fetch refuses private addresses (below).
 
 ## Turning on the optional parts
 
@@ -41,6 +46,16 @@ Each needs something else to exist first. Set the variables in the server's `.en
 | GitHub tools                     | the `github-mcp` stack             | `OPEN_WEBUI_ENABLE_GITHUB_MCP=true`                                                            |
 | Image generation                 | a provider with an image model     | `OPEN_WEBUI_ENABLE_IMAGE_GENERATION=true`, `OPEN_WEBUI_IMAGE_GENERATION_MODEL=<model id>`      |
 | Document extraction through Tika | your own Tika server (not shipped) | `OPEN_WEBUI_CONTENT_EXTRACTION_ENGINE=tika`, `OPEN_WEBUI_TIKA_SERVER_URL=<its URL>`            |
+| Web pages from your own LAN      | nothing                            | `OPEN_WEBUI_ENABLE_RAG_LOCAL_WEB_FETCH=true` (below)                                           |
+
+Each `OPEN_WEBUI_ENABLE_<NAME>_MCP` switch must be `true` or `false`. Compose writes the value
+unquoted into the JSON list of tool servers, where any other value, such as `yes` or `True`, makes
+the whole list invalid and Open WebUI loads no tool server at all. The deploy hook therefore fails
+the deploy and names the key.
+
+**Local web fetch.** Off by default. When it is on, any signed-in user can ask Open WebUI to fetch
+a private address, such as an admin page of another container or your router, and read the answer
+in the chat. Turn it on only when you need pages from your own network and trust every account.
 
 **caldav-mcp token.** Write `OPEN_WEBUI_CALDAV_MCP_TOKEN=${CALDAV_MCP_TOKEN}` in the server's
 `.env` by hand, without quotes and below the `CALDAV_MCP_TOKEN` line, so compose resolves the
@@ -63,14 +78,18 @@ leave it empty to keep them all.
 
 Declared in `+meta.ts`; `rostok stack add open-webui` writes them to the server's `.env`. Requires
 the `traefik` stack. `after.deploy.ts` copies the provider list into Open WebUI's database on
-every deploy. It also connects `hl-open-webui` to the playwright stack's `hl-playwright-mcp` network
-when that network exists.
+every deploy. It also connects `hl-open-webui` to the private network of each MCP server stack
+(`hl-playwright-mcp`, `hl-email-mcp`, `hl-github-mcp`, `hl-google-maps-mcp`) that exists on the
+server. Those servers ask callers for no credential, so they are on no shared network, and Open
+WebUI is the only other container that can reach them. `rostok deploy <server>` runs this hook
+every time; after `rostok deploy <server> <mcp stack>` of a newly added MCP stack alone, run
+`rostok deploy <server> open-webui` too, so the new network is connected.
 
 | Key                                                    | Default                                  | Meaning                                                            |
 | ------------------------------------------------------ | ---------------------------------------- | ------------------------------------------------------------------ |
 | `OPEN_WEBUI_DOMAIN`                                    | `ai.${DOMAIN}`                           | Public host of the web UI                                          |
-| `OPEN_WEBUI_OPENAI_API_KEYS`                           | none, secret, required                   | Keys of your OpenAI-compatible providers, `;`-separated            |
-| `OPEN_WEBUI_OPENAI_API_BASE_URLS`                      | none, required                           | Base URLs of those providers, same order                           |
+| `OPEN_WEBUI_OPENAI_API_KEYS`                           | none, secret                             | Keys of your OpenAI-compatible providers, `;`-separated            |
+| `OPEN_WEBUI_OPENAI_API_BASE_URLS`                      | none                                     | Base URLs of those providers, same order                           |
 | `OPEN_WEBUI_WEBUI_SECRET_KEY`                          | generated, secret                        | Session signing key (`WEBUI_SECRET_KEY`)                           |
 | `OPEN_WEBUI_HF_TOKEN`                                  | none, secret                             | Optional Hugging Face token                                        |
 | `OPEN_WEBUI_MCPO_API_KEY`                              | generated, secret                        | API key Open WebUI sends to mcpo                                   |
@@ -81,6 +100,7 @@ when that network exists.
 | `OPEN_WEBUI_IMAGE_GENERATION_MODEL`                    | none                                     | Image model of your provider                                       |
 | `OPEN_WEBUI_WEB_LOADER_ENGINE`                         | none                                     | Web page loader (empty for the built-in one, or `playwright`)      |
 | `OPEN_WEBUI_PLAYWRIGHT_WS_URL`                         | none                                     | Playwright URL, for the `playwright` loader                        |
+| `OPEN_WEBUI_ENABLE_RAG_LOCAL_WEB_FETCH`                | `false`                                  | Let users fetch pages from private addresses                       |
 | `OPEN_WEBUI_ENABLE_WEB_SEARCH`                         | `false`                                  | Enable web search                                                  |
 | `OPEN_WEBUI_WEB_SEARCH_ENGINE`                         | `searxng`                                | Web search engine                                                  |
 | `OPEN_WEBUI_SEARXNG_QUERY_URL`                         | `http://searxng:8080/search?format=json` | SearXNG query URL                                                  |

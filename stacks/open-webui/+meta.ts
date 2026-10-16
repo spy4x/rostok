@@ -10,8 +10,14 @@
 //
 // Variable shape:
 //   - OPEN_WEBUI_OPENAI_API_KEYS / OPEN_WEBUI_OPENAI_API_BASE_URLS: semicolon-separated lists,
-//     one entry per OpenAI-compatible provider, matched by position. Required: the deploy hook
-//     refuses to run without them. Keys come from the provider, so there is no default.
+//     one entry per OpenAI-compatible provider, matched by position. Optional, so that an
+//     Ollama-only server (OPEN_WEBUI_ENABLE_OLLAMA_API=true) can be added with `stack add -n`
+//     (spy4x/rostok#426); being optional, `stack add` does not ask for them: pass them with
+//     `--var` or set them in `.env`. The deploy hook refuses one without the other.
+//   - OPEN_WEBUI_ENABLE_<NAME>_MCP: `true` or `false`. Compose pastes the value unquoted into
+//     JSON, so the deploy hook refuses any other value, naming the key.
+//   - OPEN_WEBUI_ENABLE_RAG_LOCAL_WEB_FETCH: off by default (spy4x/rostok#399). On, any signed-in
+//     user can make Open WebUI fetch a private address and read the answer.
 //   - OPEN_WEBUI_WEBUI_SECRET_KEY: secret, generated at `stack add`. Compose passes it as
 //     WEBUI_SECRET_KEY, which signs sessions.
 //   - OPEN_WEBUI_HF_TOKEN: optional Hugging Face token.
@@ -48,14 +54,14 @@ export default {
     },
     {
       key: "OPEN_WEBUI_OPENAI_API_KEYS",
-      question: "API keys of your OpenAI-compatible providers (semicolon-separated)?",
-      required: true,
+      question: "API keys of your OpenAI-compatible providers (semicolon-separated, may be empty)?",
+      required: false,
       secret: true,
     },
     {
       key: "OPEN_WEBUI_OPENAI_API_BASE_URLS",
-      question: "Base URLs of those providers, same order (semicolon-separated)?",
-      required: true,
+      question: "Base URLs of those providers, same order (semicolon-separated, may be empty)?",
+      required: false,
     },
     {
       key: "OPEN_WEBUI_WEBUI_SECRET_KEY",
@@ -113,6 +119,12 @@ export default {
       key: "OPEN_WEBUI_PLAYWRIGHT_WS_URL",
       question: "Playwright URL for the playwright loader (may be empty)?",
       required: false,
+    },
+    {
+      key: "OPEN_WEBUI_ENABLE_RAG_LOCAL_WEB_FETCH",
+      question: "Let users fetch pages from private addresses (your LAN, other containers)?",
+      default: "false",
+      required: true,
     },
     {
       key: "OPEN_WEBUI_ENABLE_WEB_SEARCH",

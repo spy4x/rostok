@@ -1,8 +1,9 @@
 // Stack metadata for `google-maps-mcp`.
 //
 // mcp-google-map built from the stack's own Dockerfile, speaking Streamable HTTP. Internal only:
-// no Traefik route, so no domain and no `requires: ["traefik"]`. Other containers on the `proxy`
-// network reach it as `http://hl-google-maps-mcp:3000`.
+// no Traefik route, so no domain and no `requires: ["traefik"]`. Only Open WebUI reaches it, as
+// `http://hl-google-maps-mcp:3000` on this stack's own `hl-google-maps-mcp` network
+// (spy4x/rostok#398).
 //
 // GOOGLE_MAPS_MCP_API_KEY comes from outside (Google Cloud console), so it has no default:
 // `stack add` asks for it. The two optional keys default to compose's own fallbacks.
