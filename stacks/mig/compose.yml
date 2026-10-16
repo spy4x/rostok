@@ -79,10 +79,12 @@ services:
       # robots-deny — booking page isn't index-worthy.
       # MIG_MIDDLEWARES replaces the whole chain for every path outside
       # /embed. With the default, no site can show mig in an iframe:
-      # security-headers sends X-Frame-Options: DENY, here and again on
-      # the websecure entrypoint. To embed the scheduler in your own
-      # site, set MIG_EMBED_MIDDLEWARES on the hl-mig-embed router below
-      # instead — see README.md § "Embedding in your own site". Deploy
+      # security-headers sends X-Frame-Options: DENY. The websecure
+      # entrypoint does not (traefik's security-headers-base), so a chain
+      # without security-headers@file or frame-deny@file can be framed by
+      # any site. To embed the scheduler in your own site, set
+      # MIG_EMBED_MIDDLEWARES on the hl-mig-embed router below instead —
+      # see README.md § "Embedding in your own site". Deploy
       # traefik before mig: a router naming a middleware that does not
       # exist yet answers 404.
       - "traefik.http.routers.hl-mig.middlewares=${MIG_MIDDLEWARES:-security-headers@file,compression@file,robots-deny@file}"
@@ -106,4 +108,7 @@ services:
       # MIG_EMBED_MIDDLEWARES falls back to whatever MIG_MIDDLEWARES
       # resolves to (a server's whole-host override included), so a
       # server that never set either variable sees no behavior change.
+      # An embedding chain leaves out security-headers@file and
+      # frame-deny@file: /embed then sends no X-Frame-Options, and its
+      # frame-ancestors policy alone says who may frame it.
       - "traefik.http.routers.hl-mig-embed.middlewares=${MIG_EMBED_MIDDLEWARES:-${MIG_MIDDLEWARES:-security-headers@file,compression@file,robots-deny@file}}"

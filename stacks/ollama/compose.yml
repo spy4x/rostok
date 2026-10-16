@@ -39,5 +39,5 @@ services:
       - "traefik.http.routers.hl-ollama.rule=Host(`${OLLAMA_DOMAIN:-ollama.${DOMAIN}}`)"
       - "traefik.http.routers.hl-ollama.entrypoints=websecure"
       - "traefik.http.routers.hl-ollama.tls=true"
-      - "traefik.http.routers.hl-ollama.middlewares=authelia@file,robots-deny@file"
+      - "traefik.http.routers.hl-ollama.middlewares=frame-deny@file,authelia@file,robots-deny@file"
       - "traefik.http.routers.hl-ollama.tls.certresolver=myresolver"

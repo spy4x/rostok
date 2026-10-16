@@ -52,7 +52,7 @@ services:
       - "traefik.http.routers.hl-myservice.entrypoints=websecure"
       - "traefik.http.routers.hl-myservice.tls.certresolver=letsencrypt"
     # Auth middleware — every non-public service needs one:
-    - "traefik.http.routers.hl-myservice.middlewares=authelia@file"
+    - "traefik.http.routers.hl-myservice.middlewares=frame-deny@file,authelia@file"
     deploy:
       resources:
         limits:
@@ -79,6 +79,11 @@ networks:
   - `middlewares=authelia@file` if the user has SSO
   - `middlewares=auth` (basic auth) as a fallback
   - Public services (status pages, calendars) have no auth middleware
+- **`frame-deny@file` on every router** — it sends `X-Frame-Options: DENY`, which the
+  `websecure` entrypoint no longer sends (spy4x/rostok#318). Leave it out only for a page that
+  must be shown in another site's frame, like mig's `/embed`.
+  `stacks/traefik/frame-deny.test.ts` fails on a router that has neither it nor
+  `security-headers@file`.
 - **Resource limits** — set `cpus` and `memory` so a misbehaving
   container can't starve the host.
 - **Single-service stack** — if the stack has only one container, alias

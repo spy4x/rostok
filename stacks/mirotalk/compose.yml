@@ -42,7 +42,7 @@ services:
       - "traefik.docker.network=proxy"
       - "traefik.http.services.hl-mirotalk.loadbalancer.server.port=3000"
       - "traefik.http.routers.hl-mirotalk.rule=Host(`${MIROTALK_DOMAIN:-talk.${DOMAIN}}`)"
-      - "traefik.http.routers.hl-mirotalk.middlewares=robots-deny@file"
+      - "traefik.http.routers.hl-mirotalk.middlewares=frame-deny@file,robots-deny@file"
       - "traefik.http.routers.hl-mirotalk.entrypoints=websecure"
       - "traefik.http.routers.hl-mirotalk.tls=true"
       - "traefik.http.routers.hl-mirotalk.tls.certresolver=myresolver"

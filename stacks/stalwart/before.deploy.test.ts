@@ -119,7 +119,7 @@ Deno.test("compose: without extra domains the hosts are the primary domain's onl
 Deno.test("compose: every extra domain gets its own MTA-STS router and its certificate synced", async () => {
   const text = await composeFor(["example.org", "sub.example.net"])
   const own = [
-    "middlewares=robots-deny@file",
+    "middlewares=frame-deny@file,robots-deny@file",
     "entrypoints=websecure",
     "tls=true",
     "tls.certresolver=myresolver",
@@ -144,7 +144,7 @@ Deno.test("compose: the primary MTA-STS host keeps a router of its own, whatever
     const text = await composeFor(extra)
     assertEquals(routerLabels(text, "hl-mta-sts-primary"), [
       "rule=Host(`mta-sts.example.com`)",
-      "middlewares=robots-deny@file",
+      "middlewares=frame-deny@file,robots-deny@file",
       "entrypoints=websecure",
       "tls=true",
       "tls.certresolver=myresolver",
@@ -191,7 +191,7 @@ Deno.test("compose: the JMAP router uses the stack's own CORS middleware, not on
   const text = await composeFor([])
   assertStringIncludes(
     text,
-    '"traefik.http.routers.hl-stalwart.middlewares=hl-stalwart-jmap@docker,robots-deny@file"',
+    '"traefik.http.routers.hl-stalwart.middlewares=frame-deny@file,hl-stalwart-jmap@docker,robots-deny@file"',
   )
   assertEquals(text.includes("stalwart-jmap@file"), false)
 })

@@ -9,13 +9,15 @@ http:
       compress:
         excludedContentTypes:
           - text/event-stream
-    # security-headers runs on every websecure router (the entrypoint middleware in compose.yml).
-    # It runs after a router's own middlewares and after the app, and each header it names
-    # replaces the value they set, so it names only headers that no service needs to change.
-    security-headers:
+    # security-headers-base runs on every websecure router (the entrypoint middleware in
+    # compose.yml). It runs after a router's own middlewares and after the app, and each header it
+    # names replaces the value they set, so it names only headers that no service needs to change.
+    # That is why it sends no X-Frame-Options: a router could never remove it, and mig's /embed
+    # must drop it to be framed (spy4x/rostok#318). Every router that must refuse framing lists
+    # frame-deny@file, or security-headers@file, in its own middlewares instead.
+    security-headers-base:
       headers:
         contentTypeNosniff: true
-        frameDeny: true
         # No referrerPolicy (spy4x/rostok#356): Traefik would replace the stricter `no-referrer`
         # that an app sets on its own pages (caldav-mcp's consent page and redirect). Browsers
         # already default to strict-origin-when-cross-origin, the value this used to set.
@@ -47,6 +49,21 @@ http:
           # not including it in its router labels.
           # All private self-hosted services SHOULD add robots-deny@file to
           # their Traefik router middlewares. See docs/blocking-crawlers.md.
+    # frame-deny: X-Frame-Options DENY, so no site can show the router's pages in a frame. Every
+    # catalog router lists it, or security-headers below; stacks/traefik/frame-deny.test.ts checks
+    # that. A router that leaves both out can be framed by any site.
+    frame-deny:
+      headers:
+        frameDeny: true
+    # security-headers: the base headers plus frame-deny, for a router chain that names every
+    # security header itself (mig's and caldav's *_MIDDLEWARES defaults). Before spy4x/rostok#318
+    # this was the entrypoint middleware, with frameDeny in it, so a chain written then keeps
+    # refusing to be framed.
+    security-headers:
+      chain:
+        middlewares:
+          - security-headers-base
+          - frame-deny
     # robots-deny: opt-in X-Robots-Tag noindex/nofollow for self-hosted services.
     # Add to a router's middlewares chain to block indexing:
     #   traefik.http.routers.X.middlewares=...,robots-deny@file

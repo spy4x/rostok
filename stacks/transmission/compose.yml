@@ -45,4 +45,4 @@ services:
       - "traefik.http.routers.hl-transmission.tls.certresolver=myresolver"
       # SSO via Authelia (forward auth).
       # See stacks/traefik/dynamic.yml for the middleware definition.
-      - "traefik.http.routers.hl-transmission.middlewares=authelia@file,robots-deny@file"
+      - "traefik.http.routers.hl-transmission.middlewares=frame-deny@file,authelia@file,robots-deny@file"

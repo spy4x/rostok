@@ -67,7 +67,7 @@ services:
       - "traefik.docker.network=proxy"
       - "traefik.http.services.hl-healthchecks.loadbalancer.server.port=8000"
       - "traefik.http.routers.hl-healthchecks.rule=Host(`${HEALTHCHECKS_DOMAIN:-healthchecks.${DOMAIN}}`)"
-      - "traefik.http.routers.hl-healthchecks.middlewares=robots-deny@file"
+      - "traefik.http.routers.hl-healthchecks.middlewares=frame-deny@file,robots-deny@file"
       - "traefik.http.routers.hl-healthchecks.entrypoints=websecure"
       - "traefik.http.routers.hl-healthchecks.tls=true"
       - "traefik.http.routers.hl-healthchecks.tls.certresolver=myresolver"

@@ -51,7 +51,7 @@ services:
       - "traefik.enable=true"
       - "traefik.docker.network=proxy"
       - "traefik.http.routers.hl-immich.rule=Host(`${IMMICH_DOMAIN}`)"
-      - "traefik.http.routers.hl-immich.middlewares=robots-deny@file"
+      - "traefik.http.routers.hl-immich.middlewares=frame-deny@file,robots-deny@file"
       - "traefik.http.routers.hl-immich.entrypoints=websecure"
       - "traefik.http.routers.hl-immich.tls=true"
       - "traefik.http.routers.hl-immich.tls.certresolver=myresolver"
@@ -63,7 +63,7 @@ services:
       - "traefik.http.routers.hl-immich-thumb.tls=true"
       - "traefik.http.routers.hl-immich-thumb.tls.certresolver=myresolver"
       - "traefik.http.routers.hl-immich-thumb.service=hl-immich"
-      - "traefik.http.routers.hl-immich-thumb.middlewares=immich-api-key,robots-deny@file"
+      - "traefik.http.routers.hl-immich-thumb.middlewares=frame-deny@file,immich-api-key,robots-deny@file"
       - "traefik.http.middlewares.immich-api-key.headers.customrequestheaders.x-api-key=${IMMICH_MCP_API_KEY}"
 
   machine-learning:
@@ -181,7 +181,7 @@ services:
       # shared security-headers middleware no longer allows every origin (spy4x/rostok#354), so the
       # kiosk router sets it itself.
       - "traefik.http.middlewares.hl-immich-kiosk-cors.headers.customresponseheaders.Access-Control-Allow-Origin=*"
-      - "traefik.http.routers.hl-immich-kiosk.middlewares=hl-immich-kiosk-cors@docker,robots-deny@file"
+      - "traefik.http.routers.hl-immich-kiosk.middlewares=frame-deny@file,hl-immich-kiosk-cors@docker,robots-deny@file"
       - "traefik.http.routers.hl-immich-kiosk.entrypoints=websecure"
       - "traefik.http.routers.hl-immich-kiosk.tls=true"
       - "traefik.http.routers.hl-immich-kiosk.tls.certresolver=myresolver"

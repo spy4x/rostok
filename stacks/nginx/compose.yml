@@ -42,4 +42,4 @@ services:
       - "traefik.http.routers.${NGINX_CONTAINER_NAME}.tls.certresolver=myresolver"
       # nginx-served sites are public-facing by default. Override the global
       # X-Robots-Tag deny from security-headers so SEO crawlers can index.
-      - "traefik.http.routers.${NGINX_CONTAINER_NAME}.middlewares=allow-index@file"
+      - "traefik.http.routers.${NGINX_CONTAINER_NAME}.middlewares=frame-deny@file,allow-index@file"

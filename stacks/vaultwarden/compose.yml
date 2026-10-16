@@ -60,5 +60,5 @@ services:
       - "traefik.http.routers.hl-vaultwarden.tls.certresolver=myresolver"
       - "traefik.http.routers.hl-vaultwarden.service=hl-vaultwarden"
       # Cloudflare real IP middleware
-      - "traefik.http.routers.hl-vaultwarden.middlewares=vaultwarden-realip,robots-deny@file"
+      - "traefik.http.routers.hl-vaultwarden.middlewares=frame-deny@file,vaultwarden-realip,robots-deny@file"
       - "traefik.http.middlewares.vaultwarden-realip.headers.customrequestheaders.CF-Connecting-IP="

@@ -24,23 +24,19 @@ Bookings persist as a JSON file in the bind-mounted `/data` volume.
 
 ## Embedding in your own site
 
-Out of the box every browser refuses to show mig in an iframe. The
-Traefik stack applies `security-headers@file` to every response on the
-`websecure` entrypoint (`stacks/traefik/compose.yml`), and mig's main
-router lists it again; it sends `X-Frame-Options: DENY`. That is the
-right default: nobody can frame your booking page to trick a visitor
-into clicking it.
+Out of the box every browser refuses to show mig in an iframe. mig's
+routers list `security-headers@file`, which sends
+`X-Frame-Options: DENY`. That is the right default: nobody can frame
+your booking page to trick a visitor into clicking it.
 
-A router cannot remove that header, because the entrypoint middleware
-runs last on the way out and sets it again. What a router can do is add
-a `Content-Security-Policy: frame-ancestors` header naming your site.
-Browsers that see both headers follow `frame-ancestors` and ignore
-`X-Frame-Options`: the Content Security Policy specification recommends
-it and every current engine does it. Checked with both headers on one
-response in Chromium 153, Firefox 155 and WebKitGTK 2.52 (the engine
-Safari uses; Safari itself was not tested): the named site can frame the
-page, any other origin is refused, and with `X-Frame-Options` alone
-everyone is refused.
+The Traefik stack's entrypoint middleware, `security-headers-base@file`
+(`stacks/traefik/compose.yml`), sends the other security headers on
+every response but no `X-Frame-Options`. An entrypoint middleware runs
+outside every router's chain, so a header it set could never be removed
+by a router (spy4x/rostok#318). The `X-Frame-Options` header comes only
+from a router's own chain, and a chain for `/embed` can leave it out and
+send a `Content-Security-Policy: frame-ancestors` header naming your
+site instead.
 
 Every step of the embed flow stays under `/embed` (`/embed`,
 `/embed?date=…`, `/embed?date=…&slot=…`, the booking form posting to
@@ -79,6 +75,11 @@ and keeps refusing to be framed.
    MIG_EMBED_MIDDLEWARES=mig-frame-ancestors@file,compression@file,robots-deny@file
    ```
 
+   Leave `security-headers@file` and `frame-deny@file` out of this
+   chain: either one sends `X-Frame-Options: DENY`, which refuses every
+   site, yours included, in a browser that does not know
+   `frame-ancestors`.
+
    Leave `MIG_MIDDLEWARES` alone — it still governs every path outside
    `/embed`. If you had set `MIG_MIDDLEWARES` for embedding before this
    change, move that chain to `MIG_EMBED_MIDDLEWARES` and set
@@ -97,11 +98,11 @@ and keeps refusing to be framed.
    ```bash
    curl -sI https://meet.example.com/embed | grep -iE "x-frame|content-security"
    # content-security-policy: frame-ancestors https://example.com
-   # x-frame-options: DENY     <- still there, from the entrypoint; browsers ignore it
+   # (no x-frame-options line)
 
    curl -sI https://meet.example.com/ | grep -iE "x-frame|content-security"
    curl -sI https://meet.example.com/confirmed | grep -iE "x-frame|content-security"
-   # neither line shows content-security-policy — only x-frame-options: DENY
+   # neither shows content-security-policy; both show x-frame-options: DENY
    ```
 
    Then open a page on your site that frames `/embed` and click through

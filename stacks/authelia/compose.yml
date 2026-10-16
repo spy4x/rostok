@@ -49,7 +49,7 @@ services:
       - "traefik.http.routers.hl-authelia.entrypoints=websecure"
       - "traefik.http.routers.hl-authelia.tls=true"
       - "traefik.http.routers.hl-authelia.tls.certresolver=myresolver"
-      - "traefik.http.routers.hl-authelia.middlewares=robots-deny@file"
+      - "traefik.http.routers.hl-authelia.middlewares=frame-deny@file,robots-deny@file"
       # before.deploy.ts replaces the next line with a label that holds a hash of the two config
       # files. A deploy replaces a changed file, but the container keeps the old one mounted
       # until it is recreated; the changed label makes compose recreate it.

@@ -62,4 +62,4 @@ services:
       - "traefik.http.routers.hl-oko.tls=true"
       - "traefik.http.routers.hl-oko.tls.certresolver=myresolver"
       # Public-facing dashboard; allow SEO indexing.
-      - "traefik.http.routers.hl-oko.middlewares=allow-index@file"
+      - "traefik.http.routers.hl-oko.middlewares=frame-deny@file,allow-index@file"

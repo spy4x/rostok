@@ -68,7 +68,7 @@ services:
       - "traefik.docker.network=proxy"
       - "traefik.http.services.hl-umami.loadbalancer.server.port=3000"
       - "traefik.http.routers.hl-umami.rule=Host(`${UMAMI_DOMAIN:-stats.${DOMAIN}}`)"
-      - "traefik.http.routers.hl-umami.middlewares=robots-deny@file"
+      - "traefik.http.routers.hl-umami.middlewares=frame-deny@file,robots-deny@file"
       - "traefik.http.routers.hl-umami.entrypoints=websecure"
       - "traefik.http.routers.hl-umami.tls=true"
       - "traefik.http.routers.hl-umami.tls.certresolver=myresolver"
@@ -77,7 +77,7 @@ services:
       # then reach Umami at /umami/*. The prefix is stripped before Umami sees the request.
       - "traefik.http.middlewares.umami-stripprefix.stripprefix.prefixes=/umami"
       - "traefik.http.routers.hl-umami-proxy.rule=(Host(`${UMAMI_PROXY_DOMAIN:-${DOMAIN}}`) || Host(`${UMAMI_PROXY_WWW_DOMAIN:-www.${DOMAIN}}`)) && PathPrefix(`/umami/`)"
-      - "traefik.http.routers.hl-umami-proxy.middlewares=umami-stripprefix,robots-deny@file"
+      - "traefik.http.routers.hl-umami-proxy.middlewares=frame-deny@file,umami-stripprefix,robots-deny@file"
       - "traefik.http.routers.hl-umami-proxy.entrypoints=websecure"
       - "traefik.http.routers.hl-umami-proxy.tls=true"
       - "traefik.http.routers.hl-umami-proxy.tls.certresolver=myresolver"
