@@ -12,7 +12,7 @@ services:
   # Speaks Streamable HTTP on port 9557. Open WebUI connects via TOOL_SERVER_CONNECTIONS.
   email-mcp:
     container_name: hl-email-mcp
-    image: ghcr.io/ai-zerolab/mcp-email-server:latest
+    image: ghcr.io/ai-zerolab/mcp-email-server:${EMAIL_MCP_IMAGE_TAG:-latest}
     command: ["streamable-http"]
     restart: unless-stopped
     environment:

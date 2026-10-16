@@ -85,45 +85,47 @@ WebUI is the only other container that can reach them. `rostok deploy <server>` 
 every time; after `rostok deploy <server> <mcp stack>` of a newly added MCP stack alone, run
 `rostok deploy <server> open-webui` too, so the new network is connected.
 
-| Key                                                    | Default                                  | Meaning                                                            |
-| ------------------------------------------------------ | ---------------------------------------- | ------------------------------------------------------------------ |
-| `OPEN_WEBUI_DOMAIN`                                    | `ai.${DOMAIN}`                           | Public host of the web UI                                          |
-| `OPEN_WEBUI_OPENAI_API_KEYS`                           | none, secret                             | Keys of your OpenAI-compatible providers, `;`-separated            |
-| `OPEN_WEBUI_OPENAI_API_BASE_URLS`                      | none                                     | Base URLs of those providers, same order                           |
-| `OPEN_WEBUI_WEBUI_SECRET_KEY`                          | generated, secret                        | Session signing key (`WEBUI_SECRET_KEY`)                           |
-| `OPEN_WEBUI_HF_TOKEN`                                  | none, secret                             | Optional Hugging Face token                                        |
-| `OPEN_WEBUI_MCPO_API_KEY`                              | generated, secret                        | API key Open WebUI sends to mcpo                                   |
-| `OPEN_WEBUI_CALDAV_MCP_TOKEN`                          | none, secret                             | Bearer token sent to caldav-mcp, normally `${CALDAV_MCP_TOKEN}`    |
-| `OPEN_WEBUI_OPENAI_API_CONFIGS`                        | none                                     | Optional model whitelist per provider, as JSON                     |
-| `OPEN_WEBUI_DEFAULT_MODELS`                            | none                                     | Models preselected in a new chat, comma-separated                  |
-| `OPEN_WEBUI_ENABLE_IMAGE_GENERATION`                   | `false`                                  | Enable image generation                                            |
-| `OPEN_WEBUI_IMAGE_GENERATION_MODEL`                    | none                                     | Image model of your provider                                       |
-| `OPEN_WEBUI_WEB_LOADER_ENGINE`                         | none                                     | Web page loader (empty for the built-in one, or `playwright`)      |
-| `OPEN_WEBUI_PLAYWRIGHT_WS_URL`                         | none                                     | Playwright URL, for the `playwright` loader                        |
-| `OPEN_WEBUI_ENABLE_RAG_LOCAL_WEB_FETCH`                | `false`                                  | Let users fetch pages from private addresses                       |
-| `OPEN_WEBUI_ENABLE_WEB_SEARCH`                         | `false`                                  | Enable web search                                                  |
-| `OPEN_WEBUI_WEB_SEARCH_ENGINE`                         | `searxng`                                | Web search engine                                                  |
-| `OPEN_WEBUI_SEARXNG_QUERY_URL`                         | `http://searxng:8080/search?format=json` | SearXNG query URL                                                  |
-| `OPEN_WEBUI_WEB_SEARCH_RESULT_COUNT`                   | `3`                                      | Web search results per query                                       |
-| `OPEN_WEBUI_BYPASS_WEB_SEARCH_EMBEDDING_AND_RETRIEVAL` | `true`                                   | Pass web search results to the model without embedding             |
-| `OPEN_WEBUI_ENABLE_OLLAMA_API`                         | `false`                                  | Enable the Ollama connection                                       |
-| `OPEN_WEBUI_OLLAMA_API_BASE_URL`                       | `http://ollama:11434`                    | Ollama API base URL                                                |
-| `OPEN_WEBUI_OLLAMA_BASE_URL`                           | `http://ollama:11434`                    | Ollama base URL                                                    |
-| `OPEN_WEBUI_ENABLE_PLAYWRIGHT_MCP`                     | `false`                                  | Offer the tools of the `playwright` stack                          |
-| `OPEN_WEBUI_ENABLE_CALDAV_MCP`                         | `false`                                  | Offer the tools of the `caldav-mcp` stack                          |
-| `OPEN_WEBUI_ENABLE_EMAIL_MCP`                          | `false`                                  | Offer the tools of the `email-mcp` stack                           |
-| `OPEN_WEBUI_ENABLE_GOOGLE_MAPS_MCP`                    | `false`                                  | Offer the tools of the `google-maps-mcp` stack                     |
-| `OPEN_WEBUI_ENABLE_GITHUB_MCP`                         | `false`                                  | Offer the tools of the `github-mcp` stack                          |
-| `OPEN_WEBUI_DEFAULT_USER_ROLE`                         | `user`                                   | Role of a new user                                                 |
-| `OPEN_WEBUI_ENABLE_SIGNUP`                             | `false`                                  | Allow sign-up                                                      |
-| `OPEN_WEBUI_ENABLE_LOGIN_FORM`                         | `true`                                   | Show the login form                                                |
-| `OPEN_WEBUI_CONTENT_EXTRACTION_ENGINE`                 | none                                     | Document extraction engine (empty for the built-in one, or `tika`) |
-| `OPEN_WEBUI_TIKA_SERVER_URL`                           | none                                     | URL of your Tika server, for the `tika` engine                     |
-| `OPEN_WEBUI_RAG_TOP_K`                                 | `10`                                     | Document chunks passed to the model                                |
-| `OPEN_WEBUI_RAG_FILE_MAX_COUNT`                        | `10`                                     | Maximum files per upload                                           |
-| `OPEN_WEBUI_RAG_FILE_MAX_SIZE`                         | `52428800`                               | Maximum file size in bytes                                         |
-| `OPEN_WEBUI_ENABLE_PERSISTENT_CONFIG`                  | `false`                                  | Keep settings changed in the UI across restarts                    |
-| `OPEN_WEBUI_WEBUI_NAME`                                | `Homelab AI`                             | Name shown in the UI                                               |
+| Key                                                    | Default                                  | Meaning                                                             |
+| ------------------------------------------------------ | ---------------------------------------- | ------------------------------------------------------------------- |
+| `OPEN_WEBUI_DOMAIN`                                    | `ai.${DOMAIN}`                           | Public host of the web UI                                           |
+| `OPEN_WEBUI_OPENAI_API_KEYS`                           | none, secret                             | Keys of your OpenAI-compatible providers, `;`-separated             |
+| `OPEN_WEBUI_OPENAI_API_BASE_URLS`                      | none                                     | Base URLs of those providers, same order                            |
+| `OPEN_WEBUI_WEBUI_SECRET_KEY`                          | generated, secret                        | Session signing key (`WEBUI_SECRET_KEY`)                            |
+| `OPEN_WEBUI_HF_TOKEN`                                  | none, secret                             | Optional Hugging Face token                                         |
+| `OPEN_WEBUI_MCPO_API_KEY`                              | generated, secret                        | API key Open WebUI sends to mcpo                                    |
+| `OPEN_WEBUI_CALDAV_MCP_TOKEN`                          | none, secret                             | Bearer token sent to caldav-mcp, normally `${CALDAV_MCP_TOKEN}`     |
+| `OPEN_WEBUI_OPENAI_API_CONFIGS`                        | none                                     | Optional model whitelist per provider, as JSON                      |
+| `OPEN_WEBUI_DEFAULT_MODELS`                            | none                                     | Models preselected in a new chat, comma-separated                   |
+| `OPEN_WEBUI_ENABLE_IMAGE_GENERATION`                   | `false`                                  | Enable image generation                                             |
+| `OPEN_WEBUI_IMAGE_GENERATION_MODEL`                    | none                                     | Image model of your provider                                        |
+| `OPEN_WEBUI_WEB_LOADER_ENGINE`                         | none                                     | Web page loader (empty for the built-in one, or `playwright`)       |
+| `OPEN_WEBUI_PLAYWRIGHT_WS_URL`                         | none                                     | Playwright URL, for the `playwright` loader                         |
+| `OPEN_WEBUI_ENABLE_RAG_LOCAL_WEB_FETCH`                | `false`                                  | Let users fetch pages from private addresses                        |
+| `OPEN_WEBUI_ENABLE_WEB_SEARCH`                         | `false`                                  | Enable web search                                                   |
+| `OPEN_WEBUI_WEB_SEARCH_ENGINE`                         | `searxng`                                | Web search engine                                                   |
+| `OPEN_WEBUI_SEARXNG_QUERY_URL`                         | `http://searxng:8080/search?format=json` | SearXNG query URL                                                   |
+| `OPEN_WEBUI_WEB_SEARCH_RESULT_COUNT`                   | `3`                                      | Web search results per query                                        |
+| `OPEN_WEBUI_BYPASS_WEB_SEARCH_EMBEDDING_AND_RETRIEVAL` | `true`                                   | Pass web search results to the model without embedding              |
+| `OPEN_WEBUI_ENABLE_OLLAMA_API`                         | `false`                                  | Enable the Ollama connection                                        |
+| `OPEN_WEBUI_OLLAMA_API_BASE_URL`                       | `http://ollama:11434`                    | Ollama API base URL                                                 |
+| `OPEN_WEBUI_OLLAMA_BASE_URL`                           | `http://ollama:11434`                    | Ollama base URL                                                     |
+| `OPEN_WEBUI_ENABLE_PLAYWRIGHT_MCP`                     | `false`                                  | Offer the tools of the `playwright` stack                           |
+| `OPEN_WEBUI_ENABLE_CALDAV_MCP`                         | `false`                                  | Offer the tools of the `caldav-mcp` stack                           |
+| `OPEN_WEBUI_ENABLE_EMAIL_MCP`                          | `false`                                  | Offer the tools of the `email-mcp` stack                            |
+| `OPEN_WEBUI_ENABLE_GOOGLE_MAPS_MCP`                    | `false`                                  | Offer the tools of the `google-maps-mcp` stack                      |
+| `OPEN_WEBUI_ENABLE_GITHUB_MCP`                         | `false`                                  | Offer the tools of the `github-mcp` stack                           |
+| `OPEN_WEBUI_DEFAULT_USER_ROLE`                         | `user`                                   | Role of a new user                                                  |
+| `OPEN_WEBUI_ENABLE_SIGNUP`                             | `false`                                  | Allow sign-up                                                       |
+| `OPEN_WEBUI_ENABLE_LOGIN_FORM`                         | `true`                                   | Show the login form                                                 |
+| `OPEN_WEBUI_CONTENT_EXTRACTION_ENGINE`                 | none                                     | Document extraction engine (empty for the built-in one, or `tika`)  |
+| `OPEN_WEBUI_TIKA_SERVER_URL`                           | none                                     | URL of your Tika server, for the `tika` engine                      |
+| `OPEN_WEBUI_RAG_TOP_K`                                 | `10`                                     | Document chunks passed to the model                                 |
+| `OPEN_WEBUI_RAG_FILE_MAX_COUNT`                        | `10`                                     | Maximum files per upload                                            |
+| `OPEN_WEBUI_RAG_FILE_MAX_SIZE`                         | `52428800`                               | Maximum file size in bytes                                          |
+| `OPEN_WEBUI_ENABLE_PERSISTENT_CONFIG`                  | `false`                                  | Keep settings changed in the UI across restarts                     |
+| `OPEN_WEBUI_WEBUI_NAME`                                | `Homelab AI`                             | Name shown in the UI                                                |
+| `OPEN_WEBUI_IMAGE_TAG`                                 | `latest`                                 | Image tag of `ghcr.io/open-webui/open-webui` (service `open-webui`) |
+| `OPEN_WEBUI_MCPO_IMAGE_TAG`                            | `main`                                   | Image tag of `ghcr.io/open-webui/mcpo` (service `mcpo`)             |
 
 ## Resources
 

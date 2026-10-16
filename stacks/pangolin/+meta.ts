@@ -40,7 +40,7 @@ export default {
     },
     {
       key: "PANGOLIN_TRAEFIK_IMAGE_TAG",
-      default: "v3.7.6",
+      default: "v3.7.15",
       required: false,
     },
     {

@@ -59,6 +59,7 @@ rendered file. The deploy stops if a required key is missing.
 | `EMAIL_MCP_PASSWORD_2`     | none, secret     | Password of the second account (required with a user)       |
 | `EMAIL_MCP_FULL_NAME_2`    | its address      | Display name of the second account                          |
 | `EMAIL_MCP_ACCOUNT_NAME_2` | `second`         | Account name the assistant sees for the second account      |
+| `EMAIL_MCP_IMAGE_TAG`      | `latest`         | Image tag of `ghcr.io/ai-zerolab/mcp-email-server`          |
 
 The stack has no Traefik route, so it needs no domain and no `traefik` stack.
 

@@ -349,6 +349,7 @@ export async function stackAdd(
       toPin,
       createRegistryClient({ fetch: opts.fetch }),
       (message) => console.warn(message),
+      new Map([...floatingLatest].map((variable) => [variable, "latest"])),
     )
     for (const { variable } of toPin) {
       const at = writtenEntries.findIndex((e) => e.key === variable)
