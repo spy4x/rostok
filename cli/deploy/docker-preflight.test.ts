@@ -402,7 +402,7 @@ Deno.test("checkRemotePathsNotNested: strips control characters from a resolved 
     )
     assertEquals(err.message.includes("\x1b"), false, err.message)
     assertEquals(err.message.includes("\x07"), false, err.message)
-    assertStringIncludes(err.message, "/srv/apps/.vol]0;PWNEDume")
+    assertStringIncludes(err.message, "/srv/apps/.volume")
   })
 })
 

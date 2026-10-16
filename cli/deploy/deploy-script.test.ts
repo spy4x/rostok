@@ -6,6 +6,7 @@ import {
   parseDeployResults,
   printDeploySummary,
   type StackConfig,
+  VERIFY_LOG_LINE_BYTES,
   VERIFY_LOG_LINES,
   VERIFY_WAIT_SECONDS,
 } from "./deploy-script.ts"
@@ -77,10 +78,12 @@ interface FakeDockerOptions {
   psLines?: string[]
   /**
    * Containers as `<project>|<id>|/<name>|<status>|<exit code>|<restart count>|<finished at>`,
-   * right after `up -d` and after the wait. `after` defaults to `before`.
+   * right after `up -d`, after the first wait and after the second. `after` defaults to
+   * `before`, `later` to `after`.
    */
   before?: string[]
   after?: string[]
+  later?: string[]
   /** `docker logs` output per container ID. */
   logs?: Record<string, string>
   /**
@@ -115,7 +118,7 @@ const LONG_AGO = "2000-01-01T00:00:00.000000000Z"
  * `docker ps -a -q --filter`, `docker inspect` and `docker logs` answer from
  * `before`, `after` and `logs`, and everything else succeeds silently. The
  * fake `sleep` returns at once, records its argument, and switches the fake
- * `docker` from `before` to `after`. Neither fake calls a tool of its own
+ * `docker` from `before` to `after`, and on its second call to `later`. Neither fake calls a tool of its own
  * name, and each exits 97 when it finds itself called from itself.
  */
 async function runScriptWithFakeDocker(
@@ -133,6 +136,7 @@ async function runScriptWithFakeDocker(
     const removedLog = join(dir, "removed.log")
     const sleepLog = join(dir, "sleep.log")
     const slept = join(dir, "slept")
+    const sleptTwice = join(dir, "slept-twice")
     await Deno.writeTextFile(join(dir, "config.yml"), opts.composeConfig ?? "")
     const ownFile = `/srv/apps/stacks/${stacks[0].name}/compose.yml`
     const ps = (opts.psLines ?? []).map((l) => {
@@ -148,6 +152,7 @@ async function runScriptWithFakeDocker(
     const asFile = (lines: string[]) => lines.map((l) => `${l}\n`).join("")
     await Deno.writeTextFile(join(dir, "before.txt"), asFile(before))
     await Deno.writeTextFile(join(dir, "after.txt"), asFile(opts.after ?? before))
+    await Deno.writeTextFile(join(dir, "later.txt"), asFile(opts.later ?? opts.after ?? before))
     for (const [id, text] of Object.entries(opts.logs ?? {})) {
       await Deno.writeTextFile(join(dir, "logs", id), text)
     }
@@ -163,6 +168,7 @@ async function runScriptWithFakeDocker(
         `printf '%s\\n' "$*" >> ${shQuote(log)}`,
         `state=${shQuote(join(dir, "before.txt"))}`,
         `[ -f ${shQuote(slept)} ] && state=${shQuote(join(dir, "after.txt"))}`,
+        `[ -f ${shQuote(sleptTwice)} ] && state=${shQuote(join(dir, "later.txt"))}`,
         'for last in "$@"; do :; done',
         'case " $* " in',
         `  *" config --services "*) cat ${shQuote(join(dir, "services.txt"))} ;;`,
@@ -189,6 +195,7 @@ async function runScriptWithFakeDocker(
         '[ -n "$FAKE_SLEEP_DEPTH" ] && exit 97',
         "export FAKE_SLEEP_DEPTH=1",
         `printf '%s\\n' "$*" >> ${shQuote(sleepLog)}`,
+        `[ -f ${shQuote(slept)} ] && : > ${shQuote(sleptTwice)}`,
         `: > ${shQuote(slept)}`,
         "",
       ].join("\n"),
@@ -304,6 +311,73 @@ Deno.test("a stack whose container was restarted once during the wait and is run
   assertEquals(run.result.error, undefined)
 })
 
+for (const shell of SHELLS) {
+  Deno.test(`a container restarted once during the wait and again by a second look is marked failed (${shell})`, async () => {
+    const run = await deployFoo({
+      shell,
+      before: [`foo|c1|/hl-foo|running|0|0|${LONG_AGO}`],
+      after: [`foo|c1|/hl-foo|running|0|1|${AFTER_UP}`],
+      later: [`foo|c1|/hl-foo|running|0|2|${AFTER_UP}`],
+      logs: { c1: "boom\n" },
+    })
+    assertEquals(run.sleeps, [String(VERIFY_WAIT_SECONDS), String(VERIFY_WAIT_SECONDS)])
+    assertEquals(run.result.success, false)
+    assertEquals(run.result.error, "Container hl-foo keeps restarting. Its last log lines:\n  boom")
+  })
+}
+
+Deno.test("a container restarted once and not again by the second look leaves its stack successful", async () => {
+  const run = await deployFoo({
+    before: [`foo|c1|/hl-foo|running|0|0|${LONG_AGO}`],
+    after: [`foo|c1|/hl-foo|running|0|1|${AFTER_UP}`],
+  })
+  assertEquals(run.sleeps, [String(VERIFY_WAIT_SECONDS), String(VERIFY_WAIT_SECONDS)])
+  assertEquals(run.result.success, true)
+  assertEquals(run.stdout.split("\n").filter((l) => l === "DEPLOY_VERIFY:foo:foo").length, 1)
+})
+
+Deno.test("the second look reports only the stack whose container restarted once, after the others", async () => {
+  const stacks: StackConfig[] = [{ name: "foo" }, { name: "bar" }]
+  const run = await runScriptWithFakeDocker(stacks, {
+    before: [`foo|c1|/hl-foo|running|0|0|${LONG_AGO}`, `bar|c2|/hl-bar|running|0|0|${LONG_AGO}`],
+    after: [`foo|c1|/hl-foo|running|0|1|${AFTER_UP}`, `bar|c2|/hl-bar|running|0|0|${LONG_AGO}`],
+    later: [`foo|c1|/hl-foo|running|0|1|${AFTER_UP}`, `bar|c2|/hl-bar|running|0|5|${AFTER_UP}`],
+  })
+  // bar was fine at the first look, so its later restarts are not looked at.
+  assertEquals(parseDeployResults(run.stdout, stacks).map((r) => r.success), [true, true])
+  const markers = run.stdout.split("\n").filter((l) => l.startsWith("DEPLOY_SUCCESS:"))
+  assertEquals(markers, ["DEPLOY_SUCCESS:bar:bar", "DEPLOY_SUCCESS:foo:foo"])
+})
+
+Deno.test("a restart count that is not a number is never run as shell code", async () => {
+  const tmp = await Deno.makeTempDir({ prefix: "rostok-restarts-inject-" })
+  try {
+    const count = `x[$(touch ${tmp}/INJECTED)]`
+    const run = await deployFoo({
+      before: [`foo|c1|/hl-foo|running|0|${count}|${LONG_AGO}`],
+      after: [`foo|c1|/hl-foo|running|0|${count}|${LONG_AGO}`],
+    })
+    assertEquals(await Deno.stat(join(tmp, "INJECTED")).catch(() => null), null)
+    assertEquals(run.result.success, true)
+  } finally {
+    await Deno.remove(tmp, { recursive: true })
+  }
+})
+
+Deno.test(`a failed container's log lines are each cut to ${VERIFY_LOG_LINE_BYTES} bytes`, async () => {
+  const run = await deployFoo({
+    before: [`foo|c1|/hl-foo|running|0|0|${LONG_AGO}`],
+    after: [`foo|c1|/hl-foo|exited|1|0|${AFTER_UP}`],
+    logs: { c1: `short\n${"x".repeat(100_000)}\n` },
+  })
+  assertEquals(
+    run.result.error,
+    `Container hl-foo exited with code 1. Its last log lines:\n  short\n  ${
+      "x".repeat(VERIFY_LOG_LINE_BYTES)
+    }`,
+  )
+})
+
 Deno.test("a running container with restarts from before the deploy does not fail the stack", async () => {
   const run = await deployFoo({ before: [`foo|c1|/hl-foo|running|0|7|${LONG_AGO}`] })
   assertEquals(run.result.success, true)
@@ -386,6 +460,40 @@ Deno.test("a stack whose up -d fails is marked failed with up's output, without 
   assertEquals(run.result.error, "up went wrong")
   assertEquals(run.sleeps, [])
   assertEquals(run.calls.filter((c) => c.startsWith("logs ")), [])
+})
+
+for (const shell of SHELLS) {
+  Deno.test(`instances deployed as blog and blog2 each get their own result (${shell})`, async () => {
+    const stacks: StackConfig[] = [{ name: "blog" }, { name: "blog", deployAs: "blog2" }]
+    const run = await runScriptWithFakeDocker(stacks, {
+      shell,
+      before: [`blog|c1|/blog|running|0|0|${LONG_AGO}`, `blog2|c2|/blog2|running|0|0|${LONG_AGO}`],
+      after: [`blog|c1|/blog|running|0|0|${LONG_AGO}`, `blog2|c2|/blog2|exited|1|0|${AFTER_UP}`],
+      logs: { c2: "blog2 died\n" },
+    })
+    const results = parseDeployResults(run.stdout, stacks)
+    assertEquals(results.map((r) => r.success), [true, false])
+    assertEquals(results[0].error, undefined)
+    assertEquals(
+      results[1].error,
+      "Container blog2 exited with code 1. Its last log lines:\n  blog2 died",
+    )
+  })
+}
+
+Deno.test("parseDeployResults never gives the stack deployed as blog the lines of blog2", () => {
+  const stacks: StackConfig[] = [{ name: "blog" }, { name: "blog", deployAs: "blog2" }]
+  const output = [
+    "DEPLOY_START:blog:blog",
+    "DEPLOY_START:blog:blog2",
+    "DEPLOY_STALE:blog:blog2 removing stale container blog2 (project=hl, expected=blog2)",
+    "DEPLOY_VERIFY:blog:blog2",
+    "Container blog2 exited with code 1. Its last log lines:",
+    "DEPLOY_FAILED:blog:blog2",
+  ].join("\n")
+  const results = parseDeployResults(output, stacks)
+  assertEquals(results[0], { name: "blog", deployAs: "blog", success: false, error: undefined })
+  assertEquals(results[1].stale, ["removing stale container blog2 (project=hl, expected=blog2)"])
 })
 
 Deno.test("parseDeployResults ignores a marker inside a failed container's indented log lines", () => {
@@ -518,6 +626,37 @@ Deno.test("a container that up does not manage, of a removed service or from com
   assertEquals(run.result.recreated, undefined)
 })
 
+Deno.test("a deployAs stack is recreated for a container of its own project, not one of the stack's plain name", async () => {
+  const stacks: StackConfig[] = [{ name: "foo", deployAs: "foo-two" }]
+  const run = await runScriptWithFakeDocker(stacks, {
+    labels: [
+      "foo|hl-foo|foo|False|/srv/old/stacks/foo",
+      "foo-two|hl-foo-two|foo|False|/srv/old/stacks/foo",
+    ],
+    services: ["foo"],
+  })
+  const result = parseDeployResults(run.stdout, stacks)[0]
+  assertStringIncludes(
+    result.recreated ?? "",
+    "container hl-foo-two was created from /srv/old/stacks/foo,",
+  )
+})
+
+Deno.test("a container whose service only shares part of its name with a listed one does not recreate the stack", async () => {
+  const run = await deployFoo({
+    labels: ["foo|hl-foo|foo|False|/srv/old/stacks/foo"],
+    services: ["foo-db"],
+  })
+  assertEquals(upCalls(run), [UP_FOO])
+  assertEquals(run.result.recreated, undefined)
+})
+
+Deno.test("a container without a service label does not recreate the stack, even when compose lists no service", async () => {
+  const run = await deployFoo({ labels: ["foo|hl-foo||False|/srv/old/stacks/foo"], services: [] })
+  assertEquals(upCalls(run), [UP_FOO])
+  assertEquals(run.result.recreated, undefined)
+})
+
 Deno.test("an old folder with shell and printf syntax in it is reported as text and never run", async () => {
   const tmp = await Deno.makeTempDir({ prefix: "rostok-recreate-inject-" })
   try {
@@ -606,6 +745,84 @@ Deno.test("stale-container cleanup removes this stack's exact container_name und
   ])
   assertEquals(run.removed, ["id-old-foo"])
   assertStringIncludes(run.stdout, "removing stale container hl-foo (project=hl, expected=foo)")
+})
+
+/** What `printDeploySummary` prints for these results, one entry per line. */
+function summaryOf(results: DeployResult[]): string[] {
+  const printed: string[] = []
+  const original = console.log
+  console.log = (...args: unknown[]) => printed.push(args.join(" "))
+  try {
+    printDeploySummary(results)
+  } finally {
+    console.log = original
+  }
+  return printed
+}
+
+Deno.test("a successful deploy that removed a stale container says so in the summary", async () => {
+  const stacks: StackConfig[] = [{ name: "foo" }]
+  const run = await runScriptWithFakeDocker(stacks, {
+    composeConfig: FOO_CONFIG,
+    psLines: ["hl-foo id-old-foo hl"],
+  })
+  const results = parseDeployResults(run.stdout, stacks)
+  assertEquals(results[0].success, true)
+  const summary = summaryOf(results)
+  const at = summary.indexOf("   ✓ foo")
+  assertEquals(summary[at + 1], "     removing stale container hl-foo (project=hl, expected=foo)")
+})
+
+Deno.test("a successful deploy that kept a container with this stack's name from another file says so in the summary", async () => {
+  const stacks: StackConfig[] = [{ name: "foo" }]
+  const run = await runScriptWithFakeDocker(stacks, {
+    composeConfig: FOO_CONFIG,
+    psLines: ["hl-foo id-bar bar /srv/apps/stacks/bar/compose.yml"],
+  })
+  const results = parseDeployResults(run.stdout, stacks)
+  assertEquals(run.removed, [])
+  assertEquals(results[0].success, true)
+  assertStringIncludes(
+    summaryOf(results).join("\n"),
+    "     keeping container hl-foo: it has this stack's name",
+  )
+})
+
+Deno.test("an old-project container of this stack without a container_name is kept and listed in the stack's result", async () => {
+  const stacks: StackConfig[] = [{ name: "foo" }]
+  const run = await runScriptWithFakeDocker(stacks, {
+    composeConfig: FOO_CONFIG,
+    psLines: [
+      "hl-worker-1 id-worker hl",
+      "other-worker-1 id-other other /srv/apps/stacks/bar/compose.yml",
+    ],
+  })
+  const results = parseDeployResults(run.stdout, stacks)
+  assertEquals(run.removed, [])
+  assertEquals(results[0].stale, [
+    "keeping container hl-worker-1 of project hl: it was created from stacks/foo/compose.yml too; " +
+    "remove it with docker rm -f if it is an old copy of this stack",
+  ])
+})
+
+Deno.test("another instance of the stack in the same deploy is not named as an old copy", async () => {
+  const stacks: StackConfig[] = [{ name: "foo" }, { name: "foo", deployAs: "foo-two" }]
+  const run = await runScriptWithFakeDocker(stacks, {
+    composeConfig: FOO_CONFIG,
+    psLines: ["foo-two-worker-1 id-two foo-two", "foo-worker-1 id-one foo"],
+  })
+  const results = parseDeployResults(run.stdout, stacks)
+  assertEquals(results.map((r) => r.stale), [undefined, undefined])
+})
+
+Deno.test("a stack whose up fails keeps the stale-container lines out of its error", async () => {
+  const run = await deployFoo({
+    composeConfig: FOO_CONFIG,
+    psLines: ["hl-foo id-old-foo hl"],
+    upFails: true,
+  })
+  assertEquals(run.result.error, "up went wrong")
+  assertEquals(run.result.stale, ["removing stale container hl-foo (project=hl, expected=foo)"])
 })
 
 Deno.test("stale-container cleanup keeps this stack's container in the deployed project", async () => {
