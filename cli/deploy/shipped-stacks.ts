@@ -106,6 +106,7 @@ export const SHIPPED_STACK_FILES: Record<string, readonly string[]> = {
   ],
   woodpecker: [
     "compose.yml",
+    "db-helper.ts",
   ],
   usememos: [
     "compose.yml",

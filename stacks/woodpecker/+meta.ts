@@ -15,12 +15,17 @@ export default {
   variables: [
     {
       key: "WOODPECKER_SERVER_IMAGE_TAG",
-      default: "v3.11.0",
+      default: "v3.19.0",
       required: false,
     },
     {
       key: "WOODPECKER_AGENT_IMAGE_TAG",
-      default: "v3.11.0",
+      default: "v3.19.0",
+      required: false,
+    },
+    {
+      key: "WOODPECKER_DB_IMAGE_TAG",
+      default: "2.9.0",
       required: false,
     },
     {
