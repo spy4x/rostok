@@ -3,6 +3,7 @@ import { join } from "@std/path"
 import { UserError } from "../errors.ts"
 import { parseSshAddress } from "../server-keys.ts"
 import {
+  remoteShellSshArgs,
   rsyncEntrySyncArgs,
   rsyncSyncArgs,
   runRemoteCommand,
@@ -62,12 +63,28 @@ Deno.test("runRemoteCommand: carries the port from SSH_ADDRESS", async () => {
   })
 })
 
-Deno.test("runRemoteShell: puts -- before the target, ahead of the script", async () => {
+Deno.test("runRemoteShell: runs sh -s after -- and the target, with the script on stdin, not in argv", async () => {
   await withFakeSsh(async () => {
     const result = await runRemoteShell("root@example.com", "echo hi")
     const argv = result.output.split("\n").filter((l) => l.length > 0)
-    assertEquals(argv, [...expectedOptions(), "--", "root@example.com", "echo hi"])
+    assertEquals(argv, [...expectedOptions(), "--", "root@example.com", "sh", "-s"])
   })
+})
+
+Deno.test("remoteShellSshArgs: the options, -p, -- and the target, then sh -s and nothing else", () => {
+  const target = parseSshAddress("root@192.0.2.1:2222")
+  assertEquals(remoteShellSshArgs(target, { batchMode: true }), [
+    "-o",
+    "ConnectTimeout=10",
+    "-o",
+    "BatchMode=yes",
+    "-p",
+    "2222",
+    "--",
+    "root@192.0.2.1",
+    "sh",
+    "-s",
+  ])
 })
 
 Deno.test("runRemoteCommand: an [IPv6]:port SSH_ADDRESS reaches ssh as a bare host + -p", async () => {
@@ -198,6 +215,23 @@ Deno.test("runRemoteShell: a local server runs the script on this machine and ne
     assertEquals(result, { success: true, code: 0, output: "42", error: "" })
     assertEquals(await sshRan(), false)
   })
+})
+
+Deno.test("runRemoteShell: a local script larger than one argument may be (128 KiB) runs", async () => {
+  // Linux refuses a single argument over 128 KiB (MAX_ARG_STRLEN), which a
+  // many-stack deploy script passed as `sh -c <script>` reached (#436).
+  const line = `: ${"x".repeat(1000)}\n`
+  const script = `${line.repeat(200)}printf '%s' done`
+  assertEquals(script.length > 128 * 1024, true)
+  const result = await runRemoteShell("local", script)
+  assertEquals(result, { success: true, code: 0, output: "done", error: "" })
+})
+
+Deno.test("runRemoteShell: a command that reads stdin gets nothing and the rest of the script still runs", async () => {
+  // The script arrives on sh's stdin; a reader in it must not swallow
+  // the lines after it.
+  const result = await runRemoteShell("local", `cat\nprintf '%s' after`)
+  assertEquals(result, { success: true, code: 0, output: "after", error: "" })
 })
 
 Deno.test("runRemoteShell: a local step doesn't see the parent shell's DOMAIN, keeps PATH and HOME", async () => {

@@ -15,9 +15,9 @@
 // #282: `SSH_ADDRESS=local` (server-keys.ts's LOCAL_SSH_ADDRESS) marks the
 // server as this machine. Each runRemote* function below checks for it
 // before parsing the address and runs the same step as a local process
-// instead: the argv directly, the script through `sh -c`, and rsync with
-// the same flags but no `-e` and a plain local destination path, each
-// with only the environment `localStepEnv` keeps. This
+// instead: the argv directly, the script on the stdin of `sh -s`, and
+// rsync with the same flags but no `-e` and a plain local destination
+// path, each with only the environment `localStepEnv` keeps. This
 // file is the one seam: run-deploy.ts, docker-preflight.ts and
 // deploy-script.ts keep calling runRemote* and never ask which kind of
 // server they talk to. Every other address takes exactly the ssh path it
@@ -54,10 +54,15 @@ export interface CommandResult {
   error: string
 }
 
-/** Run a local command (argv form) and capture its output. Tracked so a SIGINT/SIGTERM handler can kill it (process-registry.ts). */
+/**
+ * Run a local command (argv form) and capture its output. Tracked so a
+ * SIGINT/SIGTERM handler can kill it (process-registry.ts). `stdin`, when
+ * given, is written to the child and then closed; otherwise the child's
+ * stdin is `/dev/null`.
+ */
 export async function runCommand(
   cmd: string[],
-  opts?: { cwd?: string; env?: Record<string, string> },
+  opts?: { cwd?: string; env?: Record<string, string>; stdin?: string },
 ): Promise<CommandResult> {
   const proc = new Deno.Command(cmd[0], {
     args: cmd.slice(1),
@@ -65,18 +70,35 @@ export async function runCommand(
     // An explicit env replaces the inherited one entirely (clearEnv), so
     // nothing outside it reaches the child.
     ...(opts?.env ? { env: opts.env, clearEnv: true } : {}),
-    stdin: "null",
+    stdin: opts?.stdin === undefined ? "null" : "piped",
     stdout: "piped",
     stderr: "piped",
   })
   const child = proc.spawn()
   trackChild(child)
-  const out = await child.output()
+  // Written while the output is read, so neither side waits on a full pipe.
+  const written = opts?.stdin === undefined ? Promise.resolve() : writeStdin(child, opts.stdin)
+  const [out] = await Promise.all([child.output(), written])
   return {
     success: out.code === 0,
     code: out.code,
     output: new TextDecoder().decode(out.stdout),
     error: new TextDecoder().decode(out.stderr),
+  }
+}
+
+/**
+ * Write `text` to the child's stdin and close it. A child that exits
+ * without reading it all is not an error here: its exit code says what
+ * happened.
+ */
+async function writeStdin(child: Deno.ChildProcess, text: string): Promise<void> {
+  const writer = child.stdin.getWriter()
+  try {
+    await writer.write(new TextEncoder().encode(text))
+    await writer.close()
+  } catch {
+    // Broken pipe: the child exited early.
   }
 }
 
@@ -115,8 +137,8 @@ export function localStepEnv(parent: Record<string, string>): Record<string, str
 }
 
 /** Run one local-server step with the reduced environment of `localStepEnv`. */
-async function runLocalStep(cmd: string[]): Promise<CommandResult> {
-  return await runCommand(cmd, { env: localStepEnv(Deno.env.toObject()) })
+async function runLocalStep(cmd: string[], stdin?: string): Promise<CommandResult> {
+  return await runCommand(cmd, { env: localStepEnv(Deno.env.toObject()), stdin })
 }
 
 /**
@@ -138,14 +160,44 @@ export async function runRemoteCommand(
   return await runCommand(["ssh", ...sshArgs(target, argv, defaultSshCallOptions())])
 }
 
-/** Run a shell script on the remote host over ssh, as a single command string. Same guards as runRemoteCommand. */
+/**
+ * What `runRemoteShell` writes to `sh -s`: the script inside one brace
+ * group whose stdin is `/dev/null` (#436). sh parses the whole group
+ * before it runs any of it, so no command in the script can read the
+ * rest of the script from stdin, and every command sees an empty stdin,
+ * as it did when the script was an argument and ssh's stdin was null.
+ * The newline before `}` ends a last line that is a comment or a
+ * here-document terminator.
+ */
+export function shellStdinScript(script: string): string {
+  return `{\n${script}\n} </dev/null\n`
+}
+
+/**
+ * The argv `runRemoteShell` passes to `ssh`: sshArgs' options and target,
+ * then `sh -s`, so the script itself travels on stdin and its size is
+ * not bound by the kernel's per-argument limit (128 KiB on Linux, #436).
+ * Pure, so a test can check the script never reaches argv.
+ */
+export function remoteShellSshArgs(target: SshTarget, opts: SshCallOptions): string[] {
+  return sshArgs(target, ["sh", "-s"], opts)
+}
+
+/**
+ * Run a shell script on the remote host over ssh: `sh -s` reads it from
+ * stdin (see shellStdinScript), locally as well as over ssh. Same address
+ * guards as runRemoteCommand.
+ */
 export async function runRemoteShell(
   sshAddress: string,
   script: string,
 ): Promise<CommandResult> {
-  if (isLocalSshAddress(sshAddress)) return await runLocalStep(["sh", "-c", script])
+  const stdin = shellStdinScript(script)
+  if (isLocalSshAddress(sshAddress)) return await runLocalStep(["sh", "-s"], stdin)
   const target = parseSshAddress(sshAddress)
-  return await runCommand(["ssh", ...sshArgs(target, [script], defaultSshCallOptions())])
+  return await runCommand(["ssh", ...remoteShellSshArgs(target, defaultSshCallOptions())], {
+    stdin,
+  })
 }
 
 /**
