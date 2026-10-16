@@ -111,6 +111,18 @@ Deno.test("initProject: creates skeleton in empty dir", async () => {
   }
 })
 
+Deno.test("initProject: creates .env.root readable by its owner only (mode 600)", async () => {
+  const tmp = await Deno.makeTempDir({ prefix: "rostok-init-mode-" })
+  try {
+    await initProject(tmp)
+    const mode = (await Deno.stat(join(tmp, ".env.root"))).mode
+    assertExists(mode, "this platform reports no file mode")
+    assertEquals((mode & 0o777).toString(8), "600")
+  } finally {
+    await Deno.remove(tmp, { recursive: true })
+  }
+})
+
 Deno.test("initProject: idempotent — second call skips existing files and doesn't re-offer key generation", async () => {
   const tmp = await Deno.makeTempDir({ prefix: "rostok-init-" })
   try {

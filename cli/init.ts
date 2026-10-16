@@ -99,8 +99,9 @@ export async function initProject(cwd: string = Deno.cwd()): Promise<InitResult>
   // 3. servers/ — empty dir for per-server config
   await mkdirIfMissing(join(cwd, "servers"), created, skipped)
 
-  // 4. .env.root — empty file (cross-server creds, user populates manually)
-  await writeIfMissing(join(cwd, ".env.root"), "", created, skipped)
+  // 4. .env.root — empty file (cross-server creds, user populates manually).
+  // #396: owner-only, like a server's .env, since it holds shared secrets.
+  await writeIfMissing(join(cwd, ".env.root"), "", created, skipped, 0o600)
 
   // 5. git init — best effort, do not fail the wizard
   let gitInitialized = false
@@ -272,12 +273,13 @@ async function writeIfMissing(
   content: string,
   created: string[],
   skipped: string[],
+  mode?: number,
 ): Promise<void> {
   if (await exists(path)) {
     skipped.push(path)
     return
   }
-  await Deno.writeTextFile(path, content)
+  await Deno.writeTextFile(path, content, { mode })
   created.push(path)
 }
 
