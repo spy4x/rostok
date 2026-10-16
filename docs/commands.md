@@ -48,6 +48,10 @@ Flags:
 | `--server=<name>`         | Target server for `stack add` (`deploy` takes the server as a positional arg)    |
 | `--var KEY=VAL`           | Repeatable. Overrides one variable for the current command                       |
 
+A `--var` value is taken whole, commas included (`--var WIREGUARD_PEERS=phone,laptop`).
+`stack add` refuses a `--var` key that neither the stack nor a stack it requires declares, and
+names the keys it does declare.
+
 ## Image versions
 
 `IMAGE_POLICY` decides whether a stack's images stay on the version you
