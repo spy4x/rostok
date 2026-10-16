@@ -164,7 +164,9 @@ too: `KEY='p$ss'` arrives as `p$ss`, and so does `KEY=p$$ss`, since `$$`
 is compose's escape for one `$` outside single quotes.
 
 Plus the contract keys `SSH_ADDRESS`, `SSH_HOST`, `SSH_PORT`, `SSH_USER`,
-`PATH_APPS` and `DEPLOY_AS` — `SSH_HOST`/`SSH_PORT` are parsed once
+`SSH_LOCAL`, `PATH_APPS` and `DEPLOY_AS`. `SSH_LOCAL=true` is set only when
+the server is this machine, and a hook that runs `docker` refuses to run
+without `SSH_HOST` or `SSH_LOCAL`. `SSH_HOST`/`SSH_PORT` are parsed once
 from `SSH_ADDRESS` by deploy itself (`cli/deploy/hooks.ts`), so a hook
 that needs to `ssh` into the target builds its own argv from
 these instead of parsing `SSH_ADDRESS` (a hook must never read

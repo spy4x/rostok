@@ -772,6 +772,18 @@ export async function runDeploy(
 }
 
 /** Fill `${VAR}` placeholders in a stack's config.json `envs` and append to the staging .env. */
+/**
+ * Reports whether a `.env` text has a line that sets `key` itself. A line for
+ * a longer key that ends in the same letters (`API_TOKEN=` for `TOKEN`) does
+ * not count, nor does a comment.
+ */
+export function envDefinesKey(text: string, key: string): boolean {
+  return text.split(`\n`).some((line) => {
+    const trimmed = line.trimStart().replace(/^export\s+/, ``)
+    return trimmed.startsWith(`${key}=`)
+  })
+}
+
 async function applyStackEnvs(
   stackConfig: StackConfig,
   serverEnv: Record<string, string>,
@@ -796,7 +808,7 @@ async function applyStackEnvs(
     })
     const stagingEnvPath = join(stagingDir, ".env")
     const current = await Deno.readTextFile(stagingEnvPath)
-    if (!current.includes(`${key}=`)) {
+    if (!envDefinesKey(current, key)) {
       await Deno.writeTextFile(stagingEnvPath, `${current}\n${key}=${filled}\n`)
     }
   }
