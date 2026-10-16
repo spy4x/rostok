@@ -1,10 +1,7 @@
 networks:
-  proxy:
-    external: true
-  default:
-    external: true
-    name: proxy
-  # Only the MCP proxy and its client (Open WebUI, connected by after.deploy.ts) are on this one.
+  # Neither service is on the shared proxy network: both drive a browser with no authentication.
+  # Only the two services and their client (Open WebUI, connected by after.deploy.ts) are on this
+  # one (spy4x/rostok#338).
   mcp:
     name: hl-playwright-mcp
 
@@ -12,6 +9,13 @@ services:
   playwright:
     container_name: hl-playwright
     image: mcr.microsoft.com/playwright:v1.60.0-noble
+    # Chromium runs headless without its sandbox here, so the container is the boundary: no root,
+    # no capabilities, no privilege gain. Docker's seccomp filter stays on.
+    user: pwuser
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
     healthcheck:
       test: ["CMD", "node", "-e", "process.exit(0)"]
       interval: 30s
@@ -26,13 +30,17 @@ services:
           memory: 512M
           cpus: "1.0"
     networks:
-      - proxy
+      - mcp
 
   playwright-mcp:
     container_name: hl-playwright-mcp
     build:
       context: .
       dockerfile: Dockerfile.mcp-proxy
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
     restart: unless-stopped
     deploy:
       resources:
