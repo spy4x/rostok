@@ -655,8 +655,10 @@ export async function runDeploy(
 
     // #310: only when a compose file deployed in this run names the
     // network. A server without one (Home Assistant on the host network)
-    // gets no stray network, and needs no right to create one.
-    if (requiredKeys.some((stack) => namesProxyNetwork(stack.compose))) {
+    // gets no stray network, and needs no right to create one. A deploy
+    // with no stacks creates it as before 1.12.1 (#449): such a server is
+    // being prepared for stacks, which nearly all join it.
+    if (stacks.length === 0 || requiredKeys.some((stack) => namesProxyNetwork(stack.compose))) {
       console.log("Ensuring proxy network exists on remote server...")
       const networkResult = await io.runRemoteShell(
         SSH_ADDRESS,

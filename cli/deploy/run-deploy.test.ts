@@ -1188,6 +1188,18 @@ Deno.test("runDeploy: a stack whose compose file names the network only in a fil
   }
 })
 
+Deno.test("runDeploy: a deploy with no stacks creates the proxy network (#449)", async () => {
+  const f = await setupRunDeployFixture()
+  try {
+    await writeRunDeployServer(f.projectDir, [])
+
+    await runDeploy({ cwd: f.projectDir, server: "test" }, f.io)
+    assert(f.remote.calls.includes("network"), "expected the proxy network step")
+  } finally {
+    await teardownRunDeployFixture(f)
+  }
+})
+
 Deno.test("namesProxyNetwork: every way a compose file names the network counts, a comment or a longer name does not (#310)", () => {
   for (
     const line of [
