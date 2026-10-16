@@ -22,6 +22,20 @@ function isDockerName(name: string): boolean {
   return /^[a-zA-Z0-9][a-zA-Z0-9_.-]*$/.test(name)
 }
 
+/**
+ * The deploy target's ssh host, or undefined on a local server. The local path is taken only when
+ * deploy says the server is local (SSH_LOCAL=true, set by cli/deploy/hooks.ts, #450): a missing
+ * SSH_HOST alone is an error, so a hook run by hand without it never acts on this machine.
+ * Exported for tests — no I/O.
+ */
+export function deployTargetHost(env: (key: string) => string | undefined): string | undefined {
+  const host = env(`SSH_HOST`) || undefined
+  if (host !== undefined || env(`SSH_LOCAL`) === `true`) return host
+  throw new Error(
+    `SSH_HOST is not set and SSH_LOCAL is not true: run this hook through rostok deploy`,
+  )
+}
+
 /** Digits only, 1-65535. */
 function isValidPort(port: string): boolean {
   return /^\d+$/.test(port) && Number(port) >= 1 && Number(port) <= 65535
@@ -76,11 +90,10 @@ export function buildSshArgs(
 }
 
 if (import.meta.main) {
-  // A local server (SSH_ADDRESS=local) has no SSH_HOST: the script then runs on this machine.
-  const SSH_HOST = Deno.env.get(`SSH_HOST`)
-
   let command: Deno.Command
   try {
+    // A local server (SSH_ADDRESS=local) has no SSH_HOST: the script then runs on this machine.
+    const SSH_HOST = deployTargetHost((key) => Deno.env.get(key))
     const script = buildConnectScript(NETWORK, CLIENT)
     const io = { stdin: `null`, stdout: `inherit`, stderr: `inherit` } as const
     command = SSH_HOST

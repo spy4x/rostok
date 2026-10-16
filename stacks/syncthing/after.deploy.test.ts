@@ -1,6 +1,6 @@
 // Tests for stacks/syncthing/after.deploy.ts pure reconciliation logic.
 
-import { assertEquals, assertThrows } from "@std/assert"
+import { assertEquals, assertRejects, assertThrows } from "@std/assert"
 
 import { type Device, type FolderRef, validateConfig } from "./before.deploy.ts"
 import {
@@ -477,4 +477,27 @@ Deno.test("dockerExecStdin: -- reaches ssh before the target (review round — t
       ])
     })
   })
+})
+
+Deno.test("runRemote: without SSH_HOST it runs on this machine only when SSH_LOCAL=true", async () => {
+  const dir = await Deno.makeTempDir({ prefix: "rostok-syncthing-local-" })
+  const saved = ["SSH_HOST", "SSH_LOCAL"].map((k) => [k, Deno.env.get(k)] as const)
+  const exists = (path: string) => Deno.lstat(path).then(() => true, () => false)
+  try {
+    Deno.env.delete("SSH_HOST")
+    Deno.env.delete("SSH_LOCAL")
+    // A hook run by hand, outside a deploy: nothing says the server is this machine.
+    await assertRejects(
+      () => runRemote(["touch", `${dir}/refused`]),
+      Error,
+      "SSH_LOCAL is not true",
+    )
+    assertEquals(await exists(`${dir}/refused`), false)
+    Deno.env.set("SSH_LOCAL", "true")
+    assertEquals((await runRemote(["touch", `${dir}/local`])).code, 0)
+    assertEquals(await exists(`${dir}/local`), true)
+  } finally {
+    for (const [k, v] of saved) v === undefined ? Deno.env.delete(k) : Deno.env.set(k, v)
+    await Deno.remove(dir, { recursive: true })
+  }
 })

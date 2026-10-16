@@ -34,6 +34,20 @@
 
 import { error, log, runCommand, success } from "./hook-lib.ts"
 
+/**
+ * The deploy target's ssh host, or undefined on a local server. The local path is taken only when
+ * deploy says the server is local (SSH_LOCAL=true, set by cli/deploy/hooks.ts, #450): a missing
+ * SSH_HOST alone is an error, so a hook run by hand without it never acts on this machine.
+ * Exported for tests — no I/O.
+ */
+export function deployTargetHost(env: (key: string) => string | undefined): string | undefined {
+  const host = env("SSH_HOST") || undefined
+  if (host !== undefined || env("SSH_LOCAL") === "true") return host
+  throw new Error(
+    "SSH_HOST is not set and SSH_LOCAL is not true: run this hook through rostok deploy",
+  )
+}
+
 /** Digits only, 1-65535 — the same range cli/server-keys.ts's parseSshAddress enforces. */
 function isValidPort(port: string): boolean {
   if (!/^\d+$/.test(port)) return false
@@ -167,9 +181,16 @@ if (import.meta.main) {
   // hl-open-webui has lost its place on them. A network that does not exist is a stack this server
   // does not run, and is skipped. A local server (SSH_ADDRESS=local) has no SSH_HOST: every command
   // of this hook then runs on this machine.
+  let SSH_HOST: string | undefined
+  try {
+    SSH_HOST = deployTargetHost((key) => Deno.env.get(key))
+  } catch (err) {
+    error("after.deploy.ts:", err instanceof Error ? err.message : String(err))
+    Deno.exit(1)
+  }
   for (const network of MCP_NETWORKS) {
     const script = buildConnectScript(network, CLIENT)
-    const host = Deno.env.get("SSH_HOST")
+    const host = SSH_HOST
     const connect = await runCommand(
       host
         ? [
@@ -188,7 +209,6 @@ if (import.meta.main) {
     log(connect.output.trim())
   }
 
-  const SSH_HOST = Deno.env.get("SSH_HOST") || undefined
   const SSH_PORT = Deno.env.get("SSH_PORT") || undefined
   const SSH_USER = Deno.env.get("SSH_USER") || undefined
   const PATH_APPS = Deno.env.get("PATH_APPS")

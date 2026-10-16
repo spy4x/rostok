@@ -5,8 +5,15 @@
 // stacks/caldiy/after.deploy.test.ts for a fake-ssh subprocess proof of
 // this exact argv shape reaching a real `ssh` binary.
 
-import { assertEquals, assertThrows } from "@std/assert"
-import { buildSshArgs, buildStopCommand, dkimDomains } from "./after.deploy.ts"
+import { assertEquals, assertRejects, assertThrows } from "@std/assert"
+import {
+  buildSshArgs,
+  buildStopCommand,
+  checkDkimOrStop,
+  dkimDomains,
+  failureMessage,
+} from "./after.deploy.ts"
+import { DkimInvariantError } from "./dkim.ts"
 
 Deno.test("buildSshArgs: -p, the standard options, then '--' then the target and command", () => {
   const args = buildSshArgs("192.0.2.10", "22", "root", ["docker", "stop", "hl-stalwart"])
@@ -105,8 +112,10 @@ Deno.test("after.deploy.ts subprocess: on a local server (no SSH_HOST) it starts
     args: ["run", "-A", import.meta.resolve("./after.deploy.ts")],
     env: {
       ...env,
-      // What deploy sets for a local server: SSH_ADDRESS=local, and no SSH_HOST or SSH_PORT.
+      // What deploy sets for a local server: SSH_ADDRESS=local, SSH_LOCAL=true, and no SSH_HOST or
+      // SSH_PORT.
       SSH_ADDRESS: "local",
+      SSH_LOCAL: "true",
       SSH_USER: "root",
       STALWART_ADMIN_PASSWORD: "test-password",
       DOMAIN: "example.invalid",
@@ -127,4 +136,109 @@ Deno.test("after.deploy.ts subprocess: on a local server (no SSH_HOST) it starts
     new TextDecoder().decode(first.value).split("\n")[0],
     "Waiting for Stalwart to become healthy...",
   )
+})
+
+Deno.test("after.deploy.ts subprocess: without SSH_HOST and without SSH_LOCAL it refuses to run", async () => {
+  const env = Deno.env.toObject()
+  for (
+    const key of ["SSH_ADDRESS", "SSH_LOCAL", "SSH_HOST", "SSH_PORT", "STALWART_INITIAL_DEPLOY"]
+  ) {
+    delete env[key]
+  }
+  const output = await new Deno.Command(Deno.execPath(), {
+    args: ["run", "-A", import.meta.resolve("./after.deploy.ts")],
+    // A hook run by hand, outside a deploy: nothing says the server is this machine.
+    env: {
+      ...env,
+      SSH_USER: "root",
+      STALWART_ADMIN_PASSWORD: "test-password",
+      DOMAIN: "example.invalid",
+    },
+    clearEnv: true,
+    stdout: "piped",
+    stderr: "piped",
+  }).output()
+  assertEquals(output.code, 1)
+  // It stops before the health check, which prints the first line.
+  assertEquals(new TextDecoder().decode(output.stdout), "")
+  assertEquals(
+    new TextDecoder().decode(output.stderr).includes("SSH_LOCAL is not true"),
+    true,
+  )
+})
+
+/** A stop step that only counts its calls, and fails when `fails` is set. */
+function fakeStop(fails = false): { calls: number; stop: () => Promise<void> } {
+  const fake = {
+    calls: 0,
+    stop: () => {
+      fake.calls++
+      return fails ? Promise.reject(new Error("docker stop refused")) : Promise.resolve()
+    },
+  }
+  return fake
+}
+
+Deno.test("a broken DKIM setup stops Stalwart and says so", async () => {
+  const fake = fakeStop()
+  await assertRejects(
+    () =>
+      checkDkimOrStop(
+        () => Promise.reject(new DkimInvariantError("DKIM key missing")),
+        false,
+        fake.stop,
+      ),
+    Error,
+    "DKIM key missing; stopped Stalwart to prevent invalid DKIM delivery",
+  )
+  assertEquals(fake.calls, 1)
+})
+
+Deno.test("any DKIM check failure on an initial deploy stops Stalwart", async () => {
+  const fake = fakeStop()
+  await assertRejects(
+    () => checkDkimOrStop(() => Promise.reject(new Error("DNS timeout")), true, fake.stop),
+    Error,
+    "DNS timeout; stopped Stalwart",
+  )
+  assertEquals(fake.calls, 1)
+})
+
+Deno.test("a DKIM check failure that is not a broken setup, on a later deploy, leaves Stalwart running", async () => {
+  const fake = fakeStop()
+  await assertRejects(
+    () => checkDkimOrStop(() => Promise.reject(new Error("DNS timeout")), false, fake.stop),
+    Error,
+    "DNS timeout",
+  )
+  assertEquals(fake.calls, 0)
+})
+
+Deno.test("a stop that fails after a broken DKIM setup is named in the error", async () => {
+  await assertRejects(
+    () =>
+      checkDkimOrStop(
+        () => Promise.reject(new DkimInvariantError("DKIM key missing")),
+        false,
+        fakeStop(true).stop,
+      ),
+    Error,
+    "DKIM key missing; failed to stop Stalwart: docker stop refused",
+  )
+})
+
+Deno.test("any failure of an initial deploy stops a Stalwart that is still running", async () => {
+  const fake = fakeStop()
+  assertEquals(
+    await failureMessage(new Error("health check failed"), true, false, fake.stop),
+    "health check failed; stopped initial Stalwart deployment before DKIM verification",
+  )
+  assertEquals(fake.calls, 1)
+})
+
+Deno.test("a failed later deploy, or one that already stopped Stalwart, does not stop it again", async () => {
+  const fake = fakeStop()
+  assertEquals(await failureMessage(new Error("x"), false, false, fake.stop), "x")
+  assertEquals(await failureMessage(new Error("x"), true, true, fake.stop), "x")
+  assertEquals(fake.calls, 0)
 })
