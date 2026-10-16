@@ -15,6 +15,7 @@ import { LOCAL_SSH_ADDRESS } from "./server-keys.ts"
 import { deployCommand } from "./commands/deploy.ts"
 import { envCommand } from "./commands/env.ts"
 import { imagesCommand } from "./commands/images.ts"
+import { offlineCommand } from "./commands/offline.ts"
 import { stackListCommand } from "./commands/list.ts"
 import { stackAddCommand } from "./commands/stack-add.ts"
 import { stackRemoveCommand } from "./commands/stack-remove.ts"
@@ -48,7 +49,9 @@ Examples:
     rostok stack list --tree              # browse the bundled catalog
     rostok deploy home                    # deploy over SSH
     rostok images outdated                # pinned images with a newer version
-    rostok env status                     # encryption posture + next steps`
+    rostok env status                     # encryption posture + next steps
+    rostok offline status                 # backup drive: settings, disks, tools
+    rostok offline backup --drive sdb -n  # copy the backups to an external drive`
 
 // deno-lint-ignore no-explicit-any
 export function buildCommand(): any {
@@ -150,6 +153,8 @@ Examples:
   cmd.command("env", envCommand)
 
   cmd.command("images", imagesCommand)
+
+  cmd.command("offline", offlineCommand)
 
   return cmd
 }

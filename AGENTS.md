@@ -21,9 +21,9 @@ rostok/                          [tracked]
 │       ├── +meta.ts             # CLI schema (READY-TO-IMPLEMENT, see docs/design/v1-cli.md)
 │       └── README.md            # what the stack does, how to configure
 ├── cli/                         # the rostok CLI source (added in v1 phase 2)
+│   └── offline/                 # `rostok offline`: copy of the backups on an external drive
 ├── scripts/
 │   ├── backup/                  # Restic backup runner (servers run it from a pinned clone)
-│   ├── offline-backup/          # copy of the backups on an external drive
 │   ├── stalwart/                # helpers for the stalwart mail stack
 │   ├── release/                 # tag-versus-version guard for publishing
 │   └── hooks/                   # git pre-commit hook (runs `deno task check`)

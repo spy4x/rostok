@@ -1,12 +1,12 @@
 import type { VerifyResults } from "./types.ts"
 
 /**
- * How an offline-backup run ended, as far as the operator needs to know.
+ * How a `rostok offline` run ended, as far as the operator needs to know.
  *
  * `Unverified` exists because "no repository failed" is not the same as
  * "the backup is good": verification can finish having proved nothing
- * at all (restic missing and the operator waived it, a target directory
- * that could not be listed, a target holding no repositories). Those
+ * at all (a target directory that could not be listed, a target holding
+ * no repositories). Those
  * runs used to print the same green banner as a fully verified one.
  */
 export enum BackupOutcome {
@@ -24,10 +24,8 @@ export enum BackupOutcome {
  * Classifies a finished run from the sync result and the verification
  * tally.
  *
- * `verificationRequested` is false only when the operator answered
- * `skip` at the verification prompt; a waived restic check inside
- * `verifyBackups` still counts as requested, because the operator asked
- * for verification and did not get it.
+ * `verificationRequested` is false only when the operator passed
+ * `--check skip`.
  *
  * Pure — no I/O, no globals — so every branch is unit-testable without
  * a drive, restic, or sudo.
@@ -66,14 +64,14 @@ export function exitCodeFor(outcome: BackupOutcome): number {
  * the wording of each outcome is testable without capturing stdout.
  *
  * `subject` names what the run did, because the same classifier serves
- * `create` (which takes a backup) and `verify` (which only checks a
- * drive that already exists). Saying "Backup completed successfully"
+ * `backup` (which takes a backup), `verify` (which only checks a drive
+ * that already exists) and `restore`. Saying "Backup completed successfully"
  * after a verify-only run would claim work that never happened.
  */
 export function formatOutcomeBanner(
   outcome: BackupOutcome,
   results: VerifyResults,
-  subject: "Backup" | "Verification" = "Backup",
+  subject: "Backup" | "Verification" | "Restore" = "Backup",
 ): string[] {
   switch (outcome) {
     case BackupOutcome.Verified:
@@ -82,15 +80,15 @@ export function formatOutcomeBanner(
       ]
     case BackupOutcome.SkippedByOperator:
       return [
-        `\n⚠️  ${subject} completed but NOT VERIFIED — you chose to skip verification.`,
-        `   Run 'deno run -A --env-file=<env file> scripts/offline-backup/+main.ts verify' to check the drive.`,
+        `\n⚠️  ${subject} completed but NOT VERIFIED — --check skip was given.`,
+        `   Run 'rostok offline verify --drive <disk>' to check the drive.`,
       ]
     case BackupOutcome.Unverified:
       return [
         `\n❌ ${subject} NOT VERIFIED — verification ran but checked no repositories.`,
         `   Nothing failed, but nothing passed either, so the drive is unproven.`,
-        `   This is where you land if you waived the missing-restic warning, if a`,
-        `   target directory could not be listed, or if it holds no repositories.`,
+        `   This is where you land if a target directory could not be listed`,
+        `   or holds no restic repositories.`,
       ]
     case BackupOutcome.Failed: {
       const failedNames = results.details

@@ -17,7 +17,7 @@ export const RESTIC_REPO_SUBDIRS = ["keys", "data", "index", "snapshots"] as con
  * for a path that still holds restic artefacts from an earlier
  * incarnation, the orphan key (or index, etc.) would coexist with a
  * freshly-written `config` and the resulting repo would be unreadable.
- * Detected by the offline-backup restic check as
+ * Detected by the `rostok offline` restic check as
  * "Fatal: config or key <id> is damaged: ciphertext verification
  * failed" (restic does not try the remaining keys once one config-auth
  * check fails).

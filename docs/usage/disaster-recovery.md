@@ -69,7 +69,8 @@ If the box itself is gone:
    now.
 
 2. **Pull the backup repo** from cross-server Syncthing or from the
-   external drive. Verify you can `restic snapshots` against it.
+   external drive (`rostok offline restore --drive <disk>` copies it back
+   and checks it). Verify you can `restic snapshots` against it.
 
 3. **Restore the on-disk layout** — `${VOLUMES_PATH}/<stack>/` for each
    service. Use `restic restore latest --target /`.
@@ -167,8 +168,10 @@ key leaks):
 - **Test restore quarterly.** Pick one stack, restore from backup to a
   throwaway container, verify. A backup you haven't restored from is
   not a backup.
-- **Verify external drive monthly.** Plug it in, check the files,
-  eject cleanly. Drives left in a drawer for years fail silently.
+- **Verify external drive monthly.** Plug it in and run
+  `rostok offline verify --drive <disk>`: it checks the repositories, runs
+  a SMART test and ejects cleanly. Drives left in a drawer for years fail
+  silently.
 - **Rotate the age key annually.** Store the previous key in a password
   manager for one rotation cycle in case you need to decrypt old
   `.env.age` files.

@@ -13,7 +13,7 @@
 // Extracts the pattern that previously lived twice in server-create.ts
 // (`ask()`) and stack-add.ts (`promptFor()`).
 
-import { Confirm, Input, Secret } from "@cliffy/prompt"
+import { Confirm, Input, Secret, Select } from "@cliffy/prompt"
 import { UserError } from "./errors.ts"
 
 /**
@@ -67,6 +67,22 @@ export type ConfirmFn = (opts: { message: string; default?: boolean }) => Promis
 export const defaultConfirmFn: ConfirmFn = (opts) => {
   assertInteractiveStdin()
   return Confirm.prompt(opts)
+}
+
+/** One entry of a {@link SelectFn} list. A `disabled` entry is shown but cannot be picked. */
+export interface SelectChoice {
+  name: string
+  value: string
+  disabled?: boolean
+}
+
+/** Replaces cliffy's `Select.prompt` for pick-one-of-a-list questions (e.g. `rostok offline`'s disk picker). */
+export type SelectFn = (opts: { message: string; options: SelectChoice[] }) => Promise<string>
+
+/** Real select: cliffy's `Select.prompt`. */
+export const defaultSelectFn: SelectFn = (opts) => {
+  assertInteractiveStdin()
+  return Select.prompt(opts)
 }
 
 /**
