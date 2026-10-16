@@ -771,7 +771,6 @@ export async function runDeploy(
   }
 }
 
-/** Fill `${VAR}` placeholders in a stack's config.json `envs` and append to the staging .env. */
 /**
  * Reports whether a `.env` text has a line that sets `key` itself. A line for
  * a longer key that ends in the same letters (`API_TOKEN=` for `TOKEN`) does
@@ -784,6 +783,7 @@ export function envDefinesKey(text: string, key: string): boolean {
   })
 }
 
+/** Fill `${VAR}` placeholders in a stack's config.json `envs` and append to the staging .env. */
 async function applyStackEnvs(
   stackConfig: StackConfig,
   serverEnv: Record<string, string>,
