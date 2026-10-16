@@ -21,6 +21,7 @@
 import { join } from "@std/path"
 import { reencryptAfterWrite } from "./reencrypt.ts"
 import {
+  decodeEnvValue,
   encodeEnvValue,
   type EnvEntry,
   readEnvFile,
@@ -317,9 +318,19 @@ export async function stackAdd(
   // be asked, pinImages warns and the variable stays unset, so the
   // floating default this run would have written is dropped too and the
   // next `stack add` can still pin it.
+  // #425: `latest` already in .env (left by a run under the `latest`
+  // policy, say) is not a pin, so under `pinned` it is pinned like an
+  // unset variable. A --var latest is the user's choice and stays.
+  const floatingLatest = new Set(
+    images.map(({ variable }) => variable).filter((variable) => {
+      const value = existingByKey.get(variable)
+      return value !== undefined && decodeEnvValue(value) === "latest"
+    }),
+  )
   const toPin = images.filter(({ variable }) =>
-    !existingByKey.has(variable) && opts.providedVars?.[variable] === undefined &&
-    (defaultedKeys.has(variable) || !writtenEntries.some((e) => e.key === variable))
+    opts.providedVars?.[variable] === undefined && (floatingLatest.has(variable) ||
+      !existingByKey.has(variable) &&
+        (defaultedKeys.has(variable) || !writtenEntries.some((e) => e.key === variable)))
   )
   if (composeUnread) {
     // Only the compose file says which variables are image tags. Without
@@ -341,11 +352,23 @@ export async function stackAdd(
     )
     for (const { variable } of toPin) {
       const at = writtenEntries.findIndex((e) => e.key === variable)
+      const pin = pins.find((p) => p.key === variable)
+      if (floatingLatest.has(variable)) {
+        // Not pinned (pinImages warned): the existing `latest` stays.
+        if (!pin) continue
+        if (at !== -1) {
+          writtenEntries.splice(at, 1)
+          keptCount--
+        }
+        writtenEntries.push(pin)
+        newCount++
+        console.log(`rostok: ${variable} was latest, pinned to ${pin.value}.`)
+        continue
+      }
       if (at !== -1) {
         writtenEntries.splice(at, 1)
         newCount--
       }
-      const pin = pins.find((p) => p.key === variable)
       if (pin) {
         writtenEntries.push(pin)
         newCount++

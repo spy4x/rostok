@@ -79,7 +79,9 @@ How a pin is chosen, under `pinned`:
   major version: `16` becomes `16.9`, never `17.x`. A full version such
   as `3.7.6` is already exact and is written as it is.
 - A tag variable that already has a value in the server's `.env`, or
-  that you pass with `--var`, is never overwritten.
+  that you pass with `--var`, is never overwritten. The one exception is
+  `latest` already in `.env` (left there while the policy was `latest`):
+  it is pinned like an unset variable, and `stack add` says so.
 - A registry that cannot be reached, or that rate-limits you, does not
   stop `stack add`. You get one warning that names the image, its
   variable stays unset, and running the same `stack add` again pins it.

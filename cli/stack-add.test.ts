@@ -782,6 +782,31 @@ Deno.test("pinned policy: a tag the user already has in .env, or passes with --v
   )
 })
 
+// #425: a `latest` already in .env (written while the policy was still
+// `latest`, say) looked pinned under `pinned` but kept floating.
+Deno.test("pinned policy: a tag variable that is latest in .env is pinned, and stack add says so", async () => {
+  await withGatusProject(
+    { rootEnv: "IMAGE_POLICY=pinned\n", serverEnv: "GATUS_IMAGE_TAG=latest\n" },
+    async (dir, catalogDir) => {
+      const lines: string[] = []
+      const originalLog = console.log
+      console.log = (...args: unknown[]) => lines.push(args.join(" "))
+      try {
+        await stackAdd("gatus", "home", {
+          cwd: dir,
+          catalogDir,
+          nonInteractive: true,
+          fetch: gatusRegistry().fetch,
+        })
+      } finally {
+        console.log = originalLog
+      }
+      assertEquals((await serverEnvOf(dir)).GATUS_IMAGE_TAG, "v5.12.1")
+      assertStringIncludes(lines.join("\n"), "GATUS_IMAGE_TAG was latest, pinned to v5.12.1")
+    },
+  )
+})
+
 Deno.test("pinned policy: an unreachable registry warns once per image, leaves its variable unset and still adds the stack", async () => {
   await withGatusProject({}, async (dir, catalogDir) => {
     const registry = gatusRegistry()
