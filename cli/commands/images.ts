@@ -17,13 +17,15 @@ function describe(row: PinRow): string {
   const current = stripControlChars(row.current ?? "")
   switch (row.state) {
     case "outdated":
-      return `${current} → ${row.newest}`
+      return `${current} → ${stripControlChars(row.newest ?? "")}`
     case "current":
       return `${current} (newest)`
     case "unknown":
       return `${current} (could not check: ${stripControlChars(row.detail ?? "")})`
     default:
-      return row.current === undefined ? `(${row.detail})` : `${current} (not pinned)`
+      return row.current === undefined
+        ? `(${stripControlChars(row.detail ?? "")})`
+        : `${current} (not pinned)`
   }
 }
 
@@ -79,7 +81,11 @@ export async function runImagesUpdate(
     return rows
   }
   for (const row of moved) {
-    console.log(`${row.variable}: ${stripControlChars(row.current ?? "")} → ${row.newest}`)
+    console.log(
+      `${row.variable}: ${stripControlChars(row.current ?? "")} → ${
+        stripControlChars(row.newest ?? "")
+      }`,
+    )
     if (row.link) console.log(`  ${row.link}`)
   }
   const pins = moved.length === 1 ? "1 pin" : `${moved.length} pins`

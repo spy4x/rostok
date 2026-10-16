@@ -70,7 +70,7 @@ export function buildCommand(): any {
       "override bundled catalog directory (must exist; its stacks run as code)",
     )
     .option(
-      "--var <kv...:string[]>",
+      "--var <kv:string>",
       "repeatable; overrides one variable (KEY=VAL)",
       { collect: true },
     )
@@ -104,7 +104,7 @@ export function buildCommand(): any {
           .arguments("[name:string]")
           .option("-n, --non-interactive", "skip prompts, use defaults")
           .option(
-            "--var <kv...:string[]>",
+            "--var <kv:string>",
             "repeatable; overrides one server field (KEY=VAL)",
             { collect: true },
           )

@@ -48,6 +48,10 @@ Flags:
 | `--server=<name>`         | Target server for `stack add` (`deploy` takes the server as a positional arg)    |
 | `--var KEY=VAL`           | Repeatable. Overrides one variable for the current command                       |
 
+A `--var` value is taken whole, commas included (`--var WIREGUARD_PEERS=phone,laptop`).
+`stack add` refuses a `--var` key that neither the stack nor a stack it requires declares, and
+names the keys it does declare.
+
 ## Image versions
 
 `IMAGE_POLICY` decides whether a stack's images stay on the version you
@@ -75,7 +79,9 @@ How a pin is chosen, under `pinned`:
   major version: `16` becomes `16.9`, never `17.x`. A full version such
   as `3.7.6` is already exact and is written as it is.
 - A tag variable that already has a value in the server's `.env`, or
-  that you pass with `--var`, is never overwritten.
+  that you pass with `--var`, is never overwritten. The one exception is
+  `latest` already in `.env` (left there while the policy was `latest`):
+  it is pinned like an unset variable, and `stack add` says so.
 - A registry that cannot be reached, or that rate-limits you, does not
   stop `stack add`. You get one warning that names the image, its
   variable stays unset, and running the same `stack add` again pins it.
@@ -113,4 +119,6 @@ stack's, when you name it), re-encrypts, and prints for each moved pin
 the image's source link (its `org.opencontainers.image.source` label)
 or, when it has none, its registry page, so you can read what changed.
 It does not deploy: run `rostok deploy <server>` afterwards. Floating
-tags and unset variables are not touched.
+tags and unset variables are not touched. A new version tag is written only when the
+registry serves its manifest; one it lists but cannot serve gets a
+warning, and its pin stays as it was.

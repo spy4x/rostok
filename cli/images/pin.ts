@@ -1,6 +1,7 @@
 // Pins an image at `rostok stack add`: turns the compose default tag
 // (`latest`, `alpine`, `16`) into the exact version it points at today.
 
+import { stripControlChars } from "../deploy/exec.ts"
 import type { EnvEntry } from "../env-files.ts"
 import type { ComposeImage } from "./compose-images.ts"
 import { parseImageRef, type RegistryClient } from "./registry.ts"
@@ -52,7 +53,7 @@ export async function resolvePin(
 /**
  * Resolve a pin for each of `images`. An image whose registry is not
  * supported, unreachable or rate-limited gets one warning that names it
- * and no entry: its variable stays unset. Never throws.
+ * and no entry: its variable stays unset. Never throws. Warnings carry no control characters.
  */
 export async function pinImages(
   images: ComposeImage[],
@@ -67,10 +68,11 @@ export async function pinImages(
       entries.push({ key: variable, value: await resolvePin(client, ref, defaultTag) })
     } catch (error) {
       const reason = error instanceof Error ? error.message : String(error)
-      warn(
+      // The reason can quote the registry's own answer: strip it (#425).
+      warn(stripControlChars(
         `rostok: could not pin ${image}:${defaultTag} (${reason}). ${variable} stays unset, so ` +
           `the image follows "${defaultTag}". Run the same \`rostok stack add\` again to pin it.`,
-      )
+      ))
     }
   }
   return entries
