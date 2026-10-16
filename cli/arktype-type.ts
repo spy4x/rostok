@@ -25,6 +25,7 @@ import { ArkErrors, type Type as ArktypeSchema } from "arktype"
  * downstream, not here.
  */
 export class ArktypeType<T = unknown> extends CliffyType<T> {
+  /** Wraps `schema` as a cliffy type named `typeName`. */
   constructor(
     /** Name shown in --help output for args/options that use this type. */
     readonly typeName: string,
@@ -34,6 +35,7 @@ export class ArktypeType<T = unknown> extends CliffyType<T> {
     super()
   }
 
+  /** Validates one CLI argument with the schema; throws a one-line error when it fails. */
   override parse({ value }: ArgumentValue): T {
     const result = this.schema(value)
     if (result instanceof ArkErrors) {

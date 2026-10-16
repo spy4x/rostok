@@ -12,7 +12,10 @@
 import { ArkErrors, type } from "arktype"
 import { unsupportedReferences } from "./defaults.ts"
 
-// Public type — what `+meta.ts` authors write `satisfies StackMeta` against.
+/**
+ * One environment variable a stack declares in its `+meta.ts`. The wizard
+ * and `rostok stack add` resolve it to a value, prompt for it, or skip it.
+ */
 export interface VariableSpec {
   /** Env-var style identifier. Required. */
   key: string
@@ -30,6 +33,25 @@ export interface VariableSpec {
   secret?: boolean
 }
 
+/**
+ * The contract of a stack's `+meta.ts`: its name, description and the
+ * variables it needs. Authors write `export default { ... } satisfies StackMeta`.
+ *
+ * @example
+ * ```ts
+ * import { generatePassword, type StackMeta } from "jsr:@rostok/cli/lib"
+ *
+ * export default {
+ *   name: "whoami",
+ *   description: "Echo server that prints the request it received",
+ *   requires: ["traefik"],
+ *   variables: [
+ *     { key: "WHOAMI_HOST", default: "whoami.${DOMAIN}" },
+ *     { key: "WHOAMI_TOKEN", default: () => generatePassword(32), secret: true },
+ *   ],
+ * } satisfies StackMeta
+ * ```
+ */
 export interface StackMeta {
   /** Stack identifier — matches directory name under `stacks/`. */
   name: string
@@ -80,6 +102,7 @@ export interface StackMeta {
 // Authors who hand-author a malformed `+meta.ts` get a clean error from
 // `validateStackMeta()` rather than a cryptic TypeScript diagnostic.
 
+/** Runtime schema behind {@linkcode VariableSpecSchema}; shares its name with the interface. */
 const VariableSpec: type.Any = type({
   key: "string > 0",
   "question?": "string",
@@ -97,8 +120,16 @@ const VariableSpec: type.Any = type({
   return true
 })
 
+/**
+ * arktype schema for one {@linkcode VariableSpec}. Call it on a value to get
+ * the value back or an `ArkErrors` instance describing what is wrong.
+ */
 export const VariableSpecSchema: type.Any = VariableSpec
 
+/**
+ * arktype schema for a whole {@linkcode StackMeta}. Prefer
+ * {@linkcode validateStackMeta}, which also checks `${...}` references.
+ */
 export const StackMetaSchema: type.Any = type({
   name: "string > 0",
   description: "string > 0",

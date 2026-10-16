@@ -1,14 +1,30 @@
-// Public API of the rostok CLI. Imported by `+meta.ts` files in `stacks/<name>/`
-// and (eventually) by end-user projects that consume the published JSR package.
-//
-// Per docs/v1-cli.md §4, stack authors write:
-//
-//   import type { StackMeta } from "@rostok/cli"
-//   import { generatePassword } from "@rostok/cli"
-//
-//   export default { ... } satisfies StackMeta
-//
-// This barrel re-exports the runtime API + types those authors need.
+/**
+ * Library API of rostok, the CLI that scaffolds a self-hosted homelab from a
+ * catalog of Docker Compose stacks and deploys it over SSH.
+ *
+ * Each catalog stack ships a `+meta.ts` that declares its variables with
+ * {@linkcode StackMeta}. This module holds that type, its runtime schemas, the
+ * password generator for secret defaults, and the rules rostok uses to resolve
+ * a default or decide whether to prompt. The CLI itself is the package's
+ * default export: `deno install -A -n rostok jsr:@rostok/cli`.
+ *
+ * @example A stack's `+meta.ts`
+ * ```ts
+ * import { generatePassword, type StackMeta } from "jsr:@rostok/cli/lib"
+ *
+ * export default {
+ *   name: "whoami",
+ *   description: "Echo server that prints the request it received",
+ *   requires: ["traefik"],
+ *   variables: [
+ *     { key: "WHOAMI_HOST", default: "whoami.${DOMAIN}" },
+ *     { key: "WHOAMI_TOKEN", default: () => generatePassword(32), secret: true },
+ *   ],
+ * } satisfies StackMeta
+ * ```
+ *
+ * @module
+ */
 
 // Stack meta types + arktype schemas.
 export type { StackMeta, VariableSpec } from "./stack-meta.ts"
@@ -23,7 +39,7 @@ export {
 export { generatePassword, passwordEntropyBits } from "./secrets.ts"
 
 // Default value resolution (`${SERVER_NAME}` substitution, lazy defaults).
-export type { ResolvedValue } from "./defaults.ts"
+export type { ResolvedValue, ServerContext } from "./defaults.ts"
 export { resolveReferences, resolveVariable, unsupportedReferences } from "./defaults.ts"
 
 // Prompt rule — when to ask, use default, or skip.

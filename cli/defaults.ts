@@ -28,12 +28,19 @@ import type { VariableSpec } from "./stack-meta.ts"
  * `PATH_*` keys are dynamic; access via the indexer.
  */
 export interface ServerContext {
+  /** Name of the server, as given to `rostok server create`. */
   SERVER_NAME: string
+  /** Apex domain the server's stacks live under, e.g. `example.com`. */
   DOMAIN: string
+  /** IANA time zone, e.g. `Europe/Berlin`. */
   TIMEZONE: string
+  /** User id the containers run as. */
   PUID: string
+  /** Group id the containers run as. */
   PGID: string
+  /** Host folder that holds the stacks' volumes. */
   VOLUMES_PATH: string
+  /** Host folders for media libraries, such as `PATH_MEDIA`. */
   // Dynamic PATH_* keys (PATH_MEDIA, PATH_VIDEOS, etc.) — keep the
   // generic index signature for forward-compat.
   [key: `PATH_${string}`]: string
@@ -88,6 +95,7 @@ function isAllowedRef(ref: string): boolean {
   return false
 }
 
+/** A variable's value after `--var` and default resolution, and where it came from. */
 export interface ResolvedValue {
   /** Final value written to .env / age64. */
   value: string
