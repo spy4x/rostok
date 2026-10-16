@@ -396,12 +396,17 @@ fi
 }
 
 /**
- * Parse the deploy output to extract results for each stack. A marker
- * counts only as a whole line, or followed by a space where it carries
- * text: the log lines of a failed container are printed into the same
- * output, indented, and must not be read as one, and a stack deployed as
- * `blog` must never take the line of the one deployed as `blog2`.
+ * True when `line` starts with `marker` and the name that ends the marker
+ * ends there too: a stack deployed as `blog` must never take the line of
+ * the one deployed as `blog2`. A marker counts only at the start of a
+ * line: the log lines of a failed container are printed into the same
+ * output, indented, and must not be read as one.
  */
+function isMarkerLine(line: string, marker: string): boolean {
+  return line.startsWith(marker) && !/[A-Za-z0-9_.-]/.test(line.charAt(marker.length))
+}
+
+/** Parse the deploy output to extract results for each stack. */
 export function parseDeployResults(output: string, stacks: StackConfig[]): DeployResult[] {
   const results: DeployResult[] = []
   const lines = output.split("\n")
@@ -422,8 +427,8 @@ export function parseDeployResults(output: string, stacks: StackConfig[]): Deplo
     const stale = lines.filter((line) => line.startsWith(staleMarker))
       .map((line) => line.slice(staleMarker.length))
 
-    const isSuccess = lines.includes(successMarker)
-    const endIdx = lines.indexOf(failedMarker)
+    const isSuccess = lines.some((line) => isMarkerLine(line, successMarker))
+    const endIdx = lines.findIndex((line) => isMarkerLine(line, failedMarker))
     const isFailed = endIdx !== -1
 
     // The error is what the stack printed last before it failed: the
@@ -434,9 +439,11 @@ export function parseDeployResults(output: string, stacks: StackConfig[]): Deplo
     let containerFailed = false
     if (isFailed) {
       const before = lines.slice(0, endIdx)
-      const verifyIdx = before.lastIndexOf(verifyMarker)
+      const verifyIdx = before.findLastIndex((line) => isMarkerLine(line, verifyMarker))
       containerFailed = verifyIdx !== -1
-      const startIdx = containerFailed ? verifyIdx : before.lastIndexOf(startMarker)
+      const startIdx = containerFailed
+        ? verifyIdx
+        : before.findLastIndex((line) => isMarkerLine(line, startMarker))
       if (startIdx !== -1) {
         errorOutput = before.slice(startIdx + 1)
           .filter((line) => !line.startsWith(recreateMarker) && !line.startsWith(staleMarker))
