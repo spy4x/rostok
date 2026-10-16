@@ -280,9 +280,9 @@ ${STALE_NAMES_VAR}=\$(cd ${quotedPathApps} && docker compose ${projectFlag} --en
 #
 # A container of another compose project that was created from this stack's
 # compose file but has none of its container_names (a service without one)
-# is only reported: it may be another instance of this stack under its own
-# deployAs, which a single-stack deploy does not list. The instances this
-# deploy does list are skipped.
+# is only reported, never removed: it may be a copy config.json does not
+# list, such as one started by hand, and rostok removes only what it can
+# prove is its own. The instances this deploy lists are skipped.
 docker ps -a --format '{{.Names}}|{{.ID}}|{{.Label "com.docker.compose.project"}}|{{.Label "com.docker.compose.project.config_files"}}' 2>/dev/null | while IFS='|' read -r cname id proj files; do
   [ "\$proj" != ${shQuote(deployAs)} ] && [ -n "\$id" ] || continue
   case ",\$files," in
