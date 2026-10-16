@@ -107,3 +107,26 @@ Deno.test("pinImages: an image on an unsupported registry is warned about and le
   assertEquals(registry.calls, [])
   assertStringIncludes(warnings[0], "only Docker Hub, GHCR and Quay are supported")
 })
+
+// #425: the registry's own text (here a body that is not JSON, quoted in
+// the parse error) must not reach the terminal with its control characters.
+Deno.test("pinImages: a registry answer with control characters is warned about without them", async () => {
+  const body = "\x1b]0;owned\x07\x1b[2J\x9b31m<html>"
+  const fakeFetch = (_input: string | URL | Request, init: RequestInit = {}) =>
+    Promise.resolve(
+      init.method === "HEAD"
+        ? new Response(null, { headers: { "docker-content-digest": sha("c1") } })
+        : new Response(body),
+    )
+  const warnings: string[] = []
+  const entries = await pinImages(
+    [{ image: "ghcr.io/team/app", variable: "APP_IMAGE_TAG", defaultTag: "latest" }],
+    createRegistryClient({ fetch: fakeFetch }),
+    (message) => warnings.push(message),
+  )
+  assertEquals(entries, [])
+  assertEquals(warnings.length, 1)
+  assertStringIncludes(warnings[0], "owned")
+  const sent = ["\x1b", "\x07", "\x9b"].filter((c) => warnings[0].includes(c))
+  assertEquals(sent, [], JSON.stringify(warnings[0]))
+})
