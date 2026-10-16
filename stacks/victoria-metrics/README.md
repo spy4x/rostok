@@ -102,3 +102,18 @@ scrape_configs:
         regex: "/(.*)"
         target_label: container
 ```
+
+## Image tags
+
+Each image takes its tag from its own variable; unset, compose uses the default below.
+Under `IMAGE_POLICY=pinned`, `rostok stack add` writes the exact version, and
+`rostok images update` moves it (see [commands](../../docs/commands.md)).
+
+| Variable                                   | Default    | Image                                                           |
+| ------------------------------------------ | ---------- | --------------------------------------------------------------- |
+| `VICTORIA_METRICS_IMAGE_TAG`               | `v1.146.0` | `victoriametrics/victoria-metrics` (service `victoria-metrics`) |
+| `VICTORIA_METRICS_VMAGENT_IMAGE_TAG`       | `v1.146.0` | `victoriametrics/vmagent` (service `vmagent`)                   |
+| `VICTORIA_METRICS_LOGS_IMAGE_TAG`          | `v1.51.0`  | `victoriametrics/victoria-logs` (service `victoria-logs`)       |
+| `VICTORIA_METRICS_PROMTAIL_IMAGE_TAG`      | `3.2.1`    | `grafana/promtail` (service `promtail`)                         |
+| `VICTORIA_METRICS_NODE_EXPORTER_IMAGE_TAG` | `latest`   | `prom/node-exporter` (service `node-exporter`)                  |
+| `VICTORIA_METRICS_CADVISOR_IMAGE_TAG`      | `v0.49.2`  | `gcr.io/cadvisor/cadvisor` (service `cadvisor`)                 |

@@ -46,3 +46,13 @@ Other containers set `DOCKER_HOST=tcp://hl-docker-sock-proxy:2375` instead of mo
 ## Resources
 
 - [GitHub: Tecnativa/docker-socket-proxy](https://github.com/Tecnativa/docker-socket-proxy)
+
+## Image tags
+
+Each image takes its tag from its own variable; unset, compose uses the default below.
+Under `IMAGE_POLICY=pinned`, `rostok stack add` writes the exact version, and
+`rostok images update` moves it (see [commands](../../docs/commands.md)).
+
+| Variable                      | Default  | Image                                                         |
+| ----------------------------- | -------- | ------------------------------------------------------------- |
+| `DOCKER_SOCK_PROXY_IMAGE_TAG` | `latest` | `tecnativa/docker-socket-proxy` (service `docker-sock-proxy`) |

@@ -7,7 +7,7 @@ networks:
 services:
   authelia:
     container_name: hl-authelia
-    image: authelia/authelia:latest
+    image: authelia/authelia:${AUTHELIA_IMAGE_TAG:-latest}
     volumes:
       - ${PATH_APPS}/configs/authelia/configuration.yml:/config/configuration.yml:ro,z
       - ${PATH_APPS}/configs/authelia/users.yml:/config/users.yml:ro,z
@@ -62,7 +62,7 @@ services:
 
   authelia-redis:
     container_name: hl-authelia-redis
-    image: redis:7-alpine
+    image: redis:${AUTHELIA_REDIS_IMAGE_TAG:-7-alpine}
     restart: unless-stopped
     networks:
       - default

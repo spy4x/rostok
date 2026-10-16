@@ -19,6 +19,11 @@ export default {
   requires: ["traefik"],
   variables: [
     {
+      key: "NTFY_IMAGE_TAG",
+      default: "latest",
+      required: false,
+    },
+    {
       key: "NTFY_DOMAIN",
       question: "Public domain for ntfy?",
       default: "ntfy.${DOMAIN}",

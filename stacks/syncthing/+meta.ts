@@ -31,6 +31,11 @@ export default {
   requires: ["traefik"],
   variables: [
     {
+      key: "SYNCTHING_IMAGE_TAG",
+      default: "latest",
+      required: false,
+    },
+    {
       key: "SYNCTHING_DOMAIN",
       question: "Public domain for the Syncthing web UI?",
       default: "sync-${SERVER_NAME}.${DOMAIN}",

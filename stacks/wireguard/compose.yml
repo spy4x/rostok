@@ -1,7 +1,7 @@
 services:
   wireguard:
     container_name: hl-wireguard
-    image: lscr.io/linuxserver/wireguard:latest
+    image: lscr.io/linuxserver/wireguard:${WIREGUARD_IMAGE_TAG:-latest}
     cap_add:
       - NET_ADMIN
       - SYS_MODULE

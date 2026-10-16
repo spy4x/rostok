@@ -6,7 +6,7 @@ services:
   # Reference: https://github.com/fosrl/pangolin
   # NOTE: uses named volumes (not bind mount) to avoid userns-remap permission issues
   pangolin:
-    image: fosrl/pangolin:1.21.1
+    image: fosrl/pangolin:${PANGOLIN_IMAGE_TAG:-1.21.1}
     container_name: ${PANGOLIN_CONTAINER_NAME:-hl-pangolin}
     restart: unless-stopped
     user: "0:0"
@@ -41,7 +41,7 @@ services:
   # Gerbil = WireGuard tunnel client that connects back to Pangolin server.
   # Runs beside Pangolin as its server-side tunnel and relay endpoint.
   gerbil:
-    image: fosrl/gerbil:1.4.3
+    image: fosrl/gerbil:${PANGOLIN_GERBIL_IMAGE_TAG:-1.4.3}
     container_name: ${PANGOLIN_GERBIL_CONTAINER_NAME:-hl-gerbil}
     restart: unless-stopped
     # Wait only for container start; API readiness is checked independently.
@@ -76,7 +76,7 @@ services:
   # the global deploy filter `name=hl-traefik` doesn't accidentally match and
   # remove it when deploying the main traefik stack.
   traefik:
-    image: traefik:v3.7.6
+    image: traefik:${PANGOLIN_TRAEFIK_IMAGE_TAG:-v3.7.6}
     container_name: ${PANGOLIN_TRAEFIK_CONTAINER_NAME:-hl-pangolin-traefik}
     restart: unless-stopped
     network_mode: service:gerbil

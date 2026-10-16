@@ -19,6 +19,11 @@ export default {
   category: "infra",
   variables: [
     {
+      key: "WIREGUARD_IMAGE_TAG",
+      default: "latest",
+      required: false,
+    },
+    {
       key: "WIREGUARD_DOMAIN",
       question: "Public host name clients connect to?",
       default: "vpn.${DOMAIN}",

@@ -11,5 +11,36 @@ export default {
   name: "victoria-metrics",
   description: "Metrics and logs stack (VictoriaMetrics, VictoriaLogs, vmagent, promtail)",
   category: "monitoring",
-  variables: [],
+  variables: [
+    {
+      key: "VICTORIA_METRICS_IMAGE_TAG",
+      default: "v1.146.0",
+      required: false,
+    },
+    {
+      key: "VICTORIA_METRICS_VMAGENT_IMAGE_TAG",
+      default: "v1.146.0",
+      required: false,
+    },
+    {
+      key: "VICTORIA_METRICS_LOGS_IMAGE_TAG",
+      default: "v1.51.0",
+      required: false,
+    },
+    {
+      key: "VICTORIA_METRICS_PROMTAIL_IMAGE_TAG",
+      default: "3.2.1",
+      required: false,
+    },
+    {
+      key: "VICTORIA_METRICS_NODE_EXPORTER_IMAGE_TAG",
+      default: "latest",
+      required: false,
+    },
+    {
+      key: "VICTORIA_METRICS_CADVISOR_IMAGE_TAG",
+      default: "v0.49.2",
+      required: false,
+    },
+  ],
 } satisfies StackMeta

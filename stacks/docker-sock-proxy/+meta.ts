@@ -11,5 +11,11 @@ export default {
   name: "docker-sock-proxy",
   description: "Filtered Docker API for containers that need it (tecnativa/docker-socket-proxy)",
   category: "infra",
-  variables: [],
+  variables: [
+    {
+      key: "DOCKER_SOCK_PROXY_IMAGE_TAG",
+      default: "latest",
+      required: false,
+    },
+  ],
 } satisfies StackMeta

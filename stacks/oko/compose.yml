@@ -17,7 +17,7 @@ services:
   # concrete "install on phone" use case appears.
   oko:
     container_name: hl-oko
-    image: ghcr.io/spy4x/oko:latest
+    image: ghcr.io/spy4x/oko:${OKO_IMAGE_TAG:-latest}
     restart: unless-stopped
     # Vars come from ${PATH_APPS}/.env via the deploy script's
     # `--env-file=.env` flag. Don't use `env_file:` here — it resolves

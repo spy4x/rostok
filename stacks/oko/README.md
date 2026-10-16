@@ -96,3 +96,13 @@ Declared in `+meta.ts`; `rostok stack add oko` writes them to the server's `.env
 - CPU limit: 0.10 (request-scoped; parallelism is bounded by
   `UPTIME_TIMEOUT_SECS × 2` per refresh)
 - [Oko GitHub](https://github.com/spy4x/oko)
+
+## Image tags
+
+Each image takes its tag from its own variable; unset, compose uses the default below.
+Under `IMAGE_POLICY=pinned`, `rostok stack add` writes the exact version, and
+`rostok images update` moves it (see [commands](../../docs/commands.md)).
+
+| Variable        | Default  | Image                               |
+| --------------- | -------- | ----------------------------------- |
+| `OKO_IMAGE_TAG` | `latest` | `ghcr.io/spy4x/oko` (service `oko`) |

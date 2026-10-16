@@ -12,7 +12,7 @@ services:
   # Can be used for mail server alerts and backup notifications
   ntfy:
     container_name: hl-ntfy
-    image: binwiederhier/ntfy:latest
+    image: binwiederhier/ntfy:${NTFY_IMAGE_TAG:-latest}
     healthcheck:
       test: ["CMD", "wget", "--spider", "http://localhost:80/v1/health"]
       interval: 30s

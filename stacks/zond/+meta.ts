@@ -22,6 +22,11 @@ export default {
   requires: ["traefik"],
   variables: [
     {
+      key: "ZOND_IMAGE_TAG",
+      default: "latest",
+      required: false,
+    },
+    {
       key: "ZOND_DOMAIN",
       question: "Public domain for the probe endpoint?",
       default: "probe-${SERVER_NAME}.${DOMAIN}",

@@ -50,3 +50,13 @@ docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
 - [Watchtower Documentation](https://containrrr.dev/watchtower/)
 - [Scheduling](https://containrrr.dev/watchtower/arguments/#scheduling)
 - [Notifications](https://containrrr.dev/watchtower/notifications/)
+
+## Image tags
+
+Each image takes its tag from its own variable; unset, compose uses the default below.
+Under `IMAGE_POLICY=pinned`, `rostok stack add` writes the exact version, and
+`rostok images update` moves it (see [commands](../../docs/commands.md)).
+
+| Variable               | Default  | Image                                         |
+| ---------------------- | -------- | --------------------------------------------- |
+| `WATCHTOWER_IMAGE_TAG` | `latest` | `nickfedor/watchtower` (service `watchtower`) |

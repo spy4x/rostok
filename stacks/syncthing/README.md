@@ -106,3 +106,13 @@ Web UI: `https://sync.${DOMAIN}`
 - [Syncthing Documentation](https://docs.syncthing.net/)
 - [Getting Started](https://docs.syncthing.net/intro/getting-started.html)
 - [Folder Types](https://docs.syncthing.net/users/foldertypes.html)
+
+## Image tags
+
+Each image takes its tag from its own variable; unset, compose uses the default below.
+Under `IMAGE_POLICY=pinned`, `rostok stack add` writes the exact version, and
+`rostok images update` moves it (see [commands](../../docs/commands.md)).
+
+| Variable              | Default  | Image                                       |
+| --------------------- | -------- | ------------------------------------------- |
+| `SYNCTHING_IMAGE_TAG` | `latest` | `syncthing/syncthing` (service `syncthing`) |
