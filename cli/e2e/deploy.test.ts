@@ -90,6 +90,29 @@ for a in "$@"; do
   fi
 done
 
+# runRemoteShell sends its script on stdin to \`sh -s\` (#436), inside
+# \`{\` ... \`} </dev/null\` (exec.ts's shellStdinScript). Read it with the
+# shell's own \`read\` (no \`cat\` off PATH) and drop those two wrapper
+# lines, so the cases below match the script text itself.
+if [ "$script" = "sh -s" ]; then
+  script=""
+  first=1
+  while IFS= read -r line || [ -n "$line" ]; do
+    if [ "$first" = 1 ] && [ "$line" = "{" ]; then
+      first=0
+      continue
+    fi
+    first=0
+    [ "$line" = "} </dev/null" ] && continue
+    if [ -z "$script" ]; then
+      script=$line
+    else
+      script="$script
+$line"
+    fi
+  done
+fi
+
 if [ -n "\${FAKE_SSH_LOG:-}" ]; then
   printf '%s\\n---\\n' "$script" >> "$FAKE_SSH_LOG"
 fi
