@@ -1,17 +1,63 @@
 networks:
-  # The endpoint asks callers for no credential, so it stays off the shared `proxy` network.
-  # Only this server and its one client, Open WebUI (connected by that stack's after.deploy.ts),
-  # are on this one.
+  # Open WebUI's way in: only the guard and Open WebUI (connected by that stack's after.deploy.ts)
+  # are on it. Its name is what Open WebUI connects to, so it stays the same.
   mcp:
     name: hl-email-mcp
+  # Between the guard and the upstream server, and nothing else. Internal: no way out through it.
+  upstream:
+    name: hl-email-mcp-upstream
+    internal: true
+  # The upstream server's way out to the mail host (IMAP and SMTP). No other container joins it,
+  # so nothing can reach the upstream server through it.
+  egress:
+    name: hl-email-mcp-egress
 
 services:
-  # Email MCP — IMAP + SMTP for AI assistants (OpenWebUI).
-  # Source: https://github.com/ai-zerolab/mcp-email-server (BSD-3-Clause)
-  # Multi-account via TOML config (rendered by before.deploy.ts).
-  # Speaks Streamable HTTP on port 9557. Open WebUI connects via TOOL_SERVER_CONNECTIONS.
+  # The guard (guard/): the only way to the mail tools. It asks for EMAIL_MCP_TOKEN, passes only
+  # the allowed tools, and lets only EMAIL_MCP_ALLOWED_USERS change mail (spy4x/rostok#143).
+  # It keeps the service name and the container name the server used to have, so Open WebUI's URL
+  # http://hl-email-mcp:9557/mcp is unchanged and a deploy replaces the old container in place.
   email-mcp:
     container_name: hl-email-mcp
+    build:
+      context: ./guard
+    restart: unless-stopped
+    environment:
+      - EMAIL_MCP_TOKEN=${EMAIL_MCP_TOKEN:?}
+      - EMAIL_MCP_ALLOWED_USERS=${EMAIL_MCP_ALLOWED_USERS:-}
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+          cpus: "0.2"
+    networks:
+      - mcp
+      - upstream
+    labels:
+      - "traefik.enable=false"
+    depends_on:
+      upstream:
+        condition: service_healthy
+    healthcheck:
+      # 200 only with a valid token configured; it does not call upstream. busybox wget exits
+      # non-zero on any other status.
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:9557/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  # Email MCP — IMAP + SMTP for AI assistants, behind the guard above.
+  # Source: https://github.com/ai-zerolab/mcp-email-server (BSD-3-Clause)
+  # Multi-account via TOML config (rendered by before.deploy.ts).
+  # Speaks Streamable HTTP on port 9557 and asks for no credential, so only the guard reaches it.
+  upstream:
+    container_name: hl-email-mcp-upstream
     image: ghcr.io/ai-zerolab/mcp-email-server:${EMAIL_MCP_IMAGE_TAG:-latest}
     command: ["streamable-http"]
     restart: unless-stopped
@@ -19,10 +65,10 @@ services:
       # --- HTTP transport ---
       - MCP_HOST=0.0.0.0
       - MCP_PORT=9557
-      # Allow connections from the Open WebUI container on this stack's own network.
-      # DNS rebinding protection enabled (default). Bare host entries allow any port.
-      - MCP_ALLOWED_HOSTS=hl-email-mcp:*,hl-open-webui:*,localhost:*,127.0.0.1:*
-      - MCP_ALLOWED_ORIGINS=http://hl-email-mcp:*,http://hl-open-webui:*,http://localhost:*,http://127.0.0.1:*
+      # The guard calls it by this name. DNS rebinding protection enabled (default). Bare host
+      # entries allow any port.
+      - MCP_ALLOWED_HOSTS=hl-email-mcp-upstream:*,localhost:*,127.0.0.1:*
+      - MCP_ALLOWED_ORIGINS=http://hl-email-mcp-upstream:*,http://localhost:*,http://127.0.0.1:*
       - MCP_ENABLE_DNS_REBINDING_PROTECTION=true
 
       # --- Multi-account config (rendered by before.deploy.ts from the EMAIL_MCP_* keys) ---
@@ -31,8 +77,8 @@ services:
       # Rendered by before.deploy.ts; mode 0600 on disk.
       # Keep this a single-file mount, never the folder: upstream's add_email_account saves by
       # renaming a temporary file over the config file, which cannot work on a mounted file. That
-      # failure is what stops any caller from adding an account with a mail host of its own
-      # choice (spy4x/rostok#143).
+      # failure is a second lock behind the guard, which refuses add_email_account outright
+      # (spy4x/rostok#143).
       - ./config.toml:/config.toml:ro
     deploy:
       resources:
@@ -42,9 +88,10 @@ services:
     security_opt:
       - no-new-privileges:true
     networks:
-      - mcp
+      - upstream
+      - egress
     labels:
-      # Internal MCP — no Traefik exposure. OpenWebUI reaches it via Docker DNS.
+      # Internal MCP — no Traefik exposure. Only the guard reaches it.
       - "traefik.enable=false"
     healthcheck:
       # MCP Streamable HTTP — send initialize, expect 200 with "result" key.

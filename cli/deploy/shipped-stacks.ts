@@ -139,6 +139,9 @@ export const SHIPPED_STACK_FILES: Record<string, readonly string[]> = {
   "email-mcp": [
     "before.deploy.ts",
     "compose.yml",
+    "guard/+main.ts",
+    "guard/Dockerfile",
+    "guard/guard.ts",
   ],
   "google-maps-mcp": [
     "Dockerfile",
