@@ -16,7 +16,7 @@ the values each stack needs, and re-encrypts the secrets for git.
 │  │  traefik/    │   │  cli/+main.ts                   │     │
 │  │  gatus/      │   │  cli/server-create.ts           │     │
 │  │  vaultwarden/│   │  cli/stack-add.ts               │     │
-│  │  ... (50+)   │   │  cli/stack-list.ts              │     │
+│  │  ... (50+)   │   │  cli/commands/list.ts           │     │
 │  │              │   │  cli/stack-meta.ts              │     │
 │  │  +meta.ts    │   │  cli/secrets.ts                 │     │
 │  │  compose.yml │   │  cli/wizard.ts                  │     │
@@ -82,8 +82,8 @@ Each stack has:
 - `backup.ts` — backup config (skipped for stateless services; a stack that keeps a volume
   without one says why under "Backup" in its README: `metube`, `mirotalk`, `pangolin`)
 - `README.md` — purpose, configuration, troubleshooting
-- `+meta.ts` — CLI schema (READY-TO-IMPLEMENT for v1; tracked per
-  `docs/design/v1-cli.md` §4 rollout)
+- `+meta.ts` — CLI schema (`docs/design/v1-cli.md` §4). A stack enters
+  the CLI's catalog only through it, imported in `cli/catalog.ts`
 
 ### `cli/` — the rostok CLI source
 

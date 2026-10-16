@@ -58,15 +58,20 @@ Thanks for considering a contribution to `rostok`. This repo is the
 
 ## Local stack testing
 
-If you add a new stack, smoke-test it:
+If you add a new stack, smoke-test it with the CLI from your checkout.
+The published `rostok` does not know a stack until it is released, and
+the checkout knows it only once its `+meta.ts` is registered in
+`cli/catalog.ts`:
 
 ```bash
 # In a fresh test folder
 mkdir /tmp/rostok-test && cd /tmp/rostok-test
-deno install -A -n rostok jsr:@rostok/cli
-rostok --non-interactive --server=test --stacks=your-new-stack
-# ... or use the test fixtures under cli/ once v1 ships
+deno run -A <checkout>/cli/+main.ts server create test -n \
+  --var SSH_ADDRESS=local --var DOMAIN=example.com --var CONTACT_EMAIL=a@example.com
+deno run -A <checkout>/cli/+main.ts stack add your-new-stack -s test
 ```
+
+The CLI's own tests sit next to their code under `cli/` (`*.test.ts`).
 
 For more thorough testing, run `deno task check` and verify the type
 checker walks through `stacks/<name>/compose.yml` references.
@@ -135,4 +140,4 @@ happen in the issue, not in the PR thread.
 
 ## License
 
-By contributing, you agree your contribution is licensed under [MIT](../LICENSE).
+By contributing, you agree your contribution is licensed under [MIT](../../LICENSE).

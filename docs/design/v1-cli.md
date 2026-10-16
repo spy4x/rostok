@@ -1,6 +1,6 @@
 # rostok v1 — design
 
-**Status:** ready-to-implement.
+**Status:** Shipped; kept as the design record. Code is the source of truth where they differ.
 
 Russian "росток" = sprout, seedling. A tiny shoot that grows into a full
 homelab.
@@ -39,7 +39,7 @@ reader knows the tool is for them.
 
 ```bash
 # one-time per machine
-deno install -A -n rostok jsr:@rostok/cli
+deno install -g -A -n rostok jsr:@rostok/cli
 
 # one-time per project
 mkdir ~/rostok && cd ~/rostok
@@ -429,7 +429,7 @@ simpler than a global key across projects.
 
 ## 8. Distribution
 
-1. `deno install -A -n rostok jsr:@rostok/cli` — primary. Gives both
+1. `deno install -g -A -n rostok jsr:@rostok/cli` — primary. Gives both
    binary and importable module.
 2. `deno task rostok` from a cloned `spy4x/rostok` — developer path.
 3. `npx rostok` / `bunx rostok` via npm tarball — v2.
@@ -463,7 +463,7 @@ stay as-is — they're independent of the CLI work.
 - Per-stack smoke: `rostok stack add traefik -s home --var KEY=VAL`
   produces a deployable dir that passes `deno task check`
 
-CI not automated (per repo AGENTS.md). Tests stay in `deno task test`,
+CI runs `deno task check` (`.woodpecker.yml`). Tests stay in `deno task test`,
 run via pre-commit hook.
 
 ---

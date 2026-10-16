@@ -33,9 +33,10 @@ Generates `.age/key.txt` and prints the public key (safe to share).
 
 ### 2. Create / edit .env
 
+`rostok server create` and `rostok stack add` write `servers/<name>/.env`
+for you. To change a value later, edit it by hand:
+
 ```bash
-cp servers/home/.env.example servers/home/.env
-# Edit with your values
 nano servers/home/.env
 ```
 
@@ -114,7 +115,6 @@ of the password, on every deploy.
 servers/
 └── home/
     ├── .env.age          # ✅ age64-encrypted (safe in Git)
-    ├── .env.example      # ✅ Template (safe in Git)
     └── .env              # ❌ Decrypted (gitignored)
 .age/
 └── key.txt               # ❌ Secret key (gitignored, in main repo)

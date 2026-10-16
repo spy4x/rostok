@@ -18,13 +18,15 @@ stacks/<name>/
 ├── compose.yml       # required
 ├── backup.ts         # required if stateful, skip if stateless
 ├── README.md         # required
-└── +meta.ts          # required for rostok v1 — CLI schema
+└── +meta.ts          # required — CLI schema
 ```
 
 `+meta.ts` is the CLI's "what variables does this stack need?" file.
 See [`docs/design/v1-cli.md`](../design/v1-cli.md) §4 for the full
-schema. Until v1 ships, you can ship the stack without `+meta.ts`
-(the CLI will prompt with generic questions instead).
+schema. `rostok stack add` installs only stacks in its catalog, and a
+stack enters the catalog through its `+meta.ts`, imported in
+`cli/catalog.ts`. A stack without one cannot be added with the CLI
+(`opencode-web` and `plausible` are the ones left today).
 
 ---
 
@@ -278,8 +280,11 @@ export default {
   `crypto.getRandomValues`, not `Math.random`.
 - **`IMAGE_TAG` is a regular variable** — not a separate `defaults`
   block. Always `required: false`.
-- **`${SERVER_NAME}` is the only allowed placeholder** — server-level
-  vars resolved before stack vars; v1 only supports this one.
+- **Only server-level placeholders** — a string `default` may refer to
+  `${SERVER_NAME}`, `${DOMAIN}`, `${TIMEZONE}`, `${PUID}`, `${PGID}`,
+  `${VOLUMES_PATH}` and any `${PATH_<NAME>}`; they are resolved from
+  the server's `.env` before stack vars. Any other reference fails
+  validation (`EXACT_REFS` in `cli/defaults.ts`).
 
 ### File mounts (`fileMounts`)
 
@@ -350,7 +355,8 @@ deno task ts:check                   # type-check stacks/<name>/*.ts
 deno task fmt:check                  # format
 ```
 
-CI (when present) runs the same checks. A failing check blocks merge.
+CI (`.woodpecker.yml`) runs `deno task check` on every push, pull
+request and `v*` tag. A failing check blocks merge.
 
 For visual review, add the stack to a throwaway rostok project with
 the CLI from your checkout (`deno run -A <checkout>/cli/+main.ts stack

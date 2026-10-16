@@ -158,6 +158,8 @@ variables.
 
 ## `rostok stack remove`
 
+**Done** (#225): `cli/commands/stack-remove.ts`. The original idea:
+
 Symmetric to `stack add`. Interactive confirmation, removes stack's
 entries from `config.json` and `.env`, stops containers via existing
 `deno task deploy`.
