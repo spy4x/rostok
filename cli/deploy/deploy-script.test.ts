@@ -788,7 +788,7 @@ Deno.test("a successful deploy that kept a container with this stack's name from
   )
 })
 
-Deno.test("an old-project container of this stack without a container_name is kept and named in the summary", async () => {
+Deno.test("an old-project container of this stack without a container_name is kept and listed in the stack's result", async () => {
   const stacks: StackConfig[] = [{ name: "foo" }]
   const run = await runScriptWithFakeDocker(stacks, {
     composeConfig: FOO_CONFIG,
