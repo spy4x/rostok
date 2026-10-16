@@ -1,6 +1,7 @@
-// Guards the decisions recorded in dynamic/00-base.yml for the shared security-headers middleware
-// (spy4x/rostok#354, #356). It runs on every websecure router after the router's own middlewares
-// and the app, so every header it names replaces theirs.
+// Guards the decisions recorded in dynamic/00-base.yml for the shared security headers
+// (spy4x/rostok#354, #356). They live in security-headers-base, which runs on every websecure
+// router after the router's own middlewares and the app, so every header it names replaces theirs.
+// security-headers is a chain of it and frame-deny (frame-deny.test.ts).
 
 import { assertEquals } from "@std/assert"
 import { parse } from "yaml"
@@ -16,7 +17,7 @@ const base = parse(
   await Deno.readTextFile(new URL("./dynamic/00-base.yml", import.meta.url)),
 ) as { http: { middlewares: Record<string, HeadersMiddleware> } }
 
-const headers = base.http.middlewares["security-headers"]!.headers
+const headers = base.http.middlewares["security-headers-base"]!.headers
 
 /** The custom response header names, lower-cased, so a change of case cannot hide one. */
 function customHeaderNames(): string[] {

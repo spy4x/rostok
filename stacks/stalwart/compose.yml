@@ -52,7 +52,7 @@ services:
       - "traefik.http.routers.hl-stalwart.entrypoints=websecure"
       - "traefik.http.routers.hl-stalwart.tls=true"
       - "traefik.http.routers.hl-stalwart.tls.certresolver=myresolver"
-      - "traefik.http.routers.hl-stalwart.middlewares=hl-stalwart-jmap@docker,robots-deny@file"
+      - "traefik.http.routers.hl-stalwart.middlewares=frame-deny@file,hl-stalwart-jmap@docker,robots-deny@file"
       # A JMAP webmail on another host (the bulwark stack, webmail.${DOMAIN}) calls this router
       # from the browser: allow that one origin, and relax COEP/CORP for it.
       - "traefik.http.middlewares.hl-stalwart-jmap.headers.customresponseheaders.Cross-Origin-Embedder-Policy=unsafe-none"
@@ -65,7 +65,7 @@ services:
       - "traefik.http.routers.hl-stalwart-dav.entrypoints=websecure"
       - "traefik.http.routers.hl-stalwart-dav.tls=true"
       - "traefik.http.routers.hl-stalwart-dav.tls.certresolver=myresolver"
-      - "traefik.http.routers.hl-stalwart-dav.middlewares=robots-deny@file"
+      - "traefik.http.routers.hl-stalwart-dav.middlewares=frame-deny@file,robots-deny@file"
       - "traefik.http.routers.hl-stalwart-dav.service=hl-stalwart"
 
   # MTA-STS policy server — serves .well-known/mta-sts.txt for TLS enforcement.
@@ -91,7 +91,7 @@ services:
       - "traefik.docker.network=proxy"
       - "traefik.http.services.hl-mta-sts.loadbalancer.server.port=8081"
       - "traefik.http.routers.hl-mta-sts-primary.rule=Host(`${STALWART_MTA_STS_DOMAIN:-mta-sts.${DOMAIN}}`)"
-      - "traefik.http.routers.hl-mta-sts-primary.middlewares=robots-deny@file"
+      - "traefik.http.routers.hl-mta-sts-primary.middlewares=frame-deny@file,robots-deny@file"
       - "traefik.http.routers.hl-mta-sts-primary.entrypoints=websecure"
       - "traefik.http.routers.hl-mta-sts-primary.tls=true"
       - "traefik.http.routers.hl-mta-sts-primary.tls.certresolver=myresolver"

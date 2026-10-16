@@ -48,7 +48,7 @@ services:
       - "traefik.docker.network=proxy"
       - "traefik.http.services.hl-gatus.loadbalancer.server.port=8080"
       - "traefik.http.routers.hl-gatus.rule=Host(`${GATUS_DOMAIN}`)"
-      - "traefik.http.routers.hl-gatus.middlewares=robots-deny@file"
+      - "traefik.http.routers.hl-gatus.middlewares=frame-deny@file,robots-deny@file"
       - "traefik.http.routers.hl-gatus.entrypoints=websecure"
       - "traefik.http.routers.hl-gatus.tls=true"
       - "traefik.http.routers.hl-gatus.tls.certresolver=myresolver"

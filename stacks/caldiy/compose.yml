@@ -92,7 +92,7 @@ services:
       - "traefik.http.routers.hl-schedule.entrypoints=websecure"
       - "traefik.http.routers.hl-schedule.tls=true"
       - "traefik.http.routers.hl-schedule.tls.certresolver=myresolver"
-      - "traefik.http.routers.hl-schedule.middlewares=robots-deny@file"
+      - "traefik.http.routers.hl-schedule.middlewares=frame-deny@file,robots-deny@file"
 
   # Processes background task queue (sendWorkflowEmails, sendWebhook, etc.)
   # Cal.com creates Task records in Postgres but has no built-in scheduler to

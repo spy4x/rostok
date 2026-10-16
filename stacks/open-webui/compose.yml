@@ -120,7 +120,7 @@ services:
       - "traefik.docker.network=proxy"
       - "traefik.http.services.hl-open-webui.loadbalancer.server.port=8080"
       - "traefik.http.routers.hl-open-webui.rule=Host(`${OPEN_WEBUI_DOMAIN}`)"
-      - "traefik.http.routers.hl-open-webui.middlewares=robots-deny@file"
+      - "traefik.http.routers.hl-open-webui.middlewares=frame-deny@file,robots-deny@file"
       - "traefik.http.routers.hl-open-webui.entrypoints=websecure"
       - "traefik.http.routers.hl-open-webui.tls=true"
       - "traefik.http.routers.hl-open-webui.tls.certresolver=myresolver"

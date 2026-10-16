@@ -41,4 +41,5 @@ services:
       - "traefik.http.routers.hl-zond.entrypoints=websecure"
       - "traefik.http.routers.hl-zond.tls=true"
       - "traefik.http.routers.hl-zond.tls.certresolver=myresolver"
-      # No middlewares — intentionally public. Only returns 200/503.
+      # Intentionally public: no auth middleware. Only returns 200/503.
+      - "traefik.http.routers.hl-zond.middlewares=frame-deny@file"

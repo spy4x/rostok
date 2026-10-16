@@ -66,5 +66,5 @@ services:
       - "traefik.http.routers.hl-akaunting.rule=Host(`${AKAUNTING_DOMAIN}`)"
       - "traefik.http.routers.hl-akaunting.entrypoints=websecure"
       - "traefik.http.routers.hl-akaunting.tls=true"
-      - "traefik.http.routers.hl-akaunting.middlewares=authelia@file,robots-deny@file"
+      - "traefik.http.routers.hl-akaunting.middlewares=frame-deny@file,authelia@file,robots-deny@file"
       - "traefik.http.routers.hl-akaunting.tls.certresolver=myresolver"

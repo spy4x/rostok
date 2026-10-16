@@ -46,4 +46,4 @@ services:
       - "traefik.http.routers.hl-metube.entrypoints=websecure"
       - "traefik.http.routers.hl-metube.tls=true"
       - "traefik.http.routers.hl-metube.tls.certresolver=myresolver"
-      - "traefik.http.routers.hl-metube.middlewares=authelia@file,robots-deny@file"
+      - "traefik.http.routers.hl-metube.middlewares=frame-deny@file,authelia@file,robots-deny@file"

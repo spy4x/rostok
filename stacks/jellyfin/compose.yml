@@ -43,7 +43,7 @@ services:
       - "traefik.docker.network=proxy"
       - "traefik.http.services.hl-jellyfin.loadbalancer.server.port=8096"
       - "traefik.http.routers.hl-jellyfin.rule=Host(`${JELLYFIN_DOMAIN}`)"
-      - "traefik.http.routers.hl-jellyfin.middlewares=robots-deny@file"
+      - "traefik.http.routers.hl-jellyfin.middlewares=frame-deny@file,robots-deny@file"
       - "traefik.http.routers.hl-jellyfin.entrypoints=websecure"
       - "traefik.http.routers.hl-jellyfin.tls=true"
       - "traefik.http.routers.hl-jellyfin.tls.certresolver=myresolver"

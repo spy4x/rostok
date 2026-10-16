@@ -77,7 +77,7 @@ function extraRouterLabels(domain: string): string[] {
   const router = `traefik.http.routers.hl-mta-sts-${domain.replaceAll(".", "_")}`
   return [
     `${router}.rule=Host(\`mta-sts.${domain}\`)`,
-    `${router}.middlewares=robots-deny@file`,
+    `${router}.middlewares=frame-deny@file,robots-deny@file`,
     `${router}.entrypoints=websecure`,
     `${router}.tls=true`,
     `${router}.tls.certresolver=myresolver`,

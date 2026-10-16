@@ -27,3 +27,4 @@ services:
       - "traefik.http.routers.hl-home-assistant.entrypoints=websecure"
       - "traefik.http.routers.hl-home-assistant.tls=true"
       - "traefik.http.routers.hl-home-assistant.tls.certresolver=myresolver"
+      - "traefik.http.routers.hl-home-assistant.middlewares=frame-deny@file"

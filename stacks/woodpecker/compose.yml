@@ -47,7 +47,7 @@ services:
       - "traefik.docker.network=proxy"
       - "traefik.http.services.hl-woodpecker.loadbalancer.server.port=8000"
       - "traefik.http.routers.hl-woodpecker.rule=Host(`${WOODPECKER_DOMAIN}`)"
-      - "traefik.http.routers.hl-woodpecker.middlewares=robots-deny@file"
+      - "traefik.http.routers.hl-woodpecker.middlewares=frame-deny@file,robots-deny@file"
       - "traefik.http.routers.hl-woodpecker.entrypoints=websecure"
       - "traefik.http.routers.hl-woodpecker.tls=true"
       - "traefik.http.routers.hl-woodpecker.tls.certresolver=myresolver"

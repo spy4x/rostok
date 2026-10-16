@@ -78,7 +78,7 @@ services:
       - "traefik.enable=true"
       - "traefik.docker.network=proxy"
       - "traefik.http.routers.hl-gitea.rule=Host(`${GITEA_DOMAIN}`)"
-      - "traefik.http.routers.hl-gitea.middlewares=robots-deny@file"
+      - "traefik.http.routers.hl-gitea.middlewares=frame-deny@file,robots-deny@file"
       - "traefik.http.routers.hl-gitea.entrypoints=websecure"
       - "traefik.http.routers.hl-gitea.tls=true"
       - "traefik.http.routers.hl-gitea.tls.certresolver=myresolver"

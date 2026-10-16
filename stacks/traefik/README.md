@@ -19,7 +19,16 @@ labels:
   - "traefik.http.routers.myservice.rule=Host(`myservice.${DOMAIN}`)"
   - "traefik.http.routers.myservice.entrypoints=websecure"
   - "traefik.http.routers.myservice.tls.certresolver=myresolver"
+  - "traefik.http.routers.myservice.middlewares=frame-deny@file,robots-deny@file"
 ```
+
+Every router on `websecure` gets `security-headers-base@file` (HSTS, `nosniff`, permissions and
+opener policies) from the entrypoint, but not `X-Frame-Options`. List `frame-deny@file` in the
+router's own middlewares, as above, or any site can show the service in a frame. Leave it out only
+for a page that must be framed, such as mig's `/embed`. An entrypoint middleware runs outside every
+router's chain, so a header it sets cannot be removed by a router; that is why `X-Frame-Options`
+is set per router (spy4x/rostok#318). `security-headers@file` is the base headers plus
+`frame-deny`, for a chain that names every security header itself.
 
 ## Environment Variables
 
@@ -107,6 +116,20 @@ A router then uses it as `app-cors@file`.
   missing (`https://mail.<domain>/` answers 404). The stalwart README, "Upgrading from
   `STALWART_NEATSOFT_DOMAIN`", has the recovery.
 - `robots-deny` and `allow-index` are unchanged. Only comments that named particular sites went.
+
+### Upgrade note: `X-Frame-Options` moved to the routers
+
+The entrypoint middleware is now `security-headers-base`, which sends no `X-Frame-Options`, and
+`frame-deny` sends it per router (spy4x/rostok#318). Every catalog router lists `frame-deny@file`
+or `security-headers@file`, so nothing changes for them. A chain that names
+`security-headers@file`, such as a `MIG_MIDDLEWARES` or `CALDAV_*_MIDDLEWARES` override, keeps
+`X-Frame-Options: DENY` too.
+
+A router of your own loses `X-Frame-Options: DENY` on the first deploy of this version unless
+its chain names one of the two: a router in `servers/<server>/configs/traefik/dynamic/`, a label
+in a `compose-override` file that sets a router's middlewares, or a container outside rostok on
+the `proxy` network. Add `frame-deny@file` to
+each, then deploy. Check with `curl -sI https://<host>/ | grep -i x-frame-options`.
 
 ## Resources
 
