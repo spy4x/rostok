@@ -127,3 +127,16 @@ Deno.test("open-webui: no shipped file names a model the stack used to hardcode"
   }
   assertEquals(named, [])
 })
+
+Deno.test("open-webui: with default answers local web fetch is off", async () => {
+  // On, any signed-in user can fetch a private address and read it in the chat (spy4x/rostok#399).
+  assertEquals((await environmentWith(DEFAULT_ANSWERS)).ENABLE_RAG_LOCAL_WEB_FETCH, "false")
+})
+
+Deno.test("open-webui: OPEN_WEBUI_ENABLE_RAG_LOCAL_WEB_FETCH=true turns local web fetch on", async () => {
+  const env = await environmentWith({
+    ...DEFAULT_ANSWERS,
+    OPEN_WEBUI_ENABLE_RAG_LOCAL_WEB_FETCH: "true",
+  })
+  assertEquals(env.ENABLE_RAG_LOCAL_WEB_FETCH, "true")
+})

@@ -23,7 +23,8 @@ least one OpenAI-compatible provider. With every other answer left at its defaul
   built-in loader;
 - the two tools this stack runs itself (YouTube transcript and web fetch, through `mcpo`) work;
 - web search, image generation, Ollama and the tools of other stacks are off, so nothing points
-  at a stack this server does not run.
+  at a stack this server does not run;
+- web fetch refuses private addresses (below).
 
 ## Turning on the optional parts
 
@@ -41,6 +42,11 @@ Each needs something else to exist first. Set the variables in the server's `.en
 | GitHub tools                     | the `github-mcp` stack             | `OPEN_WEBUI_ENABLE_GITHUB_MCP=true`                                                            |
 | Image generation                 | a provider with an image model     | `OPEN_WEBUI_ENABLE_IMAGE_GENERATION=true`, `OPEN_WEBUI_IMAGE_GENERATION_MODEL=<model id>`      |
 | Document extraction through Tika | your own Tika server (not shipped) | `OPEN_WEBUI_CONTENT_EXTRACTION_ENGINE=tika`, `OPEN_WEBUI_TIKA_SERVER_URL=<its URL>`            |
+| Web pages from your own LAN      | nothing                            | `OPEN_WEBUI_ENABLE_RAG_LOCAL_WEB_FETCH=true` (below)                                           |
+
+**Local web fetch.** Off by default. When it is on, any signed-in user can ask Open WebUI to fetch
+a private address, such as an admin page of another container or your router, and read the answer
+in the chat. Turn it on only when you need pages from your own network and trust every account.
 
 **caldav-mcp token.** Write `OPEN_WEBUI_CALDAV_MCP_TOKEN=${CALDAV_MCP_TOKEN}` in the server's
 `.env` by hand, without quotes and below the `CALDAV_MCP_TOKEN` line, so compose resolves the
@@ -85,6 +91,7 @@ every time; after `rostok deploy <server> <mcp stack>` of a newly added MCP stac
 | `OPEN_WEBUI_IMAGE_GENERATION_MODEL`                    | none                                     | Image model of your provider                                       |
 | `OPEN_WEBUI_WEB_LOADER_ENGINE`                         | none                                     | Web page loader (empty for the built-in one, or `playwright`)      |
 | `OPEN_WEBUI_PLAYWRIGHT_WS_URL`                         | none                                     | Playwright URL, for the `playwright` loader                        |
+| `OPEN_WEBUI_ENABLE_RAG_LOCAL_WEB_FETCH`                | `false`                                  | Let users fetch pages from private addresses                       |
 | `OPEN_WEBUI_ENABLE_WEB_SEARCH`                         | `false`                                  | Enable web search                                                  |
 | `OPEN_WEBUI_WEB_SEARCH_ENGINE`                         | `searxng`                                | Web search engine                                                  |
 | `OPEN_WEBUI_SEARXNG_QUERY_URL`                         | `http://searxng:8080/search?format=json` | SearXNG query URL                                                  |

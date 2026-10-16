@@ -16,7 +16,9 @@ services:
       - WEB_LOADER_ENGINE=${OPEN_WEBUI_WEB_LOADER_ENGINE:-}
       - PLAYWRIGHT_WS_URL=${OPEN_WEBUI_PLAYWRIGHT_WS_URL:-}
       - PLAYWRIGHT_TIMEOUT=5000
-      - ENABLE_RAG_LOCAL_WEB_FETCH=true
+      # Off by default: when on, any signed-in user can have Open WebUI fetch a private address
+      # (another container, a device on the LAN) and read the answer in the chat.
+      - ENABLE_RAG_LOCAL_WEB_FETCH=${OPEN_WEBUI_ENABLE_RAG_LOCAL_WEB_FETCH:-false}
 
       # --- Web Search ---
       # Off by default: the engine below is the searxng stack, which may not be on this server.
