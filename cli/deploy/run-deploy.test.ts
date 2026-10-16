@@ -7,6 +7,7 @@ import {
 } from "@std/assert"
 import { dirname, join } from "@std/path"
 import {
+  envDefinesKey,
   handleStagingSignal,
   installStagingSignalCleanup,
   namesProxyNetwork,
@@ -1334,4 +1335,12 @@ Deno.test("runDeploy: a catalog stack is checked against the bundled +meta.ts wh
   } finally {
     await teardownRunDeployFixture(f)
   }
+})
+
+Deno.test("envDefinesKey: a longer key that ends in the same name or a comment does not set it", () => {
+  assert(envDefinesKey(`A=1\nTOKEN=x\n`, `TOKEN`))
+  assert(envDefinesKey(`  export TOKEN=x`, `TOKEN`))
+  assert(envDefinesKey(`TOKEN=`, `TOKEN`))
+  assert(!envDefinesKey(`API_TOKEN=x\n`, `TOKEN`))
+  assert(!envDefinesKey(`OLD_SITE_NAME=x\n# SITE_NAME=y\n`, `SITE_NAME`))
 })
