@@ -366,7 +366,10 @@ export interface StackRequiredKeys {
   stack: string
   /** The keys its `+meta.ts` marks `required: true`. */
   keys: string[]
-  /** The text of its compose file and of the server's override for it, joined. */
+  /**
+   * The text of its compose file and of the server's override for it, each
+   * with the files it includes, joined.
+   */
   compose: string
   /** The stack's own `envs` from config.json, which the deploy adds to the `.env` every stack reads. */
   envs?: Record<string, string>
@@ -381,14 +384,31 @@ export interface StackRequiredKeys {
  * `${KEY}` and is no use at all.
  */
 export function composeNeedsKey(compose: string, key: string): boolean {
-  const name = key.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
-  const uses = compose.matchAll(
-    new RegExp(
-      `(?<!\\$)\\$(?:\\{${name}(?![A-Za-z0-9_])([^}]*)\\}|${name}(?![A-Za-z0-9_]))`,
-      "g",
-    ),
-  )
-  return [...uses].some((use) => !/^:?-/.test(use[1] ?? ""))
+  // A plain scan, not a regex: `\$\{KEY([^}]*)\}` rescans the rest of the
+  // text for every unclosed `${KEY`, which took seconds on a large file.
+  // `close` is the next `}` after the scan (Infinity: none left), found
+  // once per `}`.
+  let close = -1
+  for (let i = compose.indexOf("$"); i !== -1; i = compose.indexOf("$", i + 1)) {
+    if (compose[i + 1] === "$") {
+      i++ // `$$` is a literal `$`: skip both
+      continue
+    }
+    const braced = compose[i + 1] === "{"
+    const start = braced ? i + 2 : i + 1
+    const end = start + key.length
+    if (!compose.startsWith(key, start) || /[A-Za-z0-9_]/.test(compose[end] ?? "")) continue
+    if (!braced) return true
+    if (close < end) {
+      const next = compose.indexOf("}", end)
+      close = next === -1 ? Infinity : next
+    }
+    // An unclosed `${KEY` is no use; a later `$KEY` still counts.
+    if (close !== Infinity && !/^:?-/.test(compose.slice(end, Math.min(close, end + 2)))) {
+      return true
+    }
+  }
+  return false
 }
 
 /**
@@ -399,7 +419,9 @@ export function composeNeedsKey(compose: string, key: string): boolean {
  * `env` is `.env.root` merged with the server `.env`. A key with a blank
  * value counts as missing. A key that any deployed stack sets in its
  * config.json `envs` counts as set for every stack, because the deploy
- * appends those to the one `.env` all of them read. Only a key the stack's compose file uses
+ * appends those to the one `.env` all of them read, but only when `env`
+ * lacks the key: the deploy appends no `envs` key the server `.env`
+ * already has, so a blank line there stays blank. Only a key the stack's compose file uses
  * without a fallback (`composeNeedsKey`) is checked. The others would
  * block servers that work today:
  *
@@ -418,7 +440,8 @@ export function assertRequiredStackKeys(
   const lines: string[] = []
   // Every stack's `envs` land in the one `.env` that all compose files read.
   const shared: Record<string, string> = Object.assign({}, ...stacks.map((s) => s.envs ?? {}))
-  const hasValue = (key: string) => Boolean(env[key]?.trim() || shared[key]?.trim())
+  const hasValue = (key: string) =>
+    Object.hasOwn(env, key) ? Boolean(env[key].trim()) : Boolean(shared[key]?.trim())
   for (const { stack, keys, compose } of stacks) {
     const missing = keys.filter((key) => !hasValue(key) && composeNeedsKey(compose, key))
     if (missing.length > 0) lines.push(`  ${stack}: ${missing.join(", ")}`)

@@ -1,4 +1,4 @@
-import { assertEquals, assertStringIncludes, assertThrows } from "@std/assert"
+import { assert, assertEquals, assertStringIncludes, assertThrows } from "@std/assert"
 import { UserError } from "../errors.ts"
 import {
   assertNoBareDollar,
@@ -710,4 +710,32 @@ Deno.test("assertRequiredStackKeys: a key that any stack sets in its config.json
     "/p/servers/s/.env",
     "/p/.env.root",
   )
+})
+
+Deno.test("assertRequiredStackKeys: a key blank in the server env is missing even when a stack's config.json envs set it, since the deploy keeps the blank line", () => {
+  assertThrows(
+    () =>
+      assertRequiredStackKeys(
+        { SITE_NAME: "" },
+        [{
+          stack: "site",
+          keys: ["SITE_NAME"],
+          compose: "a: ${SITE_NAME}",
+          envs: { SITE_NAME: "x" },
+        }],
+        "/p/servers/s/.env",
+        "/p/.env.root",
+      ),
+    UserError,
+    "site: SITE_NAME",
+  )
+})
+
+Deno.test("composeNeedsKey: a large compose file full of unclosed ${KEY is scanned in well under a second, and a later $KEY still counts", () => {
+  const compose = "a: ${APP_KEY ".repeat(20_000) + "\nb: $APP_KEY"
+  const started = performance.now()
+  assertEquals(composeNeedsKey(compose, "APP_KEY"), true)
+  assertEquals(composeNeedsKey("${APP_KEY ".repeat(20_000), "APP_KEY"), false)
+  const elapsed = performance.now() - started
+  assert(elapsed < 250, `took ${Math.round(elapsed)} ms`)
 })

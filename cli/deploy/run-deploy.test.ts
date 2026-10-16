@@ -904,14 +904,18 @@ Deno.test("STAGING_CLEANUP_SIGNALS: exit codes follow the shell's 128 + signal n
 
 // #282 — a local server (SSH_ADDRESS=local) runs two guards before any step.
 
-async function writeLocalServer(projectDir: string, pathApps: string): Promise<void> {
+async function writeLocalServer(
+  projectDir: string,
+  pathApps: string,
+  volumesPath = "/srv/volumes",
+): Promise<void> {
   const serverDir = join(projectDir, "servers", "test")
   await Deno.mkdir(serverDir, { recursive: true })
   const envLines = [
     "SSH_ADDRESS=local",
     "SSH_USER=deploy",
     `PATH_APPS=${pathApps}`,
-    "VOLUMES_PATH=/srv/volumes",
+    `VOLUMES_PATH=${volumesPath}`,
     "PUID=1000",
     "PGID=1000",
     "DOCKER_GROUP_ID=988",
@@ -1054,6 +1058,28 @@ Deno.test("runDeploy: a local PATH_APPS that does not exist yet passes the path 
   }
 })
 
+Deno.test("runDeploy: a local VOLUMES_PATH under a file is refused with a UserError that names VOLUMES_PATH, not PATH_APPS (#291)", async () => {
+  const f = await setupRunDeployFixture()
+  const elsewhere = await Deno.makeTempDir({ prefix: "rostok-rundeploy-elsewhere-" })
+  try {
+    const dir = await Deno.realPath(elsewhere)
+    const file = join(dir, "a-file")
+    await Deno.writeTextFile(file, "")
+    const volumesPath = `${file}/volumes`
+    await writeLocalServer(f.projectDir, join(dir, "apps"), volumesPath)
+    const io: RunDeployIO = { ...f.io, checkLocalDockerEndpoint: async () => {} }
+    const err = await assertRejects(
+      () => runDeploy({ cwd: f.projectDir, server: "test" }, io),
+      UserError,
+    )
+    assertStringIncludes(err.message, `cannot resolve VOLUMES_PATH (${volumesPath})`)
+    assertEquals(f.remote.calls, [])
+  } finally {
+    await Deno.remove(elsewhere, { recursive: true })
+    await teardownRunDeployFixture(f)
+  }
+})
+
 // #310 — the proxy network is created only for a compose file that names it.
 
 Deno.test("runDeploy: a deploy whose only stack does not name the proxy network never creates it (#310)", async () => {
@@ -1117,6 +1143,63 @@ Deno.test("runDeploy: the proxy network is created when only the server's compos
   }
 })
 
+Deno.test("runDeploy: a stack that names the network only as ${PROXY_NETWORK:-proxy} gets it created (#449)", async () => {
+  const f = await setupRunDeployFixture()
+  try {
+    await writeLocalStack(f.projectDir, "alpha")
+    await Deno.writeTextFile(
+      join(f.projectDir, "stacks", "alpha", "compose.yml"),
+      "name: ${PROJECT}\nnetworks:\n  default:\n    external: true\n" +
+        "    name: ${PROXY_NETWORK:-proxy}\nservices:\n  alpha:\n    image: busybox\n",
+    )
+    await writeRunDeployServer(f.projectDir, ["alpha"])
+
+    await runDeploy({ cwd: f.projectDir, server: "test" }, f.io)
+    assert(f.remote.calls.includes("network"), "expected the proxy network step")
+  } finally {
+    await teardownRunDeployFixture(f)
+  }
+})
+
+Deno.test("runDeploy: a stack whose compose file names the network only in a file it includes gets it created (#449)", async () => {
+  const f = await setupRunDeployFixture()
+  try {
+    await writeLocalStack(f.projectDir, "alpha")
+    const stackDir = join(f.projectDir, "stacks", "alpha")
+    await Deno.writeTextFile(
+      join(stackDir, "compose.yml"),
+      "name: ${PROJECT}\ninclude:\n  - path: [parts/web.yml]\n",
+    )
+    await Deno.mkdir(join(stackDir, "parts"))
+    await Deno.writeTextFile(
+      join(stackDir, "parts", "web.yml"),
+      "include:\n  - net.yml\nservices:\n  alpha:\n    image: busybox\n",
+    )
+    await Deno.writeTextFile(
+      join(stackDir, "parts", "net.yml"),
+      "networks:\n  proxy:\n    external: true\n",
+    )
+    await writeRunDeployServer(f.projectDir, ["alpha"])
+
+    await runDeploy({ cwd: f.projectDir, server: "test" }, f.io)
+    assert(f.remote.calls.includes("network"), "expected the proxy network step")
+  } finally {
+    await teardownRunDeployFixture(f)
+  }
+})
+
+Deno.test("runDeploy: a deploy with no stacks creates the proxy network (#449)", async () => {
+  const f = await setupRunDeployFixture()
+  try {
+    await writeRunDeployServer(f.projectDir, [])
+
+    await runDeploy({ cwd: f.projectDir, server: "test" }, f.io)
+    assert(f.remote.calls.includes("network"), "expected the proxy network step")
+  } finally {
+    await teardownRunDeployFixture(f)
+  }
+})
+
 Deno.test("namesProxyNetwork: every way a compose file names the network counts, a comment or a longer name does not (#310)", () => {
   for (
     const line of [
@@ -1127,6 +1210,8 @@ Deno.test("namesProxyNetwork: every way a compose file names the network counts,
       '    networks: ["proxy"]',
       '      - "traefik.docker.network=proxy"',
       "      - proxy # routed by Traefik",
+      "    name: ${PROXY_NETWORK:-proxy}",
+      "    name: ${PROXY_NETWORK-proxy}",
     ]
   ) {
     assert(namesProxyNetwork(`services:\n${line}\n`), line)

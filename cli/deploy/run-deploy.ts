@@ -75,6 +75,7 @@
 // hook is never shipped, so it has no such constraint.
 
 import { basename, dirname, join, resolve, toFileUrl } from "@std/path"
+import { parse } from "yaml"
 import { parseEnv, readEnvFile } from "../env-files.ts"
 import { isLocalSshAddress, serverDirFor } from "../server-keys.ts"
 import { serverNotFoundMessage, UserError } from "../errors.ts"
@@ -398,7 +399,7 @@ export async function runDeploy(
       requiredKeys.push({
         stack: stackConfig.name,
         keys: (meta?.variables ?? []).filter((v) => v.required === true).map((v) => v.key),
-        compose: (await Promise.all(composeFiles.map(readTextIfExists))).join("\n"),
+        compose: (await Promise.all(composeFiles.map((file) => readComposeText(file)))).join("\n"),
         envs: stackConfig.envs,
       })
     }
@@ -654,8 +655,10 @@ export async function runDeploy(
 
     // #310: only when a compose file deployed in this run names the
     // network. A server without one (Home Assistant on the host network)
-    // gets no stray network, and needs no right to create one.
-    if (requiredKeys.some((stack) => namesProxyNetwork(stack.compose))) {
+    // gets no stray network, and needs no right to create one. A deploy
+    // with no stacks creates it as before 1.12.1 (#449): such a server is
+    // being prepared for stacks, which nearly all join it.
+    if (stacks.length === 0 || requiredKeys.some((stack) => namesProxyNetwork(stack.compose))) {
       console.log("Ensuring proxy network exists on remote server...")
       const networkResult = await io.runRemoteShell(
         SSH_ADDRESS,
@@ -830,13 +833,49 @@ function removeStagingDirSync(dir: string): void {
  * `proxy` as a word of its own counts (`proxy:`, `- proxy`,
  * `name: proxy`, `networks: [proxy]`, `traefik.docker.network=proxy`),
  * while a longer name such as `hl-piped-proxy` or `docker-sock-proxy`
- * does not. A wrong "yes" leaves an unused network behind; a wrong "no"
- * would break `docker compose up`.
+ * does not. `proxy` as the fallback of a variable counts too
+ * (`${PROXY_NETWORK:-proxy}`, `${PROXY_NETWORK-proxy}`). A wrong "yes"
+ * leaves an unused network behind; a wrong "no" would break
+ * `docker compose up`.
  */
 export function namesProxyNetwork(compose: string): boolean {
   return compose.split(`\n`).some((line) =>
-    !line.trimStart().startsWith(`#`) && /(^|[^\w.-])proxy($|[^\w.-])/.test(line)
+    !line.trimStart().startsWith(`#`) &&
+    /(^|[^\w.-]|\$\{\w+:?-)proxy($|[^\w.-])/.test(line)
   )
+}
+
+/**
+ * The text of a compose file followed by the text of every local file its
+ * top-level `include:` pulls in, recursively, each resolved from the
+ * directory of the file that names it (#449). "" for a file that does not
+ * exist. An include that is a remote reference (`git@`, `oci://`,
+ * `https://`), or that cannot be read or parsed, adds nothing: this text
+ * only feeds the loose checks above, never the deploy itself.
+ */
+async function readComposeText(path: string, seen = new Set<string>()): Promise<string> {
+  seen.add(path)
+  const text = await readTextIfExists(path)
+  let doc: unknown
+  try {
+    doc = parse(text)
+  } catch {
+    return text
+  }
+  const include = (doc as { include?: unknown } | null)?.include
+  const paths = (Array.isArray(include) ? include : []).flatMap((entry) => {
+    const value = typeof entry === "string" ? entry : (entry as { path?: unknown } | null)?.path
+    return (Array.isArray(value) ? value : [value]).filter((p): p is string =>
+      typeof p === "string" && !/^[\w+.-]+:\/\/|^git@/.test(p)
+    )
+  })
+  const parts = [text]
+  for (const rel of paths) {
+    const included = resolve(dirname(path), rel)
+    if (seen.has(included)) continue
+    parts.push(await readComposeText(included, seen).catch(() => ""))
+  }
+  return parts.join("\n")
 }
 
 /**
