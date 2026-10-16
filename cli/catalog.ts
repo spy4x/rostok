@@ -84,8 +84,6 @@ import stalwart from "../stacks/stalwart/+meta.ts"
 import pangolin from "../stacks/pangolin/+meta.ts"
 import authelia from "../stacks/authelia/+meta.ts"
 
-// Stacks without a +meta.ts (opencode-web, plausible) are not in the catalog yet.
-
 const STACK_META: Record<string, StackMeta> = {
   traefik,
   gatus,
