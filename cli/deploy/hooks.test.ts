@@ -134,6 +134,19 @@ Deno.test("buildHookEnv: a local server gets no SSH_HOST or SSH_PORT, not even a
   assertEquals(env.SSH_PORT, undefined)
 })
 
+Deno.test("buildHookEnv: a local server says so with SSH_LOCAL=true (#450)", () => {
+  const ctx: HookContext = { ...BASE_CTX, sshAddress: "local" }
+  const { env } = buildHookEnv(ctx, STACK_NAME, {})
+  assertEquals(env.SSH_LOCAL, "true")
+})
+
+Deno.test("buildHookEnv: a remote server gets no SSH_LOCAL, not from .env and not from the parent environment (#450)", () => {
+  const ctx: HookContext = { ...BASE_CTX, serverEnv: { SSH_LOCAL: "true" } }
+  const { env } = buildHookEnv(ctx, STACK_NAME, { SSH_LOCAL: "true" })
+  assertEquals(env.SSH_HOST, "example.com")
+  assertEquals(env.SSH_LOCAL, undefined)
+})
+
 Deno.test("buildHookEnv: an ssh_config alias parses as SSH_HOST with no port", () => {
   const ctx: HookContext = { ...BASE_CTX, sshAddress: "homelab" }
   const { env } = buildHookEnv(ctx, STACK_NAME, {})

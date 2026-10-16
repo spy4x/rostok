@@ -63,9 +63,11 @@ laptop` deploys locally without a flag. What changes:
   `sudo -n` when you are not root), `docker compose up`, and a plain
   local `rsync` into `PATH_APPS` with the same flags as a remote deploy.
   ssh is never started.
-- Stack hooks get `SSH_ADDRESS=local` and no `SSH_HOST` or `SSH_PORT`.
-  The catalog's hooks then run their commands on this machine, with
-  the local `docker` and without ssh.
+- Stack hooks get `SSH_ADDRESS=local`, `SSH_LOCAL=true` and no
+  `SSH_HOST` or `SSH_PORT`. The catalog's hooks then run their commands
+  on this machine, with the local `docker` and without ssh. A hook run
+  with neither `SSH_HOST` nor `SSH_LOCAL=true` (by hand, say) refuses
+  to start instead of guessing that the server is this machine.
 - Each local step runs with a reduced environment: `PATH`, `HOME`,
   `USER`, `LOGNAME`, `LANG`, `LC_*`, `XDG_RUNTIME_DIR` and the
   `DOCKER_CONFIG` / `DOCKER_HOST` / `DOCKER_CONTEXT` variables. Anything
