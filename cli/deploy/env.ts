@@ -381,14 +381,31 @@ export interface StackRequiredKeys {
  * `${KEY}` and is no use at all.
  */
 export function composeNeedsKey(compose: string, key: string): boolean {
-  const name = key.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
-  const uses = compose.matchAll(
-    new RegExp(
-      `(?<!\\$)\\$(?:\\{${name}(?![A-Za-z0-9_])([^}]*)\\}|${name}(?![A-Za-z0-9_]))`,
-      "g",
-    ),
-  )
-  return [...uses].some((use) => !/^:?-/.test(use[1] ?? ""))
+  // A plain scan, not a regex: `\$\{KEY([^}]*)\}` rescans the rest of the
+  // text for every unclosed `${KEY`, which took seconds on a large file.
+  // `close` is the next `}` after the scan (Infinity: none left), found
+  // once per `}`.
+  let close = -1
+  for (let i = compose.indexOf("$"); i !== -1; i = compose.indexOf("$", i + 1)) {
+    if (compose[i + 1] === "$") {
+      i++ // `$$` is a literal `$`: skip both
+      continue
+    }
+    const braced = compose[i + 1] === "{"
+    const start = braced ? i + 2 : i + 1
+    const end = start + key.length
+    if (!compose.startsWith(key, start) || /[A-Za-z0-9_]/.test(compose[end] ?? "")) continue
+    if (!braced) return true
+    if (close < end) {
+      const next = compose.indexOf("}", end)
+      close = next === -1 ? Infinity : next
+    }
+    // An unclosed `${KEY` is no use; a later `$KEY` still counts.
+    if (close !== Infinity && !/^:?-/.test(compose.slice(end, Math.min(close, end + 2)))) {
+      return true
+    }
+  }
+  return false
 }
 
 /**

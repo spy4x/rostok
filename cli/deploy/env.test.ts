@@ -1,4 +1,4 @@
-import { assertEquals, assertStringIncludes, assertThrows } from "@std/assert"
+import { assert, assertEquals, assertStringIncludes, assertThrows } from "@std/assert"
 import { UserError } from "../errors.ts"
 import {
   assertNoBareDollar,
@@ -710,4 +710,13 @@ Deno.test("assertRequiredStackKeys: a key that any stack sets in its config.json
     "/p/servers/s/.env",
     "/p/.env.root",
   )
+})
+
+Deno.test("composeNeedsKey: a large compose file full of unclosed ${KEY is scanned in well under a second", () => {
+  const compose = "a: ${APP_KEY ".repeat(50_000) + "\nb: $APP_KEY"
+  const started = performance.now()
+  assertEquals(composeNeedsKey(compose, "APP_KEY"), true)
+  assertEquals(composeNeedsKey("${APP_KEY ".repeat(50_000), "APP_KEY"), false)
+  const elapsed = performance.now() - started
+  assert(elapsed < 250, `took ${Math.round(elapsed)} ms`)
 })
