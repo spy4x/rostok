@@ -58,14 +58,36 @@ Declared in `+meta.ts`. Requires the `traefik` stack. Server-level keys `DOCKER_
 | `WOODPECKER_GITHUB_SECRET` | asked, secret     | Client secret of the GitHub OAuth app        |
 | `WOODPECKER_ADMIN`         | asked             | GitHub login that administers Woodpecker     |
 
-## Database
+## Database and build logs
 
-The server keeps its state and the build logs in SQLite at
-`${VOLUMES_PATH}/woodpecker-server/woodpecker.sqlite`. Compose opens it in WAL mode with a 30 s
-busy timeout, so parallel pipelines wait for the write lock instead of failing with
-`database is locked`. The first start switches an existing database to WAL; the
-`woodpecker.sqlite-wal` and `-shm` files beside it belong to the database. The backup stops the
-server first, so they are copied in a consistent state.
+The server keeps its state in SQLite at `${VOLUMES_PATH}/woodpecker-server/woodpecker.sqlite`,
+and each step's build log in its own file under `logs/` next to it. Compose opens the database in
+WAL mode with a 30 s busy timeout, so parallel pipelines wait for the write lock instead of
+failing with `database is locked`. The `woodpecker.sqlite-wal` and `-shm` files beside it belong
+to the database.
+
+The `woodpecker-db` service ([`db-helper.ts`](db-helper.ts)) looks after the database:
+
+- **Older installs.** Woodpecker used to keep build logs inside the database, where they grew it
+  by gigabytes. On its first start, `woodpecker-db` writes those logs to `logs/`, removes them
+  from the database and shrinks the file. The server waits for it: about 6 minutes per 4 GB of
+  database. When a step had the same line twice (a workflow that ran twice), the first copy is
+  kept.
+- **Backup copy.** Every 15 minutes it writes a consistent copy of the live database to
+  `backup/woodpecker.sqlite`.
+- **Restore.** When the live database is missing at start and `backup/woodpecker.sqlite` exists,
+  it puts the copy in place before the server starts.
+
+### Backups
+
+The nightly backup saves `backup/` and `logs/` and stops nothing, so pipelines keep running
+through it. The database in a backup is at most 15 minutes older than the backup; a log file
+copied while its step ran misses that step's last lines.
+
+To restore, stop the stack, move the live `woodpecker.sqlite`, `-wal` and `-shm` files aside, run
+the restore, and start the stack: `woodpecker-db` copies the restored database into place. Without
+that, the restore puts back only the copy in `backup/`, the server keeps its current database, and
+the next copy overwrites the restored one.
 
 ## Image tags
 
@@ -75,5 +97,6 @@ Under `IMAGE_POLICY=pinned`, `rostok stack add` writes the exact version, and
 
 | Variable                      | Default   | Image                                                          |
 | ----------------------------- | --------- | -------------------------------------------------------------- |
-| `WOODPECKER_SERVER_IMAGE_TAG` | `v3.11.0` | `woodpeckerci/woodpecker-server` (service `woodpecker-server`) |
-| `WOODPECKER_AGENT_IMAGE_TAG`  | `v3.11.0` | `woodpeckerci/woodpecker-agent` (service `woodpecker-agent`)   |
+| `WOODPECKER_SERVER_IMAGE_TAG` | `v3.19.0` | `woodpeckerci/woodpecker-server` (service `woodpecker-server`) |
+| `WOODPECKER_AGENT_IMAGE_TAG`  | `v3.19.0` | `woodpeckerci/woodpecker-agent` (service `woodpecker-agent`)   |
+| `WOODPECKER_DB_IMAGE_TAG`     | `2.9.0`   | `denoland/deno` (service `woodpecker-db`)                      |

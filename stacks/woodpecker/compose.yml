@@ -9,7 +9,7 @@ services:
   # or use GitHub/GitLab integration by setting the appropriate environment variables.
   woodpecker-server:
     container_name: hl-woodpecker-server
-    image: woodpeckerci/woodpecker-server:${WOODPECKER_SERVER_IMAGE_TAG:-v3.11.0}
+    image: woodpeckerci/woodpecker-server:${WOODPECKER_SERVER_IMAGE_TAG:-v3.19.0}
     environment:
       - WOODPECKER_OPEN=false
       - WOODPECKER_HOST=https://${WOODPECKER_DOMAIN}
@@ -18,6 +18,10 @@ services:
       # writes with "database is locked" when several pipelines run, and the agent then loses or
       # re-runs workflows. The "no sqlite3 file found" warning at start is harmless.
       - WOODPECKER_DATABASE_DATASOURCE=file:/var/lib/woodpecker/woodpecker.sqlite?_busy_timeout=30000&_journal_mode=WAL&_txlock=immediate
+      # Build logs go to one file per step in logs/, not into the database, which they grew by
+      # gigabytes. woodpecker-db moves the logs an older install kept in the database.
+      - WOODPECKER_LOG_STORE=file
+      - WOODPECKER_LOG_STORE_FILE_PATH=/var/lib/woodpecker/logs
       # GitHub integration (comment out if using Gitea/GitLab)
       - WOODPECKER_GITHUB=true
       - WOODPECKER_GITHUB_CLIENT=${WOODPECKER_GITHUB_CLIENT}
@@ -35,6 +39,9 @@ services:
       - WOODPECKER_ADMIN=${WOODPECKER_ADMIN}
     volumes:
       - ${VOLUMES_PATH}/woodpecker-server:/var/lib/woodpecker:z
+    depends_on:
+      woodpecker-db:
+        condition: service_healthy
     restart: unless-stopped
     deploy:
       resources:
@@ -56,9 +63,44 @@ services:
       - "traefik.http.routers.hl-woodpecker.tls=true"
       - "traefik.http.routers.hl-woodpecker.tls.certresolver=myresolver"
 
+  # Looks after the server's database (stacks/woodpecker/db-helper.ts): restores it from the
+  # backup copy when it is missing, moves build logs out of it before the server starts, then
+  # writes a consistent copy to backup/ every 15 minutes, which the nightly backup saves without
+  # stopping the server. `-A` is needed: Deno's SQLite allows the ATTACH that VACUUM uses only to
+  # a process with every permission. The container is the boundary: no network, and only the
+  # server's data folder and the script are mounted.
+  woodpecker-db:
+    container_name: hl-woodpecker-db
+    image: denoland/deno:${WOODPECKER_DB_IMAGE_TAG:-2.9.0}
+    # The server image's own user, so the files it reads and writes stay its own.
+    user: "1000:1000"
+    command: ["run", "-A", "/db-helper.ts"]
+    environment:
+      - DENO_DIR=/tmp/deno-dir
+      - SQLITE_TMPDIR=/var/lib/woodpecker
+    volumes:
+      - ${VOLUMES_PATH}/woodpecker-server:/var/lib/woodpecker:z
+      - ${PATH_APPS}/stacks/woodpecker/db-helper.ts:/db-helper.ts:ro,z
+    network_mode: none
+    healthcheck:
+      test: ["CMD", "test", "-f", "/tmp/woodpecker-db-ready"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      # The first start after an upgrade moves every stored log: about 6 minutes per 4 GB.
+      start_period: 2h
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: "1"
+    security_opt:
+      - no-new-privileges:true
+
   woodpecker-agent:
     container_name: hl-woodpecker-agent
-    image: woodpeckerci/woodpecker-agent:${WOODPECKER_AGENT_IMAGE_TAG:-v3.11.0}
+    image: woodpeckerci/woodpecker-agent:${WOODPECKER_AGENT_IMAGE_TAG:-v3.19.0}
     user: "${PUID:-1000}:${PGID:-1000}"
     group_add:
       - "${DOCKER_GROUP_ID:-990}" # Allow access to docker.sock
