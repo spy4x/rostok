@@ -44,6 +44,14 @@ never formatted. Exit codes: 0 done, 1 failed, 2 wrong flags or missing answer.`
  * question may be asked at all when `--yes` is absent.
  */
 export function parseOptions(args: string[], stdinIsTerminal: boolean): Options {
+  // parseArgs reads any "=value" but "false" as true, so "--delete-missing=no"
+  // would allow the very deletion it names. Only true and false are accepted.
+  for (const arg of args) {
+    const match = arg.match(/^(--(?:yes|use-mounted|delete-missing|overwrite-local))=(.*)$/)
+    if (match && match[2] !== "true" && match[2] !== "false") {
+      throw new UsageError(`${match[1]} takes no value or true | false, got "${match[2]}"`)
+    }
+  }
   const parsed = parseArgs(args, {
     string: ["drive", "verify", "smart"],
     boolean: ["yes", "use-mounted", "delete-missing", "overwrite-local"],

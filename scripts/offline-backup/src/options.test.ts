@@ -66,6 +66,10 @@ Deno.test("parseOptions rejects unknown flags, stray words and bad values", () =
   assertThrows(() => parseOptions(["--smart", "no"], true), UsageError, "--smart")
   assertThrows(() => parseOptions(["--drive", "../sda"], true), UsageError, "--drive")
   assertThrows(() => parseOptions(["--drive"], true), UsageError, "--drive")
+  for (const flag of ["--delete-missing=no", "--overwrite-local=0", "--yes=FALSE"]) {
+    assertThrows(() => parseOptions([flag], false), UsageError, flag.split("=")[0])
+  }
+  assertEquals(parseOptions(["--delete-missing=false"], false).deleteMissing, false)
 })
 
 const unattended: Options = parseOptions([], false)

@@ -77,11 +77,8 @@ Deno.test("help needs no settings and lists the flags", async () => {
 Deno.test("an unknown flag exits 2 before touching any drive", async () => {
   const cwd = await Deno.makeTempDir()
   try {
-    const { code, stderr } = await run(
-      cwd,
-      { BACKUP_PATHS: "[]", BACKUPS_PASSWORD: "placeholder" },
-      ["create", "--force"],
-    )
+    // No settings either: a wrong flag is reported before missing settings.
+    const { code, stderr } = await run(cwd, {}, ["create", "--force"])
     assertEquals(code, 2)
     assertStringIncludes(stderr, "Unknown argument: --force")
   } finally {

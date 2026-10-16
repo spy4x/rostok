@@ -42,25 +42,10 @@ if (!command || ["help", "--help", "-h"].includes(command)) {
   Deno.exit(0)
 }
 
-// Validate required env vars before dispatching
-const requiredVars = ["BACKUP_PATHS", "BACKUPS_PASSWORD"]
-const missing = requiredVars.filter((k) => !envVars[k])
-if (missing.length > 0) {
-  console.error(`❌ Missing required environment variables: ${missing.join(", ")}`)
-  console.error("   Pass the env file(s) that define them with --env-file.")
-  Deno.exit(1)
-}
-
 const commands: Record<string, (env: Record<string, string>, options: Options) => Promise<void>> = {
   create,
   restore,
   verify,
-}
-
-if (!commands[command]) {
-  console.error(`Unknown command: ${commandArg}`)
-  console.error("Run 'deno run -A scripts/offline-backup/+main.ts help' for usage")
-  Deno.exit(1)
 }
 
 let options: Options
@@ -71,6 +56,21 @@ try {
   console.error(`❌ ${error.message}`)
   console.error("Run 'deno run -A scripts/offline-backup/+main.ts help' for usage")
   Deno.exit(USAGE_EXIT_CODE)
+}
+
+// Validate required env vars before dispatching
+const requiredVars = ["BACKUP_PATHS", "BACKUPS_PASSWORD"]
+const missing = requiredVars.filter((k) => !envVars[k])
+if (missing.length > 0) {
+  console.error(`❌ Missing required environment variables: ${missing.join(", ")}`)
+  console.error("   Pass the env file(s) that define them with --env-file.")
+  Deno.exit(1)
+}
+
+if (!commands[command]) {
+  console.error(`Unknown command: ${commandArg}`)
+  console.error("Run 'deno run -A scripts/offline-backup/+main.ts help' for usage")
+  Deno.exit(1)
 }
 
 try {
