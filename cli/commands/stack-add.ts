@@ -76,7 +76,7 @@ export const stackAddCommand = new Command()
     "override bundled catalog directory (must exist; its stacks run as code)",
   )
   .option(
-    "--var <kv...:string[]>",
+    "--var <kv:string>",
     "repeatable; overrides one variable (KEY=VAL)",
     { collect: true },
   )

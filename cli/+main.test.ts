@@ -294,6 +294,77 @@ Deno.test("wiring: `stack add` through buildCommand().parse() prints next steps 
   })
 })
 
+// #391 — a --var value with a comma reaches the command whole. cliffy's
+// list type split it at the comma, so `--var PEERS=phone,laptop` failed
+// and `--var X=ab,cd=ef` stored a stray key `cd`.
+const COMMA_ARGS = ["--var", "A=1,2", "--var", "B=x=y,z"]
+const COMMA_VARS = { A: "1,2", B: "x=y,z" }
+
+Deno.test("wizard --var keeps a comma inside a value, and every repeated --var", async () => {
+  let captured: Record<string, string> = {}
+  // reset(): after `.command()` calls, cliffy's builder points at the
+  // last subcommand; this sets the root's own action.
+  const cmd = buildCommand().reset().action((options: { var?: unknown }) => {
+    captured = parseVarFlags(options.var)
+  })
+  await cmd.parse(COMMA_ARGS)
+  assertEquals(captured, COMMA_VARS)
+})
+
+Deno.test("server create --var keeps a comma inside a value, and every repeated --var", async () => {
+  let captured: Record<string, string> = {}
+  const cmd = buildCommand()
+  cmd.getCommand("server").getCommand("create").action((options: { var?: unknown }) => {
+    captured = parseVarFlags(options.var)
+  })
+  await cmd.parse(["server", "create", "home", ...COMMA_ARGS])
+  assertEquals(captured, COMMA_VARS)
+})
+
+Deno.test("stack add --var writes a value with a comma whole, and every repeated --var", async () => {
+  await withFakeSsh(async () => {
+    const tmp = await Deno.makeTempDir({ prefix: "rostok-main-var-comma-" })
+    const originalCwd = Deno.cwd()
+    const originalLog = console.log
+    console.log = () => {}
+    try {
+      Deno.chdir(tmp)
+      await Deno.writeTextFile(join(tmp, ".env.root"), "IMAGE_POLICY=latest\n")
+      await buildCommand().parse([
+        "server",
+        "create",
+        "home",
+        "-n",
+        "--var",
+        "SSH_ADDRESS=root@203.0.113.9",
+        "--var",
+        "DOMAIN=example.com",
+        "--var",
+        "CONTACT_EMAIL=a@example.com",
+      ])
+      await buildCommand().parse([
+        "stack",
+        "add",
+        "wireguard",
+        "-s",
+        "home",
+        "-n",
+        "--var",
+        "WIREGUARD_PEERS=phone,laptop,tablet",
+        "--var",
+        "WIREGUARD_DNS=9.9.9.9,1.1.1.1",
+      ])
+      const env = await readEnvFile(join(tmp, "servers", "home", ".env"))
+      assertEquals(env.find((e) => e.key === "WIREGUARD_PEERS")?.value, "phone,laptop,tablet")
+      assertEquals(env.find((e) => e.key === "WIREGUARD_DNS")?.value, "9.9.9.9,1.1.1.1")
+    } finally {
+      console.log = originalLog
+      Deno.chdir(originalCwd)
+      await Deno.remove(tmp, { recursive: true }).catch(() => {})
+    }
+  })
+})
+
 // ─────────────────────────────────────────────────────────────────────
 // #211 — user errors print without a stack trace.
 //
