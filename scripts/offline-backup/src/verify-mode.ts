@@ -11,8 +11,9 @@ import {
 import { formatBytes, parseBackupPaths } from "./helpers.ts"
 import { getBackupSize, runSmartCheck, verifyBackups } from "./verify.ts"
 import { classifyBackupOutcome, exitCodeFor, formatOutcomeBanner } from "./outcome.ts"
+import { choose, chooseDrive, type Options } from "./options.ts"
 
-export async function verify(envVars: Record<string, string>): Promise<void> {
+export async function verify(envVars: Record<string, string>, options: Options): Promise<void> {
   const backupPathsJson = envVars.BACKUP_PATHS
   const resticPassword = envVars.BACKUPS_PASSWORD
 
@@ -41,13 +42,13 @@ export async function verify(envVars: Record<string, string>): Promise<void> {
     console.log(`  ${i + 1}. ${d.name} - ${d.size} - ${d.model}`)
   })
 
-  const driveInput = prompt("\n🔍 Enter drive name (e.g., 'sda'): ")
+  const driveInput = chooseDrive(options)
   if (!driveInput) {
     console.log("❌ No drive selected")
     Deno.exit(0)
   }
 
-  const driveName = driveInput.trim()
+  const driveName = driveInput
   const device = `/dev/${driveName}`
   const partition = `${device}1`
 
@@ -63,8 +64,13 @@ export async function verify(envVars: Record<string, string>): Promise<void> {
       const currentMount = await getMountPoint(partition)
       if (currentMount) {
         console.log(`   Current mount point: ${currentMount}`)
-        const useExisting = prompt("Use this mount point? (yes/no) [no]: ")
-        if (useExisting?.toLowerCase() === "yes") {
+        const useExisting = choose(
+          options,
+          options.useMounted ? "yes" : undefined,
+          "Use this mount point? (yes/no) [no]: ",
+          "no",
+        )
+        if (useExisting.toLowerCase() === "yes") {
           MOUNT_POINT = currentMount
         } else {
           await unmountDrive(partition, currentMount)
@@ -121,7 +127,13 @@ export async function verify(envVars: Record<string, string>): Promise<void> {
     console.log(`💾 Total Backup Size: ${totalHuman}\n`)
 
     console.log("🔍 Starting full verification (this may take a while)...\n")
-    const verifyResults = await verifyBackups(MOUNT_POINT, foundPaths, resticPassword)
+    const verifyResults = await verifyBackups(
+      MOUNT_POINT,
+      foundPaths,
+      resticPassword,
+      false,
+      options.interactive,
+    )
 
     console.log("\n" + "=".repeat(60))
     console.log("📦 VERIFICATION RESULTS")
@@ -141,9 +153,12 @@ export async function verify(envVars: Record<string, string>): Promise<void> {
     console.log("   short: ~2 minutes  - Quick electrical/mechanical check")
     console.log("   long:  ~390 minutes - Comprehensive surface scan")
     console.log("   no:    Skip health check")
-    const smartChoice = prompt(
+    const smartChoice = choose(
+      options,
+      options.smart,
       "\n❓ Would you like a SMART check of the drive's health? (short/long/no) [short]: ",
-    ) || "short"
+      "short",
+    )
 
     let smartTestResults = ""
     if (smartChoice.toLowerCase() === "short" || smartChoice.toLowerCase() === "long") {

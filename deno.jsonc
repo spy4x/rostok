@@ -79,6 +79,7 @@
     "@rostok/cli": "./cli/+lib.ts",
     "@scripts/backup": "./scripts/backup/src/+lib.ts",
     "@std/assert": "jsr:@std/assert@^1.0.17",
+    "@std/cli": "jsr:@std/cli@^1.0.32",
     "@std/dotenv": "jsr:@std/dotenv",
     "@std/encoding": "jsr:@std/encoding@^1.0.9",
     "@std/fs": "jsr:@std/fs@^1.0.21",

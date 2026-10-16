@@ -15,8 +15,9 @@ import { classifyBackupOutcome, exitCodeFor, formatOutcomeBanner } from "./outco
 import { checkDeletedRepos, syncBackups } from "./sync.ts"
 import { getBackupSize, runSmartCheck, verifyBackups } from "./verify.ts"
 import { ConsoleLogger, parseBackupPaths, saveBackupLog, writeReadme } from "./helpers.ts"
+import { choose, chooseDrive, type Options, USAGE_EXIT_CODE } from "./options.ts"
 
-export async function create(envVars: Record<string, string>): Promise<void> {
+export async function create(envVars: Record<string, string>, options: Options): Promise<void> {
   const backupPathsJson = envVars.BACKUP_PATHS
   const resticPassword = envVars.BACKUPS_PASSWORD
 
@@ -107,14 +108,20 @@ export async function create(envVars: Record<string, string>): Promise<void> {
     console.log(`  ${i + 1}. ${d.name} - ${d.size} - ${d.model}`)
   })
 
-  const driveInput = prompt("\n🔍 Enter drive name (e.g., 'sda'): ")
+  let driveInput: string | null
+  try {
+    driveInput = chooseDrive(options)
+  } catch (error) {
+    logger.stop()
+    throw error
+  }
   if (!driveInput) {
     console.log("❌ No drive selected")
     logger.stop()
     Deno.exit(0)
   }
 
-  const driveName = driveInput.trim()
+  const driveName = driveInput
   device = `/dev/${driveName}`
   partition = `${device}1`
 
@@ -124,17 +131,21 @@ export async function create(envVars: Record<string, string>): Promise<void> {
     Deno.exit(1)
   }
 
-  const needsFormat = prompt(
-    "\n❓ Does this drive need formatting? (yes/no) [no]: ",
-  )
+  // Formatting erases the drive, so a run that may not ask never formats.
+  const needsFormat = options.interactive
+    ? prompt("\n❓ Does this drive need formatting? (yes/no) [no]: ")
+    : "no"
 
   console.log("\n🔍 Backup Verification")
   console.log("   fast: ~2-5 minutes  - Check repository structure only")
   console.log("   full: ~hours - Read and verify every byte (thorough)")
   console.log("   skip: Skip verification")
-  const verifyChoice = prompt(
+  const verifyChoice = choose(
+    options,
+    options.verify,
     "\n❓ Verification type? (fast/full/skip) [fast]: ",
-  ) || "fast"
+    "fast",
+  )
   const fullVerification = verifyChoice.toLowerCase() === "full"
   const skipVerification = verifyChoice.toLowerCase() === "skip"
 
@@ -142,9 +153,12 @@ export async function create(envVars: Record<string, string>): Promise<void> {
   console.log("   short: ~2 minutes  - Quick electrical/mechanical check")
   console.log("   long:  ~390 minutes - Comprehensive surface scan")
   console.log("   skip:  Skip health check")
-  const smartChoice = prompt(
+  const smartChoice = choose(
+    options,
+    options.smart,
     "\n❓ SMART check type? (short/long/skip) [short]: ",
-  ) || "short"
+    "short",
+  )
 
   console.log("\n✅ All questions answered! Starting backup process...")
   console.log("   You can now take a walk - the backup will run unattended.\n")
@@ -158,8 +172,13 @@ export async function create(envVars: Record<string, string>): Promise<void> {
       const currentMount = await getMountPoint(partition)
       if (currentMount) {
         console.log(`   Current mount point: ${currentMount}`)
-        const useExisting = prompt("Use this mount point? (yes/no) [no]: ")
-        if (useExisting?.toLowerCase() === "yes") {
+        const useExisting = choose(
+          options,
+          options.useMounted ? "yes" : undefined,
+          "Use this mount point? (yes/no) [no]: ",
+          "no",
+        )
+        if (useExisting.toLowerCase() === "yes") {
           MOUNT_POINT = currentMount
         } else {
           await unmountDrive(partition, currentMount)
@@ -172,12 +191,14 @@ export async function create(envVars: Record<string, string>): Promise<void> {
 
     await createBackupStructure(MOUNT_POINT, backupPaths)
 
-    if (!(await checkDeletedRepos(backupPaths, MOUNT_POINT))) {
+    if (!(await checkDeletedRepos(backupPaths, MOUNT_POINT, options))) {
       console.log("❌ Operation cancelled")
       await unmountDrive(partition, MOUNT_POINT)
       await ejectDrive(device)
       logger.stop()
-      Deno.exit(0)
+      // An operator who answered "no" chose this; an unattended run stopped
+      // for want of --delete-missing must not look like a finished backup.
+      Deno.exit(options.interactive ? 0 : USAGE_EXIT_CODE)
     }
 
     startTiming("rsync")
@@ -192,6 +213,7 @@ export async function create(envVars: Record<string, string>): Promise<void> {
         backupPaths,
         resticPassword,
         fullVerification,
+        options.interactive,
       )
       endTiming("verification")
     } else {

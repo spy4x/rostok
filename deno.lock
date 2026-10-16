@@ -18,6 +18,7 @@
     "jsr:@std/assert@^1.0.17": "1.0.19",
     "jsr:@std/assert@^1.0.19": "1.0.19",
     "jsr:@std/assert@~0.222.1": "0.222.1",
+    "jsr:@std/cli@^1.0.32": "1.0.32",
     "jsr:@std/cli@~0.222.1": "0.222.1",
     "jsr:@std/dotenv@*": "0.225.8",
     "jsr:@std/encoding@1.0.11": "1.0.11",
@@ -115,7 +116,7 @@
     "@hongminhee/deno-task-hooks@0.1.2": {
       "integrity": "72e87e497264efc72ca045fcefd2cdf8b47241e5058d382de9080c2dbb805e65",
       "dependencies": [
-        "jsr:@std/cli",
+        "jsr:@std/cli@~0.222.1",
         "jsr:@std/fmt@~0.222.1",
         "jsr:@std/fs@~0.222.1",
         "jsr:@std/json",
@@ -154,6 +155,9 @@
       "dependencies": [
         "jsr:@std/assert@~0.222.1"
       ]
+    },
+    "@std/cli@1.0.32": {
+      "integrity": "188b3a100d6202d64e3f5bd3d799c7fa4f6d77f92cc65eb7f641c1fa0aa92a66"
     },
     "@std/dotenv@0.225.8": {
       "integrity": "27b8c1a9d00cbf938345a5924487c04d9b27bdd7e7bd1983f54bcf76d0a0174a"
@@ -557,6 +561,7 @@
       "jsr:@cliffy/prompt@^1.2.1",
       "jsr:@spy4x/server@1.2.0",
       "jsr:@std/assert@^1.0.17",
+      "jsr:@std/cli@^1.0.32",
       "jsr:@std/dotenv@*",
       "jsr:@std/encoding@^1.0.9",
       "jsr:@std/fs@^1.0.21",
