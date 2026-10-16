@@ -33,6 +33,11 @@ so `.env.age` files are safe to commit.
 | `rostok env decrypt`                         | Decrypt `.env.age` → `.env`                                                      |
 | `rostok env status`                          | Encryption posture + next steps                                                  |
 | `rostok env setup`                           | Generate `.age/key.txt` — `rostok` hides the key generation for you              |
+| `rostok offline status`                      | Backup paths, disks and tools for the external-drive copy. Changes nothing       |
+| `rostok offline backup --drive <disk>`       | Copy the restic repositories to the external drive, check them, SMART test, eject |
+| `rostok offline verify --drive <disk>`       | Check the copies on the drive and run a SMART test; copies nothing               |
+| `rostok offline restore --drive <disk>`      | Copy the drive back over the local backup folders, then check them               |
+| `rostok offline format --drive <disk>`       | Erase a disk and create the `OfflineBackups` partition                           |
 | `rostok --help`, `rostok --version`          | Self-explanatory                                                                 |
 
 Flags:

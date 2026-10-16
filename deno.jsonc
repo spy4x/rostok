@@ -79,11 +79,11 @@
     "@rostok/cli": "./cli/+lib.ts",
     "@scripts/backup": "./scripts/backup/src/+lib.ts",
     "@std/assert": "jsr:@std/assert@^1.0.17",
-    "@std/cli": "jsr:@std/cli@^1.0.32",
     "@std/dotenv": "jsr:@std/dotenv",
     "@std/encoding": "jsr:@std/encoding@^1.0.9",
     "@std/fs": "jsr:@std/fs@^1.0.21",
     "@std/path": "jsr:@std/path@^1.1.4",
+    "@spy4x/platform": "jsr:@spy4x/platform@1.73.0",
     "@spy4x/server": "jsr:@spy4x/server@1.2.0",
     "arktype": "npm:arktype@^2.2.3",
     "yaml": "npm:yaml@^2.8.2"
