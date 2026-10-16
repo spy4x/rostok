@@ -79,11 +79,15 @@ No direct access needed - services connect via Docker network.
 
 ## Variables
 
-No variables: compose reads none, and nothing is routed through Traefik. Only Open WebUI, and
-any container you connect to `hl-playwright-mcp` yourself, reaches the two browsers.
+Nothing is routed through Traefik. Only Open WebUI, and any container you connect to
+`hl-playwright-mcp` yourself, reaches the two browsers.
 
-| Key | Default | Meaning |
-| --- | ------- | ------- |
+| Key                    | Default         | Meaning                                                            |
+| ---------------------- | --------------- | ------------------------------------------------------------------ |
+| `PLAYWRIGHT_IMAGE_TAG` | `v1.60.0-noble` | Image tag of `mcr.microsoft.com/playwright` (service `playwright`) |
+
+The MCP proxy (service `playwright-mcp`) is built from `Dockerfile.mcp-proxy`, whose base image
+is pinned there, so it has no tag variable.
 
 ## Resources
 

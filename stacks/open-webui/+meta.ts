@@ -47,6 +47,16 @@ export default {
   requires: ["traefik"],
   variables: [
     {
+      key: "OPEN_WEBUI_IMAGE_TAG",
+      default: "latest",
+      required: false,
+    },
+    {
+      key: "OPEN_WEBUI_MCPO_IMAGE_TAG",
+      default: "main",
+      required: false,
+    },
+    {
       key: "OPEN_WEBUI_DOMAIN",
       question: "Public domain for Open WebUI?",
       default: "ai.${DOMAIN}",

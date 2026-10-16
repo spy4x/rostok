@@ -4,7 +4,7 @@
 // domain and no `requires: ["traefik"]`. Only Open WebUI reaches it, as
 // `http://hl-email-mcp:9557/mcp` on this stack's own `hl-email-mcp` network (spy4x/rostok#143).
 //
-// compose.yml reads none of these keys: `before.deploy.ts` renders them into
+// compose.yml reads only EMAIL_MCP_IMAGE_TAG: `before.deploy.ts` renders the other keys into
 // `stacks/email-mcp/config.toml`, which the container mounts. One account is required, a second
 // is optional. Passwords come from outside, so they have no default: `stack add` asks for them.
 //
@@ -18,6 +18,11 @@ export default {
   description: "Email MCP server (IMAP and SMTP) for AI assistants (ai-zerolab/mcp-email-server)",
   category: "ai",
   variables: [
+    {
+      key: "EMAIL_MCP_IMAGE_TAG",
+      default: "latest",
+      required: false,
+    },
     {
       key: "EMAIL_MCP_HOST",
       question: "Mail server host for IMAP (port 993) and SMTP (port 587)?",
