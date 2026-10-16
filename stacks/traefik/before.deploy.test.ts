@@ -5,7 +5,12 @@ import { assertEquals, assertNotEquals, assertRejects, assertThrows } from "@std
 import { join } from "@std/path"
 import { compareSync, getRounds } from "npm:bcryptjs@3.0.3"
 
-import { copyServerConfigs, hashPassword, resolveHtpasswdCredential } from "./before.deploy.ts"
+import {
+  copyServerConfigs,
+  hashPassword,
+  parseReadOutput,
+  resolveHtpasswdCredential,
+} from "./before.deploy.ts"
 
 /** Build a `getEnv` from a plain object, as resolveHtpasswdCredential expects. */
 function envFrom(vars: Record<string, string>): (key: string) => string | undefined {
@@ -190,5 +195,184 @@ Deno.test("the hook adds a server's configs/traefik/dynamic files in a deploy st
     assertEquals(compareSync("s3cr3t", hash), true)
   } finally {
     await Deno.remove(staging, { recursive: true })
+  }
+})
+
+// ── keeping an unchanged .htpasswd (#397) ───────────────────────────────
+
+const creds = (user: string, password: string) => (key: string) =>
+  ({ TRAEFIK_BASIC_AUTH_USER: user, TRAEFIK_BASIC_AUTH_PASSWORD: password })[key]
+
+Deno.test("resolveHtpasswdCredential: keeps the server's hash when the password still matches", () => {
+  const hash = hashPassword("s3cr3t")
+  const credential = resolveHtpasswdCredential(creds("admin", "s3cr3t"), `admin:${hash}\n`)
+  assertEquals(credential, { user: "admin", hash })
+})
+
+Deno.test("resolveHtpasswdCredential: a changed password gets a new hash", () => {
+  const old = hashPassword("old-pass")
+  const credential = resolveHtpasswdCredential(creds("admin", "new-pass"), `admin:${old}\n`)
+  assertNotEquals(credential.hash, old)
+  assertEquals(compareSync("new-pass", credential.hash), true)
+})
+
+Deno.test("resolveHtpasswdCredential: a changed user gets a new hash", () => {
+  const old = hashPassword("s3cr3t")
+  const credential = resolveHtpasswdCredential(creds("root", "s3cr3t"), `admin:${old}\n`)
+  assertEquals(credential.user, "root")
+  assertNotEquals(credential.hash, old)
+})
+
+Deno.test("resolveHtpasswdCredential: a file with more than the one line is replaced", () => {
+  const old = hashPassword("s3cr3t")
+  const existing = `admin:${old}\nother:${old}\n`
+  const credential = resolveHtpasswdCredential(creds("admin", "s3cr3t"), existing)
+  assertNotEquals(credential.hash, old)
+})
+
+Deno.test("parseReadOutput: the first line is the mtime, the rest the content", () => {
+  assertEquals(parseReadOutput("1700000000.123456789\nadmin:x\n"), {
+    mtime: 1700000000.123456789,
+    content: "admin:x\n",
+  })
+  assertEquals(parseReadOutput("\nadmin:x\n"), { mtime: undefined, content: "admin:x\n" })
+})
+
+/**
+ * Runs the hook in a fresh staging folder with the catalog's 00-base.yml and returns the staged
+ * .htpasswd's content and mtime. `binDir` goes first on PATH when given.
+ */
+async function runInStaging(
+  env: Record<string, string>,
+  binDir?: string,
+): Promise<{ content: string; mtime: number }> {
+  const staging = await Deno.makeTempDir()
+  try {
+    const dynamic = join(staging, "stacks/traefik/dynamic")
+    await Deno.mkdir(dynamic, { recursive: true })
+    await Deno.copyFile(
+      new URL("./dynamic/00-base.yml", import.meta.url),
+      join(dynamic, "00-base.yml"),
+    )
+    const parent = Deno.env.toObject()
+    for (const key of ["SSH_HOST", "SSH_PORT", "SSH_USER", "PATH_APPS", "FAKE_SSH_DEPTH"]) {
+      delete parent[key]
+    }
+    const path = binDir ? `${binDir}:${parent.PATH ?? ""}` : parent.PATH ?? ""
+    const out = await new Deno.Command(Deno.execPath(), {
+      args: ["run", "-A", new URL("./before.deploy.ts", import.meta.url).href],
+      cwd: staging,
+      env: { ...parent, ...env, PATH: path },
+      clearEnv: true,
+      stdout: "piped",
+      stderr: "piped",
+    }).output()
+    assertEquals(out.code, 0, new TextDecoder().decode(out.stderr))
+    const file = join(dynamic, ".htpasswd")
+    return {
+      content: await Deno.readTextFile(file),
+      mtime: (await Deno.stat(file)).mtime!.getTime(),
+    }
+  } finally {
+    await Deno.remove(staging, { recursive: true })
+  }
+}
+
+/** A local server's PATH_APPS whose .htpasswd holds `content` with an mtime in 2020. */
+async function makeServer(content: string): Promise<{ pathApps: string; mtime: number }> {
+  const pathApps = await Deno.makeTempDir()
+  await Deno.mkdir(join(pathApps, "stacks/traefik/dynamic"), { recursive: true })
+  const file = join(pathApps, "stacks/traefik/dynamic/.htpasswd")
+  await Deno.writeTextFile(file, content)
+  const mtime = new Date("2020-01-02T03:04:05.678Z")
+  await Deno.utime(file, mtime, mtime)
+  return { pathApps, mtime: mtime.getTime() }
+}
+
+Deno.test("an unchanged password stages the server's .htpasswd byte for byte, with its mtime", async () => {
+  const existing = `admin:${hashPassword("s3cr3t")}\n`
+  const server = await makeServer(existing)
+  try {
+    const staged = await runInStaging({
+      TRAEFIK_BASIC_AUTH_USER: "admin",
+      TRAEFIK_BASIC_AUTH_PASSWORD: "s3cr3t",
+      PATH_APPS: server.pathApps,
+    })
+    assertEquals(staged, { content: existing, mtime: server.mtime })
+  } finally {
+    await Deno.remove(server.pathApps, { recursive: true })
+  }
+})
+
+Deno.test("a changed password stages a new .htpasswd with a new mtime", async () => {
+  const existing = `admin:${hashPassword("old-pass")}\n`
+  const server = await makeServer(existing)
+  try {
+    const staged = await runInStaging({
+      TRAEFIK_BASIC_AUTH_USER: "admin",
+      TRAEFIK_BASIC_AUTH_PASSWORD: "new-pass",
+      PATH_APPS: server.pathApps,
+    })
+    assertNotEquals(staged.content, existing)
+    assertNotEquals(staged.mtime, server.mtime)
+    assertEquals(compareSync("new-pass", staged.content.trim().split(":")[1]), true)
+  } finally {
+    await Deno.remove(server.pathApps, { recursive: true })
+  }
+})
+
+Deno.test("a server without .htpasswd gets a fresh one", async () => {
+  const pathApps = await Deno.makeTempDir()
+  try {
+    const staged = await runInStaging({
+      TRAEFIK_BASIC_AUTH_USER: "admin",
+      TRAEFIK_BASIC_AUTH_PASSWORD: "s3cr3t",
+      PATH_APPS: pathApps,
+    })
+    assertEquals(compareSync("s3cr3t", staged.content.trim().split(":")[1]), true)
+  } finally {
+    await Deno.remove(pathApps, { recursive: true })
+  }
+})
+
+Deno.test("over ssh, an unchanged password keeps the server's .htpasswd and its mtime", async () => {
+  const existing = `admin:${hashPassword("s3cr3t")}\n`
+  const binDir = await Deno.makeTempDir()
+  try {
+    // The fake ssh answers like the server: the mtime line, then the file. It calls no program
+    // named ssh, and its depth guard makes it exit 97 if it is ever entered from itself.
+    await Deno.writeTextFile(join(binDir, "server-file"), existing)
+    await Deno.writeTextFile(
+      join(binDir, "ssh"),
+      `#!/bin/sh\n[ -n "$FAKE_SSH_DEPTH" ] && exit 97\nexport FAKE_SSH_DEPTH=1\n` +
+        `echo 1577934245.678\ncat "${join(binDir, "server-file")}"\n`,
+      { mode: 0o755 },
+    )
+    const staged = await runInStaging({
+      TRAEFIK_BASIC_AUTH_USER: "admin",
+      TRAEFIK_BASIC_AUTH_PASSWORD: "s3cr3t",
+      PATH_APPS: "/srv/apps",
+      SSH_HOST: "192.0.2.10",
+      SSH_USER: "user",
+    }, binDir)
+    assertEquals(staged, { content: existing, mtime: 1577934245678 })
+  } finally {
+    await Deno.remove(binDir, { recursive: true })
+  }
+})
+
+Deno.test("over ssh, a failed read writes a fresh .htpasswd", async () => {
+  const binDir = await Deno.makeTempDir()
+  try {
+    await Deno.writeTextFile(join(binDir, "ssh"), `#!/bin/sh\nexit 255\n`, { mode: 0o755 })
+    const staged = await runInStaging({
+      TRAEFIK_BASIC_AUTH_USER: "admin",
+      TRAEFIK_BASIC_AUTH_PASSWORD: "s3cr3t",
+      PATH_APPS: "/srv/apps",
+      SSH_HOST: "192.0.2.10",
+    }, binDir)
+    assertEquals(compareSync("s3cr3t", staged.content.trim().split(":")[1]), true)
+  } finally {
+    await Deno.remove(binDir, { recursive: true })
   }
 })
