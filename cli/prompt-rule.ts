@@ -12,6 +12,10 @@
 
 import type { VariableSpec } from "./stack-meta.ts"
 
+/**
+ * What the caller does with one variable: use the resolved value, ask the
+ * user, or leave the variable out.
+ */
 export type PromptDecision = "use-resolved" | "prompt" | "skip"
 
 /**
