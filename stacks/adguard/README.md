@@ -24,7 +24,7 @@ Network-wide ad blocking DNS server.
 | --------------------------- | ---------------------------- | ------------------------------ |
 | 53/tcp, 53/udp (DNS)        | `ADGUARD_DNS_BIND`           | whoever can reach that address |
 | 853/tcp (DNS-over-TLS)      | `ADGUARD_DNS_BIND`           | whoever can reach that address |
-| 3000/tcp (first-run wizard) | `127.0.0.1`, fixed           | the server itself              |
+| 3000/tcp (first-run wizard) | the container's loopback     | `docker exec` on the server    |
 | web UI                      | Traefik, at `ADGUARD_DOMAIN` | anyone who can reach Traefik   |
 
 With the default, `127.0.0.1`, AdGuard answers DNS queries from the server itself and from nobody
@@ -50,11 +50,24 @@ The address must belong to the server; one value covers all three DNS ports.
 1. Port 53 must be free on the address you chose. On many distributions `systemd-resolved` holds
    it on `127.0.0.53`, which collides only with `0.0.0.0`: in that case set `DNSStubListener=no`
    in `/etc/systemd/resolved.conf` and restart the service.
-2. First run: the setup wizard listens on port 3000 of the server, bound to `127.0.0.1` only. Open
-   a tunnel (`ssh -L 3000:localhost:3000 <server>`) and visit `http://localhost:3000`. In the
-   wizard, set the web interface to port **80** (Traefik forwards to it) and keep DNS on port 53
-   on all interfaces: those are the container's interfaces, and `ADGUARD_DNS_BIND` decides what
-   the server publishes.
+2. First run: until AdGuard is set up, its setup wizard listens on port 3000 of the container's
+   own loopback, so no browser and no other container can reach it. Whoever finishes the
+   wizard owns the DNS server, and every container on the shared `proxy` network could otherwise
+   reach it first. Set it up from a shell on the server instead (bash or zsh):
+
+   ```bash
+   printf 'AdGuard admin password: '; read -rs P; echo
+   printf '{"web":{"ip":"0.0.0.0","port":80},"dns":{"ip":"0.0.0.0","port":53},"username":"admin","password":"%s"}' "$P" |
+     docker exec -i hl-adguard wget -qO- --header 'Content-Type: application/json' \
+       --post-file=/dev/stdin http://127.0.0.1:3000/control/install/configure
+   unset P
+   ```
+
+   It prints `OK`. The password must not contain `"` or `\`. This sets the web interface to port
+   **80** (Traefik forwards to it) and DNS to port 53 on all interfaces: those are the container's
+   interfaces, and `ADGUARD_DNS_BIND` decides what the server publishes. Then sign in at
+   `https://<ADGUARD_DOMAIN>` as `admin` and finish the settings there. From now on AdGuard
+   starts with the config it wrote, and the wizard is gone.
 3. Configure devices to use the address in `ADGUARD_DNS_BIND` as their DNS server.
 
 ## Access

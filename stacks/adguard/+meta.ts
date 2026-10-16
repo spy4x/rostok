@@ -4,7 +4,7 @@
 // DNS itself (53/tcp, 53/udp, 853/tcp) is published on ADGUARD_DNS_BIND only. The default,
 // 127.0.0.1, answers the server itself and nobody else: a resolver open to the internet gets
 // used for amplification attacks, so opening it is the user's explicit choice (see the README).
-// The first-run setup wizard listens on 127.0.0.1:3000 only.
+// The first-run setup wizard listens on the container's own loopback only (README "Setup").
 
 import type { StackMeta } from "@rostok/cli"
 

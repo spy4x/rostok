@@ -1,11 +1,21 @@
-// Guards who can reach the MCP endpoint and what its browser runs as (spy4x/rostok#338).
+// Guards who can reach the stack's two browsers and what they run as (spy4x/rostok#338).
 
 import { assertEquals } from "@std/assert"
 import { parse } from "yaml"
 
 interface Compose {
   networks: Record<string, { name?: string; external?: boolean }>
-  services: Record<string, { networks: string[]; ports?: string[] }>
+  services: Record<
+    string,
+    {
+      networks: string[]
+      ports?: string[]
+      user?: string
+      security_opt?: string[]
+      cap_drop?: string[]
+      cap_add?: string[]
+    }
+  >
 }
 
 const compose = parse(
@@ -25,3 +35,22 @@ Deno.test("playwright-mcp: the image ends as pwuser, not root", () => {
   const users = dockerfile.split(`\n`).filter((line) => line.startsWith(`USER `))
   assertEquals(users.at(-1), `USER pwuser`)
 })
+
+Deno.test("playwright: the browser server joins only the stack's own network, never the shared proxy network, and publishes no port", () => {
+  assertEquals(compose.services.playwright.ports, undefined)
+  assertEquals(compose.services.playwright.networks, [`mcp`])
+  assertEquals(Object.keys(compose.networks), [`mcp`])
+})
+
+Deno.test("playwright: the browser server runs as pwuser, not root", () => {
+  assertEquals(compose.services.playwright.user, `pwuser`)
+})
+
+for (const name of [`playwright`, `playwright-mcp`]) {
+  Deno.test(`${name}: gains no privileges and drops every capability`, () => {
+    const service = compose.services[name]
+    assertEquals(service.security_opt, [`no-new-privileges:true`])
+    assertEquals(service.cap_drop, [`ALL`])
+    assertEquals(service.cap_add, undefined)
+  })
+}

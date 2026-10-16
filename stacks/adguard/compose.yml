@@ -12,6 +12,20 @@ services:
   adguard:
     container_name: hl-adguard
     image: adguard/adguardhome:${ADGUARD_IMAGE_TAG:-latest}
+    # Before the first setup (no AdGuardHome.yaml yet) the setup wizard listens on the container's
+    # own loopback only, so no other container on proxy can finish it first and take over the DNS
+    # server (spy4x/rostok#427). The README sets it up through `docker exec`. Once the config
+    # exists, AdGuard listens where it says. The arguments are the image's own CMD.
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - >-
+          if [ -f /opt/adguardhome/conf/AdGuardHome.yaml ];
+          then exec /opt/adguardhome/AdGuardHome --no-check-update
+          -c /opt/adguardhome/conf/AdGuardHome.yaml -w /opt/adguardhome/work;
+          else exec /opt/adguardhome/AdGuardHome --no-check-update
+          -c /opt/adguardhome/conf/AdGuardHome.yaml -w /opt/adguardhome/work
+          --web-addr 127.0.0.1:3000;
+          fi
     healthcheck:
       test: ["CMD", "wget", "--spider", "http://localhost:80/"]
       interval: 30s
@@ -27,8 +41,6 @@ services:
       - ${ADGUARD_DNS_BIND:-127.0.0.1}:53:53/tcp # DNS
       - ${ADGUARD_DNS_BIND:-127.0.0.1}:53:53/udp # DNS
       - ${ADGUARD_DNS_BIND:-127.0.0.1}:853:853/tcp # DNS-over-TLS
-      # First-run setup wizard. Loopback only: reach it through an SSH tunnel, see the README.
-      - 127.0.0.1:3000:3000/tcp
     restart: unless-stopped
     deploy:
       resources:
