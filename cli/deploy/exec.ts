@@ -355,15 +355,28 @@ export function shQuote(value: string): string {
 }
 
 /**
- * Remove ASCII control characters (except newline and tab) and C1
- * control characters (`\x80`-`\x9f`) from remote output before it
- * reaches the terminal. Several deploy-time messages embed folder
- * names, docker labels or `readlink -f` output the server itself
- * supplied, and anyone with access there can shape those into escape
- * sequences — including 8-bit C1 codes, which some terminals interpret
- * the same as a `\x1b`-prefixed escape sequence.
+ * Terminal escape sequences, whole: a string sequence (OSC, DCS, SOS, PM,
+ * APC) up to its terminator, a CSI sequence up to its final byte, and any
+ * other two-byte escape. Each starts with `\x1b` or its 8-bit C1 code. A
+ * string sequence without a terminator ends at the line's end, so it can
+ * never swallow the lines after it.
+ */
+const ESCAPE_SEQUENCE =
+  // deno-lint-ignore no-control-regex
+  /(?:\x1b[\]PX^_]|[\x90\x98\x9d-\x9f])[^\x07\x1b\x9c\n]*(?:\x07|\x1b\\|\x9c)?|(?:\x1b\[|\x9b)[0-?]*[ -/]*[@-~]?|\x1b[ -/]*[0-~]/g
+
+/**
+ * Remove terminal escape sequences, then every other ASCII control
+ * character (except newline and tab) and C1 control character
+ * (`\x80`-`\x9f`), from remote output before it reaches the terminal.
+ * Several deploy-time messages embed folder names, docker labels,
+ * container logs or `readlink -f` output the server itself supplied, and
+ * anyone with access there can shape those into escape sequences —
+ * including 8-bit C1 codes, which some terminals interpret the same as a
+ * `\x1b`-prefixed escape sequence. A sequence goes whole, so no printable
+ * rest such as `[31m` is left behind.
  */
 export function stripControlChars(s: string): string {
   // deno-lint-ignore no-control-regex
-  return s.replace(/[\x00-\x08\x0b-\x1f\x7f-\x9f]/g, "")
+  return s.replace(ESCAPE_SEQUENCE, "").replace(/[\x00-\x08\x0b-\x1f\x7f-\x9f]/g, "")
 }

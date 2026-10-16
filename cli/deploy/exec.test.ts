@@ -329,9 +329,21 @@ Deno.test("shQuote: neutralizes $(...) and backticks (a literal, inert string on
   assertEquals(quoted, "'$(touch pwned)`touch pwned2`'")
 })
 
-Deno.test("stripControlChars: removes escape and bell bytes, keeps the rest", () => {
+Deno.test("stripControlChars: removes a whole title-setting sequence, keeps the rest", () => {
   const input = "x\x1b]0;PWNED\x07 real text"
-  assertEquals(stripControlChars(input), "x]0;PWNED real text")
+  assertEquals(stripControlChars(input), "x real text")
+})
+
+Deno.test("stripControlChars: removes a whole colour sequence, with no [31m left behind", () => {
+  assertEquals(stripControlChars("compose \x1b[1;31mfailed\x1b[0m now"), "compose failed now")
+})
+
+Deno.test("stripControlChars: an unterminated title sequence ends at the line's end", () => {
+  assertEquals(stripControlChars("a\x1b]0;PWNED\nnext line"), "a\nnext line")
+})
+
+Deno.test("stripControlChars: removes a two-byte escape whole", () => {
+  assertEquals(stripControlChars("a\x1bcb\x1b(Bc"), "abc")
 })
 
 Deno.test("stripControlChars: keeps newlines and tabs", () => {
@@ -343,6 +355,8 @@ Deno.test("stripControlChars: removes C1 control characters (\\x80-\\x9f)", () =
   // as a `\x1b`-prefixed escape sequence — this is a second encoding
   // of the same attack the \x1b/\x07 test above already covers, not a
   // duplicate of it.
-  const input = "x\x9bPWNED\x9c real text"
+  // \x9b opens a CSI sequence (here `2J`, clear the screen), which goes
+  // whole; \x9c on its own is dropped.
+  const input = "x\x9b2JPWNED\x9c real text"
   assertEquals(stripControlChars(input), "xPWNED real text")
 })
