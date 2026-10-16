@@ -58,6 +58,15 @@ Declared in `+meta.ts`. Requires the `traefik` stack. Server-level keys `DOCKER_
 | `WOODPECKER_GITHUB_SECRET` | asked, secret     | Client secret of the GitHub OAuth app        |
 | `WOODPECKER_ADMIN`         | asked             | GitHub login that administers Woodpecker     |
 
+## Database
+
+The server keeps its state and the build logs in SQLite at
+`${VOLUMES_PATH}/woodpecker-server/woodpecker.sqlite`. Compose opens it in WAL mode with a 30 s
+busy timeout, so parallel pipelines wait for the write lock instead of failing with
+`database is locked`. The first start switches an existing database to WAL; the
+`woodpecker.sqlite-wal` and `-shm` files beside it belong to the database. The backup stops the
+server first, so they are copied in a consistent state.
+
 ## Image tags
 
 Each image takes its tag from its own variable; unset, compose uses the default below.
