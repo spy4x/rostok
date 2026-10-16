@@ -164,6 +164,9 @@ Examples:
           })
         ),
     )
+    // `.command()` leaves the builder on the last subcommand; point it back
+    // at the group, so a caller's `.throwErrors()` applies to all of them.
+    .reset()
 }
 
 export const offlineCommand = buildOfflineCommand()

@@ -1,22 +1,43 @@
-import { assert, assertRejects, assertStringIncludes } from "@std/assert"
+import { assert, assertEquals, assertRejects, assertStringIncludes } from "@std/assert"
 import { ValidationError } from "@cliffy/command"
 import { buildCommand } from "../+main.ts"
 import { cleanup, makeFake } from "../offline/fake-deps.test.ts"
 import { buildOfflineCommand } from "./offline.ts"
 
+// Fake deps even where parsing should fail first: if validation ever
+// regressed, the run must not reach the real lsblk or udisksctl.
+
 Deno.test("offline backup: an unknown --check value is rejected with the allowed values", async () => {
-  const error = await assertRejects(
-    () => buildCommand().parse(["offline", "backup", "--drive", "sdb", "--check", "quick"]),
-    ValidationError,
-  )
-  assertStringIncludes(error.message, `Expected values: "fast", "full", "skip"`)
+  const fake = await makeFake()
+  try {
+    const cmd = buildOfflineCommand(() => fake.deps).throwErrors()
+    const error = await assertRejects(
+      () => cmd.parse(["backup", "--drive", "sdb", "--check", "quick"]),
+      ValidationError,
+    )
+    assertStringIncludes(error.message, `Expected values: "fast", "full", "skip"`)
+    assertEquals(fake.calls, [])
+  } finally {
+    await cleanup(fake)
+  }
 })
 
 Deno.test("offline verify: --check skip is not a verify mode", async () => {
-  await assertRejects(
-    () => buildCommand().parse(["offline", "verify", "--drive", "sdb", "--check", "skip"]),
-    ValidationError,
-  )
+  const fake = await makeFake()
+  try {
+    const cmd = buildOfflineCommand(() => fake.deps).throwErrors()
+    await assertRejects(
+      () => cmd.parse(["verify", "--drive", "sdb", "--check", "skip"]),
+      ValidationError,
+    )
+    assertEquals(fake.calls, [])
+  } finally {
+    await cleanup(fake)
+  }
+})
+
+Deno.test("rostok offline: is registered on the root command", () => {
+  assertEquals(buildCommand().getCommand("offline")?.getName(), "offline")
 })
 
 Deno.test("offline backup: flags reach the run (/dev/sdb, -n, --no-eject)", async () => {
