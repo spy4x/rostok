@@ -336,8 +336,9 @@ Deno.test("guard: sends upstream the checked message, without the token or the u
   const upstream = fakeUpstream()
   const guard = guardWith(upstream)
   const response = await guard(
+    // A duplicate key: the guard checks the last "name", so upstream must never see the first.
     post(
-      `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"list_mailboxes","arguments":{"account_name":"main"}}}`,
+      `{"jsonrpc":"2.0", "id":1, "method":"tools/call", "params":{"name":"delete_emails", "name":"list_mailboxes", "arguments":{"account_name":"main"}}}`,
       { ...AS_OWNER, "mcp-session-id": "session-1", cookie: "c=1" },
     ),
   )
@@ -348,7 +349,7 @@ Deno.test("guard: sends upstream the checked message, without the token or the u
   assertEquals(sent.headers.get(USER_HEADER), null)
   assertEquals(sent.headers.get("cookie"), null)
   assertEquals(sent.headers.get("mcp-session-id"), "session-1")
-  assertEquals(await sent.json(), call("list_mailboxes", { account_name: "main" }))
+  assertEquals(await sent.text(), JSON.stringify(call("list_mailboxes", { account_name: "main" })))
 })
 
 Deno.test("guard: refuses GET, which would open a stream it does not filter", async () => {
