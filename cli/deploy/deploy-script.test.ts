@@ -626,6 +626,37 @@ Deno.test("a container that up does not manage, of a removed service or from com
   assertEquals(run.result.recreated, undefined)
 })
 
+Deno.test("a deployAs stack is recreated for a container of its own project, not one of the stack's plain name", async () => {
+  const stacks: StackConfig[] = [{ name: "foo", deployAs: "foo-two" }]
+  const run = await runScriptWithFakeDocker(stacks, {
+    labels: [
+      "foo|hl-foo|foo|False|/srv/old/stacks/foo",
+      "foo-two|hl-foo-two|foo|False|/srv/old/stacks/foo",
+    ],
+    services: ["foo"],
+  })
+  const result = parseDeployResults(run.stdout, stacks)[0]
+  assertStringIncludes(
+    result.recreated ?? "",
+    "container hl-foo-two was created from /srv/old/stacks/foo,",
+  )
+})
+
+Deno.test("a container whose service only shares part of its name with a listed one does not recreate the stack", async () => {
+  const run = await deployFoo({
+    labels: ["foo|hl-foo|foo|False|/srv/old/stacks/foo"],
+    services: ["foo-db"],
+  })
+  assertEquals(upCalls(run), [UP_FOO])
+  assertEquals(run.result.recreated, undefined)
+})
+
+Deno.test("a container without a service label does not recreate the stack, even when compose lists no service", async () => {
+  const run = await deployFoo({ labels: ["foo|hl-foo||False|/srv/old/stacks/foo"], services: [] })
+  assertEquals(upCalls(run), [UP_FOO])
+  assertEquals(run.result.recreated, undefined)
+})
+
 Deno.test("an old folder with shell and printf syntax in it is reported as text and never run", async () => {
   const tmp = await Deno.makeTempDir({ prefix: "rostok-recreate-inject-" })
   try {
