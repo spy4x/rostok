@@ -198,12 +198,13 @@ this version:
 
 4. Run `rostok env encrypt`, then deploy.
 
-The first deploy replaces the old containers itself when they belong to the compose project
-`authelia` or were created from a `stacks/authelia/compose.yml`: it recreates them from the new
-folder, and the summary names a container it recreated for that reason. Containers with these names
-that come from any other compose file are left alone, and the deploy fails because the name is
-already in use: remove them first with `docker rm -f hl-authelia hl-authelia-redis`, which does
-not touch the data folder.
+The first deploy replaces the old containers itself. A container of the compose project
+`authelia` created from another folder is recreated from the new one, and one of another compose
+project created from a `stacks/authelia/compose.yml` is removed before the new one starts. The
+summary names each container it recreated or removed. Containers with these names that come from
+any other compose file are left alone, the summary names them as kept, and the deploy fails because
+the name is already in use: remove them first with `docker rm -f hl-authelia hl-authelia-redis`,
+which does not touch the data folder.
 
 The container names, the networks, the Traefik labels and the data folder
 (`${VOLUMES_PATH}/authelia/data`) are unchanged.

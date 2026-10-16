@@ -137,17 +137,24 @@ files; `.env` files stay on disk.
    └─▶ Stops, before anything is copied, when a key that a stack's
        +meta.ts marks required, and its compose.yml uses without a
        fallback, has no value in .env.root or the server .env
+   └─▶ Runs each stack's before.deploy hooks locally
+   └─▶ On a full deploy, stops and removes the stacks config.json no
+       longer lists
+   └─▶ rsyncs the files and every stack to the remote host
    └─▶ For each stack in servers/home/config.json:
-       - rsync the stack to the remote host
+       - removes a container with one of the stack's container_names
+         that an older compose project created from the stack's
+         compose file; the summary names each container it removed,
+         and each one it kept
        - docker compose up -d, with --force-recreate when a container
          of the stack was created from another folder than
          PATH_APPS/stacks/<stack>; the summary names that container
          and its old folder
-       - run before.deploy hooks
    └─▶ Waits 5 seconds once, then lists a stack under "Failed", with
        the container's last 20 log lines, when a container has exited
-       with an error or is restarting
-   └─▶ Run cross-server health checks (Gatus)
+       with an error, is restarting or was restarted twice. A container
+       restarted once gets a second look 5 seconds later
+   └─▶ Runs each stack's after.deploy hooks
 
 3. Git workflow
    └─▶ User commits servers/<n>/.env.age (encrypted)
