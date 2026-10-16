@@ -20,7 +20,10 @@
 // have broken an alias with its own non-default Port).
 //
 // A local server (SSH_ADDRESS=local) has no SSH_HOST: the hook then runs
-// `docker restart` on this machine, with no ssh and no shell.
+// `docker restart` on this machine, with no ssh.
+//
+// #397: it restarts only when config.yml changed since hl-gatus started, so a
+// deploy that changes nothing keeps the container running. See needsRestart.
 
 /** `[user@]host` — no brackets: ssh gets host and -p <port> as separate argv slots. */
 function targetHost(host: string, user: string | undefined): string {
@@ -55,6 +58,16 @@ export function buildRestartCommand(
   user: string | undefined,
   container: string,
 ): string[] {
+  return buildSshArgs(host, port, user, ["docker", "restart", container])
+}
+
+/** buildRestartCommand's argv with any remote command `remote` after the target. */
+function buildSshArgs(
+  host: string,
+  port: string | undefined,
+  user: string | undefined,
+  remote: string[],
+): string[] {
   if (port !== undefined && !isValidPort(port)) {
     throw new Error(`invalid SSH_PORT "${port}": expected digits 1-65535`)
   }
@@ -66,9 +79,7 @@ export function buildRestartCommand(
     "BatchMode=yes",
     "--",
     targetHost(host, user),
-    "docker",
-    "restart",
-    container,
+    ...remote,
   ]
 }
 
@@ -88,17 +99,98 @@ export function buildTargetRestart(
   return { cmd: "ssh", args: buildRestartCommand(host, port, user, container) }
 }
 
+/**
+ * Single-quote `value` for a POSIX shell: the one character a single-quoted string cannot hold,
+ * `'`, is closed, escaped and reopened.
+ */
+function shQuote(value: string): string {
+  return `'${value.replaceAll("'", `'\\''`)}'`
+}
+
+/**
+ * The shell script that prints the two facts the restart decision needs, one per line:
+ * `ctime=<seconds>` of `file` (its inode change time, empty when the file is missing) and
+ * `started=<StartedAt>` of `container` (empty when it does not exist). Both come from the deploy
+ * target's own clock. Exported for tests — no I/O.
+ */
+export function buildStatusScript(file: string, container: string): string {
+  return `echo "ctime=$(stat -c %Z -- ${shQuote(file)} 2>/dev/null)"; ` +
+    `echo "started=$(docker inspect -f '{{.State.StartedAt}}' ${shQuote(container)} 2>/dev/null)"`
+}
+
+/** Seconds since the epoch of a Docker `StartedAt` (RFC 3339, nanoseconds), or undefined. */
+function parseStartedAt(value: string): number | undefined {
+  const match = /^(\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d)(?:\.\d+)?(Z|[+-]\d\d:\d\d)$/.exec(value)
+  if (!match) return undefined
+  const ms = Date.parse(`${match[1]}${match[2]}`)
+  return Number.isNaN(ms) ? undefined : ms / 1000
+}
+
+/**
+ * Whether `container` must restart to load `file`, from buildStatusScript's output. It must when
+ * the file changed (its ctime) in the same second the container started or later: rsync gives a
+ * changed file a new inode on every deploy, while deploy's before-hook leaves an unchanged file's
+ * mtime as the server's, so rsync skips it and its ctime stays older than the container. Anything
+ * missing or unreadable means restart: that is the behaviour before this check existed. Exported
+ * for tests — no I/O.
+ */
+export function needsRestart(statusOutput: string): boolean {
+  const values = new Map<string, string>()
+  for (const line of statusOutput.split("\n")) {
+    const at = line.indexOf("=")
+    if (at > 0) values.set(line.slice(0, at), line.slice(at + 1).trim())
+  }
+  const ctimeText = values.get("ctime") ?? ""
+  const started = parseStartedAt(values.get("started") ?? "")
+  if (!/^\d+$/.test(ctimeText) || started === undefined) return true
+  return Number(ctimeText) >= Math.floor(started)
+}
+
+/**
+ * The program and argv that run `script` on the deploy target: `sh -c` on this machine when `host`
+ * is unset (a local server), ssh otherwise. Throws like buildRestartCommand on a bad `port`.
+ * Exported for tests — no I/O.
+ */
+export function buildTargetShell(
+  host: string | undefined,
+  port: string | undefined,
+  user: string | undefined,
+  script: string,
+): { cmd: string; args: string[] } {
+  if (!host) return { cmd: "sh", args: ["-c", script] }
+  return { cmd: "ssh", args: buildSshArgs(host, port, user, [script]) }
+}
+
 if (import.meta.main) {
   const SSH_HOST = Deno.env.get("SSH_HOST") || undefined
   const SSH_PORT = Deno.env.get("SSH_PORT") || undefined
   const SSH_USER = Deno.env.get("SSH_USER") || undefined
+  const PATH_APPS = Deno.env.get("PATH_APPS") || undefined
 
   let restart: { cmd: string; args: string[] }
+  let status: { cmd: string; args: string[] } | undefined
   try {
     restart = buildTargetRestart(SSH_HOST, SSH_PORT, SSH_USER, "hl-gatus")
+    if (PATH_APPS) {
+      const script = buildStatusScript(`${PATH_APPS}/stacks/gatus/config.yml`, "hl-gatus")
+      status = buildTargetShell(SSH_HOST, SSH_PORT, SSH_USER, script)
+    }
   } catch (err) {
     console.error("after.deploy.ts FAILED:", err instanceof Error ? err.message : String(err))
     Deno.exit(1)
+  }
+
+  if (status) {
+    const checked = await new Deno.Command(status.cmd, {
+      args: status.args,
+      stdin: "null",
+      stdout: "piped",
+      stderr: "inherit",
+    }).output()
+    if (checked.success && !needsRestart(new TextDecoder().decode(checked.stdout))) {
+      console.log("config.yml unchanged since hl-gatus started, not restarted")
+      Deno.exit(0)
+    }
   }
 
   const result = await new Deno.Command(restart.cmd, {
