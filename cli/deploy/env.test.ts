@@ -712,6 +712,25 @@ Deno.test("assertRequiredStackKeys: a key that any stack sets in its config.json
   )
 })
 
+Deno.test("assertRequiredStackKeys: a key blank in the server env is missing even when a stack's config.json envs set it, since the deploy keeps the blank line", () => {
+  assertThrows(
+    () =>
+      assertRequiredStackKeys(
+        { SITE_NAME: "" },
+        [{
+          stack: "site",
+          keys: ["SITE_NAME"],
+          compose: "a: ${SITE_NAME}",
+          envs: { SITE_NAME: "x" },
+        }],
+        "/p/servers/s/.env",
+        "/p/.env.root",
+      ),
+    UserError,
+    "site: SITE_NAME",
+  )
+})
+
 Deno.test("composeNeedsKey: a large compose file full of unclosed ${KEY is scanned in well under a second", () => {
   const compose = "a: ${APP_KEY ".repeat(50_000) + "\nb: $APP_KEY"
   const started = performance.now()

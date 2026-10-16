@@ -416,7 +416,9 @@ export function composeNeedsKey(compose: string, key: string): boolean {
  * `env` is `.env.root` merged with the server `.env`. A key with a blank
  * value counts as missing. A key that any deployed stack sets in its
  * config.json `envs` counts as set for every stack, because the deploy
- * appends those to the one `.env` all of them read. Only a key the stack's compose file uses
+ * appends those to the one `.env` all of them read, but only when `env`
+ * lacks the key: the deploy appends no `envs` key the server `.env`
+ * already has, so a blank line there stays blank. Only a key the stack's compose file uses
  * without a fallback (`composeNeedsKey`) is checked. The others would
  * block servers that work today:
  *
@@ -435,7 +437,8 @@ export function assertRequiredStackKeys(
   const lines: string[] = []
   // Every stack's `envs` land in the one `.env` that all compose files read.
   const shared: Record<string, string> = Object.assign({}, ...stacks.map((s) => s.envs ?? {}))
-  const hasValue = (key: string) => Boolean(env[key]?.trim() || shared[key]?.trim())
+  const hasValue = (key: string) =>
+    Object.hasOwn(env, key) ? Boolean(env[key].trim()) : Boolean(shared[key]?.trim())
   for (const { stack, keys, compose } of stacks) {
     const missing = keys.filter((key) => !hasValue(key) && composeNeedsKey(compose, key))
     if (missing.length > 0) lines.push(`  ${stack}: ${missing.join(", ")}`)
