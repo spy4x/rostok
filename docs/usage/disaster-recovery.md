@@ -65,8 +65,7 @@ If one container's volume is corrupted or wiped:
 If the box itself is gone:
 
 1. **Provision** a new host. Same OS, same SSH user, same data layout.
-   `rostok server create <name>` (once v1 ships) or manual setup for
-   now.
+   `rostok server create <name>` or manual setup.
 
 2. **Pull the backup repo** from cross-server Syncthing or from the
    external drive (`rostok offline restore --drive <disk>` copies it back

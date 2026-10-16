@@ -1,8 +1,10 @@
-# AGENTS.md — repo maintainer guide
+# AGENTS.md — rostok
 
-Guidelines for AI agents and humans maintaining the **rostok** repo:
-the catalog of self-hosted services and the CLI tool that scaffolds
-users' projects.
+Read `README.md` first. The global agent instructions own Git Flow, review and cleanup; this file
+adds what is specific to this repo.
+
+Guidelines for AI agents and humans maintaining the **rostok** repo: the catalog of self-hosted
+services and the CLI tool that scaffolds users' projects.
 
 What lives here is a **catalog** (`stacks/`) and the **CLI source**
 (`cli/`). Env-file encryption (age64) comes from the published
@@ -18,9 +20,9 @@ rostok/                          [tracked]
 │   └── <stack>/
 │       ├── compose.yml          # Docker Compose (must use `hl-` prefix)
 │       ├── backup.ts            # backup config (skip for stateless)
-│       ├── +meta.ts             # CLI schema (READY-TO-IMPLEMENT, see docs/design/v1-cli.md)
+│       ├── +meta.ts             # CLI schema (see docs/design/v1-cli.md)
 │       └── README.md            # what the stack does, how to configure
-├── cli/                         # the rostok CLI source (added in v1 phase 2)
+├── cli/                         # the rostok CLI source
 │   └── offline/                 # `rostok offline`: copy of the backups on an external drive
 ├── scripts/
 │   ├── backup/                  # Restic backup runner (servers run it from a pinned clone)
@@ -90,12 +92,7 @@ prefer it to creating a server by hand.
 
 ## 🔄 PR discipline
 
-A PR MUST exist for any task. Create it immediately after the first
-commit — even if the task is incomplete.
-
-- Prefix title with `[WIP]` until fully done.
 - Push + update PR body after every human interaction.
-- Remove `[WIP]` only when complete and the review gate passed.
 - Reference issues with full URLs in PR body:
   `Closes [#N](https://github.com/spy4x/rostok/issues/N)`.
 
@@ -108,7 +105,7 @@ Every stack needs:
 - `compose.yml` — Traefik labels, resource limits, `hl-` prefix
 - `backup.ts` — skip for stateless services
 - `README.md` — purpose, configuration, troubleshooting
-- `+meta.ts` — CLI schema (see `docs/design/v1-cli.md` §4) — REQUIRED for v1
+- `+meta.ts` — CLI schema (see `docs/design/v1-cli.md` §4) — REQUIRED
 
 Rules:
 
@@ -179,41 +176,13 @@ touches `.env`.
 
 ## 🧹 Merge protocol
 
-Agents work autonomously in this repo, including merging. A PR merges
-when both gates are green:
-
-- the pre-merge `@reviewer` gate (fresh-context review with its own
-  checks and mutations; a separate security review for changes to
-  deploy, SSH, secrets or auth), and
-- CI on the PR (Woodpecker, `ci/woodpecker/pr/woodpecker`).
-
-If a gate fails twice on the same cause, or a revert can't undo the
-change, leave the PR open and tell the user.
-
-- All commits relate to one feature →
-  `gh pr merge <n> --repo spy4x/rostok --squash --delete-branch`
-- Some commits fix independent things →
-  `gh pr merge <n> --repo spy4x/rostok --rebase --delete-branch`
-
-Always pass `--repo`: without it, `gh` tries to delete the local branch,
-fails while its worktree exists, and skips the remote delete.
+The global merge rules apply. The reviewer gate includes a security review for every change to
+deploy, SSH, secrets or auth. CI on the PR is the Woodpecker check `ci/woodpecker/pr/woodpecker`.
 
 Publishing follows the same rule: once the version-bump PR is merged
 and both gates are green, push the release tag without asking (see
 "Publish flow" below). JSR versions are immutable, so tag only the
 merged bump commit on `main`.
-
-Then clean up. Worktrees live in the sibling `worktrees/rostok/`; these
-commands work from any directory inside the repo or a worktree. `-D` is
-needed because git doesn't see a squash-merged branch as merged; run it
-only after the PR shows as merged.
-
-```bash
-MAIN=$(realpath "$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")")
-git -C "$MAIN" worktree remove "$(dirname "$MAIN")/worktrees/rostok/<type>/<short-description>"
-git -C "$MAIN" branch -D <type>/<short-description>
-git -C "$MAIN" fetch --prune
-```
 
 ---
 
@@ -241,7 +210,7 @@ identical:
 
 JSR versions are immutable once published, so a drift between the two
 surfaces as `deno.jsonc: 1.0.2` installed while the binary prints
-`rostok 1.0.1` (Phase 10 shipped this state). It also breaks
+`rostok 1.0.1`. It also breaks
 `import "jsr:@rostok/cli"` in downstream projects if anyone pins a
 specific version.
 
@@ -336,7 +305,7 @@ grep -H '"version"' deno.jsonc cli/version.ts
 
 ## 📚 See also
 
-- `docs/design/v1-cli.md` — v1 design (ready-to-implement)
+- `docs/design/v1-cli.md` — v1 design (shipped; kept as the design record)
 - `docs/design/v2-cli.md` — v2 backlog (draft)
 - `docs/design/v2-website.md` — future static site (draft)
 - `docs/usage/concepts.md` — stack, server, wizard
@@ -345,11 +314,3 @@ grep -H '"version"' deno.jsonc cli/version.ts
 - `docs/usage/ENCRYPTED_ENV_FILES.md` — age64 workflow
 - `docs/contributing/adding-services.md` — author a stack
 - `docs/contributing/contributing.md` — PR checklist for contributors
-
-## Shared libraries
-
-Before writing a component, helper or library here, search
-[spy4x/ts-libs](https://github.com/spy4x/ts-libs) and
-[spy4x/preact-components](https://github.com/spy4x/preact-components) for it. The global rule
-["Shared libs before local code"](https://github.com/spy4x/dotfiles/blob/main/ai-harnesses/AGENTS.md)
-says what belongs in each library; code only this repo needs stays here.

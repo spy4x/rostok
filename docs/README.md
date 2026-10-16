@@ -18,7 +18,7 @@
 
 ## Design
 
-- [v1-cli](design/v1-cli.md) — v1 design (ready-to-implement)
+- [v1-cli](design/v1-cli.md) — v1 design (shipped; kept as the design record)
 - [v2-cli](design/v2-cli.md) — v2 backlog (draft)
 - [v2-website](design/v2-website.md) — future static site (draft)
 
