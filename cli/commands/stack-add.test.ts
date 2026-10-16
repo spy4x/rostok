@@ -9,8 +9,9 @@
 // `.action()` calls, so testing it directly (with `confirmFn` injected)
 // exercises the same code path as the real `rostok stack add` command.
 
-import { assertEquals } from "@std/assert"
+import { assertEquals, assertRejects, assertStringIncludes } from "@std/assert"
 import { join } from "@std/path"
+import { UserError } from "../errors.ts"
 import { runStackAdd } from "./stack-add.ts"
 
 async function withTmpDir<T>(fn: (dir: string) => Promise<T>): Promise<T> {
@@ -109,5 +110,54 @@ Deno.test("runStackAdd: accepting a requires dependency does NOT suggest re-addi
     } finally {
       console.log = originalLog
     }
+  })
+})
+
+// #425 — a --var key the stack does not declare used to be dropped
+// without a word, so a typo looked like it had worked.
+Deno.test("runStackAdd refuses a --var key the stack does not declare, names it and writes nothing", async () => {
+  await withTmpDir(async (dir) => {
+    const catalogDir = join(dir, "catalog")
+    await writeTraefikWebCatalog(catalogDir)
+    await seedServer(dir, "home")
+    const envBefore = await Deno.readTextFile(join(dir, "servers", "home", ".env"))
+
+    const error = await assertRejects(
+      () =>
+        runStackAdd("traefik", {
+          server: "home",
+          catalog: catalogDir,
+          nonInteractive: true,
+          var: ["TRAEFIK_IMAGE_TAG=3.1", "TRAEFK_IMAGE_TAG=3.2"],
+        }, dir),
+      UserError,
+    )
+    assertStringIncludes(error.message, "TRAEFK_IMAGE_TAG")
+    assertStringIncludes(error.message, "declares: TRAEFIK_IMAGE_TAG")
+    assertEquals(await Deno.readTextFile(join(dir, "servers", "home", ".env")), envBefore)
+    const config = await Deno.stat(join(dir, "servers", "home", "config.json")).catch(() => null)
+    assertEquals(config, null)
+  })
+})
+
+Deno.test("runStackAdd accepts a --var key that a required stack declares", async () => {
+  await withTmpDir(async (dir) => {
+    const catalogDir = join(dir, "catalog")
+    await writeTraefikWebCatalog(catalogDir)
+    await seedServer(dir, "home")
+    const originalLog = console.log
+    console.log = () => {}
+    try {
+      await runStackAdd("web", {
+        server: "home",
+        catalog: catalogDir,
+        nonInteractive: true,
+        var: ["TRAEFIK_IMAGE_TAG=3.1"],
+      }, dir)
+    } finally {
+      console.log = originalLog
+    }
+    const env = await Deno.readTextFile(join(dir, "servers", "home", ".env"))
+    assertStringIncludes(env, "TRAEFIK_IMAGE_TAG=3.1")
   })
 })

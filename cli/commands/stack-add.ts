@@ -13,6 +13,10 @@ import { join, relative } from "@std/path"
 import { parseVarFlags } from "../cli-flags.ts"
 import { stackAdd, type StackAddResult } from "../stack-add.ts"
 import { serverDirFor } from "../server-keys.ts"
+import { type CatalogEntry, findStack } from "../catalog.ts"
+import { resolveCatalog } from "../catalog-paths.ts"
+import { UserError } from "../errors.ts"
+import { normalizeVariableSpec } from "../stack-meta.ts"
 import { buildNextSteps } from "../next-steps.ts"
 import type { ConfirmFn, PromptFn } from "../prompts.ts"
 
@@ -42,6 +46,7 @@ export async function runStackAdd(
 ): Promise<StackAddResult> {
   const catalogDir = options.catalog ?? undefined
   const providedVars = parseVarFlags(options.var)
+  await refuseUndeclaredVars(name, providedVars, catalogDir)
   const result = await stackAdd(name, options.server, {
     cwd,
     catalogDir,
@@ -65,6 +70,50 @@ export async function runStackAdd(
   console.log("")
   for (const line of lines) console.log(line)
   return result
+}
+
+/**
+ * #425: a --var key that neither the stack nor a stack it requires
+ * declares would be dropped without a word, so a typo looks like it
+ * worked. Refuse it before anything is written, naming the key and the
+ * keys that are declared.
+ */
+async function refuseUndeclaredVars(
+  name: string,
+  providedVars: Record<string, string>,
+  catalogDir: string | undefined,
+): Promise<void> {
+  if (Object.keys(providedVars).length === 0) return
+  const catalog = await resolveCatalog(catalogDir)
+  const declared = declaredKeys(catalog, findStack(catalog, name))
+  const unknown = Object.keys(providedVars).filter((key) => !declared.includes(key))
+  if (unknown.length === 0) return
+  const keyWord = unknown.length === 1 ? "key" : "keys"
+  throw new UserError(
+    `stack '${name}' has no variable for --var ${keyWord} ${unknown.join(", ")}. ` +
+      `It declares: ${declared.join(", ") || "(none)"}`,
+  )
+}
+
+/** Variable keys of `entry` and of every stack it requires, directly or not, in that order. */
+function declaredKeys(catalog: CatalogEntry[], entry: CatalogEntry): string[] {
+  const keys: string[] = []
+  const seen = new Set<string>()
+  const visit = (stack: CatalogEntry) => {
+    if (seen.has(stack.name)) return
+    seen.add(stack.name)
+    for (const spec of stack.meta.variables) {
+      const key = normalizeVariableSpec(spec).key
+      if (!keys.includes(key)) keys.push(key)
+    }
+    for (const required of stack.meta.requires ?? []) {
+      const dependency = catalog.find((e) => e.name === required || e.meta.name === required)
+      // An unknown dependency fails in stackAdd with its own message.
+      if (dependency) visit(dependency)
+    }
+  }
+  visit(entry)
+  return keys
 }
 
 export const stackAddCommand = new Command()
@@ -92,8 +141,11 @@ Examples:
     rostok stack add traefik -s home                    # interactive
     rostok stack add traefik -s home -n                 # non-interactive, defaults only
     rostok stack add traefik -s home \\
-        --var DOMAIN=example.com \\
-        --var TRAEFIK_BASIC_AUTH_USER=admin              # pre-supply variables`,
+        --var TRAEFIK_DOMAIN=proxy.example.com \\
+        --var TRAEFIK_BASIC_AUTH_USER=admin              # pre-supply variables
+
+A --var key that the stack (or a stack it requires) does not declare is
+refused, so a typo never passes silently.`,
   )
   .action(async (options, name: string) => {
     await runStackAdd(name, options)
