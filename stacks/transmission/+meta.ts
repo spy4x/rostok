@@ -20,6 +20,11 @@ export default {
   requires: ["traefik"],
   variables: [
     {
+      key: "TRANSMISSION_IMAGE_TAG",
+      default: "latest",
+      required: false,
+    },
+    {
       key: "TRANSMISSION_DOMAIN",
       question: "Public domain for Transmission?",
       default: "torrents.${DOMAIN}",

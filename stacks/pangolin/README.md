@@ -185,3 +185,15 @@ Losing it means re-enrolling every site.
   resource public, with no login at all.
 - **volumes**: `pangolin-config` is shared — pangolin uses `/app/config`,
   gerbil writes its key to `/var/config`.
+
+## Image tags
+
+Each image takes its tag from its own variable; unset, compose uses the default below.
+Under `IMAGE_POLICY=pinned`, `rostok stack add` writes the exact version, and
+`rostok images update` moves it (see [commands](../../docs/commands.md)).
+
+| Variable                     | Default  | Image                                 |
+| ---------------------------- | -------- | ------------------------------------- |
+| `PANGOLIN_IMAGE_TAG`         | `1.21.1` | `fosrl/pangolin` (service `pangolin`) |
+| `PANGOLIN_GERBIL_IMAGE_TAG`  | `1.4.3`  | `fosrl/gerbil` (service `gerbil`)     |
+| `PANGOLIN_TRAEFIK_IMAGE_TAG` | `v3.7.6` | `traefik` (service `traefik`)         |

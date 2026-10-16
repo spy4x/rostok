@@ -33,6 +33,16 @@ export default {
       required: false,
     },
     {
+      key: "MIROTALK_COTURN_IMAGE_TAG",
+      default: "latest",
+      required: false,
+    },
+    {
+      key: "MIROTALK_CERT_EXTRACT_IMAGE_TAG",
+      default: "3-alpine",
+      required: false,
+    },
+    {
       key: "MIROTALK_DOMAIN",
       question: "Public domain for MiroTalk?",
       default: "talk.${DOMAIN}",

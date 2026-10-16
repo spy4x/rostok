@@ -18,6 +18,16 @@ export default {
   requires: ["traefik"],
   variables: [
     {
+      key: "DOCKER_REGISTRY_IMAGE_TAG",
+      default: "2",
+      required: false,
+    },
+    {
+      key: "DOCKER_REGISTRY_UI_IMAGE_TAG",
+      default: "latest",
+      required: false,
+    },
+    {
       key: "DOCKER_REGISTRY_DOMAIN",
       question: "Public domain for the registry web UI?",
       default: "registry.${DOMAIN}",

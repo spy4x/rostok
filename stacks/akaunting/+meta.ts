@@ -16,6 +16,16 @@ export default {
   keepOwner: ["akaunting/db"],
   variables: [
     {
+      key: "AKAUNTING_DB_IMAGE_TAG",
+      default: "11",
+      required: false,
+    },
+    {
+      key: "AKAUNTING_IMAGE_TAG",
+      default: "latest",
+      required: false,
+    },
+    {
       key: "AKAUNTING_DOMAIN",
       question: "Public domain for Akaunting?",
       default: "invoices.${DOMAIN}",

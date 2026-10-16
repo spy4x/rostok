@@ -49,6 +49,21 @@ export default {
       required: false,
     },
     {
+      key: "IMMICH_KV_IMAGE_TAG",
+      default: "8-bookworm@sha256:ff21bc0f8194dc9c105b769aeabf9585fea6a8ed649c0781caeac5cb3c247884",
+      required: false,
+    },
+    {
+      key: "IMMICH_DB_IMAGE_TAG",
+      default: "14-vectorchord0.3.0-pgvectors0.2.0",
+      required: false,
+    },
+    {
+      key: "IMMICH_KIOSK_IMAGE_TAG",
+      default: "latest",
+      required: false,
+    },
+    {
       key: "IMMICH_DB_PASSWORD",
       question: "Postgres password (auto-generated)?",
       default: () => generatePassword(32),

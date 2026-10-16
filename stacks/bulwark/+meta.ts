@@ -23,6 +23,11 @@ export default {
   keepOwner: ["bulwark/settings", "bulwark/admin", "bulwark/admin-state", "bulwark/telemetry"],
   variables: [
     {
+      key: "BULWARK_IMAGE_TAG",
+      default: "1.7.6",
+      required: false,
+    },
+    {
       key: "BULWARK_DOMAIN",
       question: "Public domain for Bulwark webmail?",
       default: "webmail.${DOMAIN}",

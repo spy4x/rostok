@@ -35,3 +35,13 @@ Declared in `+meta.ts`. Requires the `traefik` stack. Server-level keys (`PROJEC
 | Key               | Default           | Meaning                   |
 | ----------------- | ----------------- | ------------------------- |
 | `USEMEMOS_DOMAIN` | `notes.${DOMAIN}` | Public host of the web UI |
+
+## Image tags
+
+Each image takes its tag from its own variable; unset, compose uses the default below.
+Under `IMAGE_POLICY=pinned`, `rostok stack add` writes the exact version, and
+`rostok images update` moves it (see [commands](../../docs/commands.md)).
+
+| Variable             | Default  | Image                              |
+| -------------------- | -------- | ---------------------------------- |
+| `USEMEMOS_IMAGE_TAG` | `stable` | `neosmemo/memos` (service `memos`) |

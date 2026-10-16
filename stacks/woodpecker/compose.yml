@@ -9,7 +9,7 @@ services:
   # or use GitHub/GitLab integration by setting the appropriate environment variables.
   woodpecker-server:
     container_name: hl-woodpecker-server
-    image: woodpeckerci/woodpecker-server:v3.11.0
+    image: woodpeckerci/woodpecker-server:${WOODPECKER_SERVER_IMAGE_TAG:-v3.11.0}
     environment:
       - WOODPECKER_OPEN=false
       - WOODPECKER_HOST=https://${WOODPECKER_DOMAIN}
@@ -54,7 +54,7 @@ services:
 
   woodpecker-agent:
     container_name: hl-woodpecker-agent
-    image: woodpeckerci/woodpecker-agent:v3.11.0
+    image: woodpeckerci/woodpecker-agent:${WOODPECKER_AGENT_IMAGE_TAG:-v3.11.0}
     user: "${PUID:-1000}:${PGID:-1000}"
     group_add:
       - "${DOCKER_GROUP_ID:-990}" # Allow access to docker.sock

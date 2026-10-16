@@ -9,7 +9,7 @@ services:
   # Audiobookshelf is a self-hosted audio & epub/pdf book server.
   audiobookshelf:
     container_name: hl-audiobookshelf
-    image: ghcr.io/advplyr/audiobookshelf:latest
+    image: ghcr.io/advplyr/audiobookshelf:${AUDIOBOOKSHELF_IMAGE_TAG:-latest}
     healthcheck:
       test: ["CMD", "wget", "--spider", "http://localhost:80/"]
       interval: 30s

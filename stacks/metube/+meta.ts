@@ -13,6 +13,11 @@ export default {
   requires: ["traefik"],
   variables: [
     {
+      key: "METUBE_IMAGE_TAG",
+      default: "latest",
+      required: false,
+    },
+    {
       key: "METUBE_DOMAIN",
       question: "Public domain for MeTube?",
       default: "metube.${DOMAIN}",

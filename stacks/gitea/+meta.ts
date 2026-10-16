@@ -16,6 +16,16 @@ export default {
   keepOwner: ["gitea/db"],
   variables: [
     {
+      key: "GITEA_DB_IMAGE_TAG",
+      default: "16-alpine",
+      required: false,
+    },
+    {
+      key: "GITEA_IMAGE_TAG",
+      default: "latest",
+      required: false,
+    },
+    {
       key: "GITEA_DOMAIN",
       question: "Public domain for Gitea?",
       default: "git.${DOMAIN}",

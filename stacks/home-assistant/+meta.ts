@@ -20,6 +20,11 @@ export default {
   category: "home",
   variables: [
     {
+      key: "HOME_ASSISTANT_IMAGE_TAG",
+      default: "stable",
+      required: false,
+    },
+    {
       key: "HOME_ASSISTANT_ZIGBEE_DEVICE",
       question: "Host path of the Zigbee USB dongle to pass through?",
       default: "/dev/ttyUSB0",

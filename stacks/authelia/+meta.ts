@@ -32,6 +32,16 @@ export default {
   requires: ["traefik"],
   variables: [
     {
+      key: "AUTHELIA_IMAGE_TAG",
+      default: "latest",
+      required: false,
+    },
+    {
+      key: "AUTHELIA_REDIS_IMAGE_TAG",
+      default: "7-alpine",
+      required: false,
+    },
+    {
       key: "AUTHELIA_DOMAIN",
       question: "Public domain for the sign-in page?",
       default: "auth.${DOMAIN}",

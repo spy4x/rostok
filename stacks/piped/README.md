@@ -84,3 +84,17 @@ Declared in `+meta.ts`; `rostok stack add piped` writes them to the server's `.e
 | `PIPED_DB_NAME`      | `piped`                | Postgres database              |
 | `PIPED_DB_USER`      | `piped`                | Postgres user                  |
 | `PIPED_DB_PASSWORD`  | generated, secret      | Postgres password              |
+
+## Image tags
+
+Each image takes its tag from its own variable; unset, compose uses the default below.
+Under `IMAGE_POLICY=pinned`, `rostok stack add` writes the exact version, and
+`rostok images update` moves it (see [commands](../../docs/commands.md)).
+
+| Variable                    | Default     | Image                                              |
+| --------------------------- | ----------- | -------------------------------------------------- |
+| `PIPED_FRONTEND_IMAGE_TAG`  | `latest`    | `1337kavin/piped-frontend` (service `frontend`)    |
+| `PIPED_BACKEND_IMAGE_TAG`   | `latest`    | `1337kavin/piped` (service `backend`)              |
+| `PIPED_PROXY_IMAGE_TAG`     | `latest`    | `1337kavin/piped-proxy` (service `proxy`)          |
+| `PIPED_BG_HELPER_IMAGE_TAG` | `latest`    | `1337kavin/bg-helper-server` (service `bg-helper`) |
+| `PIPED_DB_IMAGE_TAG`        | `16-alpine` | `pgautoupgrade/pgautoupgrade` (service `db`)       |

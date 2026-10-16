@@ -10,7 +10,7 @@ networks:
 services:
   akaunting-db:
     container_name: hl-akaunting-db
-    image: mariadb:11
+    image: mariadb:${AKAUNTING_DB_IMAGE_TAG:-11}
     restart: unless-stopped
     volumes:
       - ${VOLUMES_PATH}/akaunting/db:/var/lib/mysql:z
@@ -34,7 +34,7 @@ services:
 
   akaunting:
     container_name: hl-akaunting
-    image: akaunting/akaunting:latest
+    image: akaunting/akaunting:${AKAUNTING_IMAGE_TAG:-latest}
     restart: unless-stopped
     depends_on:
       akaunting-db:

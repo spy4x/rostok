@@ -5,7 +5,7 @@ networks:
 services:
   docker-registry:
     container_name: hl-docker-registry
-    image: registry:2
+    image: registry:${DOCKER_REGISTRY_IMAGE_TAG:-2}
     environment:
       # Deleting needs the login below, like every other request.
       - REGISTRY_STORAGE_DELETE_ENABLED=true
@@ -33,7 +33,7 @@ services:
 
   registry-ui:
     container_name: hl-registry-ui
-    image: joxit/docker-registry-ui:latest
+    image: joxit/docker-registry-ui:${DOCKER_REGISTRY_UI_IMAGE_TAG:-latest}
     environment:
       - REGISTRY_TITLE=Homelab Registry
       - REGISTRY_URL=https://${DOCKER_REGISTRY_DOMAIN}

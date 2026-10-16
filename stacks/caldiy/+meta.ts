@@ -38,6 +38,21 @@ export default {
       required: false,
     },
     {
+      key: "CALDIY_DB_IMAGE_TAG",
+      default: "16-alpine",
+      required: false,
+    },
+    {
+      key: "CALDIY_REDIS_IMAGE_TAG",
+      default: "7-alpine",
+      required: false,
+    },
+    {
+      key: "CALDIY_CRON_IMAGE_TAG",
+      default: "latest",
+      required: false,
+    },
+    {
       key: "CALDIY_DB_PASSWORD",
       question: "PostgreSQL password for Cal.diy (URL-safe characters only)?",
       default: () => generatePassword(32),

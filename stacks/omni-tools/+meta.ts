@@ -12,6 +12,11 @@ export default {
   requires: ["traefik"],
   variables: [
     {
+      key: "OMNI_TOOLS_IMAGE_TAG",
+      default: "latest",
+      required: false,
+    },
+    {
       key: "OMNI_TOOLS_DOMAIN",
       question: "Public domain for OmniTools?",
       default: "tools.${DOMAIN}",

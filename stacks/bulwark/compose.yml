@@ -15,7 +15,7 @@ networks:
 services:
   bulwark:
     container_name: hl-bulwark
-    image: ghcr.io/bulwarkmail/webmail:1.7.6
+    image: ghcr.io/bulwarkmail/webmail:${BULWARK_IMAGE_TAG:-1.7.6}
     restart: unless-stopped
     environment:
       - HOSTNAME=0.0.0.0

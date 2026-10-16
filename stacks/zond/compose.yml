@@ -10,7 +10,7 @@ services:
   # No auth needed — no sensitive data exposed.
   zond:
     container_name: hl-zond
-    image: ghcr.io/spy4x/zond:latest
+    image: ghcr.io/spy4x/zond:${ZOND_IMAGE_TAG:-latest}
     # Healthcheck is inherited from the image (zond -healthcheck).
     # The previous wget-based check broke after the Deno→Go rewrite — the
     # distroless-static image has no shell, no wget.

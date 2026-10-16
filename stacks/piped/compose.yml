@@ -7,7 +7,7 @@ name: piped
 services:
   frontend:
     container_name: hl-piped-frontend
-    image: 1337kavin/piped-frontend:latest
+    image: 1337kavin/piped-frontend:${PIPED_FRONTEND_IMAGE_TAG:-latest}
     restart: unless-stopped
     depends_on:
       backend:
@@ -42,7 +42,7 @@ services:
 
   backend:
     container_name: hl-piped-backend
-    image: 1337kavin/piped:latest
+    image: 1337kavin/piped:${PIPED_BACKEND_IMAGE_TAG:-latest}
     restart: unless-stopped
     environment:
       - DOMAIN=${DOMAIN}
@@ -81,7 +81,7 @@ services:
 
   proxy:
     container_name: hl-piped-proxy
-    image: 1337kavin/piped-proxy:latest
+    image: 1337kavin/piped-proxy:${PIPED_PROXY_IMAGE_TAG:-latest}
     restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "bash -c '</dev/tcp/127.0.0.1/8080' || exit 1"]
@@ -111,7 +111,7 @@ services:
 
   bg-helper:
     container_name: hl-piped-bg-helper
-    image: 1337kavin/bg-helper-server:latest
+    image: 1337kavin/bg-helper-server:${PIPED_BG_HELPER_IMAGE_TAG:-latest}
     restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "bash -c '</dev/tcp/127.0.0.1/3000' || exit 1"]
@@ -131,7 +131,7 @@ services:
 
   db:
     container_name: hl-piped-db
-    image: pgautoupgrade/pgautoupgrade:16-alpine
+    image: pgautoupgrade/pgautoupgrade:${PIPED_DB_IMAGE_TAG:-16-alpine}
     restart: unless-stopped
     volumes:
       - ${VOLUMES_PATH}/piped/postgres:/var/lib/postgresql/data

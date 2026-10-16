@@ -11,7 +11,7 @@ services:
   # Stalwart Mail Server - Modern mail server with JMAP support
   stalwart:
     container_name: hl-stalwart
-    image: stalwartlabs/stalwart:v0.16.11
+    image: stalwartlabs/stalwart:${STALWART_IMAGE_TAG:-v0.16.11}
     ports:
       - "25:25"
       - "465:465"
@@ -72,7 +72,7 @@ services:
   # Covers mta-sts.${DOMAIN} and mta-sts.<domain> of every STALWART_EXTRA_DOMAINS entry (same MX).
   mta-sts:
     container_name: hl-mta-sts
-    image: nginx:alpine
+    image: nginx:${STALWART_MTA_STS_IMAGE_TAG:-alpine}
     restart: unless-stopped
     volumes:
       - ./mta-sts/nginx.conf:/etc/nginx/conf.d/default.conf:ro,z
@@ -103,7 +103,7 @@ services:
   # Synchronizes Let's Encrypt certs from Traefik's acme.json into Stalwart
   cert-sync:
     container_name: hl-cert-sync
-    image: python:3-alpine
+    image: python:${STALWART_CERT_SYNC_IMAGE_TAG:-3-alpine}
     entrypoint: ["/bin/sh", "-c"]
     command:
       - |

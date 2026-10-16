@@ -20,6 +20,11 @@ export default {
   requires: ["traefik"],
   variables: [
     {
+      key: "OKO_IMAGE_TAG",
+      default: "latest",
+      required: false,
+    },
+    {
       key: "OKO_DOMAIN",
       question: "Public domain for the Oko dashboard?",
       default: "dash.${DOMAIN}",

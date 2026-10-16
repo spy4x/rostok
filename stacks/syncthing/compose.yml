@@ -36,7 +36,7 @@ networks:
 services:
   syncthing:
     container_name: hl-syncthing
-    image: syncthing/syncthing:latest
+    image: syncthing/syncthing:${SYNCTHING_IMAGE_TAG:-latest}
     healthcheck:
       test: ["CMD", "wget", "--spider", "http://localhost:8384/"]
       interval: 30s

@@ -20,6 +20,16 @@ export default {
   keepOwner: ["searxng/redis"],
   variables: [
     {
+      key: "SEARXNG_REDIS_IMAGE_TAG",
+      default: "7-alpine",
+      required: false,
+    },
+    {
+      key: "SEARXNG_IMAGE_TAG",
+      default: "latest",
+      required: false,
+    },
+    {
       key: "SEARXNG_DOMAIN",
       question: "Public domain for SearXNG?",
       default: "search.${DOMAIN}",

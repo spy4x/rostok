@@ -41,3 +41,13 @@ Declared in `+meta.ts`. Requires the `traefik` stack. Server-level keys (`DOMAIN
 | ----------------------- | ----------------------- | ---------------------------------------- |
 | `AUDIOBOOKSHELF_DOMAIN` | `books.${DOMAIN}`       | Public host of the web UI                |
 | `PATH_BOOKS`            | `${VOLUMES_PATH}/books` | Host folder mounted as the books library |
+
+## Image tags
+
+Each image takes its tag from its own variable; unset, compose uses the default below.
+Under `IMAGE_POLICY=pinned`, `rostok stack add` writes the exact version, and
+`rostok images update` moves it (see [commands](../../docs/commands.md)).
+
+| Variable                   | Default  | Image                                                       |
+| -------------------------- | -------- | ----------------------------------------------------------- |
+| `AUDIOBOOKSHELF_IMAGE_TAG` | `latest` | `ghcr.io/advplyr/audiobookshelf` (service `audiobookshelf`) |

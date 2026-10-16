@@ -58,7 +58,7 @@ services:
   # limits us to one TURN endpoint per the upstream app.
   mirotalk-coturn:
     container_name: hl-mirotalk-coturn
-    image: coturn/coturn:latest
+    image: coturn/coturn:${MIROTALK_COTURN_IMAGE_TAG:-latest}
     network_mode: host
     command:
       - -n
@@ -118,7 +118,7 @@ services:
   # propagate to coturn automatically.
   mirotalk-cert-extract:
     container_name: hl-mirotalk-cert-extract
-    image: python:3-alpine
+    image: python:${MIROTALK_CERT_EXTRACT_IMAGE_TAG:-3-alpine}
     entrypoint: ["/bin/sh", "-c"]
     command:
       - |

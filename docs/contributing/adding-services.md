@@ -25,8 +25,7 @@ stacks/<name>/
 See [`docs/design/v1-cli.md`](../design/v1-cli.md) §4 for the full
 schema. `rostok stack add` installs only stacks in its catalog, and a
 stack enters the catalog through its `+meta.ts`, imported in
-`cli/catalog.ts`. A stack without one cannot be added with the CLI
-(`opencode-web` and `plausible` are the ones left today).
+`cli/catalog.ts`. A stack without one cannot be added with the CLI.
 
 ---
 

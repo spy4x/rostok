@@ -15,7 +15,7 @@ services:
   # It's configured to use Let's Encrypt to automatically generate SSL certificates and redirect all HTTP requests to HTTPS.
   traefik:
     container_name: "hl-traefik"
-    image: "traefik:${TRAEFIK_IMAGE_TAG:-3.7.6}"
+    image: "traefik:${TRAEFIK_IMAGE_TAG:-3.7.15}"
     expose:
       - "8080"
     healthcheck:

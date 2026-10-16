@@ -17,6 +17,11 @@ export default {
   category: "infra",
   variables: [
     {
+      key: "WATCHTOWER_IMAGE_TAG",
+      default: "latest",
+      required: false,
+    },
+    {
       key: "WATCHTOWER_CPU_LIMIT",
       question: "CPU limit for the Watchtower container?",
       default: "0.5",

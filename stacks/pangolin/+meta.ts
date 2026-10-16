@@ -29,6 +29,21 @@ export default {
   requires: ["traefik"],
   variables: [
     {
+      key: "PANGOLIN_IMAGE_TAG",
+      default: "1.21.1",
+      required: false,
+    },
+    {
+      key: "PANGOLIN_GERBIL_IMAGE_TAG",
+      default: "1.4.3",
+      required: false,
+    },
+    {
+      key: "PANGOLIN_TRAEFIK_IMAGE_TAG",
+      default: "v3.7.6",
+      required: false,
+    },
+    {
       key: "PANGOLIN_DOMAIN",
       question: "Public domain for the Pangolin dashboard?",
       default: "tunnel.${DOMAIN}",

@@ -11,7 +11,7 @@ services:
   # usememos - Lightweight note-taking app
   memos:
     container_name: hl-memos
-    image: neosmemo/memos:stable
+    image: neosmemo/memos:${USEMEMOS_IMAGE_TAG:-stable}
     volumes:
       - ${VOLUMES_PATH}/memos:/var/opt/memos:z
     restart: unless-stopped

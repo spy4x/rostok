@@ -23,6 +23,8 @@ Web UI: `https://<MIROTALK_DOMAIN>`
 `rostok stack add mirotalk` writes these.
 
 - `MIROTALK_IMAGE_TAG` — image tag, default `latest`
+- `MIROTALK_COTURN_IMAGE_TAG` — image tag of `coturn/coturn`, default `latest`
+- `MIROTALK_CERT_EXTRACT_IMAGE_TAG` — image tag of `python` in `mirotalk-cert-extract`, default `3-alpine`
 - `MIROTALK_DOMAIN` — public host, default `talk.${DOMAIN}`. The TURN URL and the TLS
   certificate coturn serves use the same host.
 - `MIROTALK_TURN_SERVER_USERNAME` — long random string (coturn credential user), generated.

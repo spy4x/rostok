@@ -211,3 +211,14 @@ The container names, the networks, the Traefik labels and the data folder
 ## Resources
 
 - [Authelia documentation](https://www.authelia.com/)
+
+## Image tags
+
+Each image takes its tag from its own variable; unset, compose uses the default below.
+Under `IMAGE_POLICY=pinned`, `rostok stack add` writes the exact version, and
+`rostok images update` moves it (see [commands](../../docs/commands.md)).
+
+| Variable                   | Default    | Image                                    |
+| -------------------------- | ---------- | ---------------------------------------- |
+| `AUTHELIA_IMAGE_TAG`       | `latest`   | `authelia/authelia` (service `authelia`) |
+| `AUTHELIA_REDIS_IMAGE_TAG` | `7-alpine` | `redis` (service `authelia-redis`)       |

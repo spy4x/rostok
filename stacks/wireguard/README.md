@@ -63,3 +63,13 @@ Declared in `+meta.ts`; `rostok stack add wireguard` writes them to the server's
 - [WireGuard Documentation](https://www.wireguard.com/)
 - [Docker Image Docs](https://github.com/linuxserver/docker-wireguard)
 - [Client Apps](https://www.wireguard.com/install/)
+
+## Image tags
+
+Each image takes its tag from its own variable; unset, compose uses the default below.
+Under `IMAGE_POLICY=pinned`, `rostok stack add` writes the exact version, and
+`rostok images update` moves it (see [commands](../../docs/commands.md)).
+
+| Variable              | Default  | Image                                                 |
+| --------------------- | -------- | ----------------------------------------------------- |
+| `WIREGUARD_IMAGE_TAG` | `latest` | `lscr.io/linuxserver/wireguard` (service `wireguard`) |

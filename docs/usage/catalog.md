@@ -4,8 +4,7 @@ The `stacks/` directory. Every entry is a generic, reusable
 self-hosted service.
 
 The catalog is what the `rostok` CLI bundles. Users browse it with
-`rostok stack list`. Two stacks have no `+meta.ts` yet and are not
-bundled: opencode-web and plausible.
+`rostok stack list`. Every stack has a `+meta.ts`.
 
 ## Categories
 
@@ -74,8 +73,6 @@ bundled: opencode-web and plausible.
   restricted Docker socket proxy
 - [playwright](../../stacks/playwright/README.md) — headless browser
   for testing
-- [opencode-web](../../stacks/opencode-web/README.md) — AI coding
-  assistant (web)
 - [github-mcp](../../stacks/github-mcp/README.md) — GitHub bridge for
   AI agents
 - [google-maps-mcp](../../stacks/google-maps-mcp/README.md) — Google
@@ -92,8 +89,6 @@ bundled: opencode-web and plausible.
   (Invidious alternative)
 - [searxng](../../stacks/searxng/README.md) — meta-search engine
 - [umami](../../stacks/umami/README.md) — privacy-friendly analytics
-- [plausible](../../stacks/plausible/README.md) — privacy analytics
-  (alternative to Umami)
 - [usememos](../../stacks/usememos/README.md) — note-taking
   (self-hosted)
 - [transmission](../../stacks/transmission/README.md) — BitTorrent

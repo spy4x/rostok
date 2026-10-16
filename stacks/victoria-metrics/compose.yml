@@ -17,7 +17,7 @@ services:
   # Drop-in for PromQL queries. Listens on 8428.
   victoria-metrics:
     container_name: hl-victoria-metrics
-    image: victoriametrics/victoria-metrics:v1.146.0
+    image: victoriametrics/victoria-metrics:${VICTORIA_METRICS_IMAGE_TAG:-v1.146.0}
     command:
       - "--storageDataPath=/storage"
       - "--retentionPeriod=14"
@@ -44,7 +44,7 @@ services:
   # Pushes scraped metrics to VictoriaMetrics via remote write.
   vmagent:
     container_name: hl-vmagent
-    image: victoriametrics/vmagent:v1.146.0
+    image: victoriametrics/vmagent:${VICTORIA_METRICS_VMAGENT_IMAGE_TAG:-v1.146.0}
     command:
       - "-promscrape.config=/etc/vmagent/prometheus.yml"
       - "-remoteWrite.url=http://hl-victoria-metrics:8428/api/v1/write"
@@ -66,7 +66,7 @@ services:
   # Replaces Loki. Compatible with LogsQL.
   victoria-logs:
     container_name: hl-victoria-logs
-    image: victoriametrics/victoria-logs:v1.51.0
+    image: victoriametrics/victoria-logs:${VICTORIA_METRICS_LOGS_IMAGE_TAG:-v1.51.0}
     command:
       - "--storageDataPath=/storage"
       - "--retentionPeriod=14"
@@ -88,7 +88,7 @@ services:
   # Promtail — ships container logs to VictoriaLogs.
   promtail:
     container_name: hl-promtail
-    image: grafana/promtail:3.2.1
+    image: grafana/promtail:${VICTORIA_METRICS_PROMTAIL_IMAGE_TAG:-3.2.1}
     volumes:
       - ${PATH_APPS}/configs/victoria-metrics/promtail.yml:/etc/promtail/config.yml:ro,z
       - /var/log:/var/log:ro,z
@@ -108,7 +108,7 @@ services:
   # Node Exporter — host-level metrics (CPU, memory, disk, network)
   node-exporter:
     container_name: hl-node-exporter
-    image: prom/node-exporter:latest
+    image: prom/node-exporter:${VICTORIA_METRICS_NODE_EXPORTER_IMAGE_TAG:-latest}
     volumes:
       - /proc:/host/proc:ro,z
       - /sys:/host/sys:ro,z
@@ -130,7 +130,7 @@ services:
   # NOTE: requires seccomp=unconfined for syscalls needed to read container stats
   cadvisor:
     container_name: hl-cadvisor
-    image: gcr.io/cadvisor/cadvisor:v0.49.2
+    image: gcr.io/cadvisor/cadvisor:${VICTORIA_METRICS_CADVISOR_IMAGE_TAG:-v0.49.2}
     volumes:
       - /:/rootfs:ro,z
       - /var/run:/var/run:ro,z

@@ -14,6 +14,16 @@ export default {
   requires: ["traefik"],
   variables: [
     {
+      key: "WOODPECKER_SERVER_IMAGE_TAG",
+      default: "v3.11.0",
+      required: false,
+    },
+    {
+      key: "WOODPECKER_AGENT_IMAGE_TAG",
+      default: "v3.11.0",
+      required: false,
+    },
+    {
       key: "WOODPECKER_DOMAIN",
       question: "Public domain for Woodpecker?",
       default: "ci.${DOMAIN}",

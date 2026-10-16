@@ -57,3 +57,14 @@ Declared in `+meta.ts`. Requires the `traefik` stack. Server-level keys `DOCKER_
 | `WOODPECKER_GITHUB_CLIENT` | asked             | Client ID of the GitHub OAuth app            |
 | `WOODPECKER_GITHUB_SECRET` | asked, secret     | Client secret of the GitHub OAuth app        |
 | `WOODPECKER_ADMIN`         | asked             | GitHub login that administers Woodpecker     |
+
+## Image tags
+
+Each image takes its tag from its own variable; unset, compose uses the default below.
+Under `IMAGE_POLICY=pinned`, `rostok stack add` writes the exact version, and
+`rostok images update` moves it (see [commands](../../docs/commands.md)).
+
+| Variable                      | Default   | Image                                                          |
+| ----------------------------- | --------- | -------------------------------------------------------------- |
+| `WOODPECKER_SERVER_IMAGE_TAG` | `v3.11.0` | `woodpeckerci/woodpecker-server` (service `woodpecker-server`) |
+| `WOODPECKER_AGENT_IMAGE_TAG`  | `v3.11.0` | `woodpeckerci/woodpecker-agent` (service `woodpecker-agent`)   |

@@ -74,3 +74,14 @@ Declared in `+meta.ts`. Requires the `traefik` stack. Server-level keys (`DOMAIN
 | `DOCKER_REGISTRY_DOMAIN`   | `registry.${DOMAIN}` | Public host of the web UI and registry name |
 | `DOCKER_REGISTRY_USER`     | `admin`              | User name of the registry's login           |
 | `DOCKER_REGISTRY_PASSWORD` | generated, secret    | Password of the login; only the hook reads  |
+
+## Image tags
+
+Each image takes its tag from its own variable; unset, compose uses the default below.
+Under `IMAGE_POLICY=pinned`, `rostok stack add` writes the exact version, and
+`rostok images update` moves it (see [commands](../../docs/commands.md)).
+
+| Variable                       | Default  | Image                                              |
+| ------------------------------ | -------- | -------------------------------------------------- |
+| `DOCKER_REGISTRY_IMAGE_TAG`    | `2`      | `registry` (service `docker-registry`)             |
+| `DOCKER_REGISTRY_UI_IMAGE_TAG` | `latest` | `joxit/docker-registry-ui` (service `registry-ui`) |

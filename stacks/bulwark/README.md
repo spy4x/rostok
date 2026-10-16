@@ -72,3 +72,13 @@ extensions).
 
 Note: Bulwark is a JMAP webmail client. It is not an authentication
 proxy — for SSO, use [Authelia](../authelia/) or [the Stalwart auth endpoints](../stalwart/) directly.
+
+## Image tags
+
+Each image takes its tag from its own variable; unset, compose uses the default below.
+Under `IMAGE_POLICY=pinned`, `rostok stack add` writes the exact version, and
+`rostok images update` moves it (see [commands](../../docs/commands.md)).
+
+| Variable            | Default | Image                                             |
+| ------------------- | ------- | ------------------------------------------------- |
+| `BULWARK_IMAGE_TAG` | `1.7.6` | `ghcr.io/bulwarkmail/webmail` (service `bulwark`) |
