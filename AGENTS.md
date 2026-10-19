@@ -182,7 +182,12 @@ deploy, SSH, secrets or auth. CI on the PR is the Woodpecker check `ci/woodpecke
 Publishing follows the same rule: once the version-bump PR is merged
 and both gates are green, push the release tag without asking (see
 "Publish flow" below). JSR versions are immutable, so tag only the
-merged bump commit on `main`.
+merged bump commit on `main`. Releases are cut in batches (#483):
+one version bump and one tag once the work in flight has merged (the end
+of a session or a wave), not one per PR, or at once for a security or
+data-loss fix. The `publish` step retries a stalled `deno publish` itself,
+three attempts of 10 minutes each; restart the pipeline only after all
+three fail.
 
 ---
 
