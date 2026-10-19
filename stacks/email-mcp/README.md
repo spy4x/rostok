@@ -166,7 +166,10 @@ and the mail.
 
 **Upgrading a server deployed before this check was enforced.** Older versions
 wrote `EMAIL_MCP_VERIFY_SSL=false` to the server's `.env` and did not verify.
-That key is now ignored; delete the line. Before the next deploy, check that
+That key is now ignored; delete the line. A project with its own
+`stacks/email-mcp/` folder deploys that folder instead of the stack shipped
+with the CLI, so it keeps the old behaviour, and misses every later fix to this
+stack, until the folder is removed or updated. Before the next deploy, check that
 the mail host presents a valid certificate for its name:
 
 ```bash
@@ -193,31 +196,45 @@ assistant cannot save received attachments inside the container.
 ## Second account
 
 Set `EMAIL_MCP_USER_2` and `EMAIL_MCP_PASSWORD_2`; both accounts use the same
-host and port settings. For more than two, extend `renderConfig` in
-`before.deploy.ts` (mcp-email-server reads several `[[emails]]` blocks only
-from the TOML file, not from env vars).
+host and port settings. The stack renders at most two accounts. mcp-email-server
+reads several `[[emails]]` blocks only from its TOML file, not from env vars,
+and the shipped `before.deploy.ts` writes that file on every deploy. More
+accounts would need a copy of the whole stack in the project's
+`stacks/email-mcp/` folder, which replaces the shipped stack and gets none of
+its later fixes.
 
 ## Security notes
 
 - The guard is described under "How it is protected" above. It runs as a non-root user with a
   read-only filesystem, no capabilities, `no-new-privileges:true` and a 128M memory limit. Deno
   lets it listen on 9557, reach only `hl-email-mcp-upstream:9557`, and read only its two keys.
-- The upstream container has `no-new-privileges:true` and a 256M memory limit. Its DNS rebinding
-  protection allows only the host name the guard calls it by, and localhost.
+- The upstream container runs as root, with `no-new-privileges:true` and a 256M memory limit. It
+  starts the program the image already holds (`/app/.venv/bin/mcp-email-server`), so a start
+  downloads nothing. Its DNS rebinding protection only makes it refuse a request whose `Host`
+  header is not the name the guard calls it by, or localhost; that is not access control, since
+  any caller can send that name. What keeps other containers away from it is the internal
+  network only the guard shares.
 - No Traefik labels on either container.
-- The MCP holds your plaintext password in env. Rotate via
-  `setup email update` on the mailserver if leaked.
+- Between Open WebUI, the guard and the upstream server, the traffic is plain HTTP, not TLS, on
+  the Docker networks above. The token and the mail cross only `hl-email-mcp`, which only Open
+  WebUI and the guard join, and `hl-email-mcp-upstream`, which only the guard and the upstream
+  server join. Anyone with root or `docker` access on the server can still read both.
+- The mailbox password is kept in plain text twice on the server: in the server's `.env`, and in
+  `stacks/email-mcp/config.toml` (mode 0600), which the upstream container reads as
+  `/config.toml`. Whoever controls the upstream container can read it, which is why the guard
+  refuses every `attachments` argument. If it leaks, change it on the mail server (for Docker
+  Mailserver, `setup email update`), put the new value in `EMAIL_MCP_PASSWORD` and deploy.
 
 ## Troubleshooting
 
-| Symptom                                       | Cause                                    | Fix                                                               |
-| --------------------------------------------- | ---------------------------------------- | ----------------------------------------------------------------- |
-| `535 Authentication failed`                   | Wrong password or missing account        | `setup email update you@example.com`                              |
-| `Connection refused` on port 993/587          | Firewall blocks home → cloud             | Check cloud security group                                        |
-| `CERTIFICATE_VERIFY_FAILED`                   | Certificate not valid for the host       | See "TLS" above; also check the server clock with `date`          |
-| Tools not showing in Open WebUI               | Switch off, or not on the network        | `OPEN_WEBUI_ENABLE_EMAIL_MCP=true`, then `rostok deploy <server>` |
-| Tools not showing for a user                  | The tools are for admins only            | Make the account an admin, or use an admin account                |
-| 401 from the guard                            | Open WebUI sends no or another token     | `OPEN_WEBUI_EMAIL_MCP_TOKEN=${EMAIL_MCP_TOKEN}` below that line   |
-| 503 from the guard                            | `EMAIL_MCP_TOKEN` empty or too short     | A value of at least 32 characters, then deploy                    |
-| "changes mail and this user may only read it" | Account not in `EMAIL_MCP_ALLOWED_USERS` | Add its Open WebUI login address, then deploy                     |
-| 403 from MCP                                  | DNS rebinding protection blocks origin   | Add host to `MCP_ALLOWED_HOSTS` / origin to `MCP_ALLOWED_ORIGINS` |
+| Symptom                                       | Cause                                    | Fix                                                                                                                |
+| --------------------------------------------- | ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| `535 Authentication failed`                   | Wrong password or missing account        | `setup email update you@example.com`                                                                               |
+| `Connection refused` on port 993/587          | Firewall blocks home → cloud             | Check cloud security group                                                                                         |
+| `CERTIFICATE_VERIFY_FAILED`                   | Certificate not valid for the host       | See "TLS" above; also check the server clock with `date`                                                           |
+| Tools not showing in Open WebUI               | Switch off, or not on the network        | `OPEN_WEBUI_ENABLE_EMAIL_MCP=true`, then `rostok deploy <server>`                                                  |
+| Tools not showing for a user                  | The tools are for admins only            | Make the account an admin, or use an admin account                                                                 |
+| 401 from the guard                            | Open WebUI sends no or another token     | `OPEN_WEBUI_EMAIL_MCP_TOKEN=${EMAIL_MCP_TOKEN}` below that line                                                    |
+| 503 from the guard                            | `EMAIL_MCP_TOKEN` empty or too short     | A value of at least 32 characters, then deploy                                                                     |
+| "changes mail and this user may only read it" | Account not in `EMAIL_MCP_ALLOWED_USERS` | Add its Open WebUI login address, then deploy                                                                      |
+| 403 from MCP                                  | DNS rebinding protection blocks origin   | Set `MCP_ALLOWED_HOSTS` / `MCP_ALLOWED_ORIGINS` of `upstream` in `servers/<server>/compose-override/email-mcp.yml` |
