@@ -8,7 +8,14 @@ interface Compose {
   networks: Record<string, { name?: string; external?: boolean; internal?: boolean }>
   services: Record<
     string,
-    { container_name: string; networks: string[]; ports?: string[]; environment?: string[] }
+    {
+      container_name: string
+      networks: string[]
+      ports?: string[]
+      environment?: string[]
+      entrypoint?: string[]
+      command?: string[]
+    }
   >
 }
 
@@ -53,4 +60,15 @@ Deno.test("email-mcp: compose refuses to start the guard without EMAIL_MCP_TOKEN
     compose.services["email-mcp"].environment?.includes("EMAIL_MCP_TOKEN=${EMAIL_MCP_TOKEN:?}"),
     true,
   )
+})
+
+Deno.test("email-mcp: the upstream server starts the installed program, not uv run", () => {
+  // The image's own entrypoint, `uv run mcp-email-server`, rebuilds the project at every start and
+  // fetches its build tool from PyPI (spy4x/rostok#410).
+  assertEquals(compose.services.upstream.entrypoint, [
+    `tini`,
+    `--`,
+    `/app/.venv/bin/mcp-email-server`,
+  ])
+  assertEquals(compose.services.upstream.command, [`streamable-http`])
 })

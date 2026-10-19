@@ -59,6 +59,10 @@ services:
   upstream:
     container_name: hl-email-mcp-upstream
     image: ghcr.io/ai-zerolab/mcp-email-server:${EMAIL_MCP_IMAGE_TAG:-latest}
+    # Start the program the image already holds. The image's own entrypoint, `uv run`, builds the
+    # project again at every start and fetches its build tool from PyPI, with no version: the
+    # container would run whatever PyPI serves that day, and not start at all without it.
+    entrypoint: ["tini", "--", "/app/.venv/bin/mcp-email-server"]
     command: ["streamable-http"]
     restart: unless-stopped
     environment:
