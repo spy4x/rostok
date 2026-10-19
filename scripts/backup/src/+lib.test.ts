@@ -12,12 +12,15 @@
 
 import { assertEquals, assertRejects } from "@std/assert"
 
+// Each import gets its own query string; it only has to differ within one run.
+let importCount = 0
+
 async function importLibWith(env: Record<string, string>) {
   const previous = new Map<string, string | undefined>()
   for (const key of Object.keys(env)) previous.set(key, Deno.env.get(key))
   try {
     for (const [key, value] of Object.entries(env)) Deno.env.set(key, value)
-    return await import(`./+lib.ts?bust=${crypto.randomUUID()}`)
+    return await import(`./+lib.ts?bust=${++importCount}`)
   } finally {
     for (const [key, value] of previous) {
       value === undefined ? Deno.env.delete(key) : Deno.env.set(key, value)
