@@ -108,6 +108,26 @@ stays allowed: two browsers that both need the relay reach each other through it
 listens on that public address is therefore reachable through the relay even when a firewall in
 front of the server blocks its port, so bind such a service to a private address or to loopback.
 
+## Secrets in the container log
+
+MiroTalk prints its whole configuration to its log at every start, and that includes the REST API
+key (`MIROTALK_API_KEY_SECRET`) and the TURN username and credential in clear text. No setting of
+the image turns that line off: `LOGS_DEBUG=false` hides only debug lines, and this one is not.
+
+So whoever can read the log can read both keys:
+
+- anyone who can run `docker logs hl-mirotalk` on the server, which means root and every member
+  of the `docker` group;
+- if the `victoria-metrics` stack runs on the same server, its log collector copies every
+  container's log into VictoriaLogs and keeps it for the store's whole retention period. Then
+  everyone who can query it reads the keys too: Grafana users, and any container on the shared
+  `proxy` network, which reaches `http://hl-victoria-logs:9428` without a password.
+
+The TURN login is given to every browser that joins a room anyway (see "What the relay refuses"),
+so the log adds nothing there. The API key is the one that matters: with it, anyone can create
+meeting links and join tokens. If it has leaked, change `MIROTALK_API_KEY_SECRET` and redeploy;
+the copies already in the log store stay until its retention ends.
+
 ## TURN over TLS
 
 The browser advertises `turns://<MIROTALK_DOMAIN>:5349` to peers. The
