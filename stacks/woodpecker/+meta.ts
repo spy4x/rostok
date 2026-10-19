@@ -29,6 +29,11 @@ export default {
       required: false,
     },
     {
+      key: "WOODPECKER_MAX_WORKFLOWS",
+      default: "4",
+      required: false,
+    },
+    {
       key: "WOODPECKER_DOMAIN",
       question: "Public domain for Woodpecker?",
       default: "ci.${DOMAIN}",
