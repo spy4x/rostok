@@ -7,6 +7,7 @@ import {
   isLocalSshAddress,
   isServerKey,
   LOCAL_SSH_ADDRESS,
+  nestedStackKeyPrefixOwner,
   normalizeRemotePath,
   parseSshAddress,
   pathComponents,
@@ -100,6 +101,16 @@ Deno.test("hasReservedStackKeyPrefix flags a stack whose own prefix collides wit
 Deno.test("hasReservedStackKeyPrefix exempts the two pre-existing docker-* catalog stacks", () => {
   assertFalse(hasReservedStackKeyPrefix("docker-registry"))
   assertFalse(hasReservedStackKeyPrefix("docker-sock-proxy"))
+})
+
+Deno.test("nestedStackKeyPrefixOwner finds a nested prefix either way round, not a sibling (#265)", () => {
+  assertEquals(nestedStackKeyPrefixOwner("traefik-extra", ["gatus", "traefik"]), "traefik")
+  assertEquals(nestedStackKeyPrefixOwner("traefik", ["traefik-extra"]), "traefik-extra")
+  // Same prefix from a dash and an underscore spelling.
+  assertEquals(nestedStackKeyPrefixOwner("my_app", ["my-app"]), "my-app")
+  // TRAEFIKX_ does not start with TRAEFIK_: the trailing underscore keeps siblings apart.
+  assertEquals(nestedStackKeyPrefixOwner("traefikx", ["traefik"]), undefined)
+  assertEquals(nestedStackKeyPrefixOwner("traefik", ["traefik"]), undefined)
 })
 
 Deno.test("accepts ordinary SSH targets", () => {

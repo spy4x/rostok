@@ -13,7 +13,13 @@
 // set before staging even starts.
 
 import { UserError } from "../errors.ts"
-import { hasReservedStackKeyPrefix, stackKeyPrefix } from "../server-keys.ts"
+import { loadCatalog } from "../catalog.ts"
+import {
+  hasReservedStackKeyPrefix,
+  nestedStackKeyPrefixMessage,
+  nestedStackKeyPrefixOwner,
+  stackKeyPrefix,
+} from "../server-keys.ts"
 import type { StackConfig } from "./deploy-script.ts"
 
 /** Lowercase letters, digits, dashes and underscores; starts with a letter or digit; at most 63 characters. */
@@ -30,9 +36,15 @@ function validateStackValue(value: string, field: string, configPath: string): v
 
 /**
  * Validate every stack's `name` and `deployAs` (when set). Throws on the
- * first bad value, naming it, the field, and `configPath`.
+ * first bad value, naming it, the field, and `configPath`. A name whose
+ * key prefix nests with another configured stack's or a `catalogNames`
+ * stack's is refused too (#265).
  */
-export function validateStackConfigs(stacks: StackConfig[], configPath: string): void {
+export function validateStackConfigs(
+  stacks: StackConfig[],
+  configPath: string,
+  catalogNames: readonly string[] = loadCatalog().map((entry) => entry.name),
+): void {
   for (const stack of stacks) {
     validateStackValue(stack.name, "stack name", configPath)
     if (stack.deployAs !== undefined) {
@@ -49,6 +61,13 @@ export function validateStackConfigs(stacks: StackConfig[], configPath: string):
           stackKeyPrefix(stack.name)
         }" is reserved — rename the stack.`,
       )
+    }
+    const nestedWith = nestedStackKeyPrefixOwner(stack.name, [
+      ...stacks.map((s) => s.name),
+      ...catalogNames,
+    ])
+    if (nestedWith !== undefined) {
+      throw new UserError(`${nestedStackKeyPrefixMessage(stack.name, nestedWith)} (${configPath})`)
     }
   }
 }
