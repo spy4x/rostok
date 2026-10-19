@@ -1,0 +1,11 @@
+# The browser server with its Playwright package installed when the image is built, so a start
+# needs no registry (spy4x/rostok#410). The image holds the browsers but not the package.
+ARG PLAYWRIGHT_IMAGE_TAG=v1.60.0-noble
+FROM mcr.microsoft.com/playwright:${PLAYWRIGHT_IMAGE_TAG}
+ARG PLAYWRIGHT_IMAGE_TAG
+# The package must be the release the image's browsers belong to: v1.60.0-noble → 1.60.0.
+RUN version="${PLAYWRIGHT_IMAGE_TAG#v}" && version="${version%%-*}" && \
+    npm install -g --silent "playwright@${version}"
+USER pwuser
+WORKDIR /home/pwuser
+ENTRYPOINT ["playwright", "run-server", "--port", "3000", "--host", "0.0.0.0"]

@@ -177,6 +177,7 @@
       "!stacks/transmission/compose.yml",
       "!stacks/playwright/+meta.ts",
       "!stacks/playwright/Dockerfile.mcp-proxy",
+      "!stacks/playwright/Dockerfile.server",
       "!stacks/playwright/after.deploy.ts",
       "!stacks/playwright/compose.yml",
       "!stacks/searxng/+meta.ts",
