@@ -147,6 +147,39 @@ export function hasReservedStackKeyPrefix(stackName: string): boolean {
   return RESERVED_STACK_KEY_PREFIXES.some((reserved) => prefix.startsWith(reserved))
 }
 
+/**
+ * The first of `otherNames` whose key prefix nests with `stackName`'s: one prefix starts with the
+ * other (`traefik-extra` → `TRAEFIK_EXTRA_` starts with `traefik`'s `TRAEFIK_`). A hook receives
+ * every key that starts with its own stack's prefix (cli/deploy/hooks.ts), so nested prefixes
+ * would hand one stack's keys, secrets included, to another stack's hooks (#265). `stackName`
+ * itself is skipped. Undefined when nothing nests.
+ */
+export function nestedStackKeyPrefixOwner(
+  stackName: string,
+  otherNames: Iterable<string>,
+): string | undefined {
+  const prefix = stackKeyPrefix(stackName)
+  for (const other of otherNames) {
+    if (other === stackName) continue
+    const otherPrefix = stackKeyPrefix(other)
+    if (prefix.startsWith(otherPrefix) || otherPrefix.startsWith(prefix)) return other
+  }
+  return undefined
+}
+
+/**
+ * The refusal for two stacks whose key prefixes nest (see nestedStackKeyPrefixOwner). It asks to
+ * rename the stack with the longer prefix, or `stackName` when both prefixes are equal.
+ */
+export function nestedStackKeyPrefixMessage(stackName: string, otherName: string): string {
+  const [longer, shorter] = stackKeyPrefix(stackName).length >= stackKeyPrefix(otherName).length
+    ? [stackName, otherName]
+    : [otherName, stackName]
+  return `stack "${longer}"'s key prefix "${stackKeyPrefix(longer)}" starts with stack ` +
+    `"${shorter}"'s "${stackKeyPrefix(shorter)}", so ${shorter}'s hooks would receive ` +
+    `${longer}'s keys — rename "${longer}".`
+}
+
 /** Lowercase letters, digits and dashes; starts with a letter or digit; at most 63 characters. */
 export const SERVER_NAME_PATTERN = /^[a-z0-9][a-z0-9-]{0,62}$/
 

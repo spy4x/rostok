@@ -1,5 +1,7 @@
-import { assertStringIncludes, assertThrows } from "@std/assert"
+import { assertEquals, assertStringIncludes, assertThrows } from "@std/assert"
 import { UserError } from "../errors.ts"
+import { loadCatalog } from "../catalog.ts"
+import { nestedStackKeyPrefixOwner } from "../server-keys.ts"
 import { validateStackConfigs } from "./validate-stack-config.ts"
 
 const CONFIG_PATH = "servers/home/config.json"
@@ -84,4 +86,34 @@ Deno.test("validateStackConfigs: names the bad value in the error", () => {
     UserError,
   )
   assertStringIncludes(err.message, "evil name")
+})
+
+Deno.test("no two catalog stacks have nested key prefixes (#265)", () => {
+  const names = loadCatalog().map((entry) => entry.name)
+  for (const name of names) {
+    assertEquals(nestedStackKeyPrefixOwner(name, names), undefined, name)
+  }
+})
+
+Deno.test("validateStackConfigs: refuses traefik-extra next to an installed traefik, naming both (#265)", () => {
+  const err = assertThrows(
+    () => validateStackConfigs([{ name: "traefik" }, { name: "traefik-extra" }], CONFIG_PATH, []),
+    UserError,
+  )
+  // The installed traefik comes first, yet the message asks to rename traefik-extra.
+  assertStringIncludes(
+    err.message,
+    `stack "traefik-extra"'s key prefix "TRAEFIK_EXTRA_" starts with stack "traefik"'s "TRAEFIK_"`,
+  )
+  assertStringIncludes(err.message, `rename "traefik-extra"`)
+  assertStringIncludes(err.message, CONFIG_PATH)
+})
+
+Deno.test("validateStackConfigs: refuses traefik-extra when only the catalog has traefik (#265)", () => {
+  const err = assertThrows(
+    () => validateStackConfigs([{ name: "traefik-extra" }], CONFIG_PATH),
+    UserError,
+  )
+  assertStringIncludes(err.message, `rename "traefik-extra"`)
+  assertStringIncludes(err.message, `stack "traefik"'s "TRAEFIK_"`)
 })
