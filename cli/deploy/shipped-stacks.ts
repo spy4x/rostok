@@ -92,6 +92,7 @@ export const SHIPPED_STACK_FILES: Record<string, readonly string[]> = {
     "searxng-settings.yml",
   ],
   "open-webui": [
+    "Dockerfile.mcpo",
     "after.deploy.ts",
     "compose.yml",
     "hook-lib.ts",

@@ -133,11 +133,27 @@ services:
       - "traefik.http.routers.hl-open-webui.tls.certresolver=myresolver"
 
   # --- MCP Proxy (bridges stdio MCP servers to OpenAPI HTTP for Open WebUI) ---
-  # mcpo Docker image includes Node.js (npx) and Python (uvx) for running MCP servers
-  # Config file defines which MCP servers to spawn (YouTube Transcript, Fetch, etc.)
+  # Built from Dockerfile.mcpo: the mcpo image with both tool servers installed at fixed versions,
+  # so a start downloads nothing (spy4x/rostok#410). The config file starts the installed commands.
   mcpo:
     container_name: hl-mcpo
-    image: ghcr.io/open-webui/mcpo:${OPEN_WEBUI_MCPO_IMAGE_TAG:-main}
+    build:
+      context: .
+      dockerfile: Dockerfile.mcpo
+      args:
+        # The base image's tag. Its default is the one in Dockerfile.mcpo; change both together.
+        MCPO_IMAGE_TAG: ${OPEN_WEBUI_MCPO_IMAGE_TAG:-git-788ff92}
+    # Healthy once both tool servers answer: mcpo serves a tool's spec only after it started.
+    healthcheck:
+      test:
+        - CMD
+        - python3
+        - -c
+        - "import urllib.request as u; [u.urlopen(f'http://127.0.0.1:8000/{t}/openapi.json', timeout=5) for t in ('youtube-transcript', 'fetch')]"
+      interval: 30s
+      timeout: 15s
+      retries: 3
+      start_period: 30s
     restart: unless-stopped
     command: ["--config", "/config/mcp-servers.json", "--api-key", "${OPEN_WEBUI_MCPO_API_KEY:?}"]
     volumes:

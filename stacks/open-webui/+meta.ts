@@ -56,7 +56,7 @@ export default {
     },
     {
       key: "OPEN_WEBUI_MCPO_IMAGE_TAG",
-      default: "main",
+      default: "git-788ff92",
       required: false,
     },
     {
