@@ -947,6 +947,26 @@ Deno.test("assertNoKeepOwnerParent: matches whole path segments, not string pref
   )
 })
 
+Deno.test("assertNoKeepOwnerParent: refuses a volume inside a keepOwner folder, naming both (#335)", () => {
+  const err = assertThrows(
+    () => assertNoKeepOwnerParent(["/srv/v/gitea/db/sub"], ["/srv/v/gitea/db"]),
+    UserError,
+  )
+  assertStringIncludes(err.message, `"/srv/v/gitea/db/sub" is inside the keep-owner folder`)
+  assertStringIncludes(err.message, `"/srv/v/gitea/db"`)
+  // Doubled slashes and dots do not hide it either.
+  assertThrows(
+    () => assertNoKeepOwnerParent(["/srv/v//gitea/./db/sub/"], ["/srv/v/gitea/db"]),
+    UserError,
+    "inside the keep-owner folder",
+  )
+})
+
+Deno.test("assertNoKeepOwnerParent: a sibling sharing a string prefix is not inside the keepOwner folder (#335)", () => {
+  // /srv/v/gitea/db2 starts with the string /srv/v/gitea/db but is no folder inside it.
+  assertNoKeepOwnerParent(["/srv/v/gitea/db2", "/srv/v/gitea/db"], ["/srv/v/gitea/db"])
+})
+
 Deno.test("generateVolumeCreationScript: a volume equal to its keepOwner folder is not a parent", async () => {
   const root = await tempRoot("rostok-volumes-keep-eq-")
   try {

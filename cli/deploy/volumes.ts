@@ -300,11 +300,13 @@ function pathKey(path: string): string {
 
 /**
  * Throw a UserError when a volume folder is a strict parent of a `keepOwner`
- * folder: the `chown -R` of the parent would reach the folder whose owner
- * must stay (#324). A volume equal to the keep-owner folder is the normal
- * case. Compared by path segments, so `/v/git` is no parent of `/v/gitea/db`.
- * Deploy calls it before any remote command; the script generator calls it
- * too, so no caller can build a script that chowns into a kept folder.
+ * folder, or sits inside one: the parent's `chown -R` would reach the folder
+ * whose owner must stay (#324), and so would the chown of a volume nested in
+ * it (#335). A volume equal to the keep-owner folder is the normal case.
+ * Compared by path segments, so `/v/git` is no parent of `/v/gitea/db` and
+ * `/v/gitea/db2` is not inside `/v/gitea/db`. Deploy calls it before any
+ * remote command; the script generator calls it too, so no caller can build
+ * a script that chowns into a kept folder.
  */
 export function assertNoKeepOwnerParent(volumePaths: string[], keepOwner: string[]): void {
   for (const keep of keepOwner) {
@@ -316,6 +318,13 @@ export function assertNoKeepOwnerParent(volumePaths: string[], keepOwner: string
           `volume "${volume}" contains the keep-owner folder "${keep}": chown -R on the volume ` +
             `would change the owner of "${keep}". Mount the two as siblings, or drop the ` +
             `parent volume, in the stack's compose.yml.`,
+        )
+      }
+      if (parts.length > kept.length && kept.every((c, i) => parts[i] === c)) {
+        throw new UserError(
+          `volume "${volume}" is inside the keep-owner folder "${keep}": chown -R on the volume ` +
+            `would change the owner of part of "${keep}". Mount the two as siblings, or drop the ` +
+            `nested volume, in the stack's compose.yml.`,
         )
       }
     }
