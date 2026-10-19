@@ -31,8 +31,10 @@ no task text).
 
 The stack does not start until `servers/<server>/configs/caldav-tasks-web.env` exists: write it
 before the first deploy. It holds the app's own settings, as env vars in
-`${PATH_APPS}/configs/caldav-tasks-web.env`. These seven are required; the app refuses to start
-without any of them:
+`${PATH_APPS}/configs/caldav-tasks-web.env`. It holds secrets, so `rostok env encrypt` encrypts it to
+`configs/caldav-tasks-web.env.age`, which is safe to commit; `rostok env decrypt` writes the
+plaintext file back in a fresh clone. Run `rostok env encrypt` after every edit. These seven are
+required; the app refuses to start without any of them:
 
 | Variable              | Meaning                                                                                   |
 | --------------------- | ----------------------------------------------------------------------------------------- |
@@ -86,6 +88,5 @@ does. Deploying always pulls the configured tag (`pull_policy: always`), and Wat
 ## Maintenance
 
 - **Rotate the CalDAV password**: change it on the CalDAV server, edit `caldav-tasks-web.env`,
-  redeploy. That file is gitignored and copied to the server as it is; `deno task env:encrypt`
-  covers only `.env*` names, so it stays plain text (spy4x/rostok#350).
+  run `rostok env encrypt` to refresh `caldav-tasks-web.env.age`, then redeploy.
 - **Rotate `SESSION_SECRET`**: same steps; it signs the owner out.
