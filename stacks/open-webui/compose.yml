@@ -143,13 +143,14 @@ services:
       args:
         # The base image's tag. Its default is the one in Dockerfile.mcpo; change both together.
         MCPO_IMAGE_TAG: ${OPEN_WEBUI_MCPO_IMAGE_TAG:-git-788ff92}
-    # Healthy once both tool servers answer: mcpo serves a tool's spec only after it started.
+    # Healthy once both tool servers started: mcpo serves a tool's spec even when its server failed
+    # to start, but then with no paths, so the check asserts that each spec lists some.
     healthcheck:
       test:
         - CMD
         - python3
         - -c
-        - "import urllib.request as u; [u.urlopen(f'http://127.0.0.1:8000/{t}/openapi.json', timeout=5) for t in ('youtube-transcript', 'fetch')]"
+        - "import json, urllib.request as u; assert all(json.load(u.urlopen(f'http://127.0.0.1:8000/{t}/openapi.json', timeout=5))['paths'] for t in ('youtube-transcript', 'fetch'))"
       interval: 30s
       timeout: 15s
       retries: 3
