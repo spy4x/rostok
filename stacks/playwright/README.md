@@ -40,8 +40,9 @@ port 3000.
 
 Neither the browser server on port 3000 nor the MCP endpoint has authentication, and whoever
 reaches either one drives a browser inside your network. So neither is on the shared `proxy`
-network. Both sit on a network of their own, `hl-playwright-mcp`, and run as the unprivileged
-`pwuser`, with every Linux capability dropped and `no-new-privileges` set. Chromium runs
+network. Both sit on a network of their own, `hl-playwright-mcp`. Neither runs as root: the
+browser server `hl-playwright` and the MCP proxy `hl-playwright-mcp` each run as the unprivileged
+`pwuser` (uid 1001), with every Linux capability dropped and `no-new-privileges` set. Chromium runs
 without its own sandbox, so these container limits are what contains a page that breaks out of
 the browser. Docker's default seccomp filter stays on: Chromium's sandbox would need it turned
 off, which is the worse trade.
@@ -82,16 +83,18 @@ No direct access needed - services connect via Docker network.
 Nothing is routed through Traefik. Only Open WebUI, and any container you connect to
 `hl-playwright-mcp` yourself, reaches the two browsers.
 
-| Key                    | Default         | Meaning                                                            |
-| ---------------------- | --------------- | ------------------------------------------------------------------ |
-| `PLAYWRIGHT_IMAGE_TAG` | `v1.60.0-noble` | Image tag of `mcr.microsoft.com/playwright` (service `playwright`) |
+| Key                    | Default         | Meaning                                                |
+| ---------------------- | --------------- | ------------------------------------------------------ |
+| `PLAYWRIGHT_IMAGE_TAG` | `v1.60.0-noble` | Base tag of `Dockerfile.server` (service `playwright`) |
 
-`PLAYWRIGHT_IMAGE_TAG` must stay on the same Playwright version as the `playwright@` command in
-`compose.yml` and the base image in `Dockerfile.mcp-proxy` (1.60.0 today): the browsers in the
-image belong to that version. Change all three together.
-
-The MCP proxy (service `playwright-mcp`) is built from `Dockerfile.mcp-proxy`, whose base image
-is pinned there, so it has no tag variable.
+Both containers are built on the server, so neither downloads anything when it starts. The
+browser server (service `playwright`) is built from `Dockerfile.server`: the
+`mcr.microsoft.com/playwright` image at `PLAYWRIGHT_IMAGE_TAG`, plus the `playwright` package of
+the same release (`v1.60.0-noble` installs `playwright@1.60.0`), since the browsers in the image
+belong to that release. The MCP proxy (service `playwright-mcp`) is built from
+`Dockerfile.mcp-proxy`, whose base image is pinned there, so it has no tag variable. Keep that
+base image on the same Playwright release as `PLAYWRIGHT_IMAGE_TAG` (1.60.0 today) and change
+both together.
 
 ## Resources
 
