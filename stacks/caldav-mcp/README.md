@@ -57,8 +57,9 @@ stops when `CALDAV_MCP_PUBLIC=true` and this key is blank (`before.deploy.ts`); 
 [Public with OAuth](#public-with-oauth) shows. An internal server leaves it blank.
 
 `CALDAV_MCP_TOOLS=no-delete` leaves out `delete_calendar`, `delete_event` and `delete_todo`, so a
-stolen or misused token cannot delete anything. `all` offers them too, and `read-only` offers only
-the tools that change nothing. caldav-mcp refuses to start on any other value. The setting applies
+stolen or misused token cannot delete a calendar, event or task. It can still overwrite or clear
+the fields of one through `update_event` and `update_todo`. `all` offers the delete tools too, and
+`read-only` offers only the tools that change nothing. caldav-mcp refuses to start on any other value. The setting applies
 to every client of this server.
 
 For Stalwart on `mail.${DOMAIN}`, the URL is `https://mail.${DOMAIN}/dav/cal/`.
