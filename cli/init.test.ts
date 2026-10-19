@@ -177,6 +177,35 @@ Deno.test("initProject + key generation leaves .age/key.txt gitignored", async (
   }
 })
 
+// #350 — `rostok env encrypt` writes servers/<server>/configs/<app>.env.age
+// next to the plaintext <app>.env. Asked of git itself, not of the
+// template's text, so a rule that only looks right can't pass.
+async function gitIgnores(cwd: string, path: string): Promise<boolean> {
+  const out = await new Deno.Command("git", {
+    args: ["check-ignore", "-q", "--no-index", path],
+    cwd,
+    env: strippedGitEnv(),
+    clearEnv: true,
+    stdout: "null",
+    stderr: "null",
+  }).output()
+  return out.success
+}
+
+Deno.test("initProject: .gitignore keeps configs/<app>.env out of git but lets its .age copy in", async () => {
+  const tmp = await Deno.makeTempDir({ prefix: "rostok-init-configs-" })
+  try {
+    await gitFixture(tmp, "init")
+    await withoutGitEnv(() => initProject(tmp))
+    assertEquals(await gitIgnores(tmp, "servers/cloud/configs/mig.env"), true)
+    assertEquals(await gitIgnores(tmp, "servers/cloud/configs/mig.env.age"), false)
+    assertEquals(await gitIgnores(tmp, "servers/cloud/.env"), true)
+    assertEquals(await gitIgnores(tmp, "servers/cloud/.env.age"), false)
+  } finally {
+    await Deno.remove(tmp, { recursive: true })
+  }
+})
+
 Deno.test("initProject backfills the .age/ rule into a 1.0.3-style .gitignore", async () => {
   const tmp = await Deno.makeTempDir({ prefix: "rostok-init-age-" })
   try {

@@ -29,7 +29,7 @@ so `.env.age` files are safe to commit.
 | `rostok deploy <server> [stack]`             | Deploy — rsyncs the server's files and runs `docker compose` over SSH, or locally for `SSH_ADDRESS=local` |
 | `rostok images outdated [server]`           | List each pinned image next to the newest version the registry has               |
 | `rostok images update <server> [stack]`      | Move the outdated pins in the server's `.env`. Does not deploy                   |
-| `rostok env encrypt`                         | Encrypt `.env` → `.env.age` (per-stack + root)                                   |
+| `rostok env encrypt`                         | Encrypt `.env` → `.env.age` (per-server + root, and each `configs/<app>.env`)    |
 | `rostok env decrypt`                         | Decrypt `.env.age` → `.env`                                                      |
 | `rostok env status`                          | Encryption posture + next steps                                                  |
 | `rostok env setup`                           | Generate `.age/key.txt` — `rostok` hides the key generation for you              |

@@ -84,7 +84,7 @@
     "@std/fs": "jsr:@std/fs@^1.0.21",
     "@std/path": "jsr:@std/path@^1.1.4",
     "@spy4x/platform": "jsr:@spy4x/platform@1.73.0",
-    "@spy4x/server": "jsr:@spy4x/server@1.2.0",
+    "@spy4x/server": "jsr:@spy4x/server@1.81.0",
     "arktype": "npm:arktype@^2.2.3",
     "yaml": "npm:yaml@^2.8.2"
   },

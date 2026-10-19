@@ -31,6 +31,9 @@ const GITIGNORE_TEMPLATE = `# Plaintext secrets — never commit. The encrypted 
 # *.age pair) are safe to commit; that's the whole point of encryption.
 .env
 .env.root
+# A stack's own env file (servers/<server>/configs/<app>.env). This
+# rule doesn't match its encrypted .age copy, which is safe to commit.
+*.env
 
 # age encryption private key — decrypts every encrypted env file in
 # this project. NEVER commit this.

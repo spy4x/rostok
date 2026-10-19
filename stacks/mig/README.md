@@ -128,7 +128,10 @@ which router serves them.
 | `MIG_EMBED_MIDDLEWARES` | none (follows `MIG_MIDDLEWARES`)                          | Chain for `/embed`; see "Embedding in your own site". |
 
 The stack does not start until `servers/<server>/configs/mig.env` exists: write it
-before the first deploy. It holds mig's own settings, as env vars in `${PATH_APPS}/configs/mig.env`:
+before the first deploy. It holds mig's own settings, as env vars in `${PATH_APPS}/configs/mig.env`.
+It holds secrets, so `rostok env encrypt` encrypts it to `configs/mig.env.age`, which is safe to
+commit; `rostok env decrypt` writes `mig.env` back in a fresh clone. Run `rostok env encrypt` after
+every edit.
 
 ```bash
 # Required
@@ -175,7 +178,7 @@ snapshot.
 - **Read all bookings**: `docker exec hl-mig cat /data/bookings.json | jq`
 - **Manually trigger backup**: `deno task backup`
 - **Update**: `deno task deploy <server> mig` (pulls new image, restarts)
-- **Rotate `CANCEL_SECRET`**: edit `mig.env`, `deno task env:encrypt`,
+- **Rotate `CANCEL_SECRET`**: edit `mig.env`, run `rostok env encrypt`,
   redeploy. ⚠️ WARNING: rotating `CANCEL_SECRET` invalidates every
   existing cancel link. Do this only if tokens have leaked.
 - **Rotate the SMTP password**: in production mig sends from the
