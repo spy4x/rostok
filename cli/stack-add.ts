@@ -29,7 +29,7 @@ import {
   serverContextFromRoot,
   writeEnvFilePreservingFormat,
 } from "./env-files.ts"
-import { type CatalogEntry, findStack } from "./catalog.ts"
+import { type CatalogEntry, findStack, loadCatalog } from "./catalog.ts"
 import { resolveCatalog } from "./catalog-paths.ts"
 import { decidePrompt } from "./prompt-rule.ts"
 import { resolveVariable } from "./defaults.ts"
@@ -42,7 +42,13 @@ import {
   promptValue,
   withKeyLabel,
 } from "./prompts.ts"
-import { hasReservedStackKeyPrefix, serverDirFor, stackKeyPrefix } from "./server-keys.ts"
+import {
+  hasReservedStackKeyPrefix,
+  nestedStackKeyPrefixMessage,
+  nestedStackKeyPrefixOwner,
+  serverDirFor,
+  stackKeyPrefix,
+} from "./server-keys.ts"
 import { serverNotFoundMessage, UserError } from "./errors.ts"
 import type { resolveStackFiles } from "./deploy/stack-files.ts"
 import { type ComposeImage, ComposeReadError, stackImages } from "./images/compose-images.ts"
@@ -137,6 +143,20 @@ export async function stackAdd(
         stackKeyPrefix(entry.name)
       }" is reserved — rename the stack.`,
     )
+  }
+
+  // #265: a name whose key prefix nests with an installed or catalog
+  // stack's (`traefik-extra` next to `traefik`) would hand its keys to
+  // the other stack's hooks. Deploy refuses it too (validateStackConfigs);
+  // the bundled catalog counts even under --catalog, since deploy checks it.
+  const installed = (await readServerConfig(serverDir)).stacks.map((s) => s.name)
+  const nestedWith = nestedStackKeyPrefixOwner(entry.name, [
+    ...installed,
+    ...catalog.map((e) => e.name),
+    ...loadCatalog().map((e) => e.name),
+  ])
+  if (nestedWith !== undefined) {
+    throw new UserError(nestedStackKeyPrefixMessage(entry.name, nestedWith))
   }
 
   // Review fix — a requires cycle (a requires b, b requires a) would

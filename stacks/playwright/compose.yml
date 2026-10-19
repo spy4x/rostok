@@ -8,7 +8,13 @@ networks:
 services:
   playwright:
     container_name: hl-playwright
-    image: mcr.microsoft.com/playwright:${PLAYWRIGHT_IMAGE_TAG:-v1.60.0-noble}
+    # Built from Dockerfile.server: the Playwright image plus the package of the same release, so a
+    # start downloads nothing (spy4x/rostok#410).
+    build:
+      context: .
+      dockerfile: Dockerfile.server
+      args:
+        PLAYWRIGHT_IMAGE_TAG: ${PLAYWRIGHT_IMAGE_TAG:-v1.60.0-noble}
     # Chromium runs headless without its sandbox here, so the container is the boundary: no root,
     # no capabilities, no privilege gain. Docker's seccomp filter stays on.
     user: pwuser
@@ -17,13 +23,17 @@ services:
     cap_drop:
       - ALL
     healthcheck:
-      test: ["CMD", "node", "-e", "process.exit(0)"]
+      # Healthy once the browser server accepts connections on its port.
+      test:
+        - CMD
+        - node
+        - -e
+        - "require('net').connect(3000, '127.0.0.1').on('connect', () => process.exit(0)).on('error', () => process.exit(1))"
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 40s
     restart: unless-stopped
-    command: npx -y playwright@1.60.0 run-server --port 3000 --host 0.0.0.0
     deploy:
       resources:
         limits:

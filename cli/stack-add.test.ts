@@ -647,6 +647,56 @@ Deno.test("stack add refuses a stack whose own key prefix is reserved (GIT_)", a
   })
 })
 
+// #265 — a stack whose key prefix nests with an installed or catalog
+// stack's would hand its keys to that stack's hooks.
+
+const NESTED_STACK_META = (name: string) => `
+import type { StackMeta } from "@rostok/cli"
+export default {
+  name: "${name}",
+  description: "fixture",
+  variables: [{ key: "${
+  name.toUpperCase().replace(/-/g, "_")
+}_SECRET", default: "x", required: false }],
+} satisfies StackMeta
+`
+
+Deno.test("stack add refuses traefik-extra next to the catalog's traefik, naming both (#265)", async () => {
+  await withTmpDir(async (dir) => {
+    const catalogDir = join(dir, "catalog")
+    await writeCatalog(catalogDir, { "traefik-extra": NESTED_STACK_META("traefik-extra") })
+    await seedServer(dir, "test", { PROJECT: "hl", DOMAIN: "example.com" })
+
+    const err = await assertRejects(
+      () => stackAdd("traefik-extra", "test", { cwd: dir, catalogDir, nonInteractive: true }),
+      UserError,
+    )
+    assertStringIncludes(err.message, `stack "traefik-extra"'s key prefix "TRAEFIK_EXTRA_"`)
+    assertStringIncludes(err.message, `stack "traefik"'s "TRAEFIK_"`)
+    const entries = await readEnvFile(join(dir, "servers", "test", ".env"))
+    assertEquals(entries.some((e) => e.key === "TRAEFIK_EXTRA_SECRET"), false)
+  })
+})
+
+Deno.test("stack add refuses a stack nested under an installed project-local stack (#265)", async () => {
+  await withTmpDir(async (dir) => {
+    const catalogDir = join(dir, "catalog")
+    await writeCatalog(catalogDir, { "myapp-extra": NESTED_STACK_META("myapp-extra") })
+    await seedServer(dir, "test", { PROJECT: "hl", DOMAIN: "example.com" })
+    await Deno.writeTextFile(
+      join(dir, "servers", "test", "config.json"),
+      JSON.stringify({ stacks: [{ name: "myapp" }] }),
+    )
+
+    const err = await assertRejects(
+      () => stackAdd("myapp-extra", "test", { cwd: dir, catalogDir, nonInteractive: true }),
+      UserError,
+    )
+    assertStringIncludes(err.message, `rename "myapp-extra"`)
+    assertStringIncludes(err.message, `stack "myapp"'s "MYAPP_"`)
+  })
+})
+
 // #340 — IMAGE_POLICY: under `pinned`, stack add writes the exact version
 // of each variable-tagged image; under `latest` it leaves the tags as
 // they were. Registry answers come from a fake `fetch`.

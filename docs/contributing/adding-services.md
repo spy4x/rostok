@@ -361,8 +361,9 @@ deno task ts:check                   # type-check stacks/<name>/*.ts
 deno task fmt:check                  # format
 ```
 
-CI (`.woodpecker.yml`) runs `deno task check` on every push, pull
-request and `v*` tag. A failing check blocks merge.
+CI (`.woodpecker.yml`) runs `deno task check` on every pull request into
+main, every push to main and every `v*` tag. A branch builds only once its PR
+is open. A failing check blocks merge.
 
 For visual review, add the stack to a throwaway rostok project with
 the CLI from your checkout (`deno run -A <checkout>/cli/+main.ts stack

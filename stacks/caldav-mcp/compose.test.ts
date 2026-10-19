@@ -42,12 +42,19 @@ Deno.test("caldav-mcp: with OAuth on the bearer token is refused unless the serv
   ])
 })
 
-Deno.test("caldav-mcp: the image is v1.2.0 or later, which knows ALLOW_BEARER_TOKEN_WITH_OAUTH", () => {
-  // Older images ignore the option and accept the static token next to OAuth.
+Deno.test("caldav-mcp: the image is v1.5.0 or later, which knows CALDAV_MCP_TOOLS and commits deno.lock", () => {
+  // Before v1.2.0 an image ignores ALLOW_BEARER_TOKEN_WITH_OAUTH and accepts the static token next
+  // to OAuth; before v1.4.0 it ignores CALDAV_MCP_TOOLS and offers the delete tools; before v1.5.0
+  // it has no deno.lock for --frozen to build from.
   const dockerfile = Deno.readTextFileSync(new URL(`./Dockerfile`, import.meta.url))
   const [major, minor] = (dockerfile.match(/^ARG CALDAV_MCP_VERSION=v(\d+)\.(\d+)\.\d+$/m) ?? [])
     .slice(1).map(Number)
-  assertEquals(major! > 1 || (major === 1 && minor! >= 2), true)
+  assertEquals(major! > 1 || (major === 1 && minor! >= 5), true)
+})
+
+Deno.test("caldav-mcp: the delete tools are off unless the server opts in", () => {
+  // A stolen or misused token must not delete calendars, events or tasks by default.
+  assertEquals(envEntries(`CALDAV_MCP_TOOLS`), [`CALDAV_MCP_TOOLS=\${CALDAV_MCP_TOOLS:-no-delete}`])
 })
 
 Deno.test("caldav-mcp: the Traefik route is off unless the server opts in", () => {
@@ -116,6 +123,5 @@ Deno.test("caldav-mcp: the build is reproducible: images by digest, source by co
   assertMatch(dockerfile, /^FROM denoland\/deno:alpine-[\d.]+@sha256:[0-9a-f]{64} AS builder$/m)
   assertMatch(dockerfile, /^ARG CALDAV_MCP_COMMIT=[0-9a-f]{40}$/m)
   assertMatch(dockerfile, /test "\$\(git -C \/app rev-parse HEAD\)" = "\$\{CALDAV_MCP_COMMIT\}"/)
-  assertMatch(dockerfile, /^COPY caldav-mcp\.lock \/app\/deno\.lock$/m)
   assertMatch(dockerfile, /deno compile --frozen /)
 })

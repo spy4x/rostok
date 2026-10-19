@@ -4,8 +4,8 @@
 // `after.deploy.ts` connects Open WebUI to, never on the shared `proxy` network. Nothing is
 // exposed through Traefik, and compose reads only the browser image's tag variable.
 //
-// PLAYWRIGHT_IMAGE_TAG must stay on the same Playwright version as the `playwright@` command in
-// compose.yml and the base image in Dockerfile.mcp-proxy: change all three together.
+// PLAYWRIGHT_IMAGE_TAG must stay on the same Playwright version as the base image in
+// Dockerfile.mcp-proxy: change both together. Dockerfile.server reads its version from the tag.
 
 import type { StackMeta } from "@rostok/cli"
 

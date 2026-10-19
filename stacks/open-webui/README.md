@@ -133,7 +133,14 @@ every time; after `rostok deploy <server> <mcp stack>` of a newly added MCP stac
 | `OPEN_WEBUI_ENABLE_PERSISTENT_CONFIG`                  | `false`                                  | Keep settings changed in the UI across restarts                     |
 | `OPEN_WEBUI_WEBUI_NAME`                                | `Homelab AI`                             | Name shown in the UI                                                |
 | `OPEN_WEBUI_IMAGE_TAG`                                 | `latest`                                 | Image tag of `ghcr.io/open-webui/open-webui` (service `open-webui`) |
-| `OPEN_WEBUI_MCPO_IMAGE_TAG`                            | `main`                                   | Image tag of `ghcr.io/open-webui/mcpo` (service `mcpo`)             |
+| `OPEN_WEBUI_MCPO_IMAGE_TAG`                            | `git-788ff92`                            | Tag of `ghcr.io/open-webui/mcpo` that `Dockerfile.mcpo` builds on   |
+
+The `mcpo` service is built on the server from `Dockerfile.mcpo`: the mcpo image with the YouTube
+transcript server and the web fetch server installed at fixed versions, so `hl-mcpo` starts
+without reaching npm or PyPI. The default tag is the mcpo commit of release v0.0.20, since mcpo
+publishes no version tags. A server whose `.env` still sets `OPEN_WEBUI_MCPO_IMAGE_TAG=main`
+builds on whatever `main` is at that deploy; remove the line to use the pinned default. To move
+the tool servers to new versions, change them in `Dockerfile.mcpo`.
 
 ## Resources
 

@@ -1,0 +1,10 @@
+# mcpo with its two tool servers installed at fixed versions, so a start runs what the image holds
+# and needs no registry (spy4x/rostok#410). mcpo-config.json starts the installed commands.
+# The tag is the mcpo commit of release v0.0.20; mcpo publishes no version tags. To upgrade, change
+# the default here and in compose.yml together.
+ARG MCPO_IMAGE_TAG=git-788ff92
+FROM ghcr.io/open-webui/mcpo:${MCPO_IMAGE_TAG}
+# The fetch server gets a virtualenv of its own, so its dependencies cannot change mcpo's.
+RUN npm install -g --silent @sinco-lab/mcp-youtube-transcript@0.0.12 && \
+    /usr/local/bin/python3 -m venv /opt/fetch && \
+    /opt/fetch/bin/pip install --quiet --no-cache-dir mcp-server-fetch==2026.10.10

@@ -1,8 +1,10 @@
-# Checks run on every push and pull request. A `v*` tag runs the same checks
-# and then publishes to JSR (see "Publish flow" in AGENTS.md).
+# Checks run on every pull request into main and every push to main. A `v*` tag
+# runs the same checks and then publishes to JSR (see "Publish flow" in AGENTS.md).
+# `branch` matches a pull request by its target branch, so a commit on a PR
+# branch builds once, as a pull_request, not again as a push.
 when:
-  - event: push
-  - event: pull_request
+  - event: [push, pull_request]
+    branch: main
   - event: tag
     ref: refs/tags/v*
 

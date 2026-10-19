@@ -48,6 +48,10 @@ services:
       # Name Traefik's fixed address alone (TRAEFIK_PROXY_IP, as <ip>/32): the whole proxy
       # network would let any container on it forge the address (README "Public with OAuth").
       - TRUSTED_PROXIES=${CALDAV_MCP_TRUSTED_PROXIES:-}
+      # Which tools the server offers: no-delete (default) leaves out delete_calendar, delete_event
+      # and delete_todo; all offers them; read-only offers only the tools that change nothing.
+      # caldav-mcp refuses to start on any other value.
+      - CALDAV_MCP_TOOLS=${CALDAV_MCP_TOOLS:-no-delete}
     volumes:
       # The OAuth store (Deno KV, /data/oauth.kv): connectors stay signed in across restarts.
       - ${VOLUMES_PATH}/caldav-mcp:/data:z

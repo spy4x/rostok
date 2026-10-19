@@ -82,6 +82,7 @@ export const SHIPPED_STACK_FILES: Record<string, readonly string[]> = {
   ],
   playwright: [
     "Dockerfile.mcp-proxy",
+    "Dockerfile.server",
     "after.deploy.ts",
     "compose.yml",
   ],
@@ -92,6 +93,7 @@ export const SHIPPED_STACK_FILES: Record<string, readonly string[]> = {
     "searxng-settings.yml",
   ],
   "open-webui": [
+    "Dockerfile.mcpo",
     "after.deploy.ts",
     "compose.yml",
     "hook-lib.ts",
@@ -134,7 +136,7 @@ export const SHIPPED_STACK_FILES: Record<string, readonly string[]> = {
   ],
   "caldav-mcp": [
     "Dockerfile",
-    "caldav-mcp.lock",
+    "before.deploy.ts",
     "compose.yml",
   ],
   "email-mcp": [
