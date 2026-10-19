@@ -134,6 +134,7 @@ export const SHIPPED_STACK_FILES: Record<string, readonly string[]> = {
   ],
   "caldav-mcp": [
     "Dockerfile",
+    "before.deploy.ts",
     "caldav-mcp.lock",
     "compose.yml",
   ],

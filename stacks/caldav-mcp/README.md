@@ -49,6 +49,12 @@ Optional, for [Public with OAuth](#public-with-oauth), set by hand in the server
 | `CALDAV_MCP_AUTH_PEPPER`            | empty, secret                            | The pepper the hash was made with      |
 | `CALDAV_MCP_ALLOW_TOKEN_WITH_OAUTH` | `false`                                  | `true` accepts the token next to OAuth |
 
+A blank `CALDAV_MCP_TRUSTED_PROXIES` makes caldav-mcp take every request's address as the client's.
+Behind Traefik that is Traefik's own address, so on a public server all clients share one rate
+limit and ten bad requests a minute from anyone lock the owner's agents out. The deploy therefore
+stops when `CALDAV_MCP_PUBLIC=true` and this key is blank (`before.deploy.ts`); set it as step 2 of
+[Public with OAuth](#public-with-oauth) shows. An internal server leaves it blank.
+
 For Stalwart on `mail.${DOMAIN}`, the URL is `https://mail.${DOMAIN}/dav/cal/`.
 The username is the full mailbox address (e.g. `you@example.com`).
 
