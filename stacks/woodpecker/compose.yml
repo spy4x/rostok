@@ -108,7 +108,9 @@ services:
       - WOODPECKER_SERVER=woodpecker-server:9000
       - WOODPECKER_AGENT_SECRET=${WOODPECKER_AGENT_SECRET}
       - WOODPECKER_BACKEND=docker
-      - WOODPECKER_MAX_WORKFLOWS=4 # Parallel workflows
+      # Workflows the agent runs at once. Each one runs as its own containers beside the agent,
+      # outside the agent's limits below, so size it to the host's free memory and cores.
+      - WOODPECKER_MAX_WORKFLOWS=${WOODPECKER_MAX_WORKFLOWS:-4}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - ${VOLUMES_PATH}/woodpecker-agent/cache:/woodpecker/cache # Cache for faster builds

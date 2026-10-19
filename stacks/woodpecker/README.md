@@ -57,6 +57,12 @@ Declared in `+meta.ts`. Requires the `traefik` stack. Server-level keys `DOCKER_
 | `WOODPECKER_GITHUB_CLIENT` | asked             | Client ID of the GitHub OAuth app            |
 | `WOODPECKER_GITHUB_SECRET` | asked, secret     | Client secret of the GitHub OAuth app        |
 | `WOODPECKER_ADMIN`         | asked             | GitHub login that administers Woodpecker     |
+| `WOODPECKER_MAX_WORKFLOWS` | `4`               | Workflows the agent runs at once             |
+
+Each workflow runs as its own containers next to the agent, outside the agent's memory and CPU
+limits. Before raising `WOODPECKER_MAX_WORKFLOWS`, check that the host's free memory holds that
+many of your heaviest pipelines at their peak (`docker stats` on the `wp_*` containers during a
+run).
 
 ## Database and build logs
 
