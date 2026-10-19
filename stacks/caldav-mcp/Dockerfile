@@ -1,13 +1,14 @@
 # ── Multistage: clone → compile → distroless runtime ──
 # Source: https://github.com/spy4x/caldav-mcp (single source of truth)
-# Both images are pinned by digest, the source by commit and its dependencies by caldav-mcp.lock,
-# so a rebuild makes the same binary (spy4x/rostok#356). To upgrade, change them together.
+# Both images are pinned by digest, the source by commit and its dependencies by the deno.lock that
+# commit carries, so a rebuild makes the same binary (spy4x/rostok#356). To upgrade, change the tag
+# and the commit together.
 FROM denoland/deno:alpine-2.9.7@sha256:8ce780168429c4bf5962652e6cbea3fd45254ae902069e90585fb33f74c56968 AS builder
 
 # An exact tag: a new value changes this step, so Docker's build cache never keeps an old clone.
-ARG CALDAV_MCP_VERSION=v1.3.0
+ARG CALDAV_MCP_VERSION=v1.6.0
 # The commit that tag pointed at when it was pinned. A tag can move; the build fails if it has.
-ARG CALDAV_MCP_COMMIT=789c52b4b92867b7ba67aeb0edfde1de9d7c05ea
+ARG CALDAV_MCP_COMMIT=47ee67ee7ed549557b4cc433d08833dafb1d21db
 # The CalDAV server URL. Its host is the only outbound host the binary may reach besides claude.ai.
 ARG CALDAV_URL
 RUN apk add --no-cache git
@@ -15,10 +16,8 @@ RUN git clone --depth 1 --branch "${CALDAV_MCP_VERSION}" \
     https://github.com/spy4x/caldav-mcp.git /app \
   && test "$(git -C /app rev-parse HEAD)" = "${CALDAV_MCP_COMMIT}"
 WORKDIR /app
-# caldav-mcp commits no lockfile, so this stack keeps one, made from the pinned commit. --frozen
-# fails the build instead of resolving a newer dependency. Regenerate it on every upgrade: in a
-# clone at the new commit, run `deno cache --unstable-kv main.ts` and copy its deno.lock here.
-COPY caldav-mcp.lock /app/deno.lock
+# caldav-mcp commits its deno.lock from v1.5.0 on. --frozen fails the build instead of resolving a
+# dependency that lockfile does not name.
 # Explicit permissions instead of -A, baked into the binary:
 # - net: listen on 0.0.0.0:3000, reach the CalDAV host, and fetch connector metadata from
 #   claude.ai (caldav-mcp's TRUSTED_CLIENT_HOSTS). Before that fetch it resolves claude.ai with
