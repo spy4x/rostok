@@ -194,3 +194,39 @@ Deno.test("env encrypt: with no key, points at `rostok env setup`, not raw age-k
     assertEquals(stderr.includes("age-keygen"), false, stderr)
   })
 })
+
+// #350 — a stack's own env file (`servers/<server>/configs/<app>.env`,
+// the file its compose `env_file:` names) holds secrets too. Runs the
+// real binary, like the test above, so it proves what a user's
+// `rostok env encrypt` and `rostok env decrypt` actually do.
+async function runEnvCommand(dir: string, sub: string): Promise<Deno.CommandOutput> {
+  const mainTs = join(import.meta.dirname!, "..", "+main.ts")
+  return await new Deno.Command(Deno.execPath(), {
+    args: ["run", "-A", mainTs, "env", sub],
+    cwd: dir,
+    stdout: "null",
+    stderr: "piped",
+  }).output()
+}
+
+Deno.test("env encrypt: writes configs/<name>.env.age, and env decrypt restores it byte for byte", async () => {
+  await withTmpDir(async (dir) => {
+    await generateAgeKey(dir)
+    const configs = join(dir, "servers", "cloud", "configs")
+    await Deno.mkdir(configs, { recursive: true })
+    const envPath = join(configs, "mig.env")
+    const source = "# mig\nSESSION_SECRET=s3cret\nSMTP_PASSWORD='p # w'\n"
+    await Deno.writeTextFile(envPath, source)
+
+    const encrypt = await runEnvCommand(dir, "encrypt")
+    assertEquals(encrypt.code, 0, new TextDecoder().decode(encrypt.stderr))
+    const encrypted = await Deno.readTextFile(`${envPath}.age`)
+    assertEquals(encrypted.split("\n").includes("SESSION_SECRET=s3cret"), false)
+    assertStringIncludes(encrypted, "SESSION_SECRET=age64:")
+
+    await Deno.remove(envPath)
+    const decrypt = await runEnvCommand(dir, "decrypt")
+    assertEquals(decrypt.code, 0, new TextDecoder().decode(decrypt.stderr))
+    assertEquals(await Deno.readTextFile(envPath), source)
+  })
+})
