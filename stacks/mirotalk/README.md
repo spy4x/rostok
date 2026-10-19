@@ -120,8 +120,8 @@ So whoever can read the log can read both keys:
   of the `docker` group;
 - if the `victoria-metrics` stack runs on the same server, its log collector copies every
   container's log into VictoriaLogs and keeps it for the store's whole retention period. Then
-  everyone who can query it reads the keys too: Grafana users, and any container on the shared
-  `proxy` network, which reaches `http://hl-victoria-logs:9428` without a password.
+  everyone who can query it reads the keys too: any container on the shared `proxy` network,
+  which reaches `http://hl-victoria-logs:9428` without a password.
 
 The TURN login is given to every browser that joins a room anyway (see "What the relay refuses"),
 so the log adds nothing there. The API key is the one that matters: with it, anyone can create
