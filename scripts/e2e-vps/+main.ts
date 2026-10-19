@@ -330,14 +330,16 @@ async function installRostok(ctx: Ctx, target: Target, cwd: string): Promise<str
   const root = new URL("../../", import.meta.url).pathname
   const source = target.kind === "local"
     ? ["--config", join(root, "deno.jsonc"), join(root, "cli", "+main.ts")]
-    // A version published in the last day is refused without the dependency-age flag.
-    : ["--minimum-dependency-age=0", `jsr:@rostok/cli@${target.version}`]
+    : [`jsr:@rostok/cli@${target.version}`]
   await must(ctx, [
     Deno.execPath(),
     "install",
     "--global",
     "--allow-all",
     "--force",
+    // A global install ignores deno.lock, so without this flag Deno refuses a version published
+    // in the last day: a fresh rostok release, or a fresh ts-libs release the checkout imports.
+    "--minimum-dependency-age=0",
     "--name",
     "rostok",
     "--root",
