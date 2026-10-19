@@ -62,6 +62,9 @@ interface Harness {
   config: BackupConfigState
 }
 
+// Each import of operations.ts gets its own query string; it only has to differ within one run.
+let importCount = 0
+
 /** The runner's own environment in every test, as read from its server env file. */
 const RUNNER_ENV: Record<string, string> = {
   SSH_USER: `tester`,
@@ -96,7 +99,7 @@ async function withHarness(
     }
     saved.set(`DOCKER_CONFIG`, Deno.env.get(`DOCKER_CONFIG`))
     Deno.env.delete(`DOCKER_CONFIG`)
-    const { BackupOperations } = await import(`./operations.ts?bust=${crypto.randomUUID()}`)
+    const { BackupOperations } = await import(`./operations.ts?bust=${++importCount}`)
     const ops = new BackupOperations(`pw`)
     const config: BackupConfigState = {
       name: `app`,
