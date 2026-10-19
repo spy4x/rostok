@@ -14,6 +14,9 @@
 // open-webui sends it through its own OPEN_WEBUI_CALDAV_MCP_TOKEN, set to `${CALDAV_MCP_TOKEN}`.
 // A public OAuth-only server clears it: caldav-mcp refuses it while OAuth is on unless
 // CALDAV_MCP_ALLOW_TOKEN_WITH_OAUTH=true, and refuses to start with neither the token nor OAuth.
+//
+// CALDAV_MCP_TOOLS defaults to `no-delete`: a stolen or misused token cannot delete calendars,
+// events or tasks. `all` adds the delete tools back; `read-only` leaves every write tool out.
 
 import type { StackMeta } from "@rostok/cli"
 import { generatePassword } from "@rostok/cli"
@@ -79,6 +82,11 @@ export default {
       key: "CALDAV_MCP_AUTH_PEPPER",
       required: false,
       secret: true,
+    },
+    {
+      key: "CALDAV_MCP_TOOLS",
+      default: "no-delete",
+      required: false,
     },
     {
       key: "CALDAV_MCP_ALLOW_TOKEN_WITH_OAUTH",

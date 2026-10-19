@@ -48,6 +48,19 @@ Optional, for [Public with OAuth](#public-with-oauth), set by hand in the server
 | `CALDAV_MCP_OWNER_PASSWORD_HASH`    | empty, secret                            | The owner password hash                |
 | `CALDAV_MCP_AUTH_PEPPER`            | empty, secret                            | The pepper the hash was made with      |
 | `CALDAV_MCP_ALLOW_TOKEN_WITH_OAUTH` | `false`                                  | `true` accepts the token next to OAuth |
+| `CALDAV_MCP_TOOLS`                  | `no-delete`                              | Which tools clients get, see below     |
+
+A blank `CALDAV_MCP_TRUSTED_PROXIES` makes caldav-mcp take every request's address as the client's.
+Behind Traefik that is Traefik's own address, so on a public server all clients share one rate
+limit and ten bad requests a minute from anyone lock the owner's agents out. The deploy therefore
+stops when `CALDAV_MCP_PUBLIC=true` and this key is blank (`before.deploy.ts`); set it as step 2 of
+[Public with OAuth](#public-with-oauth) shows. An internal server leaves it blank.
+
+`CALDAV_MCP_TOOLS=no-delete` leaves out `delete_calendar`, `delete_event` and `delete_todo`, so a
+stolen or misused token cannot delete a calendar, event or task. It can still overwrite or clear
+the fields of one through `update_event` and `update_todo`. `all` offers the delete tools too, and
+`read-only` offers only the tools that change nothing. caldav-mcp refuses to start on any other
+value. The setting applies to every client of this server.
 
 For Stalwart on `mail.${DOMAIN}`, the URL is `https://mail.${DOMAIN}/dav/cal/`.
 The username is the full mailbox address (e.g. `you@example.com`).
@@ -72,9 +85,9 @@ Set all three OAuth values or none. `CALDAV_MCP_PUBLIC=true` without them publis
 endpoint, which caldav-mcp still protects but claude.ai cannot use.
 
 The image builds the caldav-mcp tag in `CALDAV_MCP_VERSION` (`Dockerfile`) and fails if the tag
-no longer points at `CALDAV_MCP_COMMIT`. Its dependencies come from `caldav-mcp.lock`, with
-`--frozen`. To upgrade, change the tag and the commit together and regenerate the lockfile as the
-`Dockerfile` describes; a branch would let Docker's build cache keep an old clone.
+no longer points at `CALDAV_MCP_COMMIT`. Its dependencies come from the `deno.lock` that commit
+carries, with `--frozen`. To upgrade, change the tag and the commit together; a branch would let
+Docker's build cache keep an old clone.
 
 The binary runs as `PUID:PGID` with no capabilities and a read-only root file system. Its Deno
 permissions are fixed at build time: it listens on port 3000, reaches only the host of
