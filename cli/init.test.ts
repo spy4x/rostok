@@ -2,7 +2,7 @@
 
 import { assertEquals, assertExists } from "@std/assert"
 import { join } from "@std/path"
-import { ensureAgeIgnored, initProject } from "./init.ts"
+import { ensureAgeIgnored, ensureEnvIgnored, initProject } from "./init.ts"
 import { generateAgeKey } from "@spy4x/server/env-age64"
 
 // #236 item 1 — a parent git process (this repo's own pre-commit hook, or a
@@ -306,6 +306,74 @@ Deno.test("ensureAgeIgnored: no tracked-key warning for an untracked key", async
     )
     assertEquals(result.tracked, false)
     assertEquals(warnings.length, 0, warnings.join("\n"))
+  } finally {
+    await Deno.remove(tmp, { recursive: true })
+  }
+})
+
+// #480 — projects created before configs/<app>.env was encrypted have a
+// .gitignore without `*.env`, so the plaintext could be committed.
+
+Deno.test("ensureEnvIgnored: adds *.env so git ignores a stack's configs/<app>.env", async () => {
+  const tmp = await Deno.makeTempDir({ prefix: "rostok-init-env-" })
+  try {
+    await gitFixture(tmp, "init")
+    await Deno.writeTextFile(join(tmp, ".gitignore"), ".env\n.env.root\n.age/\n")
+    const result = await withoutGitEnv(() => ensureEnvIgnored(tmp))
+    assertEquals(result.added, true)
+    const ignored = await new Deno.Command("git", {
+      args: ["check-ignore", "-q", "servers/x/configs/mig.env"],
+      cwd: tmp,
+      env: strippedGitEnv(),
+      clearEnv: true,
+    }).output()
+    assertEquals(ignored.success, true)
+    // The encrypted copy stays committable.
+    const ageIgnored = await new Deno.Command("git", {
+      args: ["check-ignore", "-q", "servers/x/configs/mig.env.age"],
+      cwd: tmp,
+      env: strippedGitEnv(),
+      clearEnv: true,
+    }).output()
+    assertEquals(ageIgnored.success, false)
+  } finally {
+    await Deno.remove(tmp, { recursive: true })
+  }
+})
+
+Deno.test("ensureEnvIgnored: leaves a .gitignore that already covers the file alone", async () => {
+  const tmp = await Deno.makeTempDir({ prefix: "rostok-init-env-" })
+  try {
+    await gitFixture(tmp, "init")
+    const before = ".env\nservers/*/configs/*.env\n"
+    await Deno.writeTextFile(join(tmp, ".gitignore"), before)
+    const result = await withoutGitEnv(() => ensureEnvIgnored(tmp))
+    assertEquals(result.added, false)
+    assertEquals(await Deno.readTextFile(join(tmp, ".gitignore")), before)
+  } finally {
+    await Deno.remove(tmp, { recursive: true })
+  }
+})
+
+Deno.test("ensureEnvIgnored: without git, appends *.env once", async () => {
+  const tmp = await Deno.makeTempDir({ prefix: "rostok-init-env-" })
+  try {
+    await Deno.writeTextFile(join(tmp, ".gitignore"), ".env\n")
+    assertEquals((await withoutGitEnv(() => ensureEnvIgnored(tmp))).added, true)
+    assertEquals((await withoutGitEnv(() => ensureEnvIgnored(tmp))).added, false)
+    assertEquals(await Deno.readTextFile(join(tmp, ".gitignore")), ".env\n*.env\n")
+  } finally {
+    await Deno.remove(tmp, { recursive: true })
+  }
+})
+
+Deno.test("initProject: backfills *.env in an old project's .gitignore", async () => {
+  const tmp = await Deno.makeTempDir({ prefix: "rostok-init-env-" })
+  try {
+    await Deno.writeTextFile(join(tmp, ".gitignore"), ".env\n.env.root\n.age/\n")
+    await withoutGitEnv(() => initProject(tmp))
+    const gitignore = await Deno.readTextFile(join(tmp, ".gitignore"))
+    assertExists(gitignore.match(/^\*\.env$/m))
   } finally {
     await Deno.remove(tmp, { recursive: true })
   }
