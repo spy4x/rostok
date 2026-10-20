@@ -366,3 +366,15 @@ Deno.test("ensureEnvIgnored: without git, appends *.env once", async () => {
     await Deno.remove(tmp, { recursive: true })
   }
 })
+
+Deno.test("initProject: backfills *.env in an old project's .gitignore", async () => {
+  const tmp = await Deno.makeTempDir({ prefix: "rostok-init-env-" })
+  try {
+    await Deno.writeTextFile(join(tmp, ".gitignore"), ".env\n.env.root\n.age/\n")
+    await withoutGitEnv(() => initProject(tmp))
+    const gitignore = await Deno.readTextFile(join(tmp, ".gitignore"))
+    assertExists(gitignore.match(/^\*\.env$/m))
+  } finally {
+    await Deno.remove(tmp, { recursive: true })
+  }
+})
