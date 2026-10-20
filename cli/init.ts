@@ -99,6 +99,9 @@ export async function initProject(cwd: string = Deno.cwd()): Promise<InitResult>
   // .gitignore without this rule; this backfills it.
   await ensureAgeIgnored(cwd)
 
+  // 2c. #480: the same backfill for a stack's plaintext configs/<app>.env.
+  await ensureEnvIgnored(cwd)
+
   // 3. servers/ — empty dir for per-server config
   await mkdirIfMissing(join(cwd, "servers"), created, skipped)
 
@@ -228,11 +231,45 @@ async function isAgeKeyTracked(cwd: string): Promise<boolean> {
   }
 }
 
-async function isAgeIgnored(cwd: string): Promise<boolean> {
+/**
+ * #480: make sure a stack's plaintext `servers/<server>/configs/<app>.env`
+ * can't be committed. Projects created before `rostok env encrypt` covered
+ * those files have a .gitignore without `*.env`; this appends it and
+ * prints one line, like {@link ensureAgeIgnored} does for `.age/`.
+ */
+export async function ensureEnvIgnored(cwd: string): Promise<{ added: boolean }> {
+  const probe = "servers/server/configs/app.env"
+  const rules = ["*.env", "**/*.env", "servers/*/configs/*.env", "/servers/*/configs/*.env"]
+  if (await isIgnored(cwd, probe, rules)) return { added: false }
+  await appendGitignoreRule(cwd, "*.env")
+  console.info(
+    "rostok: servers/<server>/configs/<app>.env wasn't gitignored — added `*.env` to " +
+      ".gitignore. only its encrypted .env.age copy belongs in git.",
+  )
+  return { added: true }
+}
+
+function isAgeIgnored(cwd: string): Promise<boolean> {
+  return isIgnored(cwd, ".age/key.txt", [
+    ".age",
+    ".age/",
+    "/.age",
+    "/.age/",
+    ".age/*",
+    ".age/key.txt",
+  ])
+}
+
+/**
+ * True when git ignores `probe` (a path relative to `cwd`; it need not
+ * exist). Without git or a repo, falls back to looking for one of `rules`
+ * as a whole line of `.gitignore` — not a full glob parser.
+ */
+async function isIgnored(cwd: string, probe: string, rules: string[]): Promise<boolean> {
   if (await exists(join(cwd, ".git")) && await isCommandOnPath("git")) {
     try {
       const cmd = new Deno.Command("git", {
-        args: ["check-ignore", "-q", ".age/key.txt"],
+        args: ["check-ignore", "-q", probe],
         cwd,
         stdout: "null",
         stderr: "null",
@@ -243,19 +280,13 @@ async function isAgeIgnored(cwd: string): Promise<boolean> {
       // git crashed mid-run — fall through to the text check below.
     }
   }
-  return await gitignoreTextCoversAge(cwd)
-}
-
-/** Best-effort match — not a full gitignore glob parser, just the common rule shapes. */
-async function gitignoreTextCoversAge(cwd: string): Promise<boolean> {
   let text: string
   try {
     text = await Deno.readTextFile(join(cwd, ".gitignore"))
   } catch {
     return false
   }
-  const candidates = new Set([".age", ".age/", "/.age", "/.age/", ".age/*", ".age/key.txt"])
-  return text.split("\n").some((line) => candidates.has(line.trim()))
+  return text.split("\n").some((line) => rules.includes(line.trim()))
 }
 
 async function appendGitignoreRule(cwd: string, rule: string): Promise<void> {

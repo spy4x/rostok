@@ -23,7 +23,7 @@ import {
   generateAgeKey,
   readAgeKey,
 } from "@spy4x/server/env-age64"
-import { ensureAgeIgnored } from "../init.ts"
+import { ensureAgeIgnored, ensureEnvIgnored } from "../init.ts"
 
 /**
  * `ageStatus` walks the project for `.env`/`.env.age` files and can throw
@@ -54,6 +54,9 @@ export const envEncryptCommand = new Command()
       Deno.exit(1)
     }
     try {
+      // #480: this command encrypts configs/<app>.env, so make sure an old
+      // project's .gitignore keeps the plaintext out of git.
+      await ensureEnvIgnored(cwd)
       await encryptEnvFiles(cwd)
     } catch (error) {
       console.error(error instanceof Error ? error.message : String(error))
