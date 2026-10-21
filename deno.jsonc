@@ -118,7 +118,7 @@
   },
   "publish": {
     // Ship the CLI + only `+meta.ts` from `stacks/`. Everything else in
-    // `stacks/`, `scripts/`, `docs/` is rostok-repo dev
+    // `stacks/`, `scripts/`, `docs/`, `media/` is rostok-repo dev
     // tooling — the published CLI never reads it.
     //
     // JSR's exclude doesn't follow gitignore semantics for negative
@@ -138,6 +138,8 @@
       "scripts/**",
       "docs",
       "docs/**",
+      "media",
+      "media/**",
       "stacks/**",
       "stacks/**/*",
       "stacks/*/+meta.ts",
