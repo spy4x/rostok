@@ -12,7 +12,7 @@
 [Commands](docs/commands.md) · [How it works](docs/how-it-works.md) ·
 [Catalog](docs/usage/catalog.md) · [All docs](docs/README.md)
 
-![A terminal runs "rostok stack list", which lists the 49 catalog stacks by category, then "rostok": the wizard creates the project, generates an encryption key, keeps pinned image versions, asks for the server's name, SSH address, domain and email, keeps the defaults for the rest, adds librespeed and traefik, and prints the next step, "rostok deploy home".](docs/screenshots/demo.gif)
+[![Watch the demo video: install rostok with Deno, answer its wizard about the server, pick Traefik and OmniTools from the catalog, deploy them to a fresh server, then open OmniTools over HTTPS and make a QR code with it. The still shows the wizard's catalog list with both services ticked.](media/demo/poster.webp)](https://antonshubin.com/tools/rostok)
 
 </div>
 

@@ -1,0 +1,45 @@
+WEBVTT
+
+1
+00:00:01.500 --> 00:00:08.300
+Install rostok with one Deno command
+
+2
+00:00:08.300 --> 00:00:16.933
+Run rostok in an empty folder: a short wizard starts
+
+3
+00:00:16.933 --> 00:00:30.166
+Tell it about your server: SSH address, domain and email
+
+4
+00:00:30.166 --> 00:00:38.566
+Press Enter to keep the defaults for the rest
+
+5
+00:00:38.566 --> 00:00:45.366
+Pick services from the catalog: Traefik for HTTPS, and OmniTools
+
+6
+00:00:45.366 --> 00:00:54.399
+The project is written: one folder per server, with its settings
+
+7
+00:00:54.399 --> 00:00:59.065
+Deploy: rostok copies the files to the server and starts them
+
+8
+00:00:59.065 --> 00:01:03.698
+1 min later (cut short here), the deploy is done
+
+9
+00:01:03.698 --> 00:01:07.498
+OmniTools is live on its own address, with HTTPS
+
+10
+00:01:07.498 --> 00:01:14.364
+Search its tools and open the QR code generator
+
+11
+00:01:14.364 --> 00:01:25.597
+Type a link, and the QR code follows as you type

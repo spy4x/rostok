@@ -16,6 +16,18 @@
     },
     // #endregion Real-server test
 
+    // #region Demo video
+    // Local only, never CI: it rents a Hetzner server too. Steps: media/demo/recipe/README.md.
+    "demo-video": {
+      "command": "bash media/demo/recipe/record.sh",
+      "description": "🎬 Record the demo video on a throwaway server and encode it"
+    },
+    "demo-video:encode": {
+      "command": "deno run -A media/demo/recipe/encode.ts",
+      "description": "🎬 Re-encode the demo video from a work dir of recorded takes"
+    },
+    // #endregion Demo video
+
     // #region Checks
     "check": {
       "description": "✅ Run all checks (lint, fmt, types, tests)",
@@ -306,7 +318,12 @@
     "**/AGENTS.md",
     "**/LICENSE",
     ".playwright-mcp",
-    "*.lock"
+    "*.lock",
+    // The demo video's browser half imports Playwright. Kept out of the checked graph so it never
+    // enters deno.lock: resolving it there re-resolves the age encryption's @noble/hashes to an
+    // older version. record.sh runs it with --no-lock.
+    "media/demo/recipe/browser.ts",
+    "media/demo/recipe/human-mouse.ts"
   ],
   "lint": {
     "rules": {
