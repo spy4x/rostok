@@ -14,7 +14,7 @@ services:
   healthchecks:
     container_name: hl-healthchecks
     image: healthchecks/healthchecks:${HEALTHCHECKS_IMAGE_TAG:-latest}
-    # Fix perms on /data before uwsgi starts. Deploy script chowns volumes
+    # Fix perms on /data before the app starts. Deploy script chowns volumes
     # to SSH_USER (UID 1000 on cloud), but this container runs as
     # UID 999 — without this chown sqlite is read-only and /docs/ returns
     # 500. `|| true` so a fresh empty bind mount doesn't error.
