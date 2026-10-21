@@ -5,10 +5,34 @@ http:
     dashboard-auth:
       basicAuth:
         usersFile: /etc/traefik/dynamic/.htpasswd
+    # compression runs on every websecure router (the entrypoint middleware in compose.yml). It
+    # compresses only the text types listed here (spy4x/rostok#494). Traefik matches each entry
+    # against the exact media type, with no wildcards, so a list of what to skip could never name
+    # every video, audio, image or archive type. A compressed video has no length, and a CDN that
+    # caches it answers every Range request with the whole file, so a player cannot seek.
+    # text/event-stream stays out: compressing it holds streamed (SSE) responses back.
     compression:
       compress:
-        excludedContentTypes:
-          - text/event-stream
+        includedContentTypes:
+          - text/html
+          - text/css
+          - text/plain
+          - text/javascript
+          - text/markdown
+          - text/csv
+          - text/xml
+          - text/calendar
+          - text/vcard
+          - application/javascript
+          - application/json
+          - application/ld+json
+          - application/manifest+json
+          - application/xml
+          - application/xhtml+xml
+          - application/rss+xml
+          - application/atom+xml
+          - application/wasm
+          - image/svg+xml
     # security-headers-base runs on every websecure router (the entrypoint middleware in
     # compose.yml). It runs after a router's own middlewares and after the app, and each header it
     # names replaces the value they set, so it names only headers that no service needs to change.
