@@ -241,7 +241,7 @@ async function main(work: string, music: string) {
       "title",
       "rostok",
       "Scaffold a self-hosted homelab from a curated catalog.",
-      2,
+      1.5,
     ),
   ]
   const cues: { start: number; end: number; text: string }[] = []
@@ -272,7 +272,7 @@ async function main(work: string, music: string) {
   }
   const contentEnd = t
   segs.push(
-    await card(work, "end", "github.com/spy4x/rostok", "Free and open source, MIT licence", 2.5),
+    await card(work, "end", "github.com/spy4x/rostok", "Free and open source, MIT licence", 2),
   )
 
   await Deno.writeTextFile(
