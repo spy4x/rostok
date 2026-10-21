@@ -57,8 +57,8 @@ async function up(dir: string): Promise<void> {
 
   let server: Server | undefined
   const errors: string[] = []
-  // The cheapest type can be sold out in one location; try the next offers in order.
-  for (const offer of (await cheapestX86(call)).slice(0, 6)) {
+  // The cheapest types can be sold out, or not sold, in a location; try the next offers in order.
+  for (const offer of (await cheapestX86(call)).slice(0, 12)) {
     try {
       server = await createServer(call, runId, offer, keyId, CLOUD_INIT)
       console.log(`created ${offer.type} in ${offer.location} (${offer.hourly} EUR/h)`)
