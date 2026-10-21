@@ -36,7 +36,10 @@ cleanup() {
   echo "deleting the server and its SSH key"
   vm down
 }
-trap cleanup EXIT INT TERM HUP
+# A signal exits, so the EXIT trap cleans up once and the recording never carries on without
+# its server.
+trap cleanup EXIT
+trap 'exit 130' INT TERM HUP
 
 # Low load: at most two cores, lowest CPU and disk priority, so recording never slows the desktop.
 capped() {
