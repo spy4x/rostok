@@ -1,0 +1,10 @@
+# The clean machine the clip's terminal runs in: Deno, ssh and rsync, a user named jane, an empty
+# home and an empty Deno cache, so `deno install` and rostok's ssh calls see nothing of the host.
+FROM docker.io/denoland/deno:2.9.7
+RUN apt-get update && apt-get install -y --no-install-recommends git openssh-client rsync \
+  && rm -rf /var/lib/apt/lists/* \
+  && useradd -m -u 1000 -s /bin/bash jane
+USER jane
+WORKDIR /home/jane
+ENV HOME=/home/jane DENO_INSTALL_ROOT=/home/jane/.deno DENO_DIR=/home/jane/.cache/deno PATH=/home/jane/.deno/bin:/usr/local/bin:/usr/bin:/bin \
+  TZ=Europe/Berlin

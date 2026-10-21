@@ -1,0 +1,19 @@
+# The demo terminal's shell setup, sourced by `bash --rcfile` inside the container.
+# Before each prompt it prints a blank line and a full-width rule, so every command starts under a
+# visible separator and a viewer always knows which output belongs to which command.
+
+if [ -f /demo/id_ed25519 ]; then
+  mkdir -p ~/.ssh
+  cp /demo/id_ed25519 /demo/known_hosts ~/.ssh/
+  chmod 600 ~/.ssh/*
+fi
+
+rule() {
+  local line
+  # One column short of the width, so the rule never wraps onto the prompt's line.
+  printf -v line '%*s' "$((${COLUMNS:-80} - 1))" ''
+  printf '\n\e[38;2;98;90;82m%s\e[0m\n' "${line// /─}"
+}
+PROMPT_COMMAND=rule
+# An orange bar, the folder, then the dollar sign.
+PS1='\[\e[48;2;249;115;22m\] \[\e[0m\] \[\e[38;2;188;183;175m\]\w\[\e[0m\] \$ '
