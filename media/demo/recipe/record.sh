@@ -38,7 +38,11 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM HUP
 
-capped() { systemd-run --user --scope --quiet -p TasksMax=4000 -p MemoryMax=8G "$@"; }
+# Low load: at most two cores, lowest CPU and disk priority, so recording never slows the desktop.
+capped() {
+  systemd-run --user --scope --quiet -p CPUQuota=200% -p CPUWeight=10 -p TasksMax=4000 \
+    -p MemoryMax=8G nice -n 19 ionice -c3 "$@"
+}
 
 # One take: the shared settings, then the shot's own tape, with the placeholders filled in.
 take() { # <name> <timeout seconds>
@@ -51,7 +55,7 @@ take() { # <name> <timeout seconds>
     { tail -20 "$WORK/$1.log"; return 1; }
 }
 
-podman build -q -t "$IMAGE" -f "$HERE/Containerfile" "$HERE" > /dev/null
+capped timeout 900 podman build -q -t "$IMAGE" -f "$HERE/Containerfile" "$HERE" > /dev/null
 vm up
 IP="$(cat "$WORK/vm/ip")"
 DOMAIN="${IP//./-}.sslip.io"
@@ -92,8 +96,8 @@ for _ in $(seq 1 180); do
   sleep 5
 done
 [ -n "$deployed" ] || { echo "the deploy did not finish in 15 minutes"; exit 1; }
-# The 7 s the deploy take showed are not part of the cut.
-echo $(($(date +%s) - deploy_started + 7)) > "$WORK/deploy-seconds"
+# The 1 s the deploy take showed after Enter is not part of the cut.
+echo $(($(date +%s) - deploy_started + 1)) > "$WORK/deploy-seconds"
 tmux -L "$SOCK" capture-pane -p -S -500 -t demo > "$WORK/deploy.txt"
 take 08-deployed 300
 tmux -L "$SOCK" kill-server
@@ -113,5 +117,5 @@ echo "recorded every take in $WORK"
 trap - EXIT INT TERM HUP
 cleanup || { echo "check the Hetzner console: the server may still exist"; exit 1; }
 set -e
-deno run -A "$HERE/encode.ts" "$WORK"
+capped timeout 1800 deno run -A "$HERE/encode.ts" "$WORK"
 echo "re-encode without recording: deno task demo-video:encode $WORK"

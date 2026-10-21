@@ -9,4 +9,4 @@ Sleep 1s
 Up@180ms 8
 Sleep 800ms
 Space
-Sleep 2500ms
+Sleep 1800ms

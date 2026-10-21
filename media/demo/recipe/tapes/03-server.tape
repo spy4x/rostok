@@ -18,4 +18,4 @@ Type "@@EMAIL@@"
 Sleep 800ms
 Enter
 Wait+Line /project identifier/
-Sleep 1500ms
+Sleep 1000ms

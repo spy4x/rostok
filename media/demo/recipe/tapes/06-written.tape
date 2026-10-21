@@ -6,4 +6,4 @@ Enter
 Sleep 800ms
 Enter
 Wait+Line /homelab \$\s*$/
-Sleep 3500ms
+Sleep 1500ms

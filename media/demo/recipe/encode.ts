@@ -14,7 +14,8 @@
  * `captions.vtt` and burned in from the same list, on a band at the bottom that no shot draws
  * under: the terminal is 716 px tall and the browser 56 + 660 px. The music (the second argument,
  * `media/demo/music.opus` by default) is trimmed to the video, faded in over 1 s and out over 2 s,
- * and set to {@link LOUDNESS}; the encoder refuses a mix that measures louder.
+ * and set to {@link LOUDNESS}; the encoder refuses a track shorter than the video, and a mix that
+ * measures louder.
  *
  * @module
  */
@@ -138,6 +139,19 @@ async function run(cmd: string, args: string[]): Promise<string> {
 const ffmpeg = (args: string[]) =>
   run("ffmpeg", ["-v", "error", "-y", ...args.slice(0, -1), "-threads", "2", ...args.slice(-1)])
 
+/**
+ * Throws when the music track ends before the video does: the mix would stop dead and leave the
+ * last seconds silent, instead of fading out over the end card.
+ */
+export function assertMusicCovers(musicSeconds: number, videoSeconds: number): void {
+  if (musicSeconds < videoSeconds) {
+    throw new Error(
+      `the music is ${musicSeconds.toFixed(1)} s but the video ${videoSeconds.toFixed(1)} s: ` +
+        `shorten the video or pick a longer track`,
+    )
+  }
+}
+
 async function duration(file: string): Promise<number> {
   const out = await run("ffprobe", [
     ...["-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", file],
@@ -205,7 +219,9 @@ async function main(work: string, music: string) {
   await Deno.writeTextFile(join(bdir, "frames.ffconcat"), concat.join("\n"))
   await ffmpeg([
     ...["-f", "concat", "-safe", "0", "-i", join(bdir, "frames.ffconcat")],
-    ...["-vf", `fps=${FPS},format=yuv420p`, "-c:v", "ffv1", join(work, "browser.mkv")],
+    // The frames are the 1024x528 viewport; scaled by 1.25 they fill the 1280x660 under the bar.
+    ...["-vf", `fps=${FPS},scale=${W}:${H - BAR - BAND}:flags=lanczos,format=yuv420p`],
+    ...["-c:v", "ffv1", join(work, "browser.mkv")],
   ])
   // The headless browser has no window, so draw a plain address bar with the real host and a
   // lock: record.sh checked that the page answers over a valid certificate before recording.
@@ -302,6 +318,7 @@ async function main(work: string, music: string) {
   await Deno.writeTextFile(join(work, "captions.filter"), captionFilters.join(",\n"))
 
   // The music: trimmed, faded, then set to the target loudness from a first measurement.
+  assertMusicCovers(await duration(music), total)
   const shaped = `atrim=0:${total.toFixed(3)},afade=t=in:st=0:d=1,afade=t=out:st=${
     (total - 2).toFixed(3)
   }:d=2`

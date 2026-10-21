@@ -10,8 +10,8 @@
  * with its own timestamp, so a loaded machine records fewer frames but never wrong timing. Writes
  * `<out dir>/browser/NNNNN.jpg`, `<out dir>/browser/frames.json` (each frame's time in seconds
  * from the start) and `<out dir>/browser/shots.json` (when each shot of the browser part starts
- * and ends). The frames are 1280x660 (a 1024x528 viewport at 125 %): encode.ts adds a 56 px address bar above it and the 84 px
- * caption band below it.
+ * and ends). The frames are 1024x528, the viewport's CSS pixels: encode.ts scales them by 1.25 to
+ * fill 1280x660, then adds a 56 px address bar above and the 84 px caption band below.
  *
  * @module
  */
@@ -19,13 +19,14 @@ import { chromium } from "npm:playwright@1.63.0"
 import { join } from "@std/path"
 import { clickLike, moveLike } from "./human-mouse.ts"
 
-/** The frame size the encoder expects, in screen pixels. */
-const WIDTH = 1280
-const HEIGHT = 660
-/** The page is drawn at 125 %, so its text stays readable when the clip plays small. */
-const ZOOM = 1.25
-/** The viewport in CSS pixels: what the page lays out in and the pointer moves in. */
-const VIEW = { width: WIDTH / ZOOM, height: HEIGHT / ZOOM }
+/**
+ * The viewport, in CSS pixels: what the page lays out in, the pointer moves in and the frames
+ * show. encode.ts scales the frames to 1280x660, so the page reads at 125 % when the clip plays
+ * small. It is scaled there, not drawn larger here, because neither way of drawing it larger
+ * works: the headless screencast sends CSS-pixel frames whatever the device scale factor, and
+ * CSS `zoom` on the page misplaces OmniTools' search results and shrinks its logo.
+ */
+const VIEW = { width: 1024, height: 528 }
 /** The link typed into the QR code generator. */
 const LINK = "https://github.com/spy4x/rostok"
 
@@ -38,7 +39,6 @@ const browser = await chromium.launch()
 try {
   const context = await browser.newContext({
     viewport: VIEW,
-    deviceScaleFactor: ZOOM,
     colorScheme: "dark",
     timezoneId: "Europe/Berlin",
     locale: "en-US",
@@ -89,8 +89,8 @@ try {
   await cdp.send("Page.startScreencast", {
     format: "jpeg",
     quality: 92,
-    maxWidth: WIDTH,
-    maxHeight: HEIGHT,
+    maxWidth: VIEW.width,
+    maxHeight: VIEW.height,
     everyNthFrame: 1,
   })
   while (frames.length === 0) await page.waitForTimeout(20)
@@ -102,7 +102,7 @@ try {
   }
 
   await shot("live", async () => {
-    await page.waitForTimeout(2500)
+    await page.waitForTimeout(1800)
     await moveLike(page, pointer, { x: 610, y: 340 })
     await page.waitForTimeout(1200)
   })
@@ -112,11 +112,11 @@ try {
     await page.keyboard.type("qr", { delay: 220 })
     const option = page.getByRole("option", { name: /QR Code Generator/ })
     await option.waitFor({ timeout: 10_000 })
-    await page.waitForTimeout(1500)
+    await page.waitForTimeout(1000)
     await clickLike(page, pointer, option, VIEW.height)
     await page.waitForURL(/qr-code/, { timeout: 10_000 })
     await page.waitForLoadState("networkidle")
-    await page.waitForTimeout(1500)
+    await page.waitForTimeout(1000)
   })
   await shot("qr", async () => {
     // Bring the generated code and the link field into view together, smoothly: the code's
@@ -140,7 +140,7 @@ try {
     await page.keyboard.type(LINK, { delay: 80 })
     await page.waitForTimeout(800)
     await moveLike(page, pointer, { x: pointer.x + 120, y: pointer.y + 50 })
-    await page.waitForTimeout(3000)
+    await page.waitForTimeout(2000)
   })
 
   await cdp.send("Page.stopScreencast")

@@ -3,7 +3,7 @@
 The video in `media/demo/` shows a new user's first run: install rostok, answer the wizard,
 deploy OmniTools and Traefik to a fresh server, then use OmniTools in the browser. Everything is
 recorded for real, on a throwaway Hetzner Cloud server that the recipe rents and deletes. One run
-takes about 15 minutes and costs a few cents.
+takes about 15 minutes and costs about one cent.
 
 ## What you need
 
@@ -52,8 +52,10 @@ deno task demo-video:encode <work dir>
   deploy really took.
 - **Browser.** `browser.ts` records with the DevTools screencast, which stamps every frame, so a
   busy machine records fewer frames but never wrong timing. The pointer and click marks come
-  from `pointer.js` and `human-mouse.ts` (the `demo-video` skill's helpers). The page is drawn
-  at 125 % (a 1024x528 viewport, 1280x660 frames), so its text stays readable on a small player.
+  from `pointer.js` and `human-mouse.ts` (the `demo-video` skill's helpers). The page lays out
+  in a 1024x528 viewport and `encode.ts` scales its frames by 1.25 to fill 1280x660, so its text
+  stays readable on a small player. The screencast only sends CSS-pixel frames, and CSS `zoom`
+  breaks OmniTools' search results, so the scaling happens in the encoder.
   Both files are left out of `deno check` (see `deno.jsonc`) and run with `--no-lock`, so
   Playwright never enters `deno.lock`.
 - **Encoding.** `encode.ts` holds each shot until its caption has been on screen long enough to
