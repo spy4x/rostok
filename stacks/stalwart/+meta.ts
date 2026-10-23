@@ -38,7 +38,7 @@ export default {
   variables: [
     {
       key: "STALWART_IMAGE_TAG",
-      default: "v0.16.11",
+      default: "v0.16.27",
       required: false,
     },
     {

@@ -24,7 +24,7 @@ export default {
   variables: [
     {
       key: "BULWARK_IMAGE_TAG",
-      default: "1.7.6",
+      default: "1.17.1",
       required: false,
     },
     {
