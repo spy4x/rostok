@@ -278,6 +278,6 @@ Under `IMAGE_POLICY=pinned`, `rostok stack add` writes the exact version, and
 
 | Variable                       | Default    | Image                                        |
 | ------------------------------ | ---------- | -------------------------------------------- |
-| `STALWART_IMAGE_TAG`           | `v0.16.11` | `stalwartlabs/stalwart` (service `stalwart`) |
+| `STALWART_IMAGE_TAG`           | `v0.16.27` | `stalwartlabs/stalwart` (service `stalwart`) |
 | `STALWART_MTA_STS_IMAGE_TAG`   | `alpine`   | `nginx` (service `mta-sts`)                  |
 | `STALWART_CERT_SYNC_IMAGE_TAG` | `3-alpine` | `python` (service `cert-sync`)               |

@@ -11,7 +11,7 @@ JMAP (RFC 8620) — no IMAP polling, real-time push via EventSource.
 
 ## Stack
 
-- **Image**: `ghcr.io/bulwarkmail/webmail:1.7.6`
+- **Image**: `ghcr.io/bulwarkmail/webmail:1.17.1`
 - **Domain**: `BULWARK_DOMAIN`, default `webmail.${DOMAIN}`
 - **Auth**: Own login form (authenticates against Stalwart JMAP). No Authelia or
   basic auth middleware — Bulwark handles authentication natively.
@@ -59,7 +59,7 @@ extensions).
 
 ## Security Notes
 
-- Image is pinned to `1.7.6` (not `:latest`).
+- Image is pinned to `1.17.1` (not `:latest`).
 - Runs with `no-new-privileges:true`.
 - Admin settings volume can be made read-only post-setup with
   `ADMIN_CONFIG_READONLY=true` (see upstream docs).
@@ -79,6 +79,6 @@ Each image takes its tag from its own variable; unset, compose uses the default 
 Under `IMAGE_POLICY=pinned`, `rostok stack add` writes the exact version, and
 `rostok images update` moves it (see [commands](../../docs/commands.md)).
 
-| Variable            | Default | Image                                             |
-| ------------------- | ------- | ------------------------------------------------- |
-| `BULWARK_IMAGE_TAG` | `1.7.6` | `ghcr.io/bulwarkmail/webmail` (service `bulwark`) |
+| Variable            | Default  | Image                                             |
+| ------------------- | -------- | ------------------------------------------------- |
+| `BULWARK_IMAGE_TAG` | `1.17.1` | `ghcr.io/bulwarkmail/webmail` (service `bulwark`) |
