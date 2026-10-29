@@ -110,6 +110,9 @@ export const SHIPPED_STACK_FILES: Record<string, readonly string[]> = {
     "compose.yml",
     "db-helper.ts",
   ],
+  "ci-agent": [
+    "compose.yml",
+  ],
   usememos: [
     "compose.yml",
   ],
