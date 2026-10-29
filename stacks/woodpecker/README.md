@@ -58,11 +58,26 @@ Declared in `+meta.ts`. Requires the `traefik` stack. Server-level keys `DOCKER_
 | `WOODPECKER_GITHUB_SECRET` | asked, secret     | Client secret of the GitHub OAuth app        |
 | `WOODPECKER_ADMIN`         | asked             | GitHub login that administers Woodpecker     |
 | `WOODPECKER_MAX_WORKFLOWS` | `4`               | Workflows the agent runs at once             |
+| `WOODPECKER_GRPC_DOMAIN`   | unset             | gRPC host for agents on other machines       |
 
 Each workflow runs as its own containers next to the agent, outside the agent's memory and CPU
 limits. Before raising `WOODPECKER_MAX_WORKFLOWS`, check that the host's free memory holds that
 many of your heaviest pipelines at their peak (`docker stats` on the `wp_*` containers during a
 run).
+
+## Agents on other machines
+
+To run workflows on a second machine as well, set `WOODPECKER_GRPC_DOMAIN` (for example
+`grpc.ci.example.com`), point its DNS at this server, deploy, then add the
+[`ci-agent`](../ci-agent/README.md) stack on the other machine. Traefik then serves
+the server's gRPC port on that host over TLS, on 443.
+
+The agent secret is the only authentication on that host: anyone who has it can connect an agent
+and receive your pipelines, with their secrets. Keep the generated secret, and never put it in a
+repository.
+
+Unset or empty, the route matches no connection, so gRPC stays reachable only by the agent in this
+stack.
 
 ## Database and build logs
 

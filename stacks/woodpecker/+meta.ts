@@ -1,6 +1,7 @@
 // Stack metadata for `woodpecker`.
 //
 // CI server plus a Docker agent at `ci.${DOMAIN}`, signing in through a GitHub OAuth app.
+// Agents on other machines connect through an optional gRPC host (`ci-agent` stack).
 // The agent secret is generated; the OAuth client ID and secret and the admin login come from
 // the owner's GitHub account, so they have no default.
 
@@ -38,6 +39,11 @@ export default {
       question: "Public domain for Woodpecker?",
       default: "ci.${DOMAIN}",
       required: true,
+    },
+    {
+      // Unset: no gRPC route, so only the agent in this stack can connect.
+      key: "WOODPECKER_GRPC_DOMAIN",
+      required: false,
     },
     {
       key: "WOODPECKER_AGENT_SECRET",
