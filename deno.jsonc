@@ -213,6 +213,8 @@
       "!stacks/woodpecker/+meta.ts",
       "!stacks/woodpecker/compose.yml",
       "!stacks/woodpecker/db-helper.ts",
+      "!stacks/ci-agent/+meta.ts",
+      "!stacks/ci-agent/compose.yml",
       "!stacks/usememos/+meta.ts",
       "!stacks/usememos/compose.yml",
       "!stacks/victoria-metrics/+meta.ts",

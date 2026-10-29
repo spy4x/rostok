@@ -1,0 +1,32 @@
+services:
+  # A Woodpecker agent on its own, for a machine other than the `woodpecker` server's. It reaches
+  # the server's gRPC host over TLS on 443 and runs workflows with the local Docker. Names differ
+  # from the `woodpecker` stack's agent, so both stacks can share one server.
+  ci-agent:
+    container_name: hl-ci-agent
+    image: woodpeckerci/woodpecker-agent:${CI_AGENT_IMAGE_TAG:-v3.19.0}
+    user: "${PUID:-1000}:${PGID:-1000}"
+    group_add:
+      - "${DOCKER_GROUP_ID:-990}" # Allow access to docker.sock
+    environment:
+      - WOODPECKER_SERVER=${CI_AGENT_GRPC_DOMAIN:?}:443
+      - WOODPECKER_GRPC_SECURE=true
+      # Must equal the server's WOODPECKER_AGENT_SECRET, or the server refuses the agent.
+      - WOODPECKER_AGENT_SECRET=${CI_AGENT_SECRET:?}
+      - WOODPECKER_BACKEND=docker
+      # Workflows the agent runs at once. Each one runs as its own containers beside the agent,
+      # outside the agent's limits below, so size it to the host's free memory and cores.
+      - WOODPECKER_MAX_WORKFLOWS=${CI_AGENT_MAX_WORKFLOWS:-4}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      # agent.conf keeps the id the server gave the agent, so a restart does not register a new one.
+      - ${VOLUMES_PATH}/ci-agent:/etc/woodpecker:z
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: "1"
+    security_opt:
+      - no-new-privileges:true
+      - label=type:container_runtime_t # Required for SELinux to access docker.sock

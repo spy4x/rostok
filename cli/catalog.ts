@@ -56,6 +56,7 @@ import openWebui from "../stacks/open-webui/+meta.ts"
 import audiobookshelf from "../stacks/audiobookshelf/+meta.ts"
 import metube from "../stacks/metube/+meta.ts"
 import woodpecker from "../stacks/woodpecker/+meta.ts"
+import ciAgent from "../stacks/ci-agent/+meta.ts"
 import usememos from "../stacks/usememos/+meta.ts"
 import victoriaMetrics from "../stacks/victoria-metrics/+meta.ts"
 import akaunting from "../stacks/akaunting/+meta.ts"
@@ -107,6 +108,7 @@ const STACK_META: Record<string, StackMeta> = {
   audiobookshelf,
   metube,
   woodpecker,
+  "ci-agent": ciAgent,
   usememos,
   "victoria-metrics": victoriaMetrics,
   akaunting,

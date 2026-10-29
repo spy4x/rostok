@@ -67,6 +67,8 @@ The catalog is what the `rostok` CLI bundles. Users browse it with
 - [gitea](../../stacks/gitea/README.md) — self-hosted Git (GitHub
   alternative)
 - [woodpecker](../../stacks/woodpecker/README.md) — CI/CD pipeline
+- [ci-agent](../../stacks/ci-agent/README.md) — extra
+  Woodpecker agent on a second machine
 - [docker-registry](../../stacks/docker-registry/README.md) — private
   Docker image registry
 - [docker-sock-proxy](../../stacks/docker-sock-proxy/README.md) —
