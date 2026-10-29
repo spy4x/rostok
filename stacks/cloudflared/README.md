@@ -77,7 +77,7 @@ Cloudflare will automatically create CNAME records for your tunnel routes. Verif
 ### 5. Deploy the Stack
 
 ```bash
-deno task deploy home cloudflared
+rostok deploy <server> cloudflared
 ```
 
 ## Configuration Options

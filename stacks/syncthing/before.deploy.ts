@@ -448,7 +448,7 @@ export function assertUsableApiKey(): void {
     throw new Error(
       "SYNCTHING_API_KEY is not set. Generate one with\n" +
         "  head -c 24 /dev/urandom | base64\n" +
-        "then add it to this server's .env, run `deno task env:encrypt`, and commit the .env.age.",
+        "then add it to this server's .env, run `rostok env encrypt`, and commit the .env.age.",
     )
   }
   if (key.startsWith("REPLACE_WITH_")) {

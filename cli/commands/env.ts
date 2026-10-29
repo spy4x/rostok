@@ -43,7 +43,9 @@ async function safeAgeStatus(cwd: string): Promise<AgeStatus> {
 
 /** `rostok env encrypt` — run the encrypt task directly. */
 export const envEncryptCommand = new Command()
-  .description("Encrypt .env → .env.age (same as the auto-hook after wizard writes).")
+  .description(
+    "Encrypt every .env file of the project to its .age copy (the wizard runs this after each write).",
+  )
   .action(async () => {
     const cwd = Deno.cwd()
     const status = await safeAgeStatus(cwd)

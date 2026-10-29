@@ -189,9 +189,11 @@ self-signed certificate, or one from a private authority, fails too.
 
 ## Attachment downloads
 
-Off. `before.deploy.ts` writes `enable_attachment_download = false` into
-`config.toml` on every deploy, and no key of the `.env` turns it on, so the
-assistant cannot save received attachments inside the container.
+Off. The guard in front of email-mcp refuses the `download_attachment` tool on
+every call, and that is what keeps downloads off. `before.deploy.ts` also
+writes `enable_attachment_download = false` into `config.toml`, but the
+upstream image lets `MCP_EMAIL_SERVER_ENABLE_ATTACHMENT_DOWNLOAD=true` in its
+environment (from a `compose-override/email-mcp.yml`, say) override that file.
 
 ## Second account
 

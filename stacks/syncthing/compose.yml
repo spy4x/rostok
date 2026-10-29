@@ -18,7 +18,7 @@
 # key. To set one by hand instead:
 #   head -c 24 /dev/urandom | base64
 #   # put it in servers/<server>/.env as SYNCTHING_API_KEY=..., then
-#   deno task env:encrypt                   # and commit the .env.age
+#   rostok env encrypt                      # and commit the .env.age
 #
 # STGUIAPIKEY is accepted next to the key stored in config.xml, which is left
 # unchanged (both answer the API), so the hooks' key is stable across restarts
