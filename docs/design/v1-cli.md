@@ -348,7 +348,7 @@ Concrete triggers:
 - Power-user `stack add` writes `servers/<n>/.env` → encrypt.
 - Any `.env.root` change → encrypt `.env.root.age`.
 
-Implementation: call the existing `deno task env:encrypt` flow after
+Implementation: run the same in-process encryption as `rostok env encrypt` after
 each write. Failures are non-fatal (warn) — the wizard should not block
 on encrypt hiccups. The wrapper (`cli/encrypt.ts`) detects `age`
 presence up front so the task is only spawned when it can succeed.
