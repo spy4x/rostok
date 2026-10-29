@@ -24,7 +24,8 @@ services:
     image: victoriametrics/victoria-metrics:${VICTORIA_METRICS_IMAGE_TAG:-v1.146.0}
     command:
       - "--storageDataPath=/storage"
-      - "--retentionPeriod=14"
+      # A number without a unit means months.
+      - "--retentionPeriod=14d"
       - "--httpListenAddr=:8428"
       - "--promscrape.config=/etc/vmagent/prometheus.yml"
       - "--graphiteListenAddr=:2003"
@@ -72,7 +73,8 @@ services:
     image: victoriametrics/victoria-logs:${VICTORIA_METRICS_LOGS_IMAGE_TAG:-v1.51.0}
     command:
       - "--storageDataPath=/storage"
-      - "--retentionPeriod=14"
+      # A number without a unit means months.
+      - "--retentionPeriod=14d"
       - "--httpListenAddr=:9428"
     volumes:
       - ${VOLUMES_PATH}/victoria-logs/data:/storage:z

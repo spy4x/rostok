@@ -1,4 +1,5 @@
-// Guards who can read the stack's stores, which take no password (spy4x/rostok#470).
+// Guards who can read the stack's stores, which take no password, and how long they keep data
+// (spy4x/rostok#470).
 
 import { assertEquals } from "@std/assert"
 import { parse } from "yaml"
@@ -11,7 +12,7 @@ interface Network {
 
 interface Compose {
   networks: Record<string, Network | null>
-  services: Record<string, { networks?: string[] }>
+  services: Record<string, { networks?: string[]; command?: string[] }>
 }
 
 const compose = parse(
@@ -45,4 +46,12 @@ Deno.test("victoria-metrics: only promtail reaches VictoriaLogs", () => {
 
 Deno.test("victoria-metrics: vmagent reaches VictoriaMetrics and both exporters", () => {
   assertEquals(on("metrics"), ["cadvisor", "node-exporter", "victoria-metrics", "vmagent"])
+})
+
+Deno.test("victoria-metrics: both stores keep data for 14 days", () => {
+  // A number without a unit is months: `--retentionPeriod=14` kept data for 14 months.
+  for (const store of ["victoria-metrics", "victoria-logs"]) {
+    const flags = compose.services[store].command?.filter((f) => f.startsWith("--retentionPeriod"))
+    assertEquals(flags, ["--retentionPeriod=14d"], store)
+  }
 })
