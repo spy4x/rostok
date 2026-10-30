@@ -1,8 +1,9 @@
 # No service joins the shared `proxy` network: the stack has no Traefik route, and neither store
 # asks for a password, so a container on `proxy` could read every log and every metric.
 networks:
-  # The stack's own networks. Neither is external or renamed, so no other stack can declare them,
-  # and both are internal: nothing on them needs a route out.
+  # The stack's own networks, both internal: nothing on them needs a route out. No other container
+  # is on them unless someone attaches it on purpose, for example another stack's compose file
+  # that names `victoria-metrics_logs` as an external network.
   # VictoriaMetrics, vmagent and the two exporters it scrapes.
   metrics:
     internal: true

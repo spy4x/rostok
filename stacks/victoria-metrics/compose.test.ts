@@ -28,7 +28,7 @@ function on(network: string): string[] {
 
 Deno.test("victoria-metrics: no network of the stack is shared with other stacks", () => {
   // The old file aliased `default` to the external `proxy` network, so every container on it could
-  // query both stores. Not external and not renamed: no other stack can declare these networks.
+  // query both stores. Now a container reaches them only when someone attaches it on purpose.
   assertEquals(compose.networks, { metrics: { internal: true }, logs: { internal: true } })
 })
 
