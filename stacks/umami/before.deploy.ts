@@ -1,8 +1,10 @@
 // before.deploy.ts — stops a deploy that would start Postgres 18 next to data it cannot read
 // (#363). Up to rostok 1.21, this stack kept Postgres 16 data in `${VOLUMES_PATH}/<stack>/db`.
 // Postgres 18 uses `${VOLUMES_PATH}/<stack>/postgres` instead and would start there with an
-// empty database, so the app would look empty. While the old folder exists and the new one
-// holds no data, this hook fails the deploy and names the upgrade step.
+// empty database, so the app would look empty. This hook fails the deploy and names the step
+// that fixes it while the old folder exists and the new one holds no data, while an upgrade
+// that did not finish left its marker, and while `<STACK>_DB_IMAGE_TAG` names Postgres 17 or
+// older (that image would make a second, empty cluster in the new folder).
 //
 // The same file is in stacks/gitea, stacks/umami and stacks/caldiy (gitea's test checks the
 // copies are equal): the hook contract allows no import out of the stack's own folder, so the
@@ -12,6 +14,10 @@ const UPGRADE_DOC = "https://github.com/spy4x/rostok/blob/main/docs/usage/postgr
 
 /** Exit code of the check script when the deploy must stop. */
 export const REFUSE = 3
+/** Exit code of the check script when it cannot see into the stack folder. */
+export const CANNOT_ENTER = 4
+/** Exit code of the check script when an upgrade did not finish. */
+export const INCOMPLETE = 5
 
 /** The stack folder name in `.../stacks/<name>/before.deploy.ts`, a file or jsr.io URL. */
 export function stackFromUrl(url: string): string {
@@ -26,20 +32,42 @@ function shQuote(value: string): string {
 }
 
 /**
- * A POSIX shell script that exits REFUSE when `<volumes>/<stack>/db` exists and
- * `<volumes>/<stack>/postgres` holds no `<major>/docker` data folder, and 0 otherwise. It reads
- * only the folders' names, so a deploy user who cannot open the Postgres-owned data folder gets
- * the same answer; a stack folder it cannot enter at all is an error (exit 4), never a pass.
+ * The check run with the deploy user's own rights, as `sh -c <it> sh <stack folder>`. It reads
+ * only folder names, so a user who cannot open the Postgres-owned data folder gets the right
+ * answer. It exits CANNOT_ENTER when the deepest existing folder on the path cannot be entered
+ * (the stack folder would otherwise read as missing), INCOMPLETE on upgrade.sh's marker,
+ * REFUSE when `db` exists and `postgres` holds no `<major>/docker` folder, and 0 otherwise.
+ */
+const CHECK = [
+  `p=$1`,
+  `while [ ! -e "$p" ]; do p=$(dirname -- "$p"); done`,
+  `[ -d "$p" ] && [ -x "$p" ] || { echo "cannot enter $p" >&2; exit ${CANNOT_ENTER}; }`,
+  `[ ! -e "$1/postgres/.upgrade-incomplete" ] || exit ${INCOMPLETE}`,
+  `[ -d "$1/db" ] || exit 0`,
+  `for d in "$1"/postgres/*/docker; do [ -d "$d" ] && exit 0; done`,
+  `exit ${REFUSE}`,
+].join("\n")
+
+/**
+ * A POSIX shell script that runs CHECK on `<volumes>/<stack>` and exits with its code. A deploy
+ * user that is not root and cannot enter the folder repeats it through `sudo -n`, as
+ * cli/deploy/volumes.ts does; when sudo fails too, the exit code is sudo's, never 0.
  */
 export function buildCheckScript(volumesPath: string, stack: string): string {
-  const dir = shQuote(`${volumesPath}/${stack}`)
   return [
-    `dir=${dir}`,
-    `[ ! -d "$dir" ] || [ -x "$dir" ] || { echo "cannot enter $dir" >&2; exit 4; }`,
-    `[ -d "$dir/db" ] || exit 0`,
-    `for d in "$dir"/postgres/*/docker; do [ -d "$d" ] && exit 0; done`,
-    `exit ${REFUSE}`,
+    `check=${shQuote(CHECK)}`,
+    `dir=${shQuote(`${volumesPath}/${stack}`)}`,
+    `sh -c "$check" sh "$dir"; code=$?`,
+    `if [ "$code" = ${CANNOT_ENTER} ] && [ "$(id -u)" != 0 ]; then`,
+    `  sudo -n sh -c "$check" sh "$dir"; code=$?`,
+    `fi`,
+    `exit "$code"`,
   ].join("\n")
+}
+
+/** The upgrade command a message names; the script needs root. */
+function upgradeCommand(volumesPath: string, stack: string): string {
+  return `  sudo sh upgrade.sh ${volumesPath} ${stack}`
 }
 
 /** The message a refused deploy prints. */
@@ -49,8 +77,41 @@ export function refusal(volumesPath: string, stack: string): string {
     `${stack}: ${dir}/db holds data from Postgres 16 or older, and ${dir}/postgres holds none.`,
     `This version runs Postgres 18 in ${dir}/postgres and would start with an empty database.`,
     `Move the data first, on the server, while the old version still runs:`,
-    `  sh upgrade.sh ${volumesPath} ${stack}`,
+    upgradeCommand(volumesPath, stack),
     `Then deploy again. Steps and where to get upgrade.sh: ${UPGRADE_DOC}`,
+  ].join("\n")
+}
+
+/** The message a deploy prints when upgrade.sh's marker is there. */
+export function incomplete(volumesPath: string, stack: string): string {
+  const dir = `${volumesPath}/${stack}`
+  return [
+    `${stack}: an upgrade to Postgres 18 did not finish: ${dir}/postgres/.upgrade-incomplete`,
+    `exists, so ${dir}/postgres may hold only part of the data. Run the upgrade again on the`,
+    `server; it says how to put the old data back first:`,
+    upgradeCommand(volumesPath, stack),
+    `Steps: ${UPGRADE_DOC}`,
+  ].join("\n")
+}
+
+/** The env key of the stack's Postgres image tag, such as GITEA_DB_IMAGE_TAG. */
+export function dbTagKey(stack: string): string {
+  return `${stack.toUpperCase().replaceAll("-", "_")}_DB_IMAGE_TAG`
+}
+
+/**
+ * The message when `tag` names Postgres 17 or older (`16`, `16.9`, `16-alpine`, a pinned
+ * `16.9@sha256:...`), or undefined. A tag with no leading major, such as `latest`, passes.
+ */
+export function oldTagRefusal(stack: string, tag: string | undefined): string | undefined {
+  const major = Number(tag?.match(/^(\d+)/)?.[1] ?? NaN)
+  if (!(major < 18)) return undefined
+  const key = dbTagKey(stack)
+  return [
+    `${stack}: ${key}=${tag} names Postgres ${major}. This version of the stack needs Postgres 18`,
+    `or later: an older image would start a second, empty database in the new data folder.`,
+    `Set ${key} to an 18 tag such as 18-alpine, or remove it to use the default.`,
+    `If the stack already holds data, upgrade it first: ${UPGRADE_DOC}`,
   ].join("\n")
 }
 
@@ -100,6 +161,8 @@ export async function check(
   env: (key: string) => string | undefined,
   stack: string,
 ): Promise<string | undefined> {
+  const oldTag = oldTagRefusal(stack, env(dbTagKey(stack)))
+  if (oldTag) return oldTag
   const volumesPath = env("VOLUMES_PATH")
   if (!volumesPath) return "VOLUMES_PATH is not set"
   const script = buildCheckScript(volumesPath, stack)
@@ -113,6 +176,7 @@ export async function check(
     .output()
   if (out.code === 0) return undefined
   if (out.code === REFUSE) return refusal(volumesPath, stack)
+  if (out.code === INCOMPLETE) return incomplete(volumesPath, stack)
   const stderr = new TextDecoder().decode(out.stderr).trim()
   return `${stack}: could not check the Postgres data folders (exit ${out.code}): ${stderr}`
 }
