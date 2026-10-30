@@ -13,11 +13,11 @@ export default {
   category: "devtools",
   requires: ["traefik"],
   // Postgres runs as its own user: deploy must not chown its folder to PUID:PGID (#312).
-  keepOwner: ["gitea/db"],
+  keepOwner: ["gitea/postgres"],
   variables: [
     {
       key: "GITEA_DB_IMAGE_TAG",
-      default: "16-alpine",
+      default: "18-alpine",
       required: false,
     },
     {

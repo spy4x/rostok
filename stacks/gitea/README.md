@@ -26,6 +26,13 @@ GITEA__service__DISABLE_REGISTRATION=true
 
 Registration disabled — admin creates accounts.
 
+## Postgres 18
+
+The database runs Postgres 18, in `${VOLUMES_PATH}/gitea/postgres`. An install made before rostok
+1.22 keeps Postgres 16 data in `${VOLUMES_PATH}/gitea/db`: deploy stops until you move it with the
+upgrade script, see [Upgrading Postgres 16 to 18](../../docs/usage/postgres-upgrade.md).
+Postgres 18 needs Gitea 28.0.0 or later, which the default tag `latest` is.
+
 ## Backup
 
 PostgreSQL dump + data directory backed up nightly via Restic.
@@ -58,5 +65,5 @@ Under `IMAGE_POLICY=pinned`, `rostok stack add` writes the exact version, and
 
 | Variable             | Default     | Image                           |
 | -------------------- | ----------- | ------------------------------- |
-| `GITEA_DB_IMAGE_TAG` | `16-alpine` | `postgres` (service `gitea-db`) |
+| `GITEA_DB_IMAGE_TAG` | `18-alpine` | `postgres` (service `gitea-db`) |
 | `GITEA_IMAGE_TAG`    | `latest`    | `gitea/gitea` (service `gitea`) |

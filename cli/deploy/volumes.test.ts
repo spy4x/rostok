@@ -1002,14 +1002,14 @@ Deno.test("loadStackKeepOwner reads keepOwner from a local +meta.ts", async () =
 Deno.test("loadStackKeepOwner: the bundled catalog keeps the owner of every database folder", async () => {
   const expected: Record<string, string[]> = {
     immich: ["immich/postgres"],
-    gitea: ["gitea/db"],
+    gitea: ["gitea/postgres"],
     piped: ["piped/postgres"],
     akaunting: ["akaunting/db"],
     searxng: ["searxng/redis"],
     usememos: ["memos"],
-    umami: ["umami/db"],
+    umami: ["umami/postgres"],
     bulwark: ["bulwark/settings", "bulwark/admin", "bulwark/admin-state", "bulwark/telemetry"],
-    caldiy: ["caldiy/db", "caldiy/redis"],
+    caldiy: ["caldiy/postgres", "caldiy/redis"],
     healthchecks: ["healthchecks"],
     stalwart: ["stalwart/data", "stalwart/config", "stalwart/lib"],
   }

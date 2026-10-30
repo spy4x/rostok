@@ -124,6 +124,7 @@ export const SHIPPED_STACK_FILES: Record<string, readonly string[]> = {
     "health.html",
   ],
   gitea: [
+    "before.deploy.ts",
     "compose.yml",
     "public/robots.txt",
   ],
@@ -183,6 +184,7 @@ export const SHIPPED_STACK_FILES: Record<string, readonly string[]> = {
     "compose.yml",
   ],
   umami: [
+    "before.deploy.ts",
     "compose.yml",
   ],
   mirotalk: [
@@ -194,6 +196,7 @@ export const SHIPPED_STACK_FILES: Record<string, readonly string[]> = {
   ],
   caldiy: [
     "after.deploy.ts",
+    "before.deploy.ts",
     "compose.yml",
   ],
   mig: [
