@@ -142,7 +142,7 @@ Cloudflare DNS publication remains manual. Post-deploy verification fails if
 either domain lacks matching active Ed25519 and RSA TXT records.
 
 Only first deployment, when no live Stalwart endpoint exists, may bypass
-preflight with `STALWART_INITIAL_DEPLOY=true deno task deploy cloud stalwart`.
+preflight with `STALWART_INITIAL_DEPLOY=true rostok deploy <server> stalwart`.
 Post-deploy DKIM verification remains mandatory.
 
 The apex is proxied, so `dig example.com` returns Cloudflare addresses
@@ -222,9 +222,11 @@ External mail ports (25, 465, 587, 993) are published. **Port 25 requires Hetzne
 
 ## Upgrade
 
+The image tag is pinned. Set `STALWART_IMAGE_TAG` in the server's `.env` to the new release,
+run `rostok env encrypt`, then:
+
 ```bash
-docker pull stalwartlabs/stalwart:latest
-deno task deploy cloud stalwart
+rostok deploy <server> stalwart
 ```
 
 ## Migration
@@ -262,7 +264,7 @@ deno run -A scripts/stalwart/ensure-account.ts \
   --description "Jane Doe" --password-env APP_PW --redirect jane@example.com
 ```
 
-Keep the password in the server's `.env` (then `deno task env:encrypt`) and in
+Keep the password in the server's `.env` (then `rostok env encrypt`) and in
 the app's own env. The script is idempotent: an existing account and its
 password are left alone, and the redirect script is replaced on every run. A
 refused script upload fails the run, and an account that another active Sieve

@@ -14,7 +14,7 @@ Cron job monitoring with alerts for missed tasks.
 
 | Variable                     | Default                  | Meaning                        |
 | ---------------------------- | ------------------------ | ------------------------------ |
-| `HEALTHCHECKS_IMAGE_TAG`     | `latest`                 | Image tag                      |
+| `HEALTHCHECKS_IMAGE_TAG`     | `latest`                 | Image tag, v5.0 or later       |
 | `HEALTHCHECKS_DOMAIN`        | `healthchecks.${DOMAIN}` | Public host                    |
 | `HEALTHCHECKS_SECRET_KEY`    | generated                | Django secret key              |
 | `HEALTHCHECKS_SMTP_HOST`     | none                     | SMTP server (login and alerts) |

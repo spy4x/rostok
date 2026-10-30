@@ -14,10 +14,8 @@ services:
   healthchecks:
     container_name: hl-healthchecks
     image: healthchecks/healthchecks:${HEALTHCHECKS_IMAGE_TAG:-latest}
-    # Fix perms on /data before the app starts. Deploy script chowns volumes
-    # to SSH_USER (UID 1000 on cloud), but this container runs as
-    # UID 999 — without this chown sqlite is read-only and /docs/ returns
-    # 500. `|| true` so a fresh empty bind mount doesn't error.
+    # Runs the image's run.sh (migrations, sendalerts, sendreports, web server).
+    # /data must be owned by UID 999, the user below: deploy leaves its owner alone.
     entrypoint: ["/bin/sh", "/opt/healthchecks/docker-entrypoint.sh"]
     expose:
       - "8000"

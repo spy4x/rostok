@@ -145,7 +145,7 @@ CANCEL_SECRET="$(openssl rand -base64 32)"
 SMTP_HOST="smtp.example.com"
 SMTP_PORT=587
 SMTP_USER="jane@example.com"
-SMTP_PASS="..."
+SMTP_PASSWORD="..."
 SMTP_FROM="Bookings <book@example.com>"
 PUBLIC_URL="https://meet.example.com"
 
@@ -163,8 +163,8 @@ list and syntax reference.
 ## Resources
 
 - ~30-60 MB RSS typical (Fresh + V8 + nodemailer)
-- Memory limit: 128M
-- CPU limit: 0.2
+- Memory limit: 256M
+- CPU limit: 1
 
 ## Backup
 
@@ -177,7 +177,7 @@ snapshot.
 
 - **Read all bookings**: `docker exec hl-mig cat /data/bookings.json | jq`
 - **Manually trigger backup**: `deno task backup`
-- **Update**: `deno task deploy <server> mig` (pulls new image, restarts)
+- **Update**: `rostok deploy <server> mig` (pulls new image, restarts)
 - **Rotate `CANCEL_SECRET`**: edit `mig.env`, run `rostok env encrypt`,
   redeploy. ⚠️ WARNING: rotating `CANCEL_SECRET` invalidates every
   existing cancel link. Do this only if tokens have leaked.
@@ -211,10 +211,10 @@ stable release mig's CI publishes goes live within a day with no human
 step either way.
 
 - **Deploy a new release right away**, instead of waiting for
-  Watchtower: `deno task deploy <server> mig`.
+  Watchtower: `rostok deploy <server> mig`.
 - **Pin or roll back** to a specific release: set `MIG_IMAGE_TAG=v0.3.0`
-  in the server's `.env`, `deno task env:encrypt`, then
-  `deno task deploy <server> mig`.
+  in the server's `.env`, `rostok env encrypt`, then
+  `rostok deploy <server> mig`.
 
 The image runs as a non-root user baked in (uid 1993, `deno`, from
 v0.4.0 on). `compose.yml` sets `user: "${PUID:-1000}:${PGID:-1000}"` so

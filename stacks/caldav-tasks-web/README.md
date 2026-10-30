@@ -81,9 +81,9 @@ The image is `antonshubin/caldav-tasks-web`, published by the app's CI to Docker
 does. Deploying always pulls the configured tag (`pull_policy: always`), and Watchtower pulls
 `latest` daily on its own, so a stable release goes live within a day with no human step.
 
-- **Deploy right away**: `deno task deploy <server> caldav-tasks-web`.
+- **Deploy right away**: `rostok deploy <server> caldav-tasks-web`.
 - **Pin or roll back**: set `CALDAV_TASKS_WEB_IMAGE_TAG=v1.0.0` in the server's `.env`, run
-  `deno task env:encrypt`, then deploy. Watchtower leaves a pinned tag alone.
+  `rostok env encrypt`, then deploy. Watchtower leaves a pinned tag alone.
 
 ## Maintenance
 

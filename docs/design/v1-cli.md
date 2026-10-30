@@ -57,9 +57,9 @@ rostok                          # onboarding wizard (init + server create + stac
 rostok server create [<name>]   # power-user: create one server
 rostok stack add <name> --server=<name>  # power-user: add one stack
 rostok stack list [--tree] [--format json]  # browse bundled catalog
-rostok deploy <server> [stack]  # wraps `deno task deploy`
-rostok env encrypt              # run `deno task env:encrypt` directly
-rostok env decrypt              # run `deno task env:decrypt` directly
+rostok deploy <server> [stack]  # deploy in-process
+rostok env encrypt              # encrypt in-process (age64)
+rostok env decrypt              # decrypt in-process (age64)
 rostok env status               # show encryption posture + next steps
 rostok env setup                # generate `.age/key.txt` (wraps `age-keygen`)
 
@@ -348,7 +348,7 @@ Concrete triggers:
 - Power-user `stack add` writes `servers/<n>/.env` → encrypt.
 - Any `.env.root` change → encrypt `.env.root.age`.
 
-Implementation: call the existing `deno task env:encrypt` flow after
+Implementation: run the same in-process encryption as `rostok env encrypt` after
 each write. Failures are non-fatal (warn) — the wizard should not block
 on encrypt hiccups. The wrapper (`cli/encrypt.ts`) detects `age`
 presence up front so the task is only spawned when it can succeed.
@@ -364,10 +364,10 @@ The wizard auto-runs encrypt after every `.env` write. For ad-hoc
 needs (backfilling after installing `age`, decrypting a fresh clone),
 the user can invoke the same logic directly:
 
-- `rostok env encrypt` — runs `deno task env:encrypt`. Exits non-zero
+- `rostok env encrypt` — encrypts in-process. Exits non-zero
   if `age` is missing or `.age/key.txt` is missing (explicit error —
   the user invoked the command deliberately).
-- `rostok env decrypt` — runs `deno task env:decrypt`. Same exit
+- `rostok env decrypt` — decrypts in-process. Same exit
   semantics.
 - `rostok env status` — prints whether `age` is on PATH, whether
   `.age/key.txt` exists, and the list of `.env` / `.env.age` files.
@@ -414,7 +414,7 @@ during init; the user populates it manually for cross-server creds
 prompts for these — they're outside the per-server flow.
 
 If the user wants the CLI to help populate `.env.root`, they edit it
-manually or run `deno task env:encrypt` after manual edits. There's no
+manually or run `rostok env encrypt` after manual edits. There's no
 `rostok root edit` subcommand in v1.
 
 ### 7.3 No `~/.rostok/secrets/`

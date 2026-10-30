@@ -92,7 +92,7 @@ Docker's build cache keep an old clone.
 The binary runs as `PUID:PGID` with no capabilities and a read-only root file system. Its Deno
 permissions are fixed at build time: it listens on port 3000, reaches only the host of
 `CALDAV_MCP_SERVER_URL` and `claude.ai`, and reads and writes only `/data`. A new CalDAV host needs
-a rebuild, which `deno task deploy` does. Images before spy4x/rostok#356 ran as root and left
+a rebuild, which `rostok deploy` does. Images before spy4x/rostok#356 ran as root and left
 `oauth.kv` owned by root. A deploy that logs in as a user other than root chowns the volume only
 when the folder itself is missing or has the wrong owner. That folder is already `PUID:PGID`, so
 the deploy skips it. When upgrading from such an image, stop the container, back up `oauth.kv*`, and chown those files to
@@ -124,9 +124,9 @@ not open and the container restarts in a loop.
    lockout too (10 wrong passwords per address in 15 minutes, 100 from all addresses in a day).
    Trusting the whole subnet would let any container on `proxy` forge that address.
 
-3. Then `deno task env:encrypt`.
-4. Point the DNS name at the server, then `deno task deploy <server> traefik` (for the new
-   address) and `deno task deploy <server> caldav-mcp`.
+3. Then `rostok env encrypt`.
+4. Point the DNS name at the server, then `rostok deploy <server> traefik` (for the new
+   address) and `rostok deploy <server> caldav-mcp`.
 5. In claude.ai, Settings → Connectors → Add custom connector, URL `https://mcp.example.com/mcp`,
    then sign in with the owner password.
 

@@ -8,7 +8,7 @@
 //   ├── .git/                 # git init if missing and git is installed
 //   ├── servers/              # empty dir
 //   ├── .env.root             # CLI-managed root env (gitignored)
-//   └── .env.root.age         # encrypted (gitignored)
+//   └── .env.root.age         # encrypted, committed (not created by init)
 //
 // Idempotent: existing files are left alone (warn). This matches the
 // design §3.1 behavior — "If any file already exists → warn, leave it alone."
@@ -81,7 +81,7 @@ export interface InitResult {
  *
  *   Note: `.env.root.age` is NOT created by init. When the user adds
  *   age64 encryption (via `rostok env setup` + manual edits),
- *   `deno task env:encrypt` produces both `.env.age` and
+ *   `rostok env encrypt` produces both `.env.age` and
  *   `.env.root.age` (`@spy4x/server/env-age64`).
  */
 export async function initProject(cwd: string = Deno.cwd()): Promise<InitResult> {
