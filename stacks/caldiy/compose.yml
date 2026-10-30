@@ -5,13 +5,13 @@ networks:
 services:
   caldiy-db:
     container_name: hl-caldiy-db
-    image: postgres:${CALDIY_DB_IMAGE_TAG:-16-alpine}
+    image: postgres:${CALDIY_DB_IMAGE_TAG:-18-alpine}
     environment:
       POSTGRES_USER: caldiy
       POSTGRES_PASSWORD: ${CALDIY_DB_PASSWORD}
       POSTGRES_DB: caldiy
     volumes:
-      - ${VOLUMES_PATH}/caldiy/db:/var/lib/postgresql/data:z
+      - ${VOLUMES_PATH}/caldiy/postgres:/var/lib/postgresql:z
     restart: unless-stopped
     deploy:
       resources:

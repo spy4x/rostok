@@ -13,14 +13,14 @@ services:
   # PostgreSQL for Umami
   umami-db:
     container_name: hl-umami-db
-    image: postgres:${UMAMI_DB_IMAGE_TAG:-16-alpine}
+    image: postgres:${UMAMI_DB_IMAGE_TAG:-18-alpine}
     restart: unless-stopped
     environment:
       - POSTGRES_DB=umami
       - POSTGRES_USER=umami
       - POSTGRES_PASSWORD=${UMAMI_DB_PASSWORD}
     volumes:
-      - ${VOLUMES_PATH}/umami/db:/var/lib/postgresql/data:z
+      - ${VOLUMES_PATH}/umami/postgres:/var/lib/postgresql:z
     networks:
       - umami-db
     healthcheck:

@@ -13,6 +13,12 @@
 3. Complete the setup wizard to create the first admin user
 4. Configure event types, availability, and integrations via the UI
 
+## Postgres 18
+
+The database runs Postgres 18, in `${VOLUMES_PATH}/caldiy/postgres`. An install made before rostok
+1.22 keeps Postgres 16 data in `${VOLUMES_PATH}/caldiy/db`: deploy stops until you move it with the
+upgrade script, see [Upgrading Postgres 16 to 18](../../docs/usage/postgres-upgrade.md).
+
 ## Environment Variables
 
 | Variable                 | Description                                                                                                                         |
@@ -22,7 +28,7 @@
 | `CALDIY_ENCRYPTION_KEY`  | Cal.com credential encryption key. `openssl rand -hex 32`                                                                           |
 | `CALDIY_CRON_API_KEY`    | Shared secret for cron endpoints (`scheduleEmailReminders`, etc.). `openssl rand -hex 24`                                           |
 | `CALDIY_VERSION`         | Image tag (default: `latest`)                                                                                                       |
-| `CALDIY_DB_IMAGE_TAG`    | Image tag of `postgres` in `caldiy-db` (default: `16-alpine`)                                                                       |
+| `CALDIY_DB_IMAGE_TAG`    | Image tag of `postgres` in `caldiy-db` (default: `18-alpine`)                                                                       |
 | `CALDIY_REDIS_IMAGE_TAG` | Image tag of `redis` in `caldiy-redis` (default: `7-alpine`)                                                                        |
 | `CALDIY_CRON_IMAGE_TAG`  | Image tag of `alpine/curl` in `caldiy-cron` (default: `latest`)                                                                     |
 

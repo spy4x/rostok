@@ -20,7 +20,7 @@ Web UI: `https://<UMAMI_DOMAIN>`
 | Variable                 | Default           | Meaning                                      |
 | ------------------------ | ----------------- | -------------------------------------------- |
 | `UMAMI_IMAGE_TAG`        | `latest`          | Image tag                                    |
-| `UMAMI_DB_IMAGE_TAG`     | `16-alpine`       | Image tag of `postgres` (service `umami-db`) |
+| `UMAMI_DB_IMAGE_TAG`     | `18-alpine`       | Image tag of `postgres` (service `umami-db`) |
 | `UMAMI_DOMAIN`           | `stats.${DOMAIN}` | Dashboard host                               |
 | `UMAMI_PROXY_DOMAIN`     | `${DOMAIN}`       | Site host that proxies `/umami/` to Umami    |
 | `UMAMI_PROXY_WWW_DOMAIN` | `www.${DOMAIN}`   | The www host of that site                    |
@@ -31,6 +31,12 @@ The `/umami/` path lets the tracking script load from the tracked site's own dom
 blockers and Safari tracking prevention leave alone. It applies only to sites that this server's
 Traefik serves. Point the two proxy variables at another host if your site is not on the apex
 domain.
+
+## Postgres 18
+
+The database runs Postgres 18, in `${VOLUMES_PATH}/umami/postgres`. An install made before rostok
+1.22 keeps Postgres 16 data in `${VOLUMES_PATH}/umami/db`: deploy stops until you move it with the
+upgrade script, see [Upgrading Postgres 16 to 18](../../docs/usage/postgres-upgrade.md).
 
 ## Database network
 
@@ -46,7 +52,7 @@ setting `UMAMI_DB_PASSWORD` later does not change that. Check the last line of i
 the server:
 
 ```sh
-docker exec hl-umami-db tail -n 1 /var/lib/postgresql/data/pg_hba.conf
+docker exec hl-umami-db sh -c 'tail -n 1 "$PGDATA/pg_hba.conf"'
 ```
 
 `host all all all scram-sha-256` is fine. If it says `host all all all trust`, close it:
@@ -70,7 +76,7 @@ docker exec hl-umami-db tail -n 1 /var/lib/postgresql/data/pg_hba.conf
 3. Switch the rule to ask for the password, and reload:
 
    ```sh
-   docker exec -u postgres hl-umami-db sed -i '$ s/trust$/scram-sha-256/' /var/lib/postgresql/data/pg_hba.conf
+   docker exec -u postgres hl-umami-db sh -c 'sed -i "\$ s/trust\$/scram-sha-256/" "$PGDATA/pg_hba.conf"'
    docker exec hl-umami-db psql -U umami -d umami -c 'SELECT pg_reload_conf()'
    ```
 

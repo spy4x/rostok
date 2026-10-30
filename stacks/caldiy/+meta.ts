@@ -24,7 +24,7 @@ export default {
   category: "productivity",
   requires: ["traefik"],
   // Postgres and Redis run as their own users: deploy must not chown the folder to PUID:PGID.
-  keepOwner: ["caldiy/db", "caldiy/redis"],
+  keepOwner: ["caldiy/postgres", "caldiy/redis"],
   variables: [
     {
       key: "CALDIY_DOMAIN",
@@ -39,7 +39,7 @@ export default {
     },
     {
       key: "CALDIY_DB_IMAGE_TAG",
-      default: "16-alpine",
+      default: "18-alpine",
       required: false,
     },
     {

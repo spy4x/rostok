@@ -16,7 +16,7 @@ export default {
   category: "monitoring",
   requires: ["traefik"],
   // Postgres runs as its own user: deploy must not chown the folder to PUID:PGID.
-  keepOwner: ["umami/db"],
+  keepOwner: ["umami/postgres"],
   variables: [
     {
       key: "UMAMI_IMAGE_TAG",
@@ -25,7 +25,7 @@ export default {
     },
     {
       key: "UMAMI_DB_IMAGE_TAG",
-      default: "16-alpine",
+      default: "18-alpine",
       required: false,
     },
     {

@@ -338,7 +338,7 @@ still shows "Up". List such folders in `keepOwner`, relative to
 ```ts
 export default {
   // ...
-  keepOwner: ["gitea/db"],
+  keepOwner: ["gitea/postgres"],
 } satisfies StackMeta
 ```
 

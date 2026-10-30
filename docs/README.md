@@ -15,6 +15,7 @@
 - [How it works](how-it-works.md) — CLI, catalog and your project; who it's for
 - [ENCRYPTED_ENV_FILES](usage/ENCRYPTED_ENV_FILES.md) — age64 workflow
 - [Disaster recovery](usage/disaster-recovery.md) — backup, restore, spin up a new server
+- [Upgrading Postgres 16 to 18](usage/postgres-upgrade.md) — move gitea, umami or caldiy data once
 
 ## Design
 
