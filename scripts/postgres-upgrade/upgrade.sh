@@ -104,11 +104,13 @@ moved=false
 done_ok=false
 rollback() {
   $done_ok && return
+  # A message to a terminal that hung up fails; under set -e that would end the rollback early.
+  set +e
   say "failed. Putting the old version back."
   docker rm -f "$tmp" >/dev/null 2>&1 || true
-  if $moved; then
+  # The old folder goes back first: if that fails, the new one keeps its marker, so deploy refuses.
+  if $moved && mv "$kept" "$old"; then
     [ ! -e "$new" ] || rmdir "$new" 2>/dev/null || mv "$new" "$volumes/$stack/postgres-failed-$stamp"
-    mv "$kept" "$old"
   fi
   docker start "$db" >/dev/null || true
   # shellcheck disable=SC2086
