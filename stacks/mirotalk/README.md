@@ -119,9 +119,9 @@ So whoever can read the log can read both keys:
 - anyone who can run `docker logs hl-mirotalk` on the server, which means root and every member
   of the `docker` group;
 - if the `victoria-metrics` stack runs on the same server, its log collector copies every
-  container's log into VictoriaLogs and keeps it for the store's whole retention period. Then
-  everyone who can query it reads the keys too: any container on the shared `proxy` network,
-  which reaches `http://hl-victoria-logs:9428` without a password.
+  container's log into VictoriaLogs and keeps it for 14 days. VictoriaLogs takes no password, so
+  whoever can query it reads the keys too: the containers on that stack's own `logs` network,
+  which by default are only the collector and the store. It is not on the shared `proxy` network.
 
 The TURN login is given to every browser that joins a room anyway (see "What the relay refuses"),
 so the log adds nothing there. The API key is the one that matters: with it, anyone can create

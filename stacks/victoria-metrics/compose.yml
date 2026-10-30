@@ -1,16 +1,21 @@
+# No service joins the shared `proxy` network: the stack has no Traefik route, and neither store
+# asks for a password, so a container on `proxy` could read every log and every metric.
 networks:
-  proxy:
-    external: true
-  default:
-    external: true
-    name: proxy
+  # The stack's own networks, both internal: nothing on them needs a route out. No other container
+  # is on them unless someone attaches it on purpose, for example another stack's compose file
+  # that names `victoria-metrics_logs` as an external network.
+  # VictoriaMetrics, vmagent and the two exporters it scrapes.
+  metrics:
+    internal: true
+  # VictoriaLogs and promtail, nothing else: every container's log is in that store.
+  logs:
+    internal: true
 
 services:
   # ========================================================================
   # VictoriaMetrics Stack — primary observability pipeline.
   # Provides metrics (VictoriaMetrics), logs (VictoriaLogs), and
   # host/container-level exporters (node-exporter, cadvisor).
-  # Grafana UI is provided by the separate stacks/grafana stack.
   # ========================================================================
 
   # VictoriaMetrics — single-binary Prometheus-compatible TSDB.
@@ -20,7 +25,8 @@ services:
     image: victoriametrics/victoria-metrics:${VICTORIA_METRICS_IMAGE_TAG:-v1.146.0}
     command:
       - "--storageDataPath=/storage"
-      - "--retentionPeriod=14"
+      # A number without a unit means months.
+      - "--retentionPeriod=14d"
       - "--httpListenAddr=:8428"
       - "--promscrape.config=/etc/vmagent/prometheus.yml"
       - "--graphiteListenAddr=:2003"
@@ -37,8 +43,7 @@ services:
     security_opt:
       - no-new-privileges:true
     networks:
-      - default
-      - proxy
+      - metrics
 
   # VMAgent — Prometheus-compatible scraper.
   # Pushes scraped metrics to VictoriaMetrics via remote write.
@@ -60,7 +65,7 @@ services:
     security_opt:
       - no-new-privileges:true
     networks:
-      - default
+      - metrics
 
   # VictoriaLogs — single-binary log database.
   # Replaces Loki. Compatible with LogsQL.
@@ -69,7 +74,8 @@ services:
     image: victoriametrics/victoria-logs:${VICTORIA_METRICS_LOGS_IMAGE_TAG:-v1.51.0}
     command:
       - "--storageDataPath=/storage"
-      - "--retentionPeriod=14"
+      # A number without a unit means months.
+      - "--retentionPeriod=14d"
       - "--httpListenAddr=:9428"
     volumes:
       - ${VOLUMES_PATH}/victoria-logs/data:/storage:z
@@ -82,8 +88,7 @@ services:
     security_opt:
       - no-new-privileges:true
     networks:
-      - default
-      - proxy
+      - logs
 
   # Promtail — ships container logs to VictoriaLogs.
   promtail:
@@ -103,7 +108,7 @@ services:
     security_opt:
       - no-new-privileges:true
     networks:
-      - default
+      - logs
 
   # Node Exporter — host-level metrics (CPU, memory, disk, network)
   node-exporter:
@@ -124,7 +129,7 @@ services:
           memory: 64M
           cpus: "0.1"
     networks:
-      - default
+      - metrics
 
   # cAdvisor — container-level metrics (resource usage per container)
   # NOTE: requires seccomp=unconfined for syscalls needed to read container stats
@@ -148,4 +153,4 @@ services:
       - seccomp=unconfined
       - label=type:container_runtime_t
     networks:
-      - default
+      - metrics

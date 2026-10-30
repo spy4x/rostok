@@ -31,7 +31,7 @@ The catalog is what the `rostok` CLI bundles. Users browse it with
   health monitoring
 - [ntfy](../../stacks/ntfy/README.md) — push notifications / alerting
 - [victoria-metrics](../../stacks/victoria-metrics/README.md) — metrics
-  stack (long-term storage + Grafana)
+  and logs storage (VictoriaMetrics + VictoriaLogs)
 - [watchtower](../../stacks/watchtower/README.md) — automatic container
   updates
 - [zond](../../stacks/zond/README.md) — internal health probe bridge

@@ -17,35 +17,40 @@ Replaces the previous Prometheus + Loki stack with ~35% less memory and ~80% les
 | `cadvisor`         | Container metrics          | 128M         | 0.3       |
 | **Total**          |                            | **960M**     | **1.4**   |
 
-## URLs
+## Network and retention
 
-- **Grafana**: `https://metrics.${DOMAIN}` (provided by `stacks/grafana`)
-- **VM API**: `http://hl-victoria-metrics:8428` (internal)
-- **VL API**: `http://hl-victoria-logs:9428` (internal)
+The stack has no web UI and no Traefik route, and no service joins the shared `proxy` network.
+VictoriaMetrics and VictoriaLogs take no password, and VictoriaLogs holds every container's log,
+secrets some services print included. So each store is reachable only on the stack's own internal
+networks:
+
+- `metrics`: `hl-victoria-metrics:8428` with vmagent, node-exporter and cAdvisor;
+- `logs`: `hl-victoria-logs:9428` with promtail, nothing else.
+
+To query a store from a dashboard in another stack, connect that container to the store's network
+yourself (`docker network ls` shows it as `victoria-metrics_logs` or `victoria-metrics_metrics`),
+and only that container. Anything on it reads all the data in the store.
+
+Both stores keep data for 14 days (`--retentionPeriod=14d` in `compose.yml`). A number without a
+unit means months.
 
 ## Setup
 
-1. Add env vars to `servers/home/.env`:
-
-   ```bash
-   #region Grafana
-   GRAFANA_ADMIN_PASSWORD=YOUR_SECURE_PASSWORD
-   #endregion Grafana
-   ```
-
+1. Create the two config files (see "Before the first deploy" below).
 2. Deploy:
 
    ```bash
-   deno task deploy home victoria-metrics
+   rostok deploy <server>
    ```
-
-3. Open `https://metrics.${DOMAIN}` and check the VictoriaMetrics + VictoriaLogs datasources work.
 
 ## Scrape targets
 
 - `hl-node-exporter:9100` — host-level metrics
 - `hl-cadvisor:8080` — container-level metrics
 - `hl-victoria-metrics:8428` — VM self-metrics
+
+vmagent reaches only the `metrics` network, so a target in another stack is out of its reach
+until you connect `hl-vmagent` to that stack's network.
 
 ## References
 
