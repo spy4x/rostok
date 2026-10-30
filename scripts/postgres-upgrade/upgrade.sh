@@ -7,8 +7,9 @@
 #
 # Run it while the old version of the stack is still running, then `rostok deploy`.
 # Steps: docs/usage/postgres-upgrade.md. The old data folder is renamed, never changed or
-# deleted, and a failed run puts everything back as it was. Running it again after a success
-# does nothing.
+# deleted, and a failed or interrupted run puts everything back as it was. A run killed before
+# it could do that leaves a marker file that stops both a rerun and the deploy guard. Running
+# it again after a success does nothing.
 set -eu
 
 usage="usage: sh upgrade.sh <volumes-path> <stack>"
@@ -20,6 +21,9 @@ db=hl-$stack-db
 old=$volumes/$stack/db
 new=$volumes/$stack/postgres
 tmp=$db-upgrade-$$
+# Present from before the new cluster is made until its row counts match the old ones.
+# stacks/<stack>/before.deploy.ts reads the same path.
+marker=$new/.upgrade-incomplete
 
 say() { printf '%s\n' "upgrade $stack: $*"; }
 fail() {
@@ -33,6 +37,13 @@ has_new_data() {
   return 1
 }
 
+if [ -e "$marker" ]; then
+  previous=unknown
+  read -r previous <"$marker" || true
+  fail "an earlier run did not finish: $marker exists, so $new may hold part of the data. \
+Nothing was deleted: the old data folder is $previous. To try again, move $new away, \
+rename that folder back to $old, start the old version of the stack, and run this again."
+fi
 if has_new_data; then
   [ -d "$old" ] && fail "both $old and $new hold data. Move one of them away first."
   say "already upgraded: $new holds the data. Nothing to do."
@@ -105,6 +116,9 @@ rollback() {
   say "the old data is back in $old and the old containers are started. Nothing was deleted."
 }
 trap rollback EXIT
+# dash and busybox sh skip the EXIT trap on a signal (a dropped SSH session sends HUP), but
+# run it on an exit from a signal trap.
+trap 'exit 1' HUP INT TERM
 
 say "stopping the app containers of project $project"
 # shellcheck disable=SC2086
@@ -123,6 +137,7 @@ say "kept the old data folder as $kept"
 
 # 755: the postgres user inside the container must pass through it to its own folder.
 mkdir -m 755 "$new" 2>/dev/null || chmod 755 "$new"
+printf '%s\n' "$kept" >"$marker"
 say "starting $image on $new"
 POSTGRES_USER=$user POSTGRES_PASSWORD=$password POSTGRES_DB=$dbname \
   docker run -d --name "$tmp" --network none --pids-limit 500 \
@@ -151,6 +166,7 @@ say "row counts match in $(printf '%s\n' "$before" | grep -c .) tables"
 
 docker stop "$tmp" >/dev/null
 docker rm "$tmp" >/dev/null
+rm -f -- "$marker"
 done_ok=true
 say "done. Postgres 18 data is in $new; the app stays stopped until you run rostok deploy."
 say "keep $kept and $dump until the app shows your data; then delete them."
