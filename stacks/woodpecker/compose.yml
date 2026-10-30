@@ -62,6 +62,19 @@ services:
       - "traefik.http.routers.hl-woodpecker.entrypoints=websecure"
       - "traefik.http.routers.hl-woodpecker.tls=true"
       - "traefik.http.routers.hl-woodpecker.tls.certresolver=myresolver"
+      - "traefik.http.routers.hl-woodpecker.service=hl-woodpecker"
+      # gRPC for agents on other machines (README "Agents on other machines"): TLS at Traefik,
+      # h2c to port 9000. The agent secret is its only authentication. With WOODPECKER_GRPC_DOMAIN
+      # unset or empty the rule is only ClientIP(`0.0.0.0/32`), which no connection comes from, so
+      # nothing reaches port 9000 and Traefik requests no certificate for it.
+      - "traefik.http.services.hl-woodpecker-grpc.loadbalancer.server.port=9000"
+      - "traefik.http.services.hl-woodpecker-grpc.loadbalancer.server.scheme=h2c"
+      - "traefik.http.routers.hl-woodpecker-grpc.rule=${WOODPECKER_GRPC_DOMAIN:+Host(`${WOODPECKER_GRPC_DOMAIN}`) || }ClientIP(`0.0.0.0/32`)"
+      - "traefik.http.routers.hl-woodpecker-grpc.service=hl-woodpecker-grpc"
+      - "traefik.http.routers.hl-woodpecker-grpc.middlewares=frame-deny@file,robots-deny@file"
+      - "traefik.http.routers.hl-woodpecker-grpc.entrypoints=websecure"
+      - "traefik.http.routers.hl-woodpecker-grpc.tls=true"
+      - "traefik.http.routers.hl-woodpecker-grpc.tls.certresolver=myresolver"
 
   # Looks after the server's database (stacks/woodpecker/db-helper.ts): restores it from the
   # backup copy when it is missing, moves build logs out of it before the server starts, then

@@ -33,7 +33,7 @@ when you change `BULWARK_DOMAIN`, set that key to the same host.
 
 ## Initial Setup
 
-1. Deploy: `deno task deploy home bulwark`
+1. Deploy: `rostok deploy <server> bulwark`
 2. Visit `https://webmail.${DOMAIN}` — the setup wizard runs automatically on
    first launch.
 3. Follow the wizard: configure JMAP server (pre-filled), admin password,

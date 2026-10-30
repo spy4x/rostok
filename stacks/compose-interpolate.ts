@@ -5,15 +5,16 @@
 import { assert } from "@std/assert"
 
 /**
- * Interpolate `${KEY}`, `${KEY:-fallback}` and `${KEY-fallback}` like docker compose, innermost
- * reference first so a fallback may hold another reference. A key missing from `env` is empty;
- * `:-` also replaces an empty value. A required reference, `${KEY:?}` or `${KEY?}`, throws when
+ * Interpolate `${KEY}`, `${KEY:-fallback}`, `${KEY-fallback}`, `${KEY:+alternate}` and
+ * `${KEY+alternate}` like docker compose, innermost reference first so a fallback or alternate may
+ * hold another reference. A key missing from `env` is empty; `:-` also replaces an empty value,
+ * and `:+` gives its alternate only for a non-empty one. A required reference, `${KEY:?}` or `${KEY?}`, throws when
  * the key is missing (with `:`, also when it is empty), as compose refuses to run then. Throws
  * when a compose-style (upper-case) reference is still left; shell `${var}` text in a command is
  * not touched.
  */
 export function interpolate(text: string, env: Record<string, string>): string {
-  const ref = /\$\{([A-Z0-9_]+)(?:(:?)-([^${}]*))?\}/g
+  const ref = /\$\{([A-Z0-9_]+)(?:(:?)([-+])([^${}]*))?\}/g
   const required = /\$\{([A-Z0-9_]+)(:?)\?[^${}]*\}/g
   let out = text.replace(required, (_m, key: string, colon: string) => {
     const value = env[key]
@@ -23,10 +24,12 @@ export function interpolate(text: string, env: Record<string, string>): string {
     return value
   })
   for (let i = 0; i < 10 && /\$\{[A-Z0-9_]+/.test(out); i++) {
-    out = out.replace(ref, (_m, key: string, colon: string | undefined, fallback?: string) => {
+    out = out.replace(ref, (_m, key: string, colon?: string, op?: string, word?: string) => {
       const value = env[key]
-      if (fallback === undefined) return value ?? ""
-      return value === undefined || (colon === ":" && value === "") ? fallback : value
+      if (word === undefined) return value ?? ""
+      const unset = value === undefined || (colon === ":" && value === "")
+      if (op === "+") return unset ? "" : word
+      return unset ? word : value
     })
   }
   const left = out.match(/\$\{[A-Z0-9_]+[^}]*/)

@@ -110,7 +110,7 @@
   // `stacks/*/+meta.ts` are statically imported from cli/catalog.ts,
   // so they ride along with the published binary.
   "name": "@rostok/cli",
-  "version": "1.20.4",
+  "version": "1.21.0",
   "license": "MIT",
   "exports": {
     ".": "./cli/+main.ts",
@@ -213,6 +213,8 @@
       "!stacks/woodpecker/+meta.ts",
       "!stacks/woodpecker/compose.yml",
       "!stacks/woodpecker/db-helper.ts",
+      "!stacks/ci-agent/+meta.ts",
+      "!stacks/ci-agent/compose.yml",
       "!stacks/usememos/+meta.ts",
       "!stacks/usememos/compose.yml",
       "!stacks/victoria-metrics/+meta.ts",
