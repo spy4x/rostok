@@ -28,6 +28,11 @@ all its data were gone.
 The default image tag `latest` of each app is new enough. If you pinned `GITEA_IMAGE_TAG` to a
 version before 28.0.0, update it first.
 
+If you pinned the database tag (`GITEA_DB_IMAGE_TAG`, `UMAMI_DB_IMAGE_TAG` or
+`CALDIY_DB_IMAGE_TAG`, as `IMAGE_POLICY=pinned` does), set it to an 18 tag such as `18-alpine`, or
+remove it to use the default, before you deploy. `rostok deploy` stops while it names Postgres 17
+or older: that image would start a second, empty database next to the moved data.
+
 ## Upgrade an existing install
 
 Do this once per stack, on the server, while the old version of the stack still runs (you have not
@@ -69,9 +74,17 @@ deployed the new rostok yet, or the deploy stopped with the message above).
    server makes both from the same settings), or if any table's row count differs.
 7. Stops the temporary container. The app stays stopped until `rostok deploy`.
 
-If any step fails, the script puts everything back: it renames `db-pg16-<date>` back to `db`,
-moves a non-empty new folder aside as `postgres-failed-<date>`, and starts the old containers
-again. Running it again after a success prints "already upgraded" and changes nothing.
+If any step fails, or the script is stopped (Ctrl-C, a dropped SSH session), it puts everything
+back: it renames `db-pg16-<date>` back to `db`, moves a non-empty new folder aside as
+`postgres-failed-<date>`, and starts the old containers again. Running it again after a success
+prints "already upgraded" and changes nothing.
+
+From the moment it makes the new database until the row counts match, the script keeps a file
+`${VOLUMES_PATH}/<stack>/postgres/.upgrade-incomplete`. If the script is killed so hard that it
+cannot put things back (`kill -9`, a reboot), that file stays: both a rerun of the script and
+`rostok deploy` then stop instead of using a partial database. To recover, move
+`${VOLUMES_PATH}/<stack>/postgres` away, rename `db-pg16-<date>` (the file names it) back to `db`,
+start the old version of the stack (`docker start` its containers), and run the script again.
 
 Set `PG_UPGRADE_IMAGE` to use another Postgres 18 image, for example a pinned
 `postgres:18.1-alpine`.
