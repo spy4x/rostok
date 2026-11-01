@@ -203,8 +203,16 @@ export function formatCliError(err: unknown, debug: boolean): string[] {
   return lines
 }
 
-/** Run the CLI and print+exit via {@link formatCliError} on any thrown error. */
+/**
+ * Run the CLI and print+exit via {@link formatCliError} on any thrown error. `__run-hook` (the
+ * compiled binary running a deploy hook) bypasses all of it.
+ */
 export async function runCli(args: string[]): Promise<void> {
+  if (args[0] === "__run-hook") {
+    const { runHookEntry } = await import("./deploy/hooks.ts")
+    await runHookEntry(args[1])
+    return
+  }
   try {
     await buildCommand().parse(args)
   } catch (err) {

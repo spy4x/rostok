@@ -13,6 +13,10 @@
 //   DEPLOY_AS (SSH_HOST/SSH_PORT: #229, see the module comment further
 //   down; SSH_LOCAL: #450, in buildHookEnv).
 //
+//   The compiled rostok binary has no `deno run`: it starts itself with
+//   the hidden `__run-hook <url>` subcommand instead, which imports the
+//   hook as if `deno run` had started it (#528, `hookModuleSource`).
+//
 // `-A` means a hook is FULLY TRUSTED CODE: read/write/net/run/env, no
 // sandbox. rostok runs it exactly the way it would run any other script
 // checked into the catalog or a project's own `stacks/` — the same trust
@@ -129,6 +133,8 @@
 // alias, the same as before #229 and the same as every non-hook ssh call
 // deploy makes.
 
+import { dirname, fromFileUrl } from "@std/path"
+import { encodeBase64 } from "@std/encoding/base64"
 import { IMAGE_POLICY_KEY } from "../images/policy.ts"
 import { loadCatalog } from "../catalog.ts"
 import { decodeEnvValue } from "../env-files.ts"
@@ -422,9 +428,10 @@ export async function runHook(
 
   console.log(`Running ${kind}.deploy.ts for stack ${label}...`)
   const useGroup = supportsProcessGroupKill() && await setsidAvailable()
+  const hookArgs = hookCommandArgs(source, Deno.build.standalone)
   const command = useGroup
     ? new Deno.Command("setsid", {
-      args: [Deno.execPath(), "run", "-A", source],
+      args: [Deno.execPath(), ...hookArgs],
       cwd: stagingDir,
       clearEnv: true,
       env,
@@ -432,7 +439,7 @@ export async function runHook(
       stderr: "inherit",
     })
     : new Deno.Command(Deno.execPath(), {
-      args: ["run", "-A", source],
+      args: hookArgs,
       cwd: stagingDir,
       clearEnv: true,
       env,
@@ -446,4 +453,58 @@ export async function runHook(
     throw new UserError(`${kind}.deploy.ts failed for stack '${label}' (${source})`)
   }
   console.log(`✓ ${kind}.deploy.ts for ${label}`)
+}
+
+/**
+ * Hidden subcommand the rostok binary runs a hook with: a compiled binary is no `deno` and has
+ * no `run`, so it starts itself with this and the hook's URL instead.
+ */
+export const HOOK_SUBCOMMAND = "__run-hook"
+
+/**
+ * Arguments after the executable that run hook `source`: `run -A <source>` under `deno`, or
+ * {@link HOOK_SUBCOMMAND} `<source>` when the executable is the compiled rostok binary.
+ */
+export function hookCommandArgs(source: string, standalone: boolean): string[] {
+  return standalone ? [HOOK_SUBCOMMAND, source] : ["run", "-A", source]
+}
+
+/**
+ * Turns a hook's source into a module that behaves as if `deno run` had started it, for
+ * {@link runHookEntry}. A hook guards its work with `if (import.meta.main)`, which is false for
+ * an imported module, so `import.meta.main` becomes `true`. The module is loaded from a `data:`
+ * URL, so `import.meta.url`, `import.meta.filename` and `import.meta.dirname` become the hook's
+ * own values, and relative import specifiers become absolute URLs next to the hook. Only the hook
+ * file itself is rewritten; the modules it imports load as they are, with `import.meta.main`
+ * false, as under `deno run`.
+ */
+export function hookModuleSource(code: string, sourceUrl: string): string {
+  const url = new URL(sourceUrl)
+  const filename = url.protocol === "file:" ? fromFileUrl(url) : undefined
+  return code
+    .replace(
+      /(\bfrom\s*|\bimport\s*\(\s*|\bimport\s+)(["'])(\.\.?\/[^"']*)\2/g,
+      (_m, lead: string, quote: string, spec: string) =>
+        `${lead}${quote}${new URL(spec, url).href}${quote}`,
+    )
+    .replace(/\bimport\.meta\.main\b/g, "true")
+    .replace(/\bimport\.meta\.url\b/g, JSON.stringify(url.href))
+    .replace(/\bimport\.meta\.filename\b/g, JSON.stringify(filename))
+    .replace(/\bimport\.meta\.dirname\b/g, JSON.stringify(filename && dirname(filename)))
+}
+
+/**
+ * Runs the hook at `source` (a file:// URL) in this process, as `deno run -A <source>` would:
+ * the entry point of {@link HOOK_SUBCOMMAND}. A hook's `Deno.exit(code)` ends the process with
+ * that code; a thrown error ends it with code 1.
+ */
+export async function runHookEntry(source: string | undefined): Promise<void> {
+  if (!source || !source.startsWith("file:")) {
+    throw new UserError(`${HOOK_SUBCOMMAND} needs the file:// URL of a hook, got: ${source}`)
+  }
+  const code = await Deno.readTextFile(new URL(source))
+  const module = hookModuleSource(code, source)
+  const ext = source.endsWith(".js") ? "javascript" : "typescript"
+  const bytes = new TextEncoder().encode(module)
+  await import(`data:application/${ext};base64,${encodeBase64(bytes)}`)
 }
