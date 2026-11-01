@@ -330,13 +330,11 @@ keeps `.env.age` always current with `.env`, so committing
 **Encryption is optional but endorsed.** The CLI actively recommends it
 but never requires it. Concrete behavior:
 
-- `age` on PATH + `.age/key.txt` present → encrypt runs after every
-  `.env` write (`cli/encrypt.ts:encryptEnvFiles`). Best effort — any
-  task failure is warned, not thrown; the wizard completes anyway.
-- `age` on PATH, no `.age/key.txt` → skip with a one-time hint about
-  `age-keygen`. The wizard still completes.
-- `age` missing entirely → skip with a one-time hint about
-  `apt install age`. The wizard still completes.
+- `.age/key.txt` present → encrypt runs after every `.env` write
+  (`cli/reencrypt.ts:reencryptAfterWrite`). Best effort — a failure is
+  warned, not thrown; the wizard completes anyway.
+- No `.age/key.txt` → skip with a hint to run `rostok env setup`. The
+  wizard still completes.
 
 After `init`, the CLI prints an info-level tip about age if it's not
 set up (single-shot — idempotent calls stay quiet).
@@ -350,8 +348,8 @@ Concrete triggers:
 
 Implementation: run the same in-process encryption as `rostok env encrypt` after
 each write. Failures are non-fatal (warn) — the wizard should not block
-on encrypt hiccups. The wrapper (`cli/encrypt.ts`) detects `age`
-presence up front so the task is only spawned when it can succeed.
+on encrypt hiccups. The wrapper (`cli/reencrypt.ts`) checks for the key
+first and skips encryption without one.
 
 User-side key management: the wizard does NOT auto-generate age
 keypairs. Encryption is opt-in. If the user wants to encrypt their
