@@ -25,17 +25,25 @@ const START_SIGNAL_RETRY = { maxAttempts: 3, baseDelayMs: 5_000, totalBudgetMs: 
 /**
  * Splits `NTFY_URL_BACKUPS`, a full topic URL such as `https://ntfy.example.com/backups`, into
  * the base URL and topic `NtfyClient` takes. A base path in front of the topic is kept, so
- * `https://example.com/ntfy/backups` posts to the same URL as before. `null` when the value is
- * not an absolute URL or names no topic.
+ * `https://example.com/ntfy/backups` posts to the same endpoint as before. `null` when the value
+ * is not an absolute URL, names no topic, has a broken percent-escape in the topic, or has a query
+ * string (`NtfyClient` cannot send one, so `?auth=` would silently be dropped).
  */
 export function ntfyConfigFromTopicUrl(topicUrl: string, token: string): NtfyClientConfig | null {
   if (!URL.canParse(topicUrl)) return null
   const url = new URL(topicUrl)
+  if (url.search !== "") return null
   const segments = url.pathname.split("/").filter((segment) => segment !== "")
   const topic = segments.pop()
   if (topic === undefined) return null
   const baseUrl = `${url.origin}${segments.map((segment) => `/${segment}`).join("")}`
-  const config = { baseUrl, topic: decodeURIComponent(topic) }
+  let decoded: string
+  try {
+    decoded = decodeURIComponent(topic)
+  } catch {
+    return null
+  }
+  const config = { baseUrl, topic: decoded }
   return token ? { ...config, token } : config
 }
 
@@ -99,6 +107,12 @@ export class BackupReporter {
 
   /** Builds the ntfy client, or `null` (logged, not thrown) when the settings are unusable. */
   private createNtfy(options: BackupReporterOptions): NtfyClient | null {
+    if (URL.canParse(this.context.ntfyUrl) && new URL(this.context.ntfyUrl).search !== "") {
+      error(
+        "NTFY_URL_BACKUPS has a query string, which is not supported; skipping ntfy notifications",
+      )
+      return null
+    }
     const config = ntfyConfigFromTopicUrl(this.context.ntfyUrl, this.context.ntfyAuth)
     if (!config) {
       error("NTFY_URL_BACKUPS is not a topic URL, skipping ntfy notifications")

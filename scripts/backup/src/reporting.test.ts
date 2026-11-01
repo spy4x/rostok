@@ -137,16 +137,24 @@ Deno.test("the start signal pings /start and gives up after 3 attempts", async (
   ])
 })
 
-Deno.test("failed pushes never log the ntfy URL, the token, the ping URL or a response body", async () => {
-  const { fetcher } = recordingFetch(() => new Response("body-with-secret", { status: 500 }))
-  const reporter = new BackupReporter(context(), { fetcher, sleep: noSleep })
-  const logs = await captureLogs(async () => {
-    await reporter.sendStartSignal()
-    await reporter.sendNotification(result(1))
-  })
-  assertMatch(logs, /ntfy notification failed/)
-  for (const secret of [NTFY_URL, NTFY_TOKEN, HC_URL, "body-with-secret"]) {
-    assertEquals(logs.includes(secret), false, `logs contain ${secret}`)
+Deno.test("pushes never log the ntfy URL, the token, the ping URL or a response body, sent or failed", async () => {
+  const cases = [
+    { status: 200, expected: /ntfy notification sent/ },
+    { status: 500, expected: /ntfy notification failed/ },
+  ]
+  for (const { status, expected } of cases) {
+    // healthchecks reads "OK" as accepted; ntfy ignores the body of a 2xx.
+    const body = status === 200 ? "OK" : "body-with-secret"
+    const { fetcher } = recordingFetch(() => new Response(body, { status }))
+    const reporter = new BackupReporter(context(), { fetcher, sleep: noSleep })
+    const logs = await captureLogs(async () => {
+      await reporter.sendStartSignal()
+      await reporter.sendNotification(result(1))
+    })
+    assertMatch(logs, expected)
+    for (const secret of [NTFY_URL, NTFY_TOKEN, HC_URL, "body-with-secret"]) {
+      assertEquals(logs.includes(secret), false, `logs contain ${secret} (status ${status})`)
+    }
   }
 })
 
@@ -162,4 +170,47 @@ Deno.test("an unusable NTFY_URL_BACKUPS is logged without its value and skipped,
   assertEquals(calls, [])
   assertMatch(logs, /NTFY_URL_BACKUPS is not a topic URL/)
   assertEquals(logs.includes("ntfy.example.com/backups"), false)
+})
+
+Deno.test("an NTFY_URL_BACKUPS with a broken percent-escape is skipped, not thrown", async () => {
+  const { calls, fetcher } = okFetch()
+  const logs = await captureLogs(async () => {
+    const reporter = new BackupReporter(
+      context({ ntfyUrl: "https://ntfy.example.com/%E0%A4%A", healthchecksUrl: undefined }),
+      { fetcher, sleep: noSleep },
+    )
+    await reporter.sendNotification(result(1))
+  })
+  assertEquals(calls, [])
+  assertMatch(logs, /NTFY_URL_BACKUPS is not a topic URL/)
+})
+
+Deno.test("an NTFY_URL_BACKUPS with a query string is refused by name and skipped", async () => {
+  const { calls, fetcher } = okFetch()
+  const logs = await captureLogs(async () => {
+    const reporter = new BackupReporter(
+      context({ ntfyUrl: `${NTFY_URL}?auth=qs_secret`, healthchecksUrl: undefined }),
+      { fetcher, sleep: noSleep },
+    )
+    await reporter.sendNotification(result(1))
+  })
+  assertEquals(calls, [])
+  assertMatch(logs, /NTFY_URL_BACKUPS has a query string/)
+  assertEquals(logs.includes("qs_secret"), false)
+  assertEquals(ntfyConfigFromTopicUrl(`${NTFY_URL}?auth=qs_secret`, ""), null)
+})
+
+Deno.test("an unusable HEALTHCHECKS_BACKUP_URL is logged without its value and skipped, not thrown", async () => {
+  const { calls, fetcher } = okFetch()
+  const logs = await captureLogs(async () => {
+    const reporter = new BackupReporter(context({ healthchecksUrl: "hc.example.com/ping/abc" }), {
+      fetcher,
+      sleep: noSleep,
+    })
+    await reporter.sendStartSignal()
+    await reporter.sendNotification(result(0))
+  })
+  assertEquals(calls, [])
+  assertMatch(logs, /HEALTHCHECKS_BACKUP_URL is not a valid URL/)
+  assertEquals(logs.includes("hc.example.com/ping/abc"), false)
 })
