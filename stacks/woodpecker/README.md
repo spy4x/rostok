@@ -32,9 +32,9 @@ Web UI: `https://${WOODPECKER_DOMAIN}`
 Add `.woodpecker.yml` to repository:
 
 ```yaml
-pipeline:
-  build:
-    image: node:18
+steps:
+  - name: test
+    image: node:22
     commands:
       - npm install
       - npm test

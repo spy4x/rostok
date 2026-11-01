@@ -132,9 +132,10 @@ services:
     restart: unless-stopped
     deploy:
       resources:
+        # The agent only schedules workflows; their containers are not limited here.
         limits:
-          memory: 8192M # Increased for Deno+Vite+Hono monorepos
-          cpus: "4" # More CPU for parallel builds
+          memory: 1G
+          cpus: "1"
     security_opt:
       - no-new-privileges:true
       - label=type:container_runtime_t # Required for SELinux to access docker.sock
