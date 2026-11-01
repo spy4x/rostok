@@ -30,19 +30,26 @@
 // rerun couldn't cleanly retry. config.json and .env (when confirmed)
 // are now written back to back, once the answer is known.
 //
-// Review fix — a stack that's in config.json but no longer resolves in
-// the catalog (removed from a `--catalog` override, or dropped from the
+// #269 — a stack's keys come from the project's own
+// `stacks/<name>/+meta.ts` when there is one (loaded the way deploy
+// loads it), else from the catalog's. So a local stack, which the
+// catalog doesn't know, has its declared keys dropped too.
+//
+// Review fix — a stack that's in config.json but has no `+meta.ts` in
+// either place (removed from a `--catalog` override, or dropped from the
 // bundled catalog between versions) can still be removed: its
 // config.json entry is dropped, but its own env keys are left alone —
 // there's no `+meta.ts` left to say which keys are its own, and
 // guessing by prefix could delete another stack's key.
 
-import { join } from "@std/path"
+import { join, toFileUrl } from "@std/path"
+import { exists } from "@std/fs"
 import { reencryptAfterWrite } from "./reencrypt.ts"
 import { readEnvFile, writeEnvFilePreservingFormat } from "./env-files.ts"
 import { type CatalogEntry, findStack, StackNotFoundError } from "./catalog.ts"
 import { resolveCatalog } from "./catalog-paths.ts"
-import { normalizeVariableSpec } from "./stack-meta.ts"
+import { normalizeVariableSpec, type StackMeta } from "./stack-meta.ts"
+import { loadDeployMeta } from "./deploy/volumes.ts"
 import { type ConfirmFn, defaultConfirmFn } from "./prompts.ts"
 import { isServerKey, serverDirFor } from "./server-keys.ts"
 import { readServerConfig } from "./stack-add.ts"
@@ -71,7 +78,8 @@ export interface StackRemoveResult {
   /** This stack's own env keys that exist in .env but were left alone. */
   keptOwnKeys: string[]
   /**
-   * True when `stackName` no longer resolves in the catalog — its
+   * True when `stackName` has no `+meta.ts` in the catalog or the
+   * project's `stacks/<name>/` (#269) — its
    * config.json entry was still removed, but env cleanup was skipped
    * entirely (no `+meta.ts` to say which keys are its own).
    */
@@ -100,6 +108,32 @@ function tryFindStack(catalog: CatalogEntry[], stackName: string): CatalogEntry 
     }
     throw err
   }
+}
+
+/**
+ * The `+meta.ts` that says which env keys `name` owns: the project's own
+ * `stacks/<name>/+meta.ts` when it exists (#269), loaded by deploy's
+ * `loadDeployMeta`, else `catalog`'s entry, else undefined. A local one
+ * that fails to load, for a stack no catalog knows, warns and counts as
+ * no `+meta.ts`, so the stack can still be removed.
+ */
+async function stackMetaFor(
+  cwd: string,
+  catalog: CatalogEntry[],
+  name: string,
+): Promise<StackMeta | undefined> {
+  const metaPath = join(cwd, "stacks", name, "+meta.ts")
+  if (await exists(metaPath, { isFile: true })) {
+    const files = new Map([["+meta.ts", toFileUrl(metaPath).href]])
+    try {
+      return await loadDeployMeta(name, files, "env keys")
+    } catch (err) {
+      if (!(err instanceof UserError)) throw err
+      console.warn(`Warning: ${err.message}`)
+      return undefined
+    }
+  }
+  return tryFindStack(catalog, name)?.meta
 }
 
 /**
@@ -167,7 +201,8 @@ export async function stackRemove(
     keptOwnKeys: [],
   }
 
-  if (!entry) {
+  const meta = await stackMetaFor(cwd, catalog, resolvedName)
+  if (!meta) {
     // No `+meta.ts` left to say which env keys are this stack's own —
     // guessing by prefix could delete another stack's key, so env
     // cleanup is skipped outright rather than attempted unsafely. .env
@@ -176,7 +211,7 @@ export async function stackRemove(
     await writeConfig(serverDir, cfg, remainingStacks)
     result.envCleanupSkipped = true
     console.log(
-      `rostok: '${resolvedName}' isn't in the catalog anymore — removed it from ` +
+      `rostok: '${resolvedName}' isn't in the catalog or stacks/${resolvedName}/ — removed it from ` +
         `${serverName}'s config.json, but left its values in servers/${serverName}/.env alone ` +
         `(no +meta.ts left to say which keys are its own). Remove them by hand if you no ` +
         `longer need them.`,
@@ -189,13 +224,13 @@ export async function stackRemove(
   // server-level key, minus anything another still-installed stack also
   // declares (#210 says this can't happen; checked anyway per #225).
   const ownDeclaredKeys = new Set(
-    entry.meta.variables.map((v) => normalizeVariableSpec(v).key),
+    meta.variables.map((v) => normalizeVariableSpec(v).key),
   )
   const otherDeclaredKeys = new Set<string>()
   for (const installed of remainingStacks) {
-    const otherEntry = tryFindStack(catalog, installed.name)
-    if (!otherEntry) continue
-    for (const v of otherEntry.meta.variables) {
+    const otherMeta = await stackMetaFor(cwd, catalog, installed.name)
+    if (!otherMeta) continue
+    for (const v of otherMeta.variables) {
       otherDeclaredKeys.add(normalizeVariableSpec(v).key)
     }
   }

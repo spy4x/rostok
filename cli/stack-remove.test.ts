@@ -639,3 +639,68 @@ Deno.test("stack remove --drop-env preserves hand-written comments and blank lin
     assertEquals(after.includes("LIBRESPEED_DOMAIN"), false)
   })
 })
+
+// ─────────────────────────────────────────────────────────────────────
+// #269 — a local stack (only in the project's `stacks/<name>/`, unknown
+// to the catalog) has its own `+meta.ts` read, like deploy reads it.
+// ─────────────────────────────────────────────────────────────────────
+
+/** A project-local stack `name` whose +meta.ts declares `keys`. */
+async function writeLocalStack(dir: string, name: string, keys: string[]): Promise<void> {
+  await Deno.mkdir(join(dir, "stacks", name), { recursive: true })
+  const variables = keys.map((key) => `{ key: "${key}", default: "x", required: true }`)
+  await Deno.writeTextFile(
+    join(dir, "stacks", name, "+meta.ts"),
+    `export default { name: "${name}", description: "local", variables: [${
+      variables.join(", ")
+    }] }\n`,
+  )
+}
+
+async function installByHand(dir: string, names: string[]): Promise<void> {
+  await Deno.writeTextFile(
+    join(dir, "servers", "home", "config.json"),
+    JSON.stringify({ stacks: names.map((name) => ({ name })) }) + "\n",
+  )
+}
+
+Deno.test("stack remove --drop-env: a local stack's declared keys are dropped", async () => {
+  await withTmpDir(async (dir) => {
+    const catalogDir = join(dir, "catalog")
+    await writeLibrespeedCatalog(catalogDir)
+    await seedServer(dir, "home", {
+      DOMAIN: "example.com",
+      MIROTALK_SECRET: "s",
+      MIROTALK_DOMAIN: "m.example.com",
+      MIROTALK_EXTRA: "hand-added",
+    })
+    await writeLocalStack(dir, "mirotalk", ["MIROTALK_SECRET", "MIROTALK_DOMAIN"])
+    await installByHand(dir, ["mirotalk"])
+
+    const result = await stackRemove("mirotalk", "home", { cwd: dir, catalogDir, dropEnv: true })
+    assertEquals(result.envCleanupSkipped, undefined)
+    assertEquals(result.droppedKeys.sort(), ["MIROTALK_DOMAIN", "MIROTALK_SECRET"])
+
+    const keys = (await readEnvFile(join(dir, "servers", "home", ".env"))).map((e) => e.key)
+    assertEquals(keys.sort(), ["DOMAIN", "MIROTALK_EXTRA"])
+    const cfg = await readServerConfig(join(dir, "servers", "home"))
+    assertEquals(cfg.stacks, [])
+  })
+})
+
+Deno.test("stack remove --drop-env: a key a still-installed local stack declares survives", async () => {
+  await withTmpDir(async (dir) => {
+    const catalogDir = join(dir, "catalog")
+    await writeLibrespeedCatalog(catalogDir)
+    await seedServer(dir, "home", { DOMAIN: "example.com" })
+    await addLibrespeed(dir, catalogDir)
+    await writeLocalStack(dir, "mirotalk", ["LIBRESPEED_PASSWORD"])
+    await installByHand(dir, ["librespeed", "mirotalk"])
+
+    const result = await stackRemove("librespeed", "home", { cwd: dir, catalogDir, dropEnv: true })
+    assertEquals(result.droppedKeys, ["LIBRESPEED_DOMAIN"])
+
+    const entries = await readEnvFile(join(dir, "servers", "home", ".env"))
+    assertEquals(entries.some((e) => e.key === "LIBRESPEED_PASSWORD"), true)
+  })
+})
