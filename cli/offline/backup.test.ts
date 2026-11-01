@@ -154,6 +154,22 @@ Deno.test("backup: a failed repository check exits 1 after the summary, the log 
   }
 })
 
+Deno.test("backup: a copy whose checks find no repository exits 1 and never claims success", async () => {
+  const fake = await makeFake()
+  try {
+    // A source folder without a restic `config` file: copied, but nothing to check.
+    await Deno.remove(join(fake.home, "backups", "app", "config"))
+    await assertRejects(() => runBackup(fake.deps, NIGHTLY), UserError, "finished with failures")
+    const out = fake.stdout.join("\n")
+    assertStringIncludes(out, "Backup NOT VERIFIED")
+    assert(!out.includes("completed successfully"), out)
+    const logs = [...Deno.readDirSync(join(fake.mountDir, "logs"))].map((e) => e.name)
+    assertStringIncludes(logs.join(), "_failed.log")
+  } finally {
+    await cleanup(fake)
+  }
+})
+
 Deno.test("backup: --check skip copies, runs no restic check and says the check was skipped", async () => {
   const fake = await makeFake()
   try {
