@@ -39,17 +39,6 @@ export function substituteEnvVars(
 }
 
 /**
- * Get an environment variable, throwing an error if not found (unless optional)
- */
-export function getEnvVar(key: string, isOptional = false): string {
-  const value = Deno.env.get(key)
-  if (!value && !isOptional) {
-    throw new Error(`Missing environment variable: ${key}`)
-  }
-  return value || ""
-}
-
-/**
  * Execute a shell command with optional sudo and return result
  */
 export async function runCommand(

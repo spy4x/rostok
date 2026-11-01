@@ -1,14 +1,11 @@
-import { getEnvVar } from "../../+lib.ts"
+import { readEnvVar, systemEnv } from "@spy4x/server/config/env"
 
-// Re-export getEnvVar for consumers that import from this module
-export { getEnvVar } from "../../+lib.ts"
-
-export const USER = getEnvVar("SSH_USER")
-export const PATH_APPS = getEnvVar("PATH_APPS")
-export const VOLUMES_PATH = getEnvVar("VOLUMES_PATH")
-export const PATH_MEDIA = getEnvVar("PATH_MEDIA", true) // Optional - only on home server
-export const PATH_SYNC = getEnvVar("PATH_SYNC")
-export const SERVER_NAME = getEnvVar("SERVER_NAME")
+export const USER = readEnvVar(systemEnv, "SSH_USER")
+export const PATH_APPS = readEnvVar(systemEnv, "PATH_APPS")
+export const VOLUMES_PATH = readEnvVar(systemEnv, "VOLUMES_PATH")
+export const PATH_MEDIA = readEnvVar(systemEnv, "PATH_MEDIA", { optional: true }) // Optional - only on home server
+export const PATH_SYNC = readEnvVar(systemEnv, "PATH_SYNC")
+export const SERVER_NAME = readEnvVar(systemEnv, "SERVER_NAME")
 
 export interface BackupConfig {
   name: string

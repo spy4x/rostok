@@ -1,8 +1,8 @@
 // Guards the backup cron's remote-user key. The cron job no longer passes
 // USER=... — it passes SSH_USER=... (belt-and-suspenders alongside the
 // server .env it already loads) — so +lib.ts's USER export must read
-// SSH_USER, not the legacy USER key. Reverting `getEnvVar("SSH_USER")` to
-// `getEnvVar("USER")` here silently keeps working locally (USER is the
+// SSH_USER, not the legacy USER key. Reverting `readEnvVar(systemEnv, "SSH_USER")`
+// to `readEnvVar(systemEnv, "USER")` here silently keeps working locally (USER is the
 // shell's own env var) but breaks on a real cron, whose environment has
 // no USER at all.
 //

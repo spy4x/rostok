@@ -9,11 +9,12 @@
 
 import { dirname, join } from "@std/path"
 import { absPath, error, log } from "../+lib.ts"
-import { getEnvVar, PATH_APPS, USER } from "./src/+lib.ts"
+import { PATH_APPS, USER } from "./src/+lib.ts"
 import { BackupConfigProcessor } from "./src/config.ts"
 import { BackupOperations } from "./src/operations.ts"
 import { applyRestore, literalIncludePattern, planRestore } from "./src/restore.ts"
 import { type BackupConfigState, BackupStatus } from "./src/types.ts"
+import { readEnvVar, systemEnv } from "@spy4x/server/config/env"
 
 interface RestoreOptions {
   serviceName: string
@@ -28,9 +29,9 @@ interface Snapshot {
 }
 
 class RestoreRunner {
-  private backupsPassword = getEnvVar("BACKUPS_PASSWORD")
+  private backupsPassword = readEnvVar(systemEnv, "BACKUPS_PASSWORD")
   // The same folder the backup runner writes its repositories to.
-  private backupsBasePath = absPath(getEnvVar("PATH_BACKUPS"), USER)
+  private backupsBasePath = absPath(readEnvVar(systemEnv, "PATH_BACKUPS"), USER)
   private operations = new BackupOperations(this.backupsPassword)
 
   async run(options: RestoreOptions): Promise<void> {

@@ -1,9 +1,10 @@
 import { absPath, log } from "../+lib.ts"
-import { getEnvVar, PATH_APPS, USER } from "./src/+lib.ts"
+import { PATH_APPS, USER } from "./src/+lib.ts"
 import { BackupConfigProcessor } from "./src/config.ts"
 import { BackupOperations } from "./src/operations.ts"
 import { BackupReporter } from "./src/reporting.ts"
 import { BackupConfigState, BackupContext, BackupResult, BackupStatus } from "./src/types.ts"
+import { readEnvVar, systemEnv } from "@spy4x/server/config/env"
 
 /**
  * Main backup orchestration class
@@ -76,14 +77,14 @@ class BackupRunner {
    */
   private initializeContext(): BackupContext {
     return {
-      serverName: getEnvVar("SERVER_NAME"),
-      backupsOutputBasePath: absPath(getEnvVar("PATH_BACKUPS"), USER),
-      backupsPassword: getEnvVar("BACKUPS_PASSWORD"),
-      ntfyUrl: getEnvVar("NTFY_URL_BACKUPS"),
-      ntfyAuth: getEnvVar("NTFY_TOKEN_BACKUPS"),
+      serverName: readEnvVar(systemEnv, "SERVER_NAME"),
+      backupsOutputBasePath: absPath(readEnvVar(systemEnv, "PATH_BACKUPS"), USER),
+      backupsPassword: readEnvVar(systemEnv, "BACKUPS_PASSWORD"),
+      ntfyUrl: readEnvVar(systemEnv, "NTFY_URL_BACKUPS"),
+      ntfyAuth: readEnvVar(systemEnv, "NTFY_TOKEN_BACKUPS"),
       stacksPath: absPath(`${PATH_APPS}/stacks`, USER),
       configsPath: absPath(`${PATH_APPS}/configs/backup`, USER),
-      healthchecksUrl: getEnvVar("HEALTHCHECKS_BACKUP_URL", true), // Optional
+      healthchecksUrl: readEnvVar(systemEnv, "HEALTHCHECKS_BACKUP_URL", { optional: true }), // Optional
     }
   }
 
