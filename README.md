@@ -50,10 +50,20 @@ you run a big company's fleet: rostok stays small and homelab-shaped.
 
 ## Quick start
 
-Requires [Deno](https://deno.land) 2.0 or newer.
+Install the single `rostok` binary (Linux and macOS, x64 and arm64; no Deno needed):
 
 ```bash
-deno install -g -A -n rostok jsr:@rostok/cli
+curl -fsSL https://raw.githubusercontent.com/spy4x/rostok/main/install.sh | sh
+```
+
+It checks the download against the release's `SHA256SUMS` and puts `rostok` in
+`~/.local/bin` (`ROSTOK_INSTALL=<dir>` picks another folder). `rostok upgrade`
+replaces it with the latest release later; rostok also tells you, at most once
+a day, when a newer one is out (`ROSTOK_NO_UPDATE_CHECK=1` turns that off).
+
+Or, with [Deno](https://deno.land) 2.0 or newer: `deno install -g -A -n rostok jsr:@rostok/cli`.
+
+```bash
 mkdir ~/rostok && cd ~/rostok
 rostok                       # wizard: init → server create → stack add
 rostok stack list            # browse the bundled catalog
