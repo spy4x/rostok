@@ -20,6 +20,12 @@ import { stackListCommand } from "./commands/list.ts"
 import { stackAddCommand } from "./commands/stack-add.ts"
 import { stackRemoveCommand } from "./commands/stack-remove.ts"
 import { upgradeCommand } from "./upgrade.ts"
+import {
+  type BackgroundCheck,
+  defaultUpdateCheckDeps,
+  shouldCheck,
+  startUpdateCheck,
+} from "./update-check.ts"
 // Side-effect import: keep arktype + StackMeta + defaults reachable through
 // the public barrel. The CLI entry is the canonical "load the package"
 // location.
@@ -208,8 +214,9 @@ export function formatCliError(err: unknown, debug: boolean): string[] {
 }
 
 /**
- * Run the CLI and print+exit via {@link formatCliError} on any thrown error. `__run-hook` (the
- * compiled binary running a deploy hook) bypasses all of it.
+ * Run the CLI and print+exit via {@link formatCliError} on any thrown error. An update check
+ * runs next to the command (cli/update-check.ts) and prints its notice after the command's
+ * output. `__run-hook` (the compiled binary running a deploy hook) bypasses all of it.
  */
 export async function runCli(args: string[]): Promise<void> {
   if (args[0] === "__run-hook") {
@@ -217,13 +224,19 @@ export async function runCli(args: string[]): Promise<void> {
     await runHookEntry(args[1])
     return
   }
+  const check: BackgroundCheck | undefined =
+    shouldCheck(args, (key) => Deno.env.get(key), Deno.stdout.isTerminal())
+      ? startUpdateCheck(defaultUpdateCheckDeps())
+      : undefined
   try {
     await buildCommand().parse(args)
   } catch (err) {
     const lines = formatCliError(err, Deno.env.get("ROSTOK_DEBUG") === "1")
     for (const line of lines) console.error(line)
+    await check?.finish()
     Deno.exit(1)
   }
+  await check?.finish()
 }
 
 if (import.meta.main) {
