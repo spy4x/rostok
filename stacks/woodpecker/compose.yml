@@ -139,7 +139,7 @@ services:
     security_opt:
       - no-new-privileges:true
       - label=type:container_runtime_t # Required for SELinux to access docker.sock
-      # No MCS categories: with no-new-privileges, SELinux refuses every `docker exec` (a
-      # healthcheck, a shell) that would switch into them, and logs an nnp_transition
-      # denial each time.
+      # No MCS categories: with no-new-privileges, every `docker exec` (a healthcheck, a shell)
+      # logs an nnp_transition denial when runc switches into them. The exec still works; this
+      # stops the noise.
       - label=level:s0
