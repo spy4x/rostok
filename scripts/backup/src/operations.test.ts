@@ -35,6 +35,27 @@ exit 0
 `
 }
 
+/**
+ * The fake `restic`: `cat config` fails with "is not a restic repository"
+ * until `init` ran, `init` always succeeds. Every call is logged.
+ */
+function fakeRestic(dir: string): string {
+  return `#!/bin/sh
+if [ -n "$FAKE_RESTIC_DEPTH" ]; then echo "fake restic recursed" >&2; exit 99; fi
+export FAKE_RESTIC_DEPTH=1
+printf '%s\\n' "$*" >> '${dir}/restic.log'
+case "$*" in
+  init*) touch '${dir}/init-done'; exit 0 ;;
+  *" cat config")
+    [ -e '${dir}/init-done' ] && exit 0
+    echo "Fatal: repository does not exist: unable to open config file" >&2
+    echo "Is there a repository at the following location? It is not a restic repository" >&2
+    exit 10 ;;
+esac
+exit 0
+`
+}
+
 const MISSING = `service "app" has no container to start`
 
 /** What the fake docker answers. */
@@ -55,6 +76,10 @@ interface Harness {
   log: () => string[]
   /** `VOLUMES_PATH=..|PATH_APPS=..|HOME=..|DOCKER_HOST=..|DOCKER_CONFIG=..` per docker call */
   envLog: () => string[]
+  /** args per restic call */
+  resticLog: () => string[]
+  /** Calls the private `ensureRepository` with the harness config. */
+  ensureRepository: (repoPath: string) => Promise<boolean>
   run: (
     action: "start" | "stop",
     config?: BackupConfigState,
@@ -86,7 +111,9 @@ async function withHarness(
     const bin = `${dir}/bin`
     await Deno.mkdir(bin)
     await Deno.writeTextFile(`${bin}/docker`, fakeDocker(dir), { mode: 0o755 })
+    await Deno.writeTextFile(`${bin}/restic`, fakeRestic(dir), { mode: 0o755 })
     await Deno.writeTextFile(`${dir}/docker.log`, ``)
+    await Deno.writeTextFile(`${dir}/restic.log`, ``)
     await Deno.writeTextFile(`${dir}/env.log`, ``)
     await Deno.writeTextFile(`${dir}/ps-output`, answers.ps ?? ``)
     await Deno.writeTextFile(`${dir}/start-stderr`, answers.startStderr ?? ``)
@@ -115,6 +142,8 @@ async function withHarness(
       config,
       log: () => lines(`docker.log`),
       envLog: () => lines(`env.log`),
+      resticLog: () => lines(`restic.log`),
+      ensureRepository: (repoPath) => ops[`ensureRepository`](config, repoPath),
       run: async (action, c = config) => {
         await ops.manageContainers(c, action)
         return c
@@ -464,5 +493,34 @@ Deno.test("stops no further container after one fails to stop, and names it", as
     assertEquals(c.status, BackupStatus.ERROR)
     assertEquals(c.errorAtStep, `docker_stop`)
     assertEquals(c.error, `Error stopping container two:\ncannot stop two`)
+  })
+})
+
+Deno.test("refuses to init a missing repository whose folder still holds an earlier keys/", async () => {
+  await withHarness({}, async (h) => {
+    const repo = `${h.dir}/repo`
+    await Deno.mkdir(`${repo}/keys`, { recursive: true })
+    await Deno.writeTextFile(`${repo}/keys/0123abcd`, `old key`)
+    assertEquals(await h.ensureRepository(repo), false)
+    assertEquals(h.resticLog().filter((c) => c.startsWith(`init`)), [])
+    assertEquals(h.config.status, BackupStatus.ERROR)
+    assertStringIncludes(
+      h.config.error ?? ``,
+      `Refusing to re-initialize non-empty restic directory`,
+    )
+  })
+})
+
+Deno.test("inits a missing repository whose folder holds no restic data", async () => {
+  await withHarness({}, async (h) => {
+    const repo = `${h.dir}/repo`
+    await Deno.mkdir(`${repo}/keys`, { recursive: true })
+    assertEquals(await h.ensureRepository(repo), true)
+    assertEquals(h.resticLog(), [
+      `-r ${repo} cat config`,
+      `init -r ${repo}`,
+      `-r ${repo} cat config`,
+    ])
+    assertEquals(h.config.error, undefined)
   })
 })
