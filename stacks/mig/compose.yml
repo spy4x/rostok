@@ -33,9 +33,8 @@ services:
     # the container's default user. Running the container as the same
     # PUID:PGID the deploy script already chowns the volume to sidesteps
     # that mismatch — the same fix stacks/gatus, stacks/filebrowser,
-    # stacks/ntfy, stacks/traefik, stacks/vaultwarden,
-    # stacks/watchtower and stacks/woodpecker already use for the same
-    # reason.
+    # stacks/ntfy, stacks/traefik, stacks/vaultwarden and
+    # stacks/woodpecker already use for the same reason.
     user: "${PUID:-1000}:${PGID:-1000}"
     restart: unless-stopped
     env_file:
