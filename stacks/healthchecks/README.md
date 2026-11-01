@@ -30,6 +30,16 @@ nobody can log in. Either set the SMTP variables, or create the first user by ha
 docker exec -it hl-healthchecks /opt/healthchecks/manage.py createsuperuser
 ```
 
+### Upgrading an older install
+
+Deploy creates `${VOLUMES_PATH}/healthchecks` owned by `999:999`, the container's user, but only
+when the folder is new. A folder created by an older release keeps its old owner, and Healthchecks
+cannot write its database. Fix it once on the server:
+
+```bash
+sudo chown -R 999:999 <VOLUMES_PATH>/healthchecks
+```
+
 ## Access
 
 Web UI: `https://<HEALTHCHECKS_DOMAIN>`

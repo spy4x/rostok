@@ -42,15 +42,10 @@ The system automatically discovers and merges configurations from both locations
 
 ### Manual Run
 
+From the root of a rostok checkout:
+
 ```bash
-# Run the backup process
-deno run -A +main.ts
-
-# With environment file
-deno run --env-file=/path/to/.env -A +main.ts
-
-# Check TypeScript compilation
-deno check +main.ts
+deno run -A --env-file=/path/to/.env scripts/backup/+main.ts
 ```
 
 ### Cron Job
