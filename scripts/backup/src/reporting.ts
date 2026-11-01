@@ -1,35 +1,67 @@
+import {
+  HealthchecksClient,
+  type HealthchecksClientOptions,
+  HealthchecksOutcome,
+  type HealthchecksResult,
+} from "@spy4x/integrations/healthchecks"
+import { NtfyClient, type NtfyClientConfig, NtfyPriority } from "@spy4x/integrations/ntfy"
 import { error, log } from "../../+lib.ts"
 import { BackupConfigState, BackupContext, BackupResult, BackupStatus } from "./types.ts"
 
+/** Test seams passed to both notifier clients. Production code passes nothing. */
+export interface BackupReporterOptions {
+  /** Replaces the global `fetch`. */
+  fetcher?: typeof fetch
+  /** Replaces the real sleep between retries. */
+  sleep?: HealthchecksClientOptions["sleep"]
+}
+
+/**
+ * The start signal gets a short retry budget: the backup waits for it, and a
+ * healthchecks outage must not hold the night's backup back for the default 40 minutes.
+ */
+const START_SIGNAL_RETRY = { maxAttempts: 3, baseDelayMs: 5_000, totalBudgetMs: 60_000 }
+
+/**
+ * Splits `NTFY_URL_BACKUPS`, a full topic URL such as `https://ntfy.example.com/backups`, into
+ * the base URL and topic `NtfyClient` takes. A base path in front of the topic is kept, so
+ * `https://example.com/ntfy/backups` posts to the same URL as before. `null` when the value is
+ * not an absolute URL or names no topic.
+ */
+export function ntfyConfigFromTopicUrl(topicUrl: string, token: string): NtfyClientConfig | null {
+  if (!URL.canParse(topicUrl)) return null
+  const url = new URL(topicUrl)
+  const segments = url.pathname.split("/").filter((segment) => segment !== "")
+  const topic = segments.pop()
+  if (topic === undefined) return null
+  const baseUrl = `${url.origin}${segments.map((segment) => `/${segment}`).join("")}`
+  const config = { baseUrl, topic: decodeURIComponent(topic) }
+  return token ? { ...config, token } : config
+}
+
 export class BackupReporter {
-  constructor(private context: BackupContext) {}
+  private healthchecks: HealthchecksClient | null
+  private healthchecksStart: HealthchecksClient | null
+  private ntfy: NtfyClient | null
+
+  constructor(private context: BackupContext, options: BackupReporterOptions = {}) {
+    this.healthchecks = this.createHealthchecks(options)
+    this.healthchecksStart = this.createHealthchecks({ ...options, retry: START_SIGNAL_RETRY })
+    this.ntfy = this.createNtfy(options)
+  }
 
   /**
    * Sends /start signal to healthchecks to indicate backup has begun
    * This enables Healthchecks to detect if the backup hangs/crashes
    */
   async sendStartSignal(): Promise<void> {
-    if (!this.context.healthchecksUrl) {
-      return
-    }
-
-    const url = `${this.context.healthchecksUrl}/start`
+    if (!this.healthchecksStart) return
     log(`Sending healthchecks start signal...`)
-
-    try {
-      const response = await fetch(url, {
-        method: "POST",
-        body: `Backup started for ${this.context.serverName}`,
-      })
-
-      if (response.ok) {
-        log("healthchecks start signal sent successfully")
-      } else {
-        error(`healthchecks start signal failed: ${response.status} ${response.statusText}`)
-      }
-    } catch (err) {
-      error(`Failed to send healthchecks start signal: ${err}`)
-    }
+    const result = await this.healthchecksStart.ping({
+      outcome: HealthchecksOutcome.Start,
+      body: `Backup started for ${this.context.serverName}`,
+    })
+    this.logHealthchecks("start signal", result)
   }
 
   /**
@@ -38,38 +70,58 @@ export class BackupReporter {
    * ntfy is used for direct notifications (failures only)
    */
   async sendNotification(result: BackupResult): Promise<void> {
-    // Send healthchecks ping first (if configured)
     await this.sendHealthchecksPing(result)
 
-    // Only send ntfy notification for failures
     const allSuccess = result.successCount === result.totalCount
     if (allSuccess) {
       log("All backups successful, skipping ntfy notification")
       return
     }
+    await this.sendNtfyNotification(result)
+  }
 
-    // Send ntfy notification with retry logic for failures
-    const maxRetries = 5
-    const retryDelayMs = 3000 // 3 seconds between retries
-
-    for (let attempt = 1; attempt <= maxRetries; attempt++) {
-      const ntfySuccess = await this.sendNtfyNotification(result)
-      if (ntfySuccess) {
-        log("ntfy notification sent successfully to " + this.context.ntfyUrl)
-        return
-      }
-
-      if (attempt < maxRetries) {
-        log(
-          `ntfy notification attempt ${attempt}/${maxRetries} failed, retrying in ${
-            retryDelayMs / 1000
-          }s...`,
-        )
-        await new Promise((resolve) => setTimeout(resolve, retryDelayMs))
-      }
+  /**
+   * Builds a healthchecks client, or `null` when no URL is set or it is unusable. A bad URL is
+   * logged and skipped, never thrown: a broken notifier must not stop the backup itself. The
+   * value is never logged, since a ping URL is the credential.
+   */
+  private createHealthchecks(
+    options: BackupReporterOptions & Pick<HealthchecksClientOptions, "retry">,
+  ): HealthchecksClient | null {
+    if (!this.context.healthchecksUrl) return null
+    try {
+      return new HealthchecksClient({ pingUrl: this.context.healthchecksUrl }, options)
+    } catch {
+      error("HEALTHCHECKS_BACKUP_URL is not a valid URL, skipping healthchecks pings")
+      return null
     }
+  }
 
-    error(`ntfy notification failed after ${maxRetries} attempts to ` + this.context.ntfyUrl)
+  /** Builds the ntfy client, or `null` (logged, not thrown) when the settings are unusable. */
+  private createNtfy(options: BackupReporterOptions): NtfyClient | null {
+    const config = ntfyConfigFromTopicUrl(this.context.ntfyUrl, this.context.ntfyAuth)
+    if (!config) {
+      error("NTFY_URL_BACKUPS is not a topic URL, skipping ntfy notifications")
+      return null
+    }
+    try {
+      return new NtfyClient(config, options)
+    } catch (err) {
+      // NtfyClient's own messages describe the problem without echoing the URL or token.
+      error(`ntfy settings rejected, skipping ntfy notifications: ${(err as Error).message}`)
+      return null
+    }
+  }
+
+  /** Logs a healthchecks result. Neither the URL nor a response body is logged. */
+  private logHealthchecks(what: string, result: HealthchecksResult): void {
+    if (result.ok) {
+      log(`healthchecks ${what} sent (attempts: ${result.attempts})`)
+    } else {
+      error(
+        `healthchecks ${what} failed after ${result.attempts} attempts: ${result.code} ${result.message}`,
+      )
+    }
   }
 
   /**
@@ -77,47 +129,14 @@ export class BackupReporter {
    * Uses /fail suffix if backup failed, otherwise pings success
    */
   private async sendHealthchecksPing(result: BackupResult): Promise<void> {
-    if (!this.context.healthchecksUrl) {
-      return
-    }
-
+    if (!this.healthchecks) return
     const allSuccess = result.successCount === result.totalCount
-    const url = allSuccess ? this.context.healthchecksUrl : `${this.context.healthchecksUrl}/fail`
-    const body = this.buildHealthchecksMessage(result)
-
-    const maxRetries = 10
-    const baseDelayMs = 60000
-    const maxDelayMs = 600000 // cap at 10min to fit Healthchecks 1h window
-
-    for (let attempt = 1; attempt <= maxRetries; attempt++) {
-      try {
-        const response = await fetch(url, {
-          method: "POST",
-          body,
-        })
-
-        if (response.ok) {
-          log(`healthchecks ping sent successfully (${allSuccess ? "success" : "fail"})`)
-          return
-        } else {
-          error(`healthchecks ping failed: ${response.status} ${response.statusText}`)
-        }
-      } catch (err) {
-        error(`Failed to send healthchecks ping: ${err}`)
-      }
-
-      if (attempt < maxRetries) {
-        const delayMs = Math.min(baseDelayMs * Math.pow(2, attempt - 1), maxDelayMs)
-        log(
-          `healthchecks ping attempt ${attempt}/${maxRetries} failed, retrying in ${
-            delayMs / 1000
-          }s...`,
-        )
-        await new Promise((resolve) => setTimeout(resolve, delayMs))
-      }
-    }
-
-    error(`healthchecks ping failed after ${maxRetries} attempts`)
+    const outcome = allSuccess ? HealthchecksOutcome.Success : HealthchecksOutcome.Fail
+    const ping = await this.healthchecks.ping({
+      outcome,
+      body: this.buildHealthchecksMessage(result),
+    })
+    this.logHealthchecks(`ping (${outcome})`, ping)
   }
 
   /**
@@ -171,42 +190,25 @@ export class BackupReporter {
   }
 
   /**
-   * Sends notification via ntfy
+   * Sends the failure report via ntfy. The client turns the title into ASCII for the header,
+   * retries, and never puts the URL, token or response body in its result.
    */
-  private async sendNtfyNotification(result: BackupResult): Promise<boolean> {
-    try {
-      const { successCount, totalCount } = result
-      const successRate = totalCount > 0 ? ((successCount / totalCount) * 100).toFixed(0) : "0"
-
-      // Headers must be ASCII-only (no emojis)
-      const title =
-        `Backup report, server "${this.context.serverName}": ${successCount}/${totalCount} (${successRate}%)`
-      const message = this.buildNtfyMessage(result)
-
-      const headers: Record<string, string> = {
-        "Title": title,
-        "Priority": successCount === totalCount ? "default" : "high",
-        "Tags": successCount === totalCount ? "white_check_mark" : "warning",
-      }
-
-      if (this.context.ntfyAuth) {
-        headers["Authorization"] = `Bearer ${this.context.ntfyAuth}`
-      }
-
-      const response = await fetch(this.context.ntfyUrl, {
-        method: "POST",
-        headers,
-        body: message,
-      })
-
-      log(`ntfy response status: ${response.status}`)
-      const responseBody = await response.text()
-      log(`ntfy response body: ${responseBody}`)
-
-      return response.ok
-    } catch (err) {
-      error(`Failed to send ntfy notification: ${err}`)
-      return false
+  private async sendNtfyNotification(result: BackupResult): Promise<void> {
+    if (!this.ntfy) return
+    const { successCount, totalCount } = result
+    const successRate = totalCount > 0 ? ((successCount / totalCount) * 100).toFixed(0) : "0"
+    const title =
+      `Backup report, server "${this.context.serverName}": ${successCount}/${totalCount} (${successRate}%)`
+    const pushed = await this.ntfy.notifyFailure(title, this.buildNtfyMessage(result), {
+      priority: NtfyPriority.High,
+      tags: ["warning"],
+    })
+    if (pushed.ok) {
+      log(`ntfy notification sent (attempts: ${pushed.attempts})`)
+    } else {
+      error(
+        `ntfy notification failed after ${pushed.attempts} attempts: ${pushed.code} ${pushed.message}`,
+      )
     }
   }
 
