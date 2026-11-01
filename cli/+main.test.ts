@@ -770,4 +770,6 @@ Deno.test("formatCliError: strips control characters from the debug stack trace 
 Deno.test("rostok update is an alias of rostok upgrade", () => {
   const cmd = buildCommand()
   assertEquals(cmd.getCommand("update")?.getName(), "upgrade")
+  // A second build must not add the alias to the same command twice.
+  assertEquals(buildCommand().getCommand("update")?.getName(), "upgrade")
 })

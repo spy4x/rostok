@@ -168,7 +168,7 @@ Examples:
 
   cmd.command("offline", offlineCommand)
 
-  cmd.command("upgrade", upgradeCommand).alias("update")
+  cmd.command("upgrade", upgradeCommand()).alias("update")
 
   return cmd
 }

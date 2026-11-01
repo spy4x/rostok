@@ -282,10 +282,12 @@ export function defaultUpgradeDeps(): UpgradeDeps {
   }
 }
 
-export const upgradeCommand = new Command()
-  .arguments("[version:string]")
-  .description(
-    `Replace this rostok binary with the latest release, or with [version].
+/** A fresh `upgrade` command; `buildCommand` adds the `update` alias to it on every call. */
+export function upgradeCommand() {
+  return new Command()
+    .arguments("[version:string]")
+    .description(
+      `Replace this rostok binary with the latest release, or with [version].
 
 Downloads the binary for this platform from GitHub, checks it against the
 release's SHA256SUMS, and swaps it in place. A Deno (JSR) install prints the
@@ -295,7 +297,8 @@ Examples:
 
     rostok upgrade                        # latest release
     rostok upgrade 1.24.0                 # a given version`,
-  )
-  .action(async (_options: unknown, version?: string) => {
-    await upgrade(version, defaultUpgradeDeps())
-  })
+    )
+    .action(async (_options: unknown, version?: string) => {
+      await upgrade(version, defaultUpgradeDeps())
+    })
+}
