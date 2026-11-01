@@ -91,9 +91,11 @@ see §5 for the layout and §7 for ownership.
    - `.env.age` and `.env.root.age` are **NOT** gitignored. They're
      age64-encrypted blobs — safe to commit; that's the whole point.
    - **Encryption is optional but endorsed.** Encryption runs
-     in-process, so no `age` binary is needed. Without `.age/key.txt`
-     the wizard runs to completion without encrypting and, after each
-     `.env` write, prints a hint to run `rostok env setup`. The CLI never blocks on this — encryption is a nice-to-
+     in-process, so no `age` binary is needed. On a project's first
+     init the wizard offers to generate `.age/key.txt` (default yes).
+     Without a key the wizard runs to completion without encrypting
+     and, after each `.env` write, prints a hint to run
+     `rostok env setup`. The CLI never blocks on this — encryption is a nice-to-
      have for keeping `.env.age` in git; it's not required for the
      wizard.
 
@@ -282,8 +284,8 @@ imports (`import { type } from "arktype"`).
 **`.env.age` and `.env.root.age` are safe to commit.** They're age64-
 encrypted blobs. The plaintext `.env` and `.env.root` are the secrets;
 they stay gitignored. Encrypt-on-write is **optional but endorsed** —
-`rostok env setup` writes the key in-process. No `age` binary is
-needed.
+the key comes from the first-init offer or from `rostok env setup`,
+both in-process. No `age` binary is needed.
 
 **No `.env.example` files.** The schema lives in `+meta.ts`. CLI manages
 `.env` directly. Re-encryption runs after every `.env` mutation (see
@@ -353,9 +355,10 @@ on encrypt hiccups. The wrapper (`cli/reencrypt.ts`) checks for the key
 first and skips encryption without one.
 
 User-side key management: the wizard does NOT auto-generate a key.
-Encryption is opt-in. A user who wants it runs `rostok env setup` once,
-which writes `.age/key.txt` in-process (no `age` binary needed), then
-commits `.env.age` (NOT `.age/key.txt`).
+Encryption is opt-in. A user who wants it accepts the first-init offer
+or runs `rostok env setup` once; both write `.age/key.txt` in-process
+(no `age` binary needed). Then they commit `.env.age` (NOT
+`.age/key.txt`).
 
 ### 6.1 Explicit `rostok env ...` commands
 

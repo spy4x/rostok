@@ -54,7 +54,7 @@ It has to be installed for root via `sudo crontab -e` to allow changing ownershi
 
 ```bash
 # Daily at 2:30am
-30 2 * * * SSH_USER=$USER /path/to/deno run --env-file=/path/to/.env -A /path/to/+main.ts >> /path/to/backup.log 2>&1
+30 2 * * * SSH_USER=$USER /path/to/deno run --env-file=/path/to/.env -A /path/to/rostok/scripts/backup/+main.ts >> /path/to/backup.log 2>&1
 ```
 
 ## Running a pinned release

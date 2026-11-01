@@ -65,7 +65,7 @@ services:
 
 Deploy `docker-sock-proxy` on its own first, `rostok deploy <server> docker-sock-proxy`:
 compose refuses to start a stack whose external network does not exist yet, and one `rostok
-deploy` run with both stacks does not put the proxy first. Keep the consumer on its other networks
+deploy` run deploys stacks in the order the server's `config.json` lists them, not by need. Keep the consumer on its other networks
 (`proxy` for a Traefik route) as before; `hl-docker-api` only adds the way to
 the Docker API.
 
