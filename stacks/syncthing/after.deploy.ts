@@ -24,7 +24,12 @@
 // wrapped with endpoint + 200-byte snippet.
 
 import { parse as parseYaml } from "npm:yaml@2.8.2"
-import { type FolderRef, validateConfig } from "./before.deploy.ts"
+import {
+  type Device,
+  type FolderRef,
+  type SyncthingConfig,
+  validateConfig,
+} from "./before.deploy.ts"
 
 // ── API types ─────────────────────────────────────────────────────────
 
@@ -110,6 +115,40 @@ export function desiredFolder(
   })
 
   return out
+}
+
+/**
+ * The declared devices with this server's entry pointed at the live device ID (#317). The entry
+ * named by `self` takes `myId`, so a server rebuilt with a new identity never gets its dead old
+ * ID added back as a peer. Returns a warning when the file's ID for this server is stale, or when
+ * no `self` is set and no listed device is this server.
+ */
+export function withLiveSelf(
+  config: SyncthingConfig,
+  myId: string,
+): { devices: Device[]; warnings: string[] } {
+  const devices = config.devices ?? []
+  const warnings: string[] = []
+  if (config.self === undefined) {
+    if (devices.length > 0 && !devices.some((d) => d.id === myId)) {
+      warnings.push(
+        `no device in configs/syncthing.yml has this server's ID ${myId}; if one of them is this ` +
+          `server under an old ID, name it in \`self\` so it is not added as a peer`,
+      )
+    }
+    return { devices, warnings }
+  }
+  return {
+    devices: devices.map((d) => {
+      if (d.name !== config.self || d.id === myId) return d
+      warnings.push(
+        `"${d.name}" (self) is listed with ID ${d.id}, but this server runs as ${myId}: using ` +
+          `the live ID; update configs/syncthing.yml`,
+      )
+      return { ...d, id: myId }
+    }),
+    warnings,
+  }
 }
 
 /** Compute desired device state — overlay YAML over current. */
@@ -527,6 +566,10 @@ async function main() {
 
   const currentFolders = await apiGet<ApiFolder[]>("/rest/config/folders", isFolderArray)
   const currentDevices = await apiGet<ApiDevice[]>("/rest/config/devices", isDeviceArray)
+
+  const self = withLiveSelf(config, myId)
+  for (const w of self.warnings) console.warn(`Warning: ${w}`)
+  config.devices = self.devices
 
   const nameMap = new Map<string, string>()
   for (const d of config.devices ?? []) {

@@ -86,10 +86,28 @@ server's `.env`. Requires the `traefik` stack. Server-level keys (`PUID`,
 `compose.yml` defines no volumes. Before the first deploy, add
 `servers/<server>/compose-override/syncthing.yml` with the bind mounts
 (config at `/var/syncthing/config`, plus your data folders), and optionally
-`servers/<server>/configs/syncthing.yml` (`data_dir`, `mounts`, `folders`,
+`servers/<server>/configs/syncthing.yml` (`data_dir`, `self`, `mounts`, `folders`,
 `devices`) so the deploy hooks create the host directories and reconcile
 folders and devices through the REST API. Without the override the
 container starts with throwaway storage.
+
+## This server's own device
+
+Syncthing lists the server itself among its devices, so `configs/syncthing.yml` lists it too,
+and folders name it in their device lists. Set `self` to the name of that entry:
+
+```yaml
+self: home
+devices:
+  - id: AAAAAAA-...
+    name: home
+```
+
+The device ID comes from the server's `cert.pem` and `key.pem`. When those are lost and the
+server is rebuilt, Syncthing starts with a new ID. With `self` set, the deploy uses the live ID
+for that entry, warns that the file still has the old one, and does not add the old ID as a
+peer. Update the ID in the file afterwards. Without `self`, the deploy cannot tell which entry is
+this server: it warns when no listed ID matches and adds the old ID as a separate device.
 
 ## Folder Configuration
 
