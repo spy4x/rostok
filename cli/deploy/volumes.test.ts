@@ -1008,6 +1008,13 @@ Deno.test("generateVolumeCreationScript: a volume that contains an owner folder 
   )
 })
 
+Deno.test("the healthchecks stack creates its data folder owned by the container's 999:999", async () => {
+  const url = new URL("../../stacks/healthchecks/+meta.ts", import.meta.url).href
+  assertEquals(await loadStackOwner("healthchecks", new Map([["+meta.ts", url]])), {
+    "healthchecks": "999:999",
+  })
+})
+
 Deno.test("assertNoKeepOwnerParent: matches whole path segments, not string prefixes", () => {
   // /srv/v/git is a string prefix of /srv/v/gitea/db, not a parent of it.
   assertNoKeepOwnerParent(["/srv/v/git"], ["/srv/v/gitea/db"])
