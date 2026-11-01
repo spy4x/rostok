@@ -1,6 +1,11 @@
+# Not on the shared `proxy` network: every container behind Traefik is on it, and this API has no
+# authentication and allows container create and exec, so any one of them could take the host.
 networks:
-  proxy:
-    external: true
+  # Only this proxy and the containers whose stack names `hl-docker-api` as an external network are
+  # on it. Internal: no route out. The fixed name is what those stacks reference.
+  docker-api:
+    name: hl-docker-api
+    internal: true
 
 services:
   docker-sock-proxy:
@@ -47,7 +52,7 @@ services:
       # Allow POST/PUT/DELETE for granted endpoints
       - POST=1
     networks:
-      - proxy
+      - docker-api
     deploy:
       resources:
         limits:
