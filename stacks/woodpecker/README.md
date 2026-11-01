@@ -36,7 +36,7 @@ steps:
   - name: test
     image: node:22
     commands:
-      - npm ci
+      - npm install
       - npm test
 ```
 
