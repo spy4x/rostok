@@ -19,6 +19,10 @@ services:
     security_opt:
       - no-new-privileges:true
       - label=type:container_runtime_t # Required for SELinux to access docker.sock
+      # No MCS categories: with no-new-privileges, SELinux refuses every `docker exec` (a
+      # healthcheck, a shell) that would switch into them, and logs an nnp_transition
+      # denial each time.
+      - label=level:s0
     # --include-restarting: a container crash-looping on a broken image would
     # otherwise never receive the upstream fix.
     command: --interval 86400 --cleanup --include-restarting
