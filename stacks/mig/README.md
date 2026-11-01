@@ -207,7 +207,7 @@ recreates the container if it changed — `docker compose up -d --build`
 would otherwise keep whatever image is already on disk, since
 `--build` is a no-op for a service with no `build:` and compose only
 pulls a missing image on its own. Watchtower also polls every
-container daily and pulls `latest` on its own, so a
+container daily and pulls the configured tag (`latest` by default), so a
 stable release mig's CI publishes goes live within a day with no human
 step either way.
 
@@ -216,6 +216,17 @@ step either way.
 - **Pin or roll back** to a specific release: set `MIG_IMAGE_TAG=v0.3.0`
   in the server's `.env`, `rostok env encrypt`, then
   `rostok deploy <server> mig`.
+- **Follow `latest` again** after a pin: remove `MIG_IMAGE_TAG` from the
+  server's `.env`, `rostok env encrypt`, then `rostok deploy <server> mig`.
+  Watchtower follows whatever tag is configured, so while a pin is set it
+  never moves mig to a newer release.
+- **A mig deploy needs Docker Hub.** With Docker Hub unreachable,
+  `pull_policy: always` makes the mig deploy fail. The running container
+  keeps serving, the other stacks in the same run still start, but the
+  run reports a failure and skips every after-deploy hook. During an
+  outage, deploy the other stacks one at a time, or set
+  `pull_policy: missing` for mig in
+  `servers/<server>/compose-override/mig.yml`.
 
 The image runs as a non-root user baked in (uid 1993, `deno`, from
 v0.4.0 on). `compose.yml` sets `user: "${PUID:-1000}:${PGID:-1000}"` so

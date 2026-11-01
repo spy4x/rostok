@@ -2,7 +2,8 @@
 
 Secure proxy for the Docker API socket. Restricts which API endpoints containers can access via Docker socket.
 
-Prevents mounting `/var/run/docker.sock` directly into containers like Watchtower or Portainer.
+A container that joins it talks to the Docker API without mounting `/var/run/docker.sock`
+itself. Not every catalog stack uses it yet: Watchtower, for one, still mounts the socket.
 
 ## Access
 
@@ -62,8 +63,9 @@ services:
       - docker-api
 ```
 
-Deploy `docker-sock-proxy` first: compose refuses to start a stack whose
-external network does not exist yet. Keep the consumer on its other networks
+Deploy `docker-sock-proxy` on its own first, `rostok deploy <server> docker-sock-proxy`:
+compose refuses to start a stack whose external network does not exist yet, and one `rostok
+deploy` run deploys stacks in the order the server's `config.json` lists them, not by need. Keep the consumer on its other networks
 (`proxy` for a Traefik route) as before; `hl-docker-api` only adds the way to
 the Docker API.
 

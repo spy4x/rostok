@@ -54,6 +54,8 @@ export interface Device {
 
 export interface SyncthingConfig {
   data_dir: string
+  /** Name of the `devices` entry that is this server; its ID follows the live one (#317). */
+  self?: string
   mounts?: Mount[]
   folders?: FolderRef[]
   devices?: Device[]
@@ -164,6 +166,9 @@ export function validateConfig(raw: unknown): SyncthingConfig {
   const deviceNames = new Set(
     devices.map((d) => (typeof d?.name === "string" ? d.name : "")).filter(Boolean),
   )
+  if (cfg.self !== undefined && (typeof cfg.self !== "string" || !deviceNames.has(cfg.self))) {
+    errors.push(`\`self\` must be the name of a device declared in devices[] (got "${cfg.self}")`)
+  }
   for (const [i, f] of folders.entries()) {
     if (!Array.isArray(f?.devices)) continue
     for (const name of f.devices) {

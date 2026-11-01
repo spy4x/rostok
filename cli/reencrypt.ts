@@ -18,7 +18,7 @@ import { ageStatus, encryptEnvFiles } from "@spy4x/server/env-age64"
  * without ever throwing: a caller that just wrote a `.env` file keeps
  * going either way.
  *
- * - No key yet: prints a one-time hint, doesn't warn (this is the
+ * - No key yet: prints a hint on every call, doesn't warn (this is the
  *   normal state for a project that hasn't run `rostok env setup`).
  * - A key exists but the encrypt itself fails (a bad value, a
  *   permission problem, …): warns with the module's own error message
