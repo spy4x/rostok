@@ -5,18 +5,55 @@ What every `rostok` command and flag does. The two-minute version is the
 
 ## Install
 
+The single binary, for Linux and macOS on x64 and arm64, needs no Deno:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/spy4x/rostok/main/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/spy4x/rostok/main/install.sh | sh -s -- 1.24.0
+```
+
+`install.sh` downloads `rostok-<platform>.gz` and `SHA256SUMS` from the
+[GitHub release](https://github.com/spy4x/rostok/releases), refuses a file
+whose checksum does not match, and installs to `~/.local/bin/rostok`
+(`ROSTOK_INSTALL=<dir>` installs elsewhere). It says how to add the folder to
+`PATH` when it is not there yet.
+
+Or install from JSR with [Deno](https://deno.land) ≥ 2.0:
+
 ```bash
 deno install -g -A -n rostok jsr:@rostok/cli
 ```
 
-Requires [Deno](https://deno.land) ≥ 2.0 — `-g`/`--global` is required
-on Deno 2 for a named executable install (`deno install -A -n rostok
-...` alone errors with "the following required arguments were not
-provided: --global"). Encryption is optional but endorsed — the wizard
-runs to completion without a key, and your `.env` files stay plaintext
-(gitignored). No extra binary to install: encryption runs in-process
-(`@spy4x/server/env-age64`). The wizard offers to generate a key for you
-so `.env.age` files are safe to commit.
+`-g`/`--global` is required on Deno 2 for a named executable install
+(`deno install -A -n rostok ...` alone errors with "the following required
+arguments were not provided: --global").
+
+Encryption is optional but endorsed — the wizard runs to completion without
+a key, and your `.env` files stay plaintext (gitignored). No extra binary to
+install: encryption runs in-process (`@spy4x/server/env-age64`). The wizard
+offers to generate a key for you so `.env.age` files are safe to commit.
+
+### Upgrading
+
+`rostok upgrade` (or `rostok update`) replaces the binary with the latest
+release, `rostok upgrade 1.24.0` with a given one. It checks the download
+against `SHA256SUMS`, runs the new binary once with `--version`, and only then
+swaps it in. When the binary's folder is not writable, it says so: run it as
+that folder's owner, e.g. with `sudo`. A JSR install prints the
+`deno install … --force` command to run instead.
+
+At most once a day, a command also asks GitHub for the latest version while it
+runs, and prints one line after its own output when a newer one exists:
+
+```
+rostok 1.25.0 is available (you have 1.24.0). Run: rostok upgrade
+```
+
+The check never delays a command by more than a moment and stays silent when
+the network is down. It is skipped for `upgrade`, `--version` and `--help`,
+when the output is not a terminal, when `CI` is set, and with
+`ROSTOK_NO_UPDATE_CHECK=1`. It remembers the last check in
+`$XDG_CACHE_HOME/rostok/update-check.json` (default `~/.cache/rostok/`).
 
 ## Commands
 
@@ -38,6 +75,7 @@ so `.env.age` files are safe to commit.
 | `rostok offline verify --drive <disk>`       | Check the copies on the drive and run a SMART test; copies nothing               |
 | `rostok offline restore --drive <disk>`      | Copy the drive back over the local backup folders, then check them               |
 | `rostok offline format --drive <disk>`       | Erase a disk and create the `OfflineBackups` partition                           |
+| `rostok upgrade [version]`                   | Replace this binary with the latest (or the given) release. Alias `update`       |
 | `rostok --help`, `rostok --version`          | Self-explanatory                                                                 |
 
 Flags:

@@ -3,7 +3,15 @@ import { join, toFileUrl } from "@std/path"
 import { loadCatalog } from "../catalog.ts"
 import { encodeEnvValue, parseEnv } from "../env-files.ts"
 import { UserError } from "../errors.ts"
-import { buildHookEnv, type HookContext, isDeniedEnvKey, runHook } from "./hooks.ts"
+import {
+  buildHookEnv,
+  hookCommandArgs,
+  type HookContext,
+  hookModuleSource,
+  isDeniedEnvKey,
+  runHook,
+  runHookEntry,
+} from "./hooks.ts"
 import {
   killActiveChildren,
   setsidAvailable,
@@ -895,5 +903,52 @@ Deno.test("killActiveChildren: gives a child the grace period to exit on SIGTERM
     } catch {
       // Already gone.
     }
+  }
+})
+
+Deno.test("hookCommandArgs runs a hook with deno run, or the binary's hidden subcommand", () => {
+  assertEquals(hookCommandArgs("file:///s/a.ts", false), ["run", "-A", "file:///s/a.ts"])
+  assertEquals(hookCommandArgs("file:///s/a.ts", true), ["__run-hook", "file:///s/a.ts"])
+})
+
+Deno.test("hookModuleSource makes the hook its own main module next to its source", () => {
+  const code = [
+    `import { a } from "./lib.ts"`,
+    `import type { B } from '../shared/b.ts'`,
+    `import { parse } from "npm:yaml@2.8.2"`,
+    `export * from "./re.ts"`,
+    `const m = await import("./dyn.ts")`,
+    `if (import.meta.main) console.log(import.meta.url, import.meta.dirname, import.meta.filename)`,
+  ].join("\n")
+  const out = hookModuleSource(code, "file:///p/stacks/x/before.deploy.ts")
+  assertEquals(out.split("\n"), [
+    `import { a } from "file:///p/stacks/x/lib.ts"`,
+    `import type { B } from 'file:///p/stacks/shared/b.ts'`,
+    `import { parse } from "npm:yaml@2.8.2"`,
+    `export * from "file:///p/stacks/x/re.ts"`,
+    `const m = await import("file:///p/stacks/x/dyn.ts")`,
+    `if (true) console.log("file:///p/stacks/x/before.deploy.ts", "/p/stacks/x", ` +
+    `"/p/stacks/x/before.deploy.ts")`,
+  ])
+})
+
+Deno.test("runHookEntry runs a hook's main block with its relative imports", async () => {
+  const dir = await Deno.makeTempDir({ prefix: "rostok-hook-entry-" })
+  try {
+    await Deno.writeTextFile(join(dir, "lib.ts"), `export const word = "from-lib"\n`)
+    const out = join(dir, "out.txt")
+    await Deno.writeTextFile(
+      join(dir, "after.deploy.ts"),
+      `import { word } from "./lib.ts"\n` +
+        `if (import.meta.main) {\n` +
+        `  Deno.writeTextFileSync(${JSON.stringify(out)}, word + " " + import.meta.url)\n` +
+        `}\n`,
+    )
+    const url = toFileUrl(join(dir, "after.deploy.ts")).href
+    await runHookEntry(url)
+    assertEquals(await Deno.readTextFile(out), `from-lib ${url}`)
+    await assertRejects(() => runHookEntry("https://example.com/h.ts"), UserError, "file://")
+  } finally {
+    await Deno.remove(dir, { recursive: true })
   }
 })
