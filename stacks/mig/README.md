@@ -176,7 +176,8 @@ snapshot.
 ## Maintenance
 
 - **Read all bookings**: `docker exec hl-mig cat /data/bookings.json | jq`
-- **Manually trigger backup**: `deno task backup`
+- **Run a backup now**: on the server, run the backup runner by hand (see
+  [scripts/backup](../../scripts/backup/README.md), "Running a pinned release").
 - **Update**: `rostok deploy <server> mig` (pulls new image, restarts)
 - **Rotate `CANCEL_SECRET`**: edit `mig.env`, run `rostok env encrypt`,
   redeploy. ⚠️ WARNING: rotating `CANCEL_SECRET` invalidates every
