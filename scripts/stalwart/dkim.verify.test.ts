@@ -1,7 +1,7 @@
-// Unit tests for the pure DKIM verifier. Covers canonicalization, header
-// parsing, public-key extraction, and the round-trip: generate a key pair,
-// sign a test message, then verify with the same code path that will
-// validate Stalwart's outbound mail.
+// Tests for the DKIM verifier rostok uses, `@spy4x/email/dkim-verify`. Covers
+// canonicalization, header parsing, public-key extraction, and the round-trip:
+// generate a key pair, sign a test message, then verify with the same code
+// path that will validate Stalwart's outbound mail.
 
 import {
   canonicalizeBody,
@@ -11,7 +11,7 @@ import {
   sha256Base64,
   splitMessage,
   verifyDkim,
-} from "./dkim-verify.ts"
+} from "@spy4x/email/dkim-verify"
 import { assert, assertEquals } from "@std/assert"
 
 Deno.test("splitMessage handles CRLF-only message", () => {
@@ -57,14 +57,14 @@ Deno.test("splitMessage refuses to split at folded continuation", () => {
   assertEquals(body, "body\r\n")
 })
 
-Deno.test("canonicalizeHeader relaxed lowercases name and trims WSP", () => {
+Deno.test("canonicalizeHeader relaxed lowercases name and trims WSP around the colon", () => {
   assertEquals(
     canonicalizeHeader("Subject", "  Hello World  ", "relaxed"),
-    "subject: Hello World\r\n",
+    "subject:Hello World\r\n",
   )
   assertEquals(
     canonicalizeHeader("FROM", "a@example.com", "relaxed"),
-    "from: a@example.com\r\n",
+    "from:a@example.com\r\n",
   )
 })
 
@@ -72,7 +72,7 @@ Deno.test("canonicalizeHeader relaxed collapses internal WSP", () => {
   // Folding of `\r\n  ` (CRLF + WSP) yields the value with the WSP stripped.
   assertEquals(
     canonicalizeHeader("X-Test", "foo \r\n  bar", "relaxed"),
-    "x-test: foo bar\r\n",
+    "x-test:foo bar\r\n",
   )
 })
 
@@ -99,7 +99,7 @@ Deno.test("canonicalizeBody relaxed strips trailing empty lines, reduces WSP", (
 Deno.test("parseDkimSignature handles missing-semicolon edge case", () => {
   // Stalwart emits `r=y;h=...` with no separator. Parser must still find h=.
   const parsed = parseDkimSignature(
-    "v=1; a=rsa-sha256; d=example.com; s=sel; h=from:to; " +
+    "v=1; a=rsa-sha256; d=example.com; s=sel; " +
       "bh=abc; b=xxx; c=relaxed/relaxed; r=y;h=from:to;",
   )
   assertEquals(parsed.domain, "example.com")
@@ -186,8 +186,11 @@ async function buildAndSign(
   }
   // DKIM-Signature with empty b= value
   const unfoldedStub = stub.replace(/\r?\n[ \t]+/g, "")
-  headerParts.push(canonicalizeHeader("DKIM-Signature", unfoldedStub, "relaxed"))
-  const input = headerParts.join("") + bodyHash
+  // RFC 6376 §3.7: the DKIM-Signature header is hashed without its trailing CRLF.
+  headerParts.push(
+    canonicalizeHeader("DKIM-Signature", unfoldedStub, "relaxed").replace(/\r\n$/, ""),
+  )
+  const input = headerParts.join("")
 
   const sig = await crypto.subtle.sign(
     { name: "RSASSA-PKCS1-v1_5" },
@@ -323,14 +326,14 @@ Deno.test("verifyDkim round-trip with Ed25519", async () => {
   const dkimRaw = "v=1; a=ed25519-sha256; d=example.com; s=sel; " +
     `h=from:to:subject:date:message-id; bh=${bh}; b=; c=relaxed/relaxed`
   const unfoldedDkim = dkimRaw.replace(/\r?\n[ \t]+/g, "")
-  headerParts.push(canonicalizeHeader("DKIM-Signature", unfoldedDkim, "relaxed"))
-  const input = headerParts.join("") + bh
-
-  const sig = await crypto.subtle.sign(
-    { name: "Ed25519" },
-    keyPair.privateKey,
-    new TextEncoder().encode(input),
+  headerParts.push(
+    canonicalizeHeader("DKIM-Signature", unfoldedDkim, "relaxed").replace(/\r\n$/, ""),
   )
+  const input = headerParts.join("")
+
+  // RFC 8463 §3: Ed25519 signs the SHA-256 digest of the input, not the input itself.
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(input))
+  const sig = await crypto.subtle.sign({ name: "Ed25519" }, keyPair.privateKey, digest)
   const sigB64 = base64Encode(new Uint8Array(sig))
   const dkimHdr = `DKIM-Signature: ${dkimRaw.replace("b=;", `b=${sigB64};`)}`
   const raw = headers.join("\r\n") + "\r\n" + dkimHdr + "\r\n\r\n" + body

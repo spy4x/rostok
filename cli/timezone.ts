@@ -26,6 +26,7 @@
 // shelling out or touching the filesystem.
 
 import { serverShellArgv } from "./server-keys.ts"
+import { isValidTimeZone } from "@spy4x/time/tz"
 
 export interface TimezoneSources {
   /**
@@ -40,34 +41,14 @@ export interface TimezoneSources {
   etcTimezone?: () => Promise<string | undefined>
 }
 
-/**
- * True when `Intl.DateTimeFormat` accepts `tz` as a timeZone — the
- * standard way to validate an IANA name without a lookup table.
- *
- * Review nit — canonicalizing a legacy alias (`Asia/Saigon` →
- * `Asia/Ho_Chi_Minh`) was considered, but neither
- * `Intl.DateTimeFormat(undefined, { timeZone }).resolvedOptions().timeZone`
- * nor `Temporal.Now.zonedDateTimeISO(tz).timeZoneId` canonicalize it in
- * this runtime's ICU — both echo the alias back unchanged, and
- * `Intl.supportedValuesOf("timeZone")` lists `Asia/Saigon` but not
- * `Asia/Ho_Chi_Minh`, so there's no reliable JS-exposed canonicalization
- * to call here. Skipped; the alias is still a valid IANA name and works
- * correctly wherever TIMEZONE is used.
- */
-function isValidTimezone(tz: string): boolean {
-  try {
-    new Intl.DateTimeFormat(undefined, { timeZone: tz })
-    return true
-  } catch {
-    return false
-  }
-}
-
+// A legacy alias (`Asia/Saigon`) is accepted as is: this runtime's ICU offers no reliable
+// canonicalization (`resolvedOptions().timeZone` and Temporal both echo the alias back), and the
+// alias is still a valid IANA name wherever TIMEZONE is used.
 /** Accept `candidate` only when it's non-empty (after trimming) and a valid IANA zone name; otherwise treat the source as unavailable. */
 function validCandidate(candidate: string | undefined): string | undefined {
   if (candidate === undefined) return undefined
   const trimmed = candidate.trim()
-  if (!trimmed || !isValidTimezone(trimmed)) return undefined
+  if (!trimmed || !isValidTimeZone(trimmed)) return undefined
   return trimmed
 }
 
