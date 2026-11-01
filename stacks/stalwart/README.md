@@ -156,11 +156,12 @@ The `v1-*-20260629` pair on both domains and the docker-mailserver-era
 `20260702` pair above is published. Leaving a superseded selector in DNS keeps
 its old private key able to sign mail that still passes DKIM.
 
-## DKIM verification (`dkim-verify.ts`)
+## DKIM verification (`@spy4x/email/dkim-verify`)
 
-`scripts/stalwart/dkim-verify.ts` is a pure-Deno RFC 6376 DKIM signature
-verifier — both `rsa-sha256` and `ed25519-sha256`. Pure functions, no
-Stalwart dependency, usable from any Deno script or `deno repl`.
+[`@spy4x/email/dkim-verify`](https://jsr.io/@spy4x/email/doc/dkim-verify) is
+an RFC 6376 DKIM signature verifier — both `rsa-sha256` and
+`ed25519-sha256`. Pure functions, no Stalwart dependency, usable from any
+Deno script or `deno repl`.
 
 ### Why it exists
 
@@ -177,7 +178,7 @@ the ongoing Ed25519-at-Google noise.
 ### API
 
 ```ts
-import { parseDkimPublicKey, verifyDkim } from "./scripts/stalwart/dkim-verify.ts"
+import { parseDkimPublicKey, verifyDkim } from "jsr:@spy4x/email@1.103.0/dkim-verify"
 
 // Fetch the public key from DNS (or wherever) and verify
 const pubKey = parseDkimPublicKey(
@@ -187,10 +188,11 @@ const result = await verifyDkim(rawMessage, pubKey)
 // result: { valid: boolean, reason?: string, parsed?, computedBodyHash?, ... }
 ```
 
-`verifyDkim` accepts the raw RFC822 message (with whatever line endings
-IMAP serves you) and the parsed public key. It folds continuation
-headers, canonicalises per the `c=` tag (relaxed/relaxed default),
-recomputes the body hash, and verifies the signature with WebCrypto.
+`verifyDkim` accepts the raw RFC822 message and the parsed public key. It
+folds continuation headers, canonicalises per the `c=` tag (simple/simple
+when absent), recomputes the body hash, and verifies the signature with
+WebCrypto. It checks every signature, requires `From` to be signed, and
+refuses RSA keys shorter than 1024 bits.
 
 ### Regression check after deploy
 
@@ -209,12 +211,13 @@ regardless — that's RFC 8463 not being implemented there, not our bug.
 
 ### Tolerates real-world input
 
-- Mixed CRLF/LF line endings (IMAP servers sometimes normalise mid-stream)
+- CRLF or bare-LF line endings, as long as one header block uses one kind
+  (a block that mixes them is refused: something rewrote it in transit)
 - Folded continuation headers (Stalwart emits multi-line DKIM-Signature)
 - Folded values across line breaks (`bh=AAA\n\tBBB` → `bh=AAABBB`)
 
-17 unit tests cover the round-trip (sign with generated keypair, verify
-with the verifier). Tests are in `dkim.verify.test.ts`.
+16 tests in `scripts/stalwart/dkim.verify.test.ts` cover the round-trip
+(sign with a generated key pair, verify with the verifier).
 
 ## Ports
 
