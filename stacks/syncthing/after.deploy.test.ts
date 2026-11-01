@@ -11,6 +11,7 @@ import {
   desiredDevice,
   desiredFolder,
   dockerExecStdin,
+  folderEqual,
   isDeviceArray,
   isFolderArray,
   isSystemStatus,
@@ -546,4 +547,23 @@ Deno.test("validateConfig: rejects a self that names no declared device", () => 
     Error,
     "`self` must be the name of a device",
   )
+})
+
+Deno.test("folderEqual: a folder whose file lists its devices in another order needs no update", () => {
+  const yaml: FolderRef = {
+    id: "archive",
+    path: "/OLD/path",
+    type: "sendreceive",
+    devices: ["alice-offsite", "alice-home"],
+  }
+  const desired = desiredFolder(yaml, currentFolder, nameMap)
+  assertEquals(desired.devices.map((d) => d.deviceID), [OFFSITE_ID, HOME_ID])
+  assertEquals(folderEqual(currentFolder, desired), true)
+})
+
+Deno.test("folderEqual: a different device set or another changed field is still a difference", () => {
+  const otherSet = { ...currentFolder, devices: [currentFolder.devices[0]] }
+  assertEquals(folderEqual(currentFolder, otherSet), false)
+  const otherPath = { ...currentFolder, devices: [...currentFolder.devices].reverse(), path: "/x" }
+  assertEquals(folderEqual(currentFolder, otherPath), false)
 })

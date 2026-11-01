@@ -151,6 +151,22 @@ export function withLiveSelf(
   }
 }
 
+/**
+ * Deep equality of two folder device lists as sets: Syncthing stores a list sorted by device ID,
+ * whatever order the file gives (#317).
+ */
+export function sameDevices(a: ApiFolder["devices"], b: ApiFolder["devices"]): boolean {
+  const sorted = (l: ApiFolder["devices"]) =>
+    [...l].sort((x, y) => x.deviceID.localeCompare(y.deviceID))
+  return deepEqual(sorted(a), sorted(b))
+}
+
+/** Deep equality of two folders, with their device lists compared as sets. */
+export function folderEqual(a: ApiFolder, b: ApiFolder): boolean {
+  return sameDevices(a.devices, b.devices) &&
+    deepEqual({ ...a, devices: [] }, { ...b, devices: [] })
+}
+
 /** Compute desired device state — overlay YAML over current. */
 export function desiredDevice(
   yaml: {
@@ -633,14 +649,14 @@ async function main() {
       continue
     }
     const desired = desiredFolder(folder, existing, nameMap)
-    if (deepEqual(existing, desired)) {
+    if (folderEqual(existing, desired)) {
       console.log(`  ✓ ${folder.id}`)
       continue
     }
     const diffs: string[] = []
     if (!deepEqual(existing.path, desired.path)) diffs.push(`path`)
     if (!deepEqual(existing.versioning, desired.versioning)) diffs.push(`versioning`)
-    if (!deepEqual(existing.devices, desired.devices)) diffs.push(`devices`)
+    if (!sameDevices(existing.devices, desired.devices)) diffs.push(`devices`)
     if (!deepEqual(existing.paused, desired.paused)) diffs.push(`paused`)
     console.log(`  ~ update ${folder.id} (${diffs.join(", ") || "minor fields"})`)
     await apiSend("PUT", `/rest/config/folders/${encodeURIComponent(folder.id)}`, desired)
@@ -672,7 +688,7 @@ async function main() {
       continue
     }
     const desired = desiredFolder(folder, found, nameMap)
-    if (!deepEqual(found, desired)) {
+    if (!folderEqual(found, desired)) {
       errors.push(`folder drift after write: ${folder.id}`)
     }
   }

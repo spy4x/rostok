@@ -109,6 +109,9 @@ for that entry, warns that the file still has the old one, and does not add the 
 peer. Update the ID in the file afterwards. Without `self`, the deploy cannot tell which entry is
 this server: it warns when no listed ID matches and adds the old ID as a separate device.
 
+The order of a folder's `devices` list does not matter: Syncthing sorts it by device ID, and the
+deploy compares the lists as sets.
+
 ## Folder Configuration
 
 **Send & Receive** - Default for backup sync\
