@@ -19,8 +19,14 @@ export default {
   description: "Modern JMAP webmail client for the Stalwart mail server",
   category: "productivity",
   requires: ["traefik"],
-  // The image runs as uid 1001 (nextjs): deploy must not chown its data folders to PUID:PGID.
-  keepOwner: ["bulwark/settings", "bulwark/admin", "bulwark/admin-state", "bulwark/telemetry"],
+  // The image runs as nextjs (1001:65533) and never chowns: deploy creates the data folders owned
+  // by it and never chowns them afterwards.
+  owner: {
+    "bulwark/settings": "1001:65533",
+    "bulwark/admin": "1001:65533",
+    "bulwark/admin-state": "1001:65533",
+    "bulwark/telemetry": "1001:65533",
+  },
   variables: [
     {
       key: "BULWARK_IMAGE_TAG",
