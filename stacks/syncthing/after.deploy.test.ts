@@ -11,12 +11,14 @@ import {
   desiredDevice,
   desiredFolder,
   dockerExecStdin,
+  folderEqual,
   isDeviceArray,
   isFolderArray,
   isSystemStatus,
   resolveFolderDeviceIds,
   runRemote,
   sshOptionArgs,
+  withLiveSelf,
 } from "./after.deploy.ts"
 
 const HOME_ID = "HOME-LOCAL-DEVICE-IDENTIFIER-PLACEHOLDER-DUMMY0"
@@ -500,4 +502,68 @@ Deno.test("runRemote: without SSH_HOST it runs on this machine only when SSH_LOC
     for (const [k, v] of saved) v === undefined ? Deno.env.delete(k) : Deno.env.set(k, v)
     await Deno.remove(dir, { recursive: true })
   }
+})
+
+// ── #317: a rebuilt server's new identity, and device order ──────────
+
+const NEW_HOME_ID = "HOME-REBUILT-DEVICE-IDENTIFIER-PLACEHOLDER-DUMMY"
+
+Deno.test("withLiveSelf: the self entry takes the live ID in place of a stale one, with a warning", () => {
+  const config = validateConfig({
+    data_dir: "~/x",
+    self: "alice-home",
+    devices: [{ id: HOME_ID, name: "alice-home" }, { id: OFFSITE_ID, name: "alice-offsite" }],
+  })
+  const { devices, warnings } = withLiveSelf(config, NEW_HOME_ID)
+  assertEquals(devices.map((d) => d.id), [NEW_HOME_ID, OFFSITE_ID])
+  assertEquals(warnings.length, 1)
+  assertEquals(warnings[0].includes(HOME_ID) && warnings[0].includes(NEW_HOME_ID), true)
+})
+
+Deno.test("withLiveSelf: a self entry that already has the live ID changes nothing and warns nothing", () => {
+  const config = validateConfig({
+    data_dir: "~/x",
+    self: "alice-home",
+    devices: [{ id: HOME_ID, name: "alice-home" }, { id: OFFSITE_ID, name: "alice-offsite" }],
+  })
+  assertEquals(withLiveSelf(config, HOME_ID), { devices: config.devices!, warnings: [] })
+})
+
+Deno.test("withLiveSelf: without self, warns when no listed device is this server", () => {
+  const config = validateConfig({
+    data_dir: "~/x",
+    devices: [{ id: HOME_ID, name: "alice-home" }],
+  })
+  const { devices, warnings } = withLiveSelf(config, NEW_HOME_ID)
+  assertEquals(devices, config.devices)
+  assertEquals(warnings.length, 1)
+  assertEquals(withLiveSelf(config, HOME_ID).warnings, [])
+})
+
+Deno.test("validateConfig: rejects a self that names no declared device", () => {
+  assertThrows(
+    () =>
+      validateConfig({ data_dir: "~/x", self: "nobody", devices: [{ id: HOME_ID, name: "a" }] }),
+    Error,
+    "`self` must be the name of a device",
+  )
+})
+
+Deno.test("folderEqual: a folder whose file lists its devices in another order needs no update", () => {
+  const yaml: FolderRef = {
+    id: "archive",
+    path: "/OLD/path",
+    type: "sendreceive",
+    devices: ["alice-offsite", "alice-home"],
+  }
+  const desired = desiredFolder(yaml, currentFolder, nameMap)
+  assertEquals(desired.devices.map((d) => d.deviceID), [OFFSITE_ID, HOME_ID])
+  assertEquals(folderEqual(currentFolder, desired), true)
+})
+
+Deno.test("folderEqual: a different device set or another changed field is still a difference", () => {
+  const otherSet = { ...currentFolder, devices: [currentFolder.devices[0]] }
+  assertEquals(folderEqual(currentFolder, otherSet), false)
+  const otherPath = { ...currentFolder, devices: [...currentFolder.devices].reverse(), path: "/x" }
+  assertEquals(folderEqual(currentFolder, otherPath), false)
 })

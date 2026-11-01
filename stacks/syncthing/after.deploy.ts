@@ -24,7 +24,12 @@
 // wrapped with endpoint + 200-byte snippet.
 
 import { parse as parseYaml } from "npm:yaml@2.8.2"
-import { type FolderRef, validateConfig } from "./before.deploy.ts"
+import {
+  type Device,
+  type FolderRef,
+  type SyncthingConfig,
+  validateConfig,
+} from "./before.deploy.ts"
 
 // ── API types ─────────────────────────────────────────────────────────
 
@@ -110,6 +115,56 @@ export function desiredFolder(
   })
 
   return out
+}
+
+/**
+ * The declared devices with this server's entry pointed at the live device ID (#317). The entry
+ * named by `self` takes `myId`, so a server rebuilt with a new identity never gets its dead old
+ * ID added back as a peer. Returns a warning when the file's ID for this server is stale, or when
+ * no `self` is set and no listed device is this server.
+ */
+export function withLiveSelf(
+  config: SyncthingConfig,
+  myId: string,
+): { devices: Device[]; warnings: string[] } {
+  const devices = config.devices ?? []
+  const warnings: string[] = []
+  if (config.self === undefined) {
+    if (devices.length > 0 && !devices.some((d) => d.id === myId)) {
+      warnings.push(
+        `no device in configs/syncthing.yml has this server's ID ${myId}; if one of them is this ` +
+          `server under an old ID, name it in \`self\` so it is not added as a peer`,
+      )
+    }
+    return { devices, warnings }
+  }
+  return {
+    devices: devices.map((d) => {
+      if (d.name !== config.self || d.id === myId) return d
+      warnings.push(
+        `"${d.name}" (self) is listed with ID ${d.id}, but this server runs as ${myId}: using ` +
+          `the live ID; update configs/syncthing.yml`,
+      )
+      return { ...d, id: myId }
+    }),
+    warnings,
+  }
+}
+
+/**
+ * Deep equality of two folder device lists as sets: Syncthing stores a list sorted by device ID,
+ * whatever order the file gives (#317).
+ */
+export function sameDevices(a: ApiFolder["devices"], b: ApiFolder["devices"]): boolean {
+  const sorted = (l: ApiFolder["devices"]) =>
+    [...l].sort((x, y) => x.deviceID.localeCompare(y.deviceID))
+  return deepEqual(sorted(a), sorted(b))
+}
+
+/** Deep equality of two folders, with their device lists compared as sets. */
+export function folderEqual(a: ApiFolder, b: ApiFolder): boolean {
+  return sameDevices(a.devices, b.devices) &&
+    deepEqual({ ...a, devices: [] }, { ...b, devices: [] })
 }
 
 /** Compute desired device state — overlay YAML over current. */
@@ -528,6 +583,10 @@ async function main() {
   const currentFolders = await apiGet<ApiFolder[]>("/rest/config/folders", isFolderArray)
   const currentDevices = await apiGet<ApiDevice[]>("/rest/config/devices", isDeviceArray)
 
+  const self = withLiveSelf(config, myId)
+  for (const w of self.warnings) console.warn(`Warning: ${w}`)
+  config.devices = self.devices
+
   const nameMap = new Map<string, string>()
   for (const d of config.devices ?? []) {
     if (typeof d?.name === "string" && typeof d?.id === "string") {
@@ -590,14 +649,14 @@ async function main() {
       continue
     }
     const desired = desiredFolder(folder, existing, nameMap)
-    if (deepEqual(existing, desired)) {
+    if (folderEqual(existing, desired)) {
       console.log(`  ✓ ${folder.id}`)
       continue
     }
     const diffs: string[] = []
     if (!deepEqual(existing.path, desired.path)) diffs.push(`path`)
     if (!deepEqual(existing.versioning, desired.versioning)) diffs.push(`versioning`)
-    if (!deepEqual(existing.devices, desired.devices)) diffs.push(`devices`)
+    if (!sameDevices(existing.devices, desired.devices)) diffs.push(`devices`)
     if (!deepEqual(existing.paused, desired.paused)) diffs.push(`paused`)
     console.log(`  ~ update ${folder.id} (${diffs.join(", ") || "minor fields"})`)
     await apiSend("PUT", `/rest/config/folders/${encodeURIComponent(folder.id)}`, desired)
@@ -629,7 +688,7 @@ async function main() {
       continue
     }
     const desired = desiredFolder(folder, found, nameMap)
-    if (!deepEqual(found, desired)) {
+    if (!folderEqual(found, desired)) {
       errors.push(`folder drift after write: ${folder.id}`)
     }
   }
