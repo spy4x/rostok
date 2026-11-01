@@ -19,6 +19,7 @@ import { offlineCommand } from "./commands/offline.ts"
 import { stackListCommand } from "./commands/list.ts"
 import { stackAddCommand } from "./commands/stack-add.ts"
 import { stackRemoveCommand } from "./commands/stack-remove.ts"
+import { upgradeCommand } from "./upgrade.ts"
 // Side-effect import: keep arktype + StackMeta + defaults reachable through
 // the public barrel. The CLI entry is the canonical "load the package"
 // location.
@@ -51,7 +52,8 @@ Examples:
     rostok images outdated                # pinned images with a newer version
     rostok env status                     # encryption posture + next steps
     rostok offline status                 # backup drive: settings, disks, tools
-    rostok offline backup --drive sdb -n  # copy the backups to an external drive`
+    rostok offline backup --drive sdb -n  # copy the backups to an external drive
+    rostok upgrade                        # replace this binary with the latest release`
 
 /**
  * Build the `rostok` command tree: the root command (which runs the setup wizard) with its global
@@ -159,6 +161,8 @@ Examples:
   cmd.command("images", imagesCommand)
 
   cmd.command("offline", offlineCommand)
+
+  cmd.command("upgrade", upgradeCommand).alias("update")
 
   return cmd
 }
