@@ -96,6 +96,16 @@ export interface StackMeta {
    * entry must match the path after `${VOLUMES_PATH}/` in `compose.yml`.
    */
   keepOwner?: string[]
+  /**
+   * The `uid:gid` owner of a volume folder whose container runs as a fixed
+   * user that cannot set the owner itself (#509), such as Healthchecks
+   * (`user: "999:999"`): `{ "healthchecks": "999:999" }`. Deploy chowns
+   * the folder (not recursively) only when it creates it; an existing
+   * folder keeps its owner, exactly as under `keepOwner`, which a folder
+   * listed here needs no entry in. Keys are paths relative to
+   * VOLUMES_PATH, like `keepOwner`; values are numeric `uid:gid`.
+   */
+  owner?: Record<string, string>
 }
 
 // Runtime schemas — defense-in-depth beyond TypeScript's `satisfies` check.
@@ -138,6 +148,7 @@ export const StackMetaSchema: type.Any = type({
   "requires?": "string[]",
   "fileMounts?": "string[]",
   "keepOwner?": "string[]",
+  "owner?": "Record<string, string>",
 })
 
 /**
@@ -165,10 +176,7 @@ export function validateStackMeta(input: unknown): StackMeta {
     }
   }
   for (const mount of result.fileMounts ?? []) {
-    const parts = mount.split("/")
-    if (
-      mount.startsWith("/") || parts.includes("..") || !parts.some((p: string) => p && p !== ".")
-    ) {
+    if (!isVolumeRelative(mount)) {
       throw new Error(
         `Invalid +meta.ts: fileMounts entry "${mount}" must be a path relative to VOLUMES_PATH, ` +
           `with no ".." component (e.g. "traefik/letsencrypt/acme.json").`,
@@ -176,17 +184,34 @@ export function validateStackMeta(input: unknown): StackMeta {
     }
   }
   for (const dir of result.keepOwner ?? []) {
-    const parts = dir.split("/")
-    if (
-      dir.startsWith("/") || parts.includes("..") || !parts.some((p: string) => p && p !== ".")
-    ) {
+    if (!isVolumeRelative(dir)) {
       throw new Error(
         `Invalid +meta.ts: keepOwner entry "${dir}" must be a path relative to VOLUMES_PATH, ` +
           `with no ".." component (e.g. "immich/postgres").`,
       )
     }
   }
+  for (const [dir, id] of Object.entries(result.owner ?? {}) as [string, string][]) {
+    if (!isVolumeRelative(dir)) {
+      throw new Error(
+        `Invalid +meta.ts: owner entry "${dir}" must be a path relative to VOLUMES_PATH, ` +
+          `with no ".." component (e.g. "healthchecks").`,
+      )
+    }
+    if (!/^[0-9]+:[0-9]+$/.test(id)) {
+      throw new Error(
+        `Invalid +meta.ts: owner of "${dir}" is "${id}"; it must be a numeric uid:gid ` +
+          `(e.g. "999:999").`,
+      )
+    }
+  }
   return result as StackMeta
+}
+
+/** True when `dir` is relative to VOLUMES_PATH: not absolute, no `..`, not empty or only `.`. */
+function isVolumeRelative(dir: string): boolean {
+  const parts = dir.split("/")
+  return !dir.startsWith("/") && !parts.includes("..") && parts.some((p) => p && p !== ".")
 }
 
 /**

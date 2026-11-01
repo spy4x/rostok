@@ -8,6 +8,7 @@ import {
   generateVolumeCreationScript,
   loadStackFileMounts,
   loadStackKeepOwner,
+  loadStackOwner,
   type VolumeScriptOptions,
 } from "./volumes.ts"
 import { UserError } from "../errors.ts"
@@ -873,6 +874,64 @@ for (const needsSudo of [false, true]) {
     }
   })
 
+  Deno.test(`generateVolumeCreationScript (${mode}): a missing owner folder is created and chowned, not recursively, to its declared owner`, async () => {
+    const root = await tempRoot("rostok-volumes-owner-new-")
+    try {
+      const hc = join(root, "healthchecks")
+      const data = join(root, "data")
+      const script = generateVolumeCreationScript(
+        opts(root, [hc, data], {
+          owners: { [hc]: "999:999" },
+          puid: "4242",
+          pgid: "4343",
+          needsSudo,
+        }),
+      )
+      const result = await runScript(script)
+      assertEquals(result.success, true, result.stderr)
+      assertEquals((await Deno.stat(hc)).isDirectory, true)
+      assertEquals(result.chownCalls, [`-h 999:999 -- ${hc}`, `-R 4242:4343 -- ${data}`])
+    } finally {
+      await Deno.remove(root, { recursive: true })
+    }
+  })
+
+  Deno.test(`generateVolumeCreationScript (${mode}): an existing owner folder keeps its owner`, async () => {
+    const root = await tempRoot("rostok-volumes-owner-old-")
+    try {
+      const hc = join(root, "healthchecks")
+      await Deno.mkdir(hc)
+      const script = generateVolumeCreationScript(
+        opts(root, [hc], { owners: { [hc]: "999:999" }, needsSudo }),
+      )
+      const result = await runScript(script)
+      assertEquals(result.success, true, result.stderr)
+      assertEquals(result.chownCalls, [])
+      assertEquals(result.sudoCalls, [])
+    } finally {
+      await Deno.remove(root, { recursive: true })
+    }
+  })
+
+  Deno.test(`generateVolumeCreationScript (${mode}): a missing owner folder behind a symlink out of VOLUMES_PATH is refused before mkdir`, async () => {
+    const root = await escapeFixture("rostok-volumes-owner-mid-")
+    try {
+      const script = generateVolumeCreationScript(
+        opts(`${root}/volumes`, [`${root}/volumes/app/hc`], {
+          owners: { [`${root}/volumes/app/hc`]: "999:999" },
+          needsSudo,
+        }),
+      )
+      const result = await runScript(script)
+      assertEquals(result.success, false)
+      assertStringIncludes(result.stderr, "outside VOLUMES_PATH")
+      assertEquals(await exists(`${root}/outside/hc`), false, "mkdir followed the symlink")
+      assertEquals(result.chownCalls, [])
+    } finally {
+      await Deno.remove(root, { recursive: true })
+    }
+  })
+
   Deno.test(`generateVolumeCreationScript (${mode}): a keepOwner folder that is a symlink out of VOLUMES_PATH is refused`, async () => {
     const root = await escapeFixture("rostok-volumes-keep-link-")
     try {
@@ -934,6 +993,19 @@ Deno.test("generateVolumeCreationScript: a volume that contains a keepOwner fold
   )
   assertStringIncludes(err.message, `"/srv/v/gitea"`)
   assertStringIncludes(err.message, `"/srv/v/gitea/db"`)
+})
+
+Deno.test("generateVolumeCreationScript: a volume that contains an owner folder is refused", () => {
+  assertThrows(
+    () =>
+      generateVolumeCreationScript(
+        opts("/srv/v", ["/srv/v/hc", "/srv/v/hc/data"], {
+          owners: { "/srv/v/hc/data": "999:999" },
+        }),
+      ),
+    UserError,
+    `contains the keep-owner folder "/srv/v/hc/data"`,
+  )
 })
 
 Deno.test("assertNoKeepOwnerParent: matches whole path segments, not string prefixes", () => {
@@ -999,7 +1071,7 @@ Deno.test("loadStackKeepOwner reads keepOwner from a local +meta.ts", async () =
   }
 })
 
-Deno.test("loadStackKeepOwner: the bundled catalog keeps the owner of every database folder", async () => {
+Deno.test("the bundled catalog keeps the owner (keepOwner or owner) of every database and fixed-uid folder", async () => {
   const expected: Record<string, string[]> = {
     immich: ["immich/postgres"],
     gitea: ["gitea/postgres"],
@@ -1014,7 +1086,11 @@ Deno.test("loadStackKeepOwner: the bundled catalog keeps the owner of every data
     stalwart: ["stalwart/data", "stalwart/config", "stalwart/lib"],
   }
   for (const [stack, folders] of Object.entries(expected)) {
-    assertEquals(await loadStackKeepOwner(stack, new Map()), folders, stack)
+    const kept = [
+      ...await loadStackKeepOwner(stack, new Map()),
+      ...Object.keys(await loadStackOwner(stack, new Map())),
+    ]
+    assertEquals(kept, folders, stack)
   }
 })
 

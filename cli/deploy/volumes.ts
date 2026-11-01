@@ -168,6 +168,18 @@ export function loadStackKeepOwner(
   return loadMetaList(stackName, files, "keepOwner")
 }
 
+/**
+ * The `owner` map a stack declares in its `+meta.ts` (#509): folder,
+ * relative to VOLUMES_PATH, to the `uid:gid` it gets when deploy creates
+ * it. Loaded like `loadStackKeepOwner`.
+ */
+export async function loadStackOwner(
+  stackName: string,
+  files: Map<string, string>,
+): Promise<Record<string, string>> {
+  return (await loadDeployMeta(stackName, files, "owner"))?.owner ?? {}
+}
+
 async function loadMetaList(
   stackName: string,
   files: Map<string, string>,
@@ -224,6 +236,12 @@ export interface VolumeScriptOptions {
    * created when missing, never chowned. Optional: omitted means none.
    */
   keepOwner?: string[]
+  /**
+   * Absolute paths of volume folders mapped to the `uid:gid` they get when
+   * the script creates them (`owner`, #509). Such a folder is also kept:
+   * an existing one is never chowned. Optional: omitted means none.
+   */
+  owners?: Record<string, string>
   puid: string
   pgid: string
   /** True when the remote user isn't root, so mkdir/chown go through `sudo -n`. */
@@ -281,6 +299,23 @@ rostok_resolve "$1" && chown -R "$2" -- "$rostok_real"`
 const SUDO_KEEP_SCRIPT = `${RESOLVE_FUNCTIONS}
 rostok_base_init "$3" && rostok_resolve "$1" && mkdir -p -- "$rostok_real" &&
 rostok_resolve "$1"`
+
+/**
+ * `rostok_create_owned P U:G` resolves P like `rostok_resolve`; when P does
+ * not exist yet, it creates it and chowns that one folder (not
+ * recursively, `-h` so a link swapped in is not followed) to U:G (#509).
+ * An existing P is left as it is.
+ */
+const OWNED_FUNCTION = `rostok_create_owned() {
+  rostok_resolve "$1" || return 1
+  [ -e "$rostok_real" ] && return 0
+  mkdir -p -- "$rostok_real" && rostok_resolve "$1" && chown -h "$2" -- "$rostok_real"
+}`
+
+/** For an `owner` folder: `$1` the path, `$2` its `uid:gid`, `$3` VOLUMES_PATH. */
+const SUDO_OWNED_SCRIPT = `${RESOLVE_FUNCTIONS}
+${OWNED_FUNCTION}
+rostok_base_init "$3" && rostok_create_owned "$1" "$2"`
 
 /** Prints why and fails unless `$1` is a regular file. */
 const FILE_FUNCTION = `rostok_file() {
@@ -368,7 +403,9 @@ export function generateFileMountCheckScript(
  * Build the remote script that creates and chowns every volume folder
  * (every volume path except the file mounts) to `puid:pgid`. A folder in
  * `keepOwner` (#312) is created when missing and resolved like the rest,
- * but never chowned: a running database would lose access to its files. Any failure
+ * but never chowned: a running database would lose access to its files. A
+ * folder in `owners` (#509) is kept the same way, except that a folder the
+ * script creates is chowned to its declared owner. Any failure
  * fails the whole script and its stderr reaches the caller: nothing is
  * hidden behind `|| true` or `2>/dev/null`.
  *
@@ -394,18 +431,30 @@ export function generateVolumeCreationScript(opts: VolumeScriptOptions): string 
   const owner = `${shQuote(opts.puid)}:${shQuote(opts.pgid)}`
   const base = shQuote(opts.volumesPath)
   const files = new Set(fileMountsInUse(opts.volumePaths, opts.fileMounts))
-  assertNoKeepOwnerParent(opts.volumePaths, opts.keepOwner ?? [])
-  const keep = new Set((opts.keepOwner ?? []).map(pathKey))
+  const owners = new Map(
+    Object.entries(opts.owners ?? {}).map(([path, id]) => [pathKey(path), id]),
+  )
+  const kept = [...(opts.keepOwner ?? []), ...Object.keys(opts.owners ?? {})]
+  assertNoKeepOwnerParent(opts.volumePaths, kept)
+  const keep = new Set(kept.map(pathKey))
   const folders = opts.volumePaths.filter((p) => !files.has(p))
+  const ownerOf = (path: string) => owners.get(pathKey(path))
+  const owned = folders.some((p) => ownerOf(p) !== undefined)
   if (!opts.needsSudo) {
     const steps = [`rostok_base_init ${base}`]
     for (const path of folders) {
       const p = shQuote(path)
       const r = `"$rostok_real"`
+      const id = ownerOf(path)
+      if (id !== undefined) {
+        steps.push(`rostok_create_owned ${p} ${shQuote(id)}`)
+        continue
+      }
       const chown = keep.has(pathKey(path)) ? "" : ` && chown -R ${owner} -- ${r}`
       steps.push(`rostok_resolve ${p} && mkdir -p -- ${r} && rostok_resolve ${p}${chown}`)
     }
-    return `${RESOLVE_FUNCTIONS}\n${steps.join(" &&\n")}\n`
+    const fns = owned ? `${RESOLVE_FUNCTIONS}\n${OWNED_FUNCTION}` : RESOLVE_FUNCTIONS
+    return `${fns}\n${steps.join(" &&\n")}\n`
   }
   const isKept = (path: string) => keep.has(pathKey(path))
   // Each sudo script is defined once, and only when a folder uses it. `shQuote`
@@ -417,8 +466,16 @@ export function generateVolumeCreationScript(opts: VolumeScriptOptions): string 
   if (folders.some((p) => !isKept(p))) {
     head.push(`rostok_sudo_folder=${shQuote(SUDO_FOLDER_SCRIPT)}`)
   }
+  if (owned) head.push(`rostok_sudo_owned=${shQuote(SUDO_OWNED_SCRIPT)}`)
   const body = folders.map((path) => {
     const p = shQuote(path)
+    const id = ownerOf(path)
+    if (id !== undefined) {
+      // Like a kept folder below: an existing one needs nothing privileged; a
+      // missing one is created and chowned to its declared owner by sudo.
+      return `( [ -d ${p} ] && [ ! -L ${p} ] && rostok_base_init ${base} && ` +
+        `rostok_resolve ${p} || sudo -n sh -c "$rostok_sudo_owned" sh ${p} ${shQuote(id)} ${base} )`
+    }
     if (isKept(path)) {
       // Never chowned, so an existing folder needs nothing privileged. The
       // resolve check still runs with the user's own rights: a symlinked

@@ -351,6 +351,21 @@ whose data folder the container writes as `PUID:PGID` (it takes `PUID`
 and `PGID` or `user:`) needs nothing here. Deploy reads `keepOwner` from
 the same `+meta.ts` as `fileMounts`.
 
+An image that runs as a fixed user and never sets the owner itself
+(Healthchecks runs as `user: "999:999"` and only writes `/data`) cannot
+start in a folder the deploy user owns. Name that folder's owner in
+`owner` instead of `keepOwner`:
+
+```ts
+export default {
+  // ...
+  owner: { "healthchecks": "999:999" },
+} satisfies StackMeta
+```
+
+Deploy chowns the folder to that numeric `uid:gid` only when it creates
+it, and never chowns it after that, so existing data keeps its owner.
+
 ---
 
 ## Verify before opening a PR
