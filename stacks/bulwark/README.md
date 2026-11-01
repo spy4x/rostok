@@ -40,6 +40,16 @@ when you change `BULWARK_DOMAIN`, set that key to the same host.
    branding, and security settings.
 4. Users log in with their Stalwart email credentials.
 
+### Upgrading an older install
+
+Deploy creates the `${VOLUMES_PATH}/bulwark/*` folders owned by `1001:65533`, the container's
+user, but only when a folder is new. Folders created by an older release keep their old owner, and
+Bulwark cannot save its settings. Fix them once on the server:
+
+```bash
+sudo chown -R 1001:65533 <VOLUMES_PATH>/bulwark
+```
+
 ## Features
 
 - **Mail**: Threading, unified inbox, full-text search, Sieve filters, S/MIME,

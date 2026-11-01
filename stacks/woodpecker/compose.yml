@@ -126,7 +126,7 @@ services:
       - WOODPECKER_MAX_WORKFLOWS=${WOODPECKER_MAX_WORKFLOWS:-4}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
-      - ${VOLUMES_PATH}/woodpecker-agent/cache:/woodpecker/cache # Cache for faster builds
+      - ${VOLUMES_PATH}/woodpecker-agent/cache:/woodpecker/cache # Empty unless a pipeline uses it as its cache
     depends_on:
       - woodpecker-server
     restart: unless-stopped

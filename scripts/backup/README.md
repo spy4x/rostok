@@ -42,15 +42,10 @@ The system automatically discovers and merges configurations from both locations
 
 ### Manual Run
 
+From the root of a rostok checkout:
+
 ```bash
-# Run the backup process
-deno run -A +main.ts
-
-# With environment file
-deno run --env-file=/path/to/.env -A +main.ts
-
-# Check TypeScript compilation
-deno check +main.ts
+deno run -A --env-file=/path/to/.env scripts/backup/+main.ts
 ```
 
 ### Cron Job
@@ -59,7 +54,7 @@ It has to be installed for root via `sudo crontab -e` to allow changing ownershi
 
 ```bash
 # Daily at 2:30am
-30 2 * * * SSH_USER=$USER /path/to/deno run --env-file=/path/to/.env -A /path/to/+main.ts >> /path/to/backup.log 2>&1
+30 2 * * * SSH_USER=$USER /path/to/deno run --env-file=/path/to/.env -A /path/to/rostok/scripts/backup/+main.ts >> /path/to/backup.log 2>&1
 ```
 
 ## Running a pinned release
