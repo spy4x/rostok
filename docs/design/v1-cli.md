@@ -234,11 +234,11 @@ reference is `${SERVER_NAME}`. v1 keeps this minimal.
 - `default: () => generatePassword(N)` — `crypto.getRandomValues`, base64
 - Routed through age64 encryption automatically (see §6)
 
-### Volume ownership (`keepOwner`, `fileMounts`)
+### Volume ownership (`keepOwner`, `owner`, `fileMounts`)
 
 Deploy creates every `${VOLUMES_PATH}/...` folder of a stack's
-`compose.yml` and chowns it to `PUID:PGID`. Two optional fields change
-that, both lists of paths relative to `VOLUMES_PATH`:
+`compose.yml` and chowns it to `PUID:PGID`. Three optional fields change
+that, all keyed by paths relative to `VOLUMES_PATH`:
 
 - `fileMounts`: a volume that is a single file (Traefik's `acme.json`).
   Never created or chowned; deploy checks it is a regular file.
@@ -249,6 +249,11 @@ that, both lists of paths relative to `VOLUMES_PATH`:
   container still shows "Up". A folder it creates is owned by the deploy
   user (root, or root through `sudo -n`); the image sets the owner on its
   first start. Deploy still refuses a symlink out of `VOLUMES_PATH`.
+- `owner` (#509): a map from folder to a numeric `uid:gid`, for an image
+  that runs as a fixed user and cannot set the owner itself (Healthchecks,
+  `{ "healthchecks": "999:999" }`). A folder deploy creates is chowned
+  (not recursively) to that owner; an existing one is treated like a
+  `keepOwner` folder and keeps its owner.
 
 ### Validation library
 

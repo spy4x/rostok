@@ -15,7 +15,7 @@ services:
     container_name: hl-healthchecks
     image: healthchecks/healthchecks:${HEALTHCHECKS_IMAGE_TAG:-latest}
     # Runs the image's run.sh (migrations, sendalerts, sendreports, web server).
-    # /data must be owned by UID 999, the user below: deploy leaves its owner alone.
+    # /data must be owned by UID 999, the user below: deploy creates it so (+meta.ts `owner`).
     entrypoint: ["/bin/sh", "/opt/healthchecks/docker-entrypoint.sh"]
     expose:
       - "8000"

@@ -16,8 +16,9 @@ export default {
   description: "Cron job and scheduled task monitoring with alerts for missed pings",
   category: "monitoring",
   requires: ["traefik"],
-  // the container runs as 999:999, so /data must stay owned by 999: deploy must not chown it to PUID:PGID.
-  keepOwner: ["healthchecks"],
+  // The container runs as 999:999 and cannot chown /data itself: deploy creates the folder owned
+  // by 999:999 and never chowns it afterwards.
+  owner: { "healthchecks": "999:999" },
   variables: [
     {
       key: "HEALTHCHECKS_IMAGE_TAG",

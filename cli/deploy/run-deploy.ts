@@ -98,6 +98,7 @@ import {
   loadDeployMeta,
   loadStackFileMounts,
   loadStackKeepOwner,
+  loadStackOwner,
 } from "./volumes.ts"
 import {
   type DeployResult,
@@ -379,6 +380,14 @@ export async function runDeploy(
     const keepOwner: string[] = []
     for (const [stackName, resolved] of stackFiles) {
       for (const rel of await loadStackKeepOwner(stackName, resolved.files)) {
+        keepOwner.push(`${VOLUMES_PATH}/${rel}`)
+      }
+    }
+    // #509: an `owner` folder is kept too, and chowned to its owner only when deploy creates it.
+    const owners: Record<string, string> = {}
+    for (const [stackName, resolved] of stackFiles) {
+      for (const [rel, id] of Object.entries(await loadStackOwner(stackName, resolved.files))) {
+        owners[`${VOLUMES_PATH}/${rel}`] = id
         keepOwner.push(`${VOLUMES_PATH}/${rel}`)
       }
     }
@@ -684,6 +693,7 @@ export async function runDeploy(
           volumePaths,
           fileMounts,
           keepOwner,
+          owners,
           puid: PUID,
           pgid: PGID,
           needsSudo,

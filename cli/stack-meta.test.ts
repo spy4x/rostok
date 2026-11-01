@@ -222,6 +222,31 @@ Deno.test("validateStackMeta: accepts keepOwner relative to VOLUMES_PATH", () =>
   assertEquals(meta.keepOwner, ["gitea/db"])
 })
 
+Deno.test("validateStackMeta: accepts an owner map of relative folders to numeric uid:gid", () => {
+  const meta = validateStackMeta({ ...validStack, owner: { "healthchecks": "999:999" } })
+  assertEquals(meta.owner, { "healthchecks": "999:999" })
+})
+
+Deno.test("validateStackMeta: rejects an absolute or .. owner folder", () => {
+  for (const bad of ["/healthchecks", "../hc", "a/../../hc", "", "."]) {
+    assertThrows(
+      () => validateStackMeta({ ...validStack, owner: { [bad]: "999:999" } }),
+      Error,
+      `owner entry "${bad}" must be a path relative to VOLUMES_PATH`,
+    )
+  }
+})
+
+Deno.test("validateStackMeta: rejects an owner that is not a numeric uid:gid", () => {
+  for (const bad of ["999", "hc:hc", "999:999 ", "999:999;id", ":999", ""]) {
+    assertThrows(
+      () => validateStackMeta({ ...validStack, owner: { "healthchecks": bad } }),
+      Error,
+      `it must be a numeric uid:gid`,
+    )
+  }
+})
+
 Deno.test("validateStackMeta: rejects an absolute or .. keepOwner entry", () => {
   for (const bad of ["/gitea/db", "../db", "a/../../db", "", "."]) {
     assertThrows(

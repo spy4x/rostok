@@ -114,9 +114,9 @@ for (const name of names) {
     }
   })
 
-  Deno.test(`${name} +meta.ts: every keepOwner folder is a volume of compose.yml`, async () => {
+  Deno.test(`${name} +meta.ts: every keepOwner and owner folder is a volume of compose.yml`, async () => {
     const compose = await codeOf(name, "compose.yml")
-    for (const dir of meta.keepOwner ?? []) {
+    for (const dir of [...(meta.keepOwner ?? []), ...Object.keys(meta.owner ?? {})]) {
       assert(
         compose.includes(`\${VOLUMES_PATH}/${dir}:`),
         `+meta.ts keeps the owner of ${dir} but compose.yml has no \${VOLUMES_PATH}/${dir} volume`,

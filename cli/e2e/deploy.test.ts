@@ -1236,6 +1236,43 @@ Deno.test("e2e: a keepOwner folder from the stack's +meta.ts is created but neve
   }
 })
 
+Deno.test("e2e: an owner folder from the stack's +meta.ts is created owned by its declared uid:gid", async () => {
+  // #509: Healthchecks runs as 999:999 and could not write a folder owned by the deploy user.
+  const f = await setupFixture()
+  try {
+    const stackDir = join(f.projectDir, "stacks", "fixed-uid")
+    await Deno.mkdir(stackDir, { recursive: true })
+    await Deno.writeTextFile(
+      join(stackDir, "compose.yml"),
+      [
+        "name: ${PROJECT}",
+        "services:",
+        "  app:",
+        "    image: busybox",
+        "    volumes:",
+        "      - ${VOLUMES_PATH}/fixed-uid/data:/data:z",
+      ].join("\n") + "\n",
+    )
+    await Deno.writeTextFile(
+      join(stackDir, "+meta.ts"),
+      `export default { name: "fixed-uid", description: "d", variables: [], ` +
+        `owner: { "fixed-uid/data": "999:999" } }\n`,
+    )
+    await writeServer(f.projectDir, [], ["fixed-uid"])
+
+    const { remote } = await runDeployInProcess(f)
+    const volumeScript = remote.shellScripts.find((s) => s.includes("rostok_create_owned '"))
+    assert(volumeScript, `expected a volume script, got:\n${remote.shellScripts.join("\n---\n")}`)
+    assertStringIncludes(
+      volumeScript!,
+      "rostok_create_owned '/srv/volumes/fixed-uid/data' '999:999'",
+    )
+    assertEquals(volumeScript!.includes("chown -R"), false, volumeScript)
+  } finally {
+    await teardownFixture(f)
+  }
+})
+
 Deno.test("e2e: a missing declared file mount stops the deploy before stale cleanup or file sync", async () => {
   const f = await setupFixture()
   try {
