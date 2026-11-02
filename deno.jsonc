@@ -186,6 +186,8 @@
       "!stacks/home-assistant/compose.traefik.yml",
       "!stacks/wireguard/+meta.ts",
       "!stacks/wireguard/compose.yml",
+      "!stacks/xray/+meta.ts",
+      "!stacks/xray/compose.yml",
       "!stacks/ntfy/+meta.ts",
       "!stacks/ntfy/compose.yml",
       "!stacks/oko/+meta.ts",
