@@ -8,7 +8,14 @@ import { renderCompose } from "../compose-interpolate.ts"
 import meta from "./+meta.ts"
 
 interface Compose {
-  services: { xray: { ports?: string[]; labels: string[] } }
+  services: {
+    xray: {
+      ports?: string[]
+      labels: string[]
+      pids_limit?: number
+      deploy: { resources: { limits: { pids?: number } } }
+    }
+  }
   configs: { "xray-config": { content: string } }
 }
 
@@ -56,4 +63,11 @@ Deno.test("no port is published; Traefik passes only the decoy name through", as
   assert(xray.labels.includes("traefik.tcp.routers.hl-xray.rule=HostSNI(`decoy.example.com`)"))
   assert(xray.labels.includes("traefik.tcp.routers.hl-xray.tls.passthrough=true"))
   assert(xray.labels.includes("traefik.tcp.routers.hl-xray.entrypoints=websecure"))
+})
+
+Deno.test("the process limit sits under deploy limits, where compose accepts it", async () => {
+  // docker compose 2.40 refuses `pids_limit` next to `deploy.resources.limits`.
+  const xray = (await rendered(generatedEnv())).services.xray
+  assertEquals(xray.pids_limit, undefined)
+  assertEquals(xray.deploy.resources.limits.pids, 200)
 })
