@@ -20,12 +20,12 @@ probes the server with that site's name gets the real site back.
 Declared in `+meta.ts`; `rostok stack add xray` writes them to the server's `.env` and generates
 the secrets.
 
-| Key                        | Default             | Meaning                                        |
-| -------------------------- | ------------------- | ---------------------------------------------- |
+| Key                        | Default           | Meaning                                        |
+| -------------------------- | ----------------- | ---------------------------------------------- |
 | `XRAY_REALITY_SNI`         | `www.samsung.com` | Decoy site; must not be a host Traefik serves  |
-| `XRAY_REALITY_PRIVATE_KEY` | generated           | X25519 private key, base64url (secret)         |
-| `XRAY_REALITY_SHORT_ID`    | generated           | 16 hex characters every client link carries    |
-| `XRAY_CLIENTS`             | one generated       | JSON array of clients, one per person (secret) |
+| `XRAY_REALITY_PRIVATE_KEY` | generated         | X25519 private key, base64url (secret)         |
+| `XRAY_REALITY_SHORT_ID`    | generated         | 16 hex characters every client link carries    |
+| `XRAY_CLIENTS`             | one generated     | JSON array of clients, one per person (secret) |
 
 Pick a decoy the censor does not block, with TLS 1.3 and HTTP/2. Check it from the server:
 
