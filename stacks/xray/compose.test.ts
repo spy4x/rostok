@@ -44,6 +44,9 @@ Deno.test("traffic to private addresses is blocked, so clients cannot reach the 
   const config = JSON.parse((await rendered(generatedEnv()))["configs"]["xray-config"].content)
   const rule = config.routing.rules.find((r: { ip?: string[] }) => r.ip?.includes("geoip:private"))
   assertEquals(rule?.outboundTag, "block")
+  // Without it the rule sees only raw IPs: a container name or a name resolving to a LAN address
+  // would get through.
+  assertEquals(config.routing.domainStrategy, "IPIfNonMatch")
 })
 
 Deno.test("no port is published; Traefik passes only the decoy name through", async () => {
@@ -52,4 +55,5 @@ Deno.test("no port is published; Traefik passes only the decoy name through", as
   assertEquals(xray.ports, undefined)
   assert(xray.labels.includes("traefik.tcp.routers.hl-xray.rule=HostSNI(`decoy.example.com`)"))
   assert(xray.labels.includes("traefik.tcp.routers.hl-xray.tls.passthrough=true"))
+  assert(xray.labels.includes("traefik.tcp.routers.hl-xray.entrypoints=websecure"))
 })

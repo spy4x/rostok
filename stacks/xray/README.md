@@ -10,10 +10,11 @@ probes the server with that site's name gets the real site back.
 - Traefik passes every TLS connection on `:443` whose server name is `XRAY_REALITY_SNI` straight
   to `hl-xray` (a TCP router with TLS passthrough). Every other host keeps going to the HTTP
   routers, so no port is published and no router port forward is needed.
-- The whole Xray config is built from `.env` by compose. Nothing is stored, so the stack has no
-  backup.
-- The server refuses traffic to private and LAN addresses, so a client cannot reach the host's LAN
-  or its Docker networks, and refuses BitTorrent, whose abuse complaints would reach you.
+- The whole Xray config is built from `.env` by compose. Nothing is stored and no access log is
+  kept, so the stack has no backup.
+- The server resolves every name first and refuses traffic to private and LAN addresses, so a
+  client cannot reach the host's LAN or its Docker networks, by address or by name. It also
+  refuses BitTorrent, whose abuse complaints would reach you.
 
 ## Variables
 

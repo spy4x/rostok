@@ -11,6 +11,7 @@ services:
         target: /etc/xray/config.json
     restart: unless-stopped
     read_only: true
+    pids_limit: 200
     cap_drop:
       - ALL
     security_opt:
@@ -34,7 +35,7 @@ configs:
   xray-config:
     content: |
       {
-        "log": { "loglevel": "warning" },
+        "log": { "loglevel": "warning", "access": "none" },
         "inbounds": [
           {
             "tag": "reality",
@@ -62,6 +63,7 @@ configs:
           { "tag": "block", "protocol": "blackhole" }
         ],
         "routing": {
+          "domainStrategy": "IPIfNonMatch",
           "rules": [
             { "ip": ["geoip:private"], "outboundTag": "block" },
             { "protocol": ["bittorrent"], "outboundTag": "block" }
