@@ -60,6 +60,9 @@ export const SHIPPED_STACK_FILES: Record<string, readonly string[]> = {
   wireguard: [
     "compose.yml",
   ],
+  xray: [
+    "compose.yml",
+  ],
   ntfy: [
     "compose.yml",
   ],

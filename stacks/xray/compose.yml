@@ -1,0 +1,77 @@
+# Xray-core with VLESS + Reality. Traefik passes TLS connections that name the decoy site
+# (XRAY_REALITY_SNI) straight to this container; every other host on :443 keeps going to the HTTP
+# routers. No port is published. The whole config comes from `.env`, so nothing is stored.
+services:
+  xray:
+    container_name: hl-xray
+    image: ghcr.io/xtls/xray-core:${XRAY_IMAGE_TAG:-26.10.31}
+    command: ["run", "-config", "/etc/xray/config.json"]
+    configs:
+      - source: xray-config
+        target: /etc/xray/config.json
+    restart: unless-stopped
+    read_only: true
+    pids_limit: 200
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 256M
+    networks:
+      - default
+    labels:
+      - "traefik.enable=true"
+      - "traefik.tcp.routers.hl-xray.rule=HostSNI(`${XRAY_REALITY_SNI:-www.samsung.com}`)"
+      - "traefik.tcp.routers.hl-xray.entrypoints=websecure"
+      - "traefik.tcp.routers.hl-xray.tls.passthrough=true"
+      - "traefik.tcp.routers.hl-xray.service=hl-xray"
+      - "traefik.tcp.services.hl-xray.loadbalancer.server.port=443"
+
+configs:
+  xray-config:
+    content: |
+      {
+        "log": { "loglevel": "warning", "access": "none" },
+        "inbounds": [
+          {
+            "tag": "reality",
+            "port": 443,
+            "protocol": "vless",
+            "settings": {
+              "clients": ${XRAY_CLIENTS},
+              "decryption": "none"
+            },
+            "streamSettings": {
+              "network": "tcp",
+              "security": "reality",
+              "realitySettings": {
+                "dest": "${XRAY_REALITY_SNI:-www.samsung.com}:443",
+                "serverNames": ["${XRAY_REALITY_SNI:-www.samsung.com}"],
+                "privateKey": "${XRAY_REALITY_PRIVATE_KEY}",
+                "shortIds": ["${XRAY_REALITY_SHORT_ID}"]
+              }
+            },
+            "sniffing": { "enabled": true, "destOverride": ["http", "tls", "quic"] }
+          }
+        ],
+        "outbounds": [
+          { "tag": "direct", "protocol": "freedom" },
+          { "tag": "block", "protocol": "blackhole" }
+        ],
+        "routing": {
+          "domainStrategy": "IPIfNonMatch",
+          "rules": [
+            { "ip": ["geoip:private"], "outboundTag": "block" },
+            { "protocol": ["bittorrent"], "outboundTag": "block" }
+          ]
+        }
+      }
+
+networks:
+  default:
+    external: true
+    name: proxy

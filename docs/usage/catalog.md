@@ -106,6 +106,8 @@ The catalog is what the `rostok` CLI bundles. Users browse it with
 - [syncthing](../../stacks/syncthing/README.md) — file sync between
   machines
 - [wireguard](../../stacks/wireguard/README.md) — VPN
+- [xray](../../stacks/xray/README.md) — VPN that passes censors
+  which block plain VPNs (VLESS + Reality)
 
 ### Misc
 

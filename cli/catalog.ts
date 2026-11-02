@@ -45,6 +45,7 @@ import watchtower from "../stacks/watchtower/+meta.ts"
 import syncthing from "../stacks/syncthing/+meta.ts"
 import homeAssistant from "../stacks/home-assistant/+meta.ts"
 import wireguard from "../stacks/wireguard/+meta.ts"
+import xray from "../stacks/xray/+meta.ts"
 import ntfy from "../stacks/ntfy/+meta.ts"
 import oko from "../stacks/oko/+meta.ts"
 import immich from "../stacks/immich/+meta.ts"
@@ -97,6 +98,7 @@ const STACK_META: Record<string, StackMeta> = {
   syncthing,
   "home-assistant": homeAssistant,
   wireguard,
+  xray,
   ntfy,
   oko,
   immich,
