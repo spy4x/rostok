@@ -10,7 +10,6 @@ services:
       - source: xray-config
         target: /etc/xray/config.json
     restart: unless-stopped
-    read_only: true
     cap_drop:
       - ALL
     security_opt:

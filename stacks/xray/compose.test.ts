@@ -13,6 +13,7 @@ interface Compose {
       ports?: string[]
       labels: string[]
       pids_limit?: number
+      read_only?: boolean
       deploy: { resources: { limits: { pids?: number } } }
     }
   }
@@ -70,4 +71,9 @@ Deno.test("the process limit sits under deploy limits, where compose accepts it"
   const xray = (await rendered(generatedEnv())).services.xray
   assertEquals(xray.pids_limit, undefined)
   assertEquals(xray.deploy.resources.limits.pids, 200)
+})
+
+Deno.test("the root file system stays writable, so compose can place the config file", async () => {
+  // compose refuses a `configs: content:` entry in a `read_only` service.
+  assertEquals((await rendered(generatedEnv())).services.xray.read_only, undefined)
 })
