@@ -65,3 +65,9 @@ Deno.test("vaultwarden: no router middleware rewrites the client address header"
   )
   assertEquals(rewrites, [])
 })
+
+Deno.test("vaultwarden: a fresh install and an older .env both allow invitations", async () => {
+  const env = { VAULTWARDEN_INVITATIONS_ALLOWED: metaDefault("VAULTWARDEN_INVITATIONS_ALLOWED") }
+  assertEquals(await setting("INVITATIONS_ALLOWED", env), "true")
+  assertEquals(await setting("INVITATIONS_ALLOWED", {}), "true")
+})
