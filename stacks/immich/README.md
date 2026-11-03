@@ -49,8 +49,9 @@ The kiosk's API key can only be created in Immich (Account settings, API keys) a
 ## Access without a login
 
 Every Immich URL needs a login, thumbnails included: the stack adds no API key to any request. The
-kiosk publishes no port on the server; open it at `https://${IMMICH_KIOSK_DOMAIN}`, which asks for
-`IMMICH_KIOSK_PASSWORD`.
+kiosk publishes no port on the server; open it at
+`https://${IMMICH_KIOSK_DOMAIN}/?password=<IMMICH_KIOSK_PASSWORD>`. Without the password it shows
+"Unauthorized".
 
 **Existing installs.** Earlier versions of this stack added `IMMICH_MCP_API_KEY` to every
 `/api/assets/<id>/thumbnail` request, so anyone who knew an asset id saw its thumbnail, and
@@ -59,7 +60,8 @@ removes both. After it:
 
 - Delete the key you created for `IMMICH_MCP_API_KEY` in Immich (Account settings, API keys) and
   remove its line from `servers/<server>/.env`. Nothing uses it any more.
-- Point a screen that opened `http://<server>:3000` at `https://${IMMICH_KIOSK_DOMAIN}` instead.
+- Point a screen that opened `http://<server>:3000` at `https://${IMMICH_KIOSK_DOMAIN}` instead,
+  and keep its `?password=` part.
 
 ## Resources
 
