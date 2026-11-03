@@ -12,7 +12,7 @@
 //   offer to change them but doesn't block.
 // - VAULTWARDEN_SMTP_*: required:false, no default → omitted unless user
 //   opts in via --var or wizard. Vaultwarden runs without SMTP (no email
-//   notifications, but signups/invites/password resets still work).
+//   notifications, but invites and password resets still work).
 
 import type { StackMeta } from "@rostok/cli"
 
@@ -34,8 +34,10 @@ export default {
       required: true,
     },
     {
+      // Off, so a stranger cannot open an account on a public host (spy4x/rostok#551). The
+      // README says how the first user signs up.
       key: "VAULTWARDEN_SIGNUPS_ALLOWED",
-      default: "true",
+      default: "false",
       required: false,
     },
     {

@@ -23,6 +23,24 @@ VAULTWARDEN_SMTP_USERNAME=noreply@example.com
 VAULTWARDEN_SMTP_PASSWORD=...
 ```
 
+## Sign-ups
+
+Sign-ups are off by default (`VAULTWARDEN_SIGNUPS_ALLOWED=false`), so a stranger who finds the host
+cannot open an account on your server. To create the first account:
+
+1. Set `VAULTWARDEN_SIGNUPS_ALLOWED=true` in `servers/<server>/.env`.
+2. Deploy: `rostok deploy <server> vaultwarden`.
+3. Open the web vault and create your account.
+4. Set `VAULTWARDEN_SIGNUPS_ALLOWED=false` again and deploy again.
+
+Add more people afterwards from an organization in the web vault (Members, Invite member). With
+SMTP set they get an invitation e-mail; without SMTP they can sign up with the invited address
+while sign-ups stay off. `VAULTWARDEN_INVITATIONS_ALLOWED=false` turns invitations off too.
+
+**Existing installs** keep the value already in their `.env`. A server set up before this default
+changed has `VAULTWARDEN_SIGNUPS_ALLOWED=true` there: set it to `false` and deploy, unless you
+want anyone who reaches the host to be able to sign up.
+
 ## Access
 
 - Web Vault: `https://${VAULTWARDEN_DOMAIN}` (default `https://passwords.${DOMAIN}`)
