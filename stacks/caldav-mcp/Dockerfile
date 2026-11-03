@@ -25,6 +25,9 @@ WORKDIR /app
 #   user-defined network such as `proxy`. Without it every connector sign-in fails "Unknown client";
 # - read/write: only /data, where the OAuth store lives;
 # - env: the settings in compose.yml.
+# The only pipe is printf into sed inside $(...), and the case line right after it rejects an empty
+# result, so pipefail would catch nothing more.
+# hadolint ignore=DL4006
 RUN caldav_host="$(printf '%s' "${CALDAV_URL}" | sed -E 's#^[a-zA-Z][a-zA-Z0-9+.-]*://([^/@]*@)?([^/?#]+).*$#\2#')" \
   && case "${caldav_host}" in ""|*://*|*/*) echo "CALDAV_URL must be an http(s) URL" >&2; exit 1;; esac \
   && deno compile --frozen --unstable-kv \

@@ -1,86 +1,92 @@
 # Disaster recovery
 
-What to do when things go wrong — server dies, data corrupts, a stack
-breaks. Generic guidance. Your exact backup targets, restore steps,
-and runbooks live in the per-stack READMEs and in your project's
-private docs (this is a rostok repo, not your runbook).
+What to do when a server dies, data corrupts or a stack breaks. This is generic guidance: your
+exact backup targets and runbook belong in your own rostok project.
 
 ## Backup architecture
 
-rostok's default backup chain (configured per-stack via
-`stacks/<name>/backup.ts` and aggregated by `scripts/backup/`):
+Each stack with data declares what to back up in its `stacks/<name>/backup.ts`; your own folders
+go in `servers/<server>/configs/backup/*.backup.ts` in your project. The backup runner
+(`scripts/backup/+main.ts`, see its [README](../../scripts/backup/README.md)) stops each stack,
+writes a restic snapshot and starts the stack again. rostok does not install the runner: clone a
+release tag on the server and add the cron line its README shows.
 
 ```
-                       ┌─────────────────┐
-                       │  per-service    │
-                       │  backup.ts      │
-                       │  (Restic)       │
-                       └────────┬────────┘
-                                │
-        ┌───────────────────────┼───────────────────────┐
-        ▼                       ▼                       ▼
-┌──────────────┐       ┌──────────────────┐     ┌─────────────────┐
-│ on-server    │       │  cross-server    │     │  external drive │
-│ Restic repo  │──────▶│  Restic repo     │────▶│  monthly        │
-│ (daily)      │       │  (Syncthing)     │     │  offline copy   │
-└──────────────┘       └──────────────────┘     └─────────────────┘
+                      ┌──────────────────────────┐
+                      │  backup runner (cron)    │
+                      │  one restic repository   │
+                      │  per backup name         │
+                      └────────────┬─────────────┘
+                                   ▼
+┌──────────────────────┐   ┌────────────────────┐   ┌─────────────────────────┐
+│ ${PATH_BACKUPS}/     │──▶│ a second server,   │   │ external drive          │
+│ <repo> on the server │   │ if you sync the    │   │ `rostok offline backup` │
+│                      │   │ folder (syncthing) │   │ from your machine       │
+└──────────────────────┘   └────────────────────┘   └─────────────────────────┘
 ```
 
-Three copies, three locations. Any single failure (server crash, ISP
-outage, accidental `rm -rf`) is recoverable.
+Only the first copy is automatic. Keep at least one more: sync `PATH_BACKUPS` to another server
+(for example with the [syncthing](../../stacks/syncthing/README.md) stack) and copy it to an
+external drive with `rostok offline backup --drive <disk>` (see [commands](../commands.md)). With
+three copies in three places, any single failure (a dead server, a lost account, an accidental
+`rm -rf`) is recoverable.
+
+Every repository uses the password `BACKUPS_PASSWORD` from the server's env file. Keep that
+password somewhere outside the server too: without it no copy can be read.
+
+The runner reports failures to ntfy and every run to healthchecks ([monitoring](monitoring.md)).
 
 ## Scenario 1 — single service lost data
 
-If one container's volume is corrupted or wiped:
+If one stack's volume is corrupted or wiped, restore it with `scripts/backup/restore.ts`. Run it
+on the server, as the same user and with the same `--env-file` arguments as the backup's cron line:
 
-1. **Stop the service's containers** on the server to avoid writes
-   during restore (`docker ps` lists them; stack containers start with
-   `hl-`):
-   ```bash
-   docker stop <container>
-   ```
+```bash
+deno run -A --env-file=<env file> scripts/backup/restore.ts <service>              # latest snapshot
+deno run -A --env-file=<env file> scripts/backup/restore.ts <service> <snapshot-id>
+```
 
-2. **Identify the backup ID** for that stack. Each `backup.ts` declares
-   a `sourcePaths`; the Restic repo has snapshots timestamped by day.
+`<service>` is the backup's `name`; a wrong name lists the valid ones. The script shows which
+folders it will replace and waits for `yes`. Then it stops the stack's containers, unpacks the
+snapshot next to each folder, moves the old data aside as `<folder>.backup-<time>`, puts the
+restored data in place, fixes ownership and starts the containers again, also when the restore
+failed. Check that the service works, then delete the `.backup-<time>` folders.
 
-3. **Restore** to a temporary path first to verify:
-   ```bash
-   restic -r /path/to/repo restore <snapshot-id> \
-     --target /tmp/restore-test --include <volume-name>
-   ```
-   Verify the data looks right (`ls`, sample files).
+To look inside a snapshot first, use restic directly. The repository folder `<repo>` is the
+backup's name, except for stacks shared across servers (gatus, healthchecks, ntfy, syncthing,
+traefik, wireguard), whose folder is `<name>-<server>`, for example `gatus-home`.
+It asks for the repository password, `BACKUPS_PASSWORD`, unless `RESTIC_PASSWORD` holds it:
 
-4. **Replace** the live volume. The simplest path is `docker compose
-   stop <service>` then copy back. For stateful services that have
-   a built-in restore (Postgres `pg_restore`, Vaultwarden
-   `sqlite3 .backup`), prefer that.
+```bash
+restic -r ${PATH_BACKUPS}/<repo> snapshots
+restic -r ${PATH_BACKUPS}/<repo> restore <snapshot-id> --target /tmp/restore-test
+```
 
-5. **Restart** and verify health:
-   ```bash
-   rostok deploy <server> <stack>
-   ```
+For stacks whose app has its own restore (a Postgres dump, for example), you can use that instead.
 
 ## Scenario 2 — server hardware failure
 
-If the box itself is gone:
+If the server itself is gone:
 
-1. **Provision** a new host. Same OS, same SSH user, same data layout.
-   `rostok server create <name>` or manual setup.
+1. **Provision** a new host with the same OS, SSH user and paths (`PATH_APPS`, `VOLUMES_PATH`,
+   `PATH_BACKUPS`). If its SSH address changed, run `rostok server create <name>` again: it asks
+   every question again with the current values from the server's `.env` as defaults, so press
+   Enter to keep each one and type only the new address.
 
-2. **Pull the backup repo** from cross-server Syncthing or from the
-   external drive (`rostok offline restore --drive <disk>` copies it back
-   and checks it). Verify you can `restic snapshots` against it.
+2. **Deploy** the same stacks from your rostok project: `rostok deploy <server>` copies each
+   stack's files, the env files and your `configs/` to the new host and starts the stacks with
+   empty data.
 
-3. **Restore the on-disk layout** — `${VOLUMES_PATH}/<stack>/` for each
-   service. Use `restic restore latest --target /`.
+3. **Bring the backup repositories back** to `PATH_BACKUPS`: from the second server, or from the
+   external drive with `rostok offline restore --drive <disk>`, which copies them back and checks
+   them. Run `restic -r ${PATH_BACKUPS}/<repo> snapshots` on one to confirm it opens.
 
-4. **Re-deploy** the same stacks from your rostok project.
-   `rostok deploy <server>` copies each stack's `compose.yml`, the env
-   files and any per-stack config to the new host and starts them.
+4. **Restore each stack** with `scripts/backup/restore.ts <service>` as in Scenario 1, from a clone
+   of the backup runner on the new host. Add the runner's cron line only after this step: a run
+   before it would snapshot the empty data, and restore picks the latest snapshot.
 
-5. **Update DNS** if the server's public IP changed. (Hetzner
-   floating IPs help — point the same IP at the new box, no DNS
-   change.)
+5. **Update DNS** if the server's public IP changed. (A Hetzner floating IP avoids that: point the
+   same IP at the new server.)
 
 ## Scenario 3 — failing system disk, Docker still on it
 
@@ -157,7 +163,7 @@ key leaks):
    rostok env encrypt
    ```
 
-4. **Redeploy** to make the running services pick up the new value.
+4. **Redeploy** with `rostok deploy <server>` so the running services pick up the new value.
 
 5. **Audit** `git log -p` for the old value to confirm it's gone from
    history. If not, `git filter-repo` to scrub.
@@ -180,8 +186,7 @@ key leaks):
 
 ## What this doc is NOT
 
-- A specific server's runbook. Each user has different topology,
-  backup targets, Restic repo paths. Keep your runbook in your own
-  project folder (it's gitignored, so it stays local).
-- A replacement for actual backups. Verify the chain works before you
-  need it.
+- A specific server's runbook. Each user has a different layout, backup targets and repository
+  paths. Keep your runbook in your own rostok project, next to the servers it describes, and keep
+  a copy somewhere you can read when that project's machine is gone.
+- A replacement for actual backups. Verify the chain works before you need it.

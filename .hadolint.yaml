@@ -1,0 +1,10 @@
+# hadolint settings for every Dockerfile in the catalog, linted by the `hadolint` step in
+# .woodpecker.yml. Each ignored rule carries its reason.
+ignored:
+  # Pinning apk and apt package versions breaks rebuilds: Alpine and Ubuntu mirrors drop old
+  # versions, and the base images already fix the distribution release.
+  - DL3018
+  - DL3008
+  # The named users (deno, pwuser) come from the pinned base images; compose files never map
+  # them to host ids.
+  - DL3066

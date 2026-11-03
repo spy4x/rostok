@@ -142,15 +142,54 @@ catalog. The catalog only ships per-stack configs under
 
 ## `before.deploy.ts` / `after.deploy.ts` (optional)
 
-Standalone Deno scripts `rostok deploy` runs with `deno run -A` — before
-and after `docker compose up`, respectively. Optional; a stack without
-either is a no-op for that hook. Self-contained: no import out of the
-stack's own directory (a JSR install runs a hook from an `https://` URL,
-where a relative parent import can't resolve — see `stacks/traefik/`
-and `stacks/gatus/` for the pattern of inlining a small shared helper
-instead of importing it). Imports must be relative or fully qualified
-(`npm:pkg@1.2.3`, `jsr:`, `node:`), never import-map names like `"yaml"`:
-the import map does not apply to a hook run from its URL.
+Standalone Deno scripts `rostok deploy` runs before and after
+`docker compose up`, respectively, with full permissions. Optional; a
+stack without either is a no-op for that hook. How the hook starts
+depends on how rostok was installed (`hookCommandArgs` and
+`runHookEntry` in `cli/deploy/hooks.ts`):
+
+- **JSR install** (`deno install … jsr:@rostok/cli`): `deno run -A`
+  on the hook's `https://` URL inside the package. Deno downloads any
+  fully qualified import it needs.
+- **The `rostok` binary**: the binary runs the hook itself, through
+  the hidden `rostok __run-hook <file-url>` subcommand. It cannot
+  download modules, so a hook can import only what was compiled into
+  the binary (`scripts/release/compile.ts`: `cli/+main.ts` plus every
+  file under `stacks/`).
+
+A hook must work under both, which leaves these imports:
+
+- **Relative imports** inside the stack's own directory. No import out
+  of it: under a JSR install a relative parent import can't resolve
+  from the package URL. See `stacks/traefik/` and `stacks/gatus/` for
+  inlining a small shared helper instead.
+- **`node:` built-ins**, such as `node:path` or `node:crypto`.
+- **`npm:` packages the binary ships**, with a pinned version:
+  rostok's own `npm:` entries in the `imports` of `deno.jsonc`, and
+  what other catalog hooks import (`npm:yaml@2.8.2`,
+  `npm:bcryptjs@3.0.3`). A version the binary lacks fails with
+  "Could not find constraint 'yaml@2.7.0' in the list of packages".
+- **No `jsr:` imports.** A `jsr:` import works under a JSR install but
+  may fail in the binary with "Module not found", even one written
+  exactly as in `deno.jsonc` (`jsr:@std/dotenv`) and every subpath
+  (`jsr:@std/path@^1.1.4/join`). Use a `node:` built-in, a relative
+  import or an `npm:` package at the binary's version instead.
+- **Never an import-map name** like `"yaml"`: the import map does not
+  apply to a hook run from its URL (`stacks/hook-imports.test.ts`
+  enforces this and the stack-directory rule).
+
+```ts
+import { join } from "node:path"
+import { parse } from "npm:yaml@2.8.2"
+import { helper } from "./helper.ts"
+```
+
+The binary rewrites `import.meta.main`, `import.meta.url`,
+`import.meta.filename` and `import.meta.dirname` to the hook's own
+values, but not `import.meta.resolve`: there it throws
+`Import "./x.ts" not a dependency`. Write
+`new URL("./x.ts", import.meta.url)` instead. Only the hook file is
+rewritten; a module it imports sees its own `import.meta` as usual.
 
 **Environment.** A hook receives a filtered view of `.env`/`.env.root`:
 only server-level keys (`DOMAIN`, `PROJECT`, ...) and keys carrying the

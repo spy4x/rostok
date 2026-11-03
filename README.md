@@ -110,7 +110,9 @@ After `$ rostok`, your project folder holds:
 
 Full layout + ownership rules: [`docs/design/v1-cli.md`](docs/design/v1-cli.md).
 Concepts, architecture, encryption and disaster recovery:
-[`docs/README.md`](docs/README.md).
+[`docs/README.md`](docs/README.md). Before exposing a stack, read its row in the
+[security matrix](docs/usage/security-matrix.md); alerts and health checks are in
+[monitoring](docs/usage/monitoring.md).
 
 ## Development
 

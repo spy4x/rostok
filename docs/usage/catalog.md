@@ -6,6 +6,9 @@ self-hosted service.
 The catalog is what the `rostok` CLI bundles. Users browse it with
 `rostok stack list`. Every stack has a `+meta.ts`.
 
+Before you expose a stack, check its row in the [security matrix](security-matrix.md). How the
+monitoring stacks work together: [monitoring](monitoring.md).
+
 ## Categories
 
 ### Proxy & TLS
