@@ -56,15 +56,6 @@ services:
       - "traefik.http.routers.hl-immich.tls=true"
       - "traefik.http.routers.hl-immich.tls.certresolver=myresolver"
       - "traefik.http.services.hl-immich.loadbalancer.server.port=2283"
-      # Thumbnail-only proxy: adds API key so browsers can load inline images
-      - "traefik.http.routers.hl-immich-thumb.rule=Host(`${IMMICH_DOMAIN}`) && PathRegexp(`/api/assets/[^/]+/thumbnail`)"
-      - "traefik.http.routers.hl-immich-thumb.priority=100"
-      - "traefik.http.routers.hl-immich-thumb.entrypoints=websecure"
-      - "traefik.http.routers.hl-immich-thumb.tls=true"
-      - "traefik.http.routers.hl-immich-thumb.tls.certresolver=myresolver"
-      - "traefik.http.routers.hl-immich-thumb.service=hl-immich"
-      - "traefik.http.routers.hl-immich-thumb.middlewares=frame-deny@file,immich-api-key,robots-deny@file"
-      - "traefik.http.middlewares.immich-api-key.headers.customrequestheaders.x-api-key=${IMMICH_MCP_API_KEY}"
 
   machine-learning:
     container_name: hl-immich-machine-learning
@@ -171,8 +162,8 @@ services:
     restart: unless-stopped
     security_opt:
       - no-new-privileges:true
-    ports:
-      - 3000:3000
+    # No published port: Traefik reaches the kiosk over `proxy`, behind TLS and its password
+    # (spy4x/rostok#551).
     labels:
       - "traefik.enable=true"
       - "traefik.docker.network=proxy"
