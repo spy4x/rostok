@@ -6,7 +6,8 @@ Internal health probe bridge — probes Docker containers and returns 200/503 st
 
 - Probes containers on the proxy network
 - Health check endpoint for external monitoring
-- No auth needed (no sensitive data exposed)
+- Public by default: `/health/<target>` tells anyone who asks which internal services exist and
+  whether they are up. Add `authelia@file` to the router's middlewares to keep it private
 - Ultra-lightweight (~32MB RAM, 0.1 CPU)
 - YAML-based probe configuration
 

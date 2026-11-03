@@ -2,7 +2,8 @@
 // point 3):
 //
 //   `stacks/<name>/before.deploy.ts` and `after.deploy.ts` are standalone
-//   Deno scripts. Deploy runs them with `deno run -A` FROM THEIR SOURCE
+//   Deno scripts. Deploy runs them with full permissions (`deno run -A`
+//   under a JSR install; the binary, see below) FROM THEIR SOURCE
 //   LOCATION — the file in a local `stacks/` folder, or the URL of the
 //   file inside the installed package — never from a staging copy, with
 //   cwd = the local staging directory. The hook receives every KEY IT'S

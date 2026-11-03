@@ -63,22 +63,16 @@ link in the footer calls this.
 
 ## Adding services
 
-Edit the canonical list at
-[`internal/config/config.go`](https://github.com/spy4x/oko/blob/main/internal/config/config.go)
-in the [`spy4x/oko`](https://github.com/spy4x/oko) repo. Each entry
-needs:
+The service list is the file `${PATH_APPS}/configs/oko/config.json` on the server. Edit it and the
+next page load shows the change; no restart or redeploy is needed. Each server in `servers` has a
+`name` and a list of `services`. Each service needs:
 
-- `Name`, `Product`, `ProductURL` — what shows on the card
-- `Endpoint` — gatus endpoint key
-- `GatusHost` — which gatus server exposes that key
-- `URL` — service URL, with `${DOMAIN}` substituted at render time
-- `Section` — `home` / `cloud` / `offsite` / `portable`
-- `Icon`, `Description` — display metadata
-- `Hidden` — `true` keeps gatus fetch on but skips rendering (phasing out)
+- `name`, `url` — what the card shows and where it links
+- `endpoint` — the gatus endpoint key, for the status marker
+- `gatus_host` — the first label of the gatus host in `OKO_UPTIME_HOSTS` that exposes that key
 
-Push to `main` triggers the Woodpecker pipeline (`.woodpecker.yml`) to
-build + push `ghcr.io/spy4x/oko:latest`. Watchtower (already deployed
-on every server) picks up the new image and restarts the container.
+Optional: `icon`, `description`, `product`, `product_url`, `hidden`. The full format is in the
+[oko configuration docs](https://github.com/spy4x/oko/blob/main/docs/configuration.md).
 
 ## Variables
 

@@ -67,7 +67,9 @@ visitor who reaches Traefik directly.
 ## Access
 
 - Web Vault: `https://${VAULTWARDEN_DOMAIN}` (default `https://passwords.${DOMAIN}`)
-- Admin Panel: `https://${VAULTWARDEN_DOMAIN}/admin` (requires `VAULTWARDEN_ADMIN_TOKEN`)
+- Admin Panel: `https://${VAULTWARDEN_DOMAIN}/admin`, off by default. To use it for a while,
+  uncomment the `ADMIN_TOKEN` line in `compose.yml`, set `VAULTWARDEN_ADMIN_TOKEN` in the server's
+  `.env` and deploy. When you are done, comment the line out again and deploy, so the page is off.
 
 ## Clients
 

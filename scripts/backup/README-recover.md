@@ -31,7 +31,7 @@ no env file by itself.
 
 ## What it does
 
-For each repo under `~/sync/backups/`:
+For each repo under the folder `PATH_BACKUPS` names:
 
 1. **healthy** — no action
 2. **partial** (some snapshots corrupted, some good): deletes `snapshots/`, `index/`, `locks/` subdirs, runs `restic repair index`. Pack files (actual data) are preserved. Loss: snapshot history. Next backup creates fresh snapshot.
@@ -60,5 +60,5 @@ run `rostok env decrypt` there.
 After running recovery and re-running backups successfully:
 
 - Remove old, orphaned worktrees: `git worktree list`, then `git worktree remove <path> && git branch -d <branch>`
-- Investigate disk usage: `df -h`, `ncdu ~/sync/backups/`
+- Investigate disk usage: `df -h`, `ncdu <PATH_BACKUPS>`
 - Add disk space alerts (see `docs/usage/disaster-recovery.md`)
