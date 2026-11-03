@@ -41,6 +41,29 @@ while sign-ups stay off. `VAULTWARDEN_INVITATIONS_ALLOWED=false` turns invitatio
 changed has `VAULTWARDEN_SIGNUPS_ALLOWED=true` there: set it to `false` and deploy, unless you
 want anyone who reaches the host to be able to sign up.
 
+## Client addresses
+
+Vaultwarden limits failed logins per client address, so it must see each visitor's own address.
+It reads it from the header named in `VAULTWARDEN_IP_HEADER`, `X-Real-Ip` by default. Traefik
+drops any `X-Real-Ip` a visitor sends and sets it to the address the connection came from, so a
+visitor cannot pick their own address and nothing needs setting.
+
+**Behind Cloudflare**, proxied DNS or the cloudflared tunnel, every request reaches Traefik from a
+Cloudflare or tunnel address. Cloudflare strips any `X-Real-Ip` a visitor sends, so Traefik writes
+that Cloudflare address, and all visitors share one limit. Cloudflare puts the visitor's address in
+its own header instead:
+
+```env
+VAULTWARDEN_IP_HEADER=CF-Connecting-IP
+```
+
+Do this only with the cloudflared tunnel and ports 80 and 443 closed to the internet, or with
+Cloudflare's
+[Authenticated Origin Pulls](https://developers.cloudflare.com/ssl/origin-configuration/authenticated-origin-pull/).
+A firewall that accepts only [Cloudflare's ranges](https://www.cloudflare.com/ips/) is not enough:
+a Cloudflare Worker in someone else's account can send any `CF-Connecting-IP` it likes, and so can a
+visitor who reaches Traefik directly.
+
 ## Access
 
 - Web Vault: `https://${VAULTWARDEN_DOMAIN}` (default `https://passwords.${DOMAIN}`)
