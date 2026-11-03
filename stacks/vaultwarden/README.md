@@ -48,19 +48,20 @@ It reads it from the header named in `VAULTWARDEN_IP_HEADER`, `X-Real-Ip` by def
 drops any `X-Real-Ip` a visitor sends and sets it to the address the connection came from, so a
 visitor cannot pick their own address and nothing needs setting.
 
-**Behind Cloudflare**, every request reaches Traefik from a Cloudflare address, so `X-Real-Ip`
-names Cloudflare, not the visitor, and visitors share a limit. If you list Cloudflare's ranges in
-`TRAEFIK_FORWARDED_TRUSTED_IPS`, it gets worse: Traefik then keeps an `X-Real-Ip` the visitor sent
-through Cloudflare, so an attacker can choose a new address for every guess. Use Cloudflare's own
-header instead, which Cloudflare always overwrites:
+**Behind Cloudflare**, proxied DNS or the cloudflared tunnel, every request reaches Traefik from a
+Cloudflare or tunnel address, so `X-Real-Ip` names that, not the visitor, and visitors share a
+limit. If you list Cloudflare's ranges in `TRAEFIK_FORWARDED_TRUSTED_IPS`, it gets worse: Traefik
+then keeps an `X-Real-Ip` the visitor sent through Cloudflare, so an attacker can choose a new
+address for every guess. Use Cloudflare's own header instead, which Cloudflare always overwrites:
 
 ```env
 VAULTWARDEN_IP_HEADER=CF-Connecting-IP
 ```
 
-Do this only when the server's firewall accepts ports 80 and 443 from
-[Cloudflare's ranges](https://www.cloudflare.com/ips/) alone. A visitor who reaches the server
-directly can send any `CF-Connecting-IP` they like.
+Do this only when no visitor can reach Traefik without passing Cloudflare: the firewall accepts
+ports 80 and 443 from [Cloudflare's ranges](https://www.cloudflare.com/ips/) alone, or, with the
+tunnel, keeps them closed to the internet. A visitor who reaches Traefik directly can send any
+`CF-Connecting-IP` they like.
 
 ## Access
 
