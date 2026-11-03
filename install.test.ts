@@ -95,3 +95,5 @@ Deno.test("install.sh refuses a binary whose checksum does not match", async () 
     },
   )
 })
+
+# Automated fix for issue #562: fix(vaultwarden): fallbacks for every setting, pinned image
