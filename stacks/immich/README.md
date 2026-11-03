@@ -30,7 +30,7 @@ See [localStacks/immich/](../localStacks/immich/) for hardware acceleration conf
 
 Declared in `+meta.ts`; `rostok stack add immich` writes them to the server's `.env`. Requires the `traefik` stack and a host with an NVIDIA GPU and the NVIDIA container toolkit: the compose file uses NVENC transcoding and the CUDA machine-learning image. Photos go to `PATH_PHOTOS`. The kiosk is served at `${IMMICH_KIOSK_DOMAIN}`.
 
-The two API keys can only be created in Immich (Account settings, API keys) after the first deploy: leave them empty, deploy, create the keys, add them to `.env`, deploy again.
+The kiosk's API key can only be created in Immich (Account settings, API keys) after the first deploy: leave it empty, deploy, create the key, add it to `.env`, deploy again.
 
 | Key                            | Default                              | Meaning                                                       |
 | ------------------------------ | ------------------------------------ | ------------------------------------------------------------- |
@@ -42,10 +42,24 @@ The two API keys can only be created in Immich (Account settings, API keys) afte
 | `IMMICH_KIOSK_IMAGE_TAG`       | `latest`                             | Image tag of `immich-kiosk`                                   |
 | `IMMICH_DB_PASSWORD`           | generated, secret                    | Postgres password                                             |
 | `IMMICH_KIOSK_PASSWORD`        | generated, secret                    | Password of the kiosk page                                    |
-| `IMMICH_MCP_API_KEY`           | none, secret                         | API key added to thumbnail requests, so inline images load    |
 | `IMMICH_KIOSK_API_KEY`         | none, secret                         | API key the kiosk uses to read photos                         |
 | `PATH_PHOTOS`                  | `${VOLUMES_PATH}/photos`             | Host folder of the photo library                              |
 | `IMMICH_KIOSK_EXCLUDED_PEOPLE` | none                                 | Comma-separated Immich person IDs the kiosk never shows       |
+
+## Access without a login
+
+Every Immich URL needs a login, thumbnails included: the stack adds no API key to any request. The
+kiosk publishes no port on the server; open it at `https://${IMMICH_KIOSK_DOMAIN}`, which asks for
+`IMMICH_KIOSK_PASSWORD`.
+
+**Existing installs.** Earlier versions of this stack added `IMMICH_MCP_API_KEY` to every
+`/api/assets/<id>/thumbnail` request, so anyone who knew an asset id saw its thumbnail, and
+published the kiosk on port 3000 of every interface. The next `rostok deploy <server> immich`
+removes both. After it:
+
+- Delete the key you created for `IMMICH_MCP_API_KEY` in Immich (Account settings, API keys) and
+  remove its line from `servers/<server>/.env`. Nothing uses it any more.
+- Point a screen that opened `http://<server>:3000` at `https://${IMMICH_KIOSK_DOMAIN}` instead.
 
 ## Resources
 

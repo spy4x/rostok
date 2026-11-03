@@ -8,9 +8,9 @@
 // Variable shape:
 //   - IMMICH_VERSION: image tag, `release` like compose.
 //   - IMMICH_DB_PASSWORD, IMMICH_KIOSK_PASSWORD: secrets, generated at `stack add`.
-//   - IMMICH_MCP_API_KEY, IMMICH_KIOSK_API_KEY: Immich API keys. They can only be created in
-//     the Immich UI after the first deploy, so they are optional here: leave them empty, deploy,
-//     create the keys, put them in `.env` and deploy again.
+//   - IMMICH_KIOSK_API_KEY: Immich API key. It can only be created in the Immich UI after the
+//     first deploy, so it is optional here: leave it empty, deploy, create the key, put it in
+//     `.env` and deploy again.
 //   - IMMICH_KIOSK_EXCLUDED_PEOPLE: comma-separated Immich person IDs the kiosk never shows.
 //
 //   - PATH_PHOTOS: host folder of the photo library. Shared by name with other stacks, so it
@@ -75,13 +75,6 @@ export default {
       question: "Kiosk page password (auto-generated)?",
       default: () => generatePassword(16),
       required: true,
-      secret: true,
-    },
-    {
-      key: "IMMICH_MCP_API_KEY",
-      question:
-        "Immich API key for thumbnail requests (create it in Immich after the first deploy)?",
-      required: false,
       secret: true,
     },
     {
