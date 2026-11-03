@@ -46,6 +46,13 @@ export default {
       required: false,
     },
     {
+      // Header Vaultwarden reads the client address from (spy4x/rostok#553). Traefik sets
+      // X-Real-Ip itself; the README says when to use CF-Connecting-IP instead.
+      key: "VAULTWARDEN_IP_HEADER",
+      default: "X-Real-Ip",
+      required: false,
+    },
+    {
       key: "VAULTWARDEN_SHOW_PASSWORD_HINT",
       default: "false",
       required: false,
