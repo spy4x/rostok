@@ -20,7 +20,7 @@ release tag on the server and add the cron line its README shows.
                                    ▼
 ┌──────────────────────┐   ┌────────────────────┐   ┌─────────────────────────┐
 │ ${PATH_BACKUPS}/     │──▶│ a second server,   │   │ external drive          │
-│ <name> on the server │   │ if you sync the    │   │ `rostok offline backup` │
+│ <repo> on the server │   │ if you sync the    │   │ `rostok offline backup` │
 │                      │   │ folder (syncthing) │   │ from your machine       │
 └──────────────────────┘   └────────────────────┘   └─────────────────────────┘
 ```
@@ -52,12 +52,14 @@ snapshot next to each folder, moves the old data aside as `<folder>.backup-<time
 restored data in place, fixes ownership and starts the containers again, also when the restore
 failed. Check that the service works, then delete the `.backup-<time>` folders.
 
-To look inside a snapshot first, use restic directly. It asks for the repository password,
-`BACKUPS_PASSWORD`, unless `RESTIC_PASSWORD` holds it:
+To look inside a snapshot first, use restic directly. The repository folder `<repo>` is the
+backup's name, except for stacks shared across servers (gatus, healthchecks, ntfy, syncthing,
+traefik, wireguard), whose folder is `<name>-<server>`, for example `gatus-home`.
+It asks for the repository password, `BACKUPS_PASSWORD`, unless `RESTIC_PASSWORD` holds it:
 
 ```bash
-restic -r ${PATH_BACKUPS}/<name> snapshots
-restic -r ${PATH_BACKUPS}/<name> restore <snapshot-id> --target /tmp/restore-test
+restic -r ${PATH_BACKUPS}/<repo> snapshots
+restic -r ${PATH_BACKUPS}/<repo> restore <snapshot-id> --target /tmp/restore-test
 ```
 
 For stacks whose app has its own restore (a Postgres dump, for example), you can use that instead.
@@ -67,8 +69,9 @@ For stacks whose app has its own restore (a Postgres dump, for example), you can
 If the server itself is gone:
 
 1. **Provision** a new host with the same OS, SSH user and paths (`PATH_APPS`, `VOLUMES_PATH`,
-   `PATH_BACKUPS`). If its SSH address changed, run `rostok server create <name>` again: it keeps
-   every other value from the server's `.env` and asks only what you change.
+   `PATH_BACKUPS`). If its SSH address changed, run `rostok server create <name>` again: it asks
+   every question again with the current values from the server's `.env` as defaults, so press
+   Enter to keep each one and type only the new address.
 
 2. **Deploy** the same stacks from your rostok project: `rostok deploy <server>` copies each
    stack's files, the env files and your `configs/` to the new host and starts the stacks with
@@ -76,10 +79,11 @@ If the server itself is gone:
 
 3. **Bring the backup repositories back** to `PATH_BACKUPS`: from the second server, or from the
    external drive with `rostok offline restore --drive <disk>`, which copies them back and checks
-   them. Run `restic -r ${PATH_BACKUPS}/<name> snapshots` on one to confirm it opens.
+   them. Run `restic -r ${PATH_BACKUPS}/<repo> snapshots` on one to confirm it opens.
 
 4. **Restore each stack** with `scripts/backup/restore.ts <service>` as in Scenario 1, from a clone
-   of the backup runner on the new host.
+   of the backup runner on the new host. Add the runner's cron line only after this step: a run
+   before it would snapshot the empty data, and restore picks the latest snapshot.
 
 5. **Update DNS** if the server's public IP changed. (A Hetzner floating IP avoids that: point the
    same IP at the new server.)

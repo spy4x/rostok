@@ -9,8 +9,8 @@ A test (`stacks/security-matrix.test.ts`) fails when a stack has no row here.
 
 - **Internet via Traefik.** "Yes" means the compose file turns Traefik on for the service and gives
   it a router on the `websecure` entrypoint (port 443), at the host shown. Traefik only routes
-  containers that say `traefik.enable=true`; nothing is exposed by default. Every router also gets
-  the `security-headers-base` and `compression` middlewares from the Traefik stack.
+  containers that say `traefik.enable=true`; nothing is exposed by default. Every HTTP router also
+  gets the `security-headers-base` and `compression` middlewares from the Traefik stack.
 - **Who checks the visitor.**
   - *Authelia*: the router names the `authelia@file` middleware. No catalog stack defines that
     middleware yet: add it to a Traefik dynamic file as the
