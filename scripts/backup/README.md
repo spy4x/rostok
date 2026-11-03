@@ -81,7 +81,10 @@ Required:
 - `SERVER_NAME` - server name, used in reports and `destName` templates
 - `PATH_BACKUPS` - where the restic repositories are written
 - `BACKUPS_PASSWORD` - password of the restic repositories
-- `NTFY_URL_BACKUPS` - ntfy topic URL for the report
+- `NTFY_URL_BACKUPS` - ntfy topic URL for the report, such as `https://ntfy.example.com/backups`.
+  Use the final `https://` URL, with no query string: the push does not follow redirects, so a
+  URL that redirects (for example `http://` to `https://`) fails and no report arrives. A query
+  string is refused and ntfy is skipped.
 - `NTFY_TOKEN_BACKUPS` - ntfy bearer token
 
 Optional:
