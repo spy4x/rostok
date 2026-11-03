@@ -21,7 +21,7 @@ services:
       - DOMAIN=https://${VAULTWARDEN_DOMAIN}
       # - ADMIN_TOKEN=${VAULTWARDEN_ADMIN_TOKEN} # Enable admin page only while needed and disable otherwise for better security
       - SIGNUPS_ALLOWED=${VAULTWARDEN_SIGNUPS_ALLOWED:-false}
-      - INVITATIONS_ALLOWED=${VAULTWARDEN_INVITATIONS_ALLOWED}
+      - INVITATIONS_ALLOWED=${VAULTWARDEN_INVITATIONS_ALLOWED:-true}
       - SHOW_PASSWORD_HINT=${VAULTWARDEN_SHOW_PASSWORD_HINT}
       - LOGIN_RATELIMIT_MAX_BURST=${VAULTWARDEN_LOGIN_RATELIMIT_MAX_BURST}
       - LOGIN_RATELIMIT_SECONDS=${VAULTWARDEN_LOGIN_RATELIMIT_SECONDS}
@@ -35,8 +35,9 @@ services:
       - SMTP_USERNAME=${VAULTWARDEN_SMTP_USERNAME:-}
       - SMTP_PASSWORD=${VAULTWARDEN_SMTP_PASSWORD:-}
       - SMTP_SECURITY=starttls
-      # Real client IP from Cloudflare (enables proper logging and rate limiting)
-      - IP_HEADER=CF-Connecting-IP
+      # Client address for login rate limits and logs. Traefik sets X-Real-Ip from the connection and
+      # drops a visitor's own value; behind Cloudflare, see the README (spy4x/rostok#553).
+      - IP_HEADER=${VAULTWARDEN_IP_HEADER:-X-Real-Ip}
     volumes:
       - ${VOLUMES_PATH}/vaultwarden:/data:z
     restart: unless-stopped
@@ -59,6 +60,4 @@ services:
       - "traefik.http.routers.hl-vaultwarden.tls=true"
       - "traefik.http.routers.hl-vaultwarden.tls.certresolver=myresolver"
       - "traefik.http.routers.hl-vaultwarden.service=hl-vaultwarden"
-      # Cloudflare real IP middleware
-      - "traefik.http.routers.hl-vaultwarden.middlewares=frame-deny@file,vaultwarden-realip,robots-deny@file"
-      - "traefik.http.middlewares.vaultwarden-realip.headers.customrequestheaders.CF-Connecting-IP="
+      - "traefik.http.routers.hl-vaultwarden.middlewares=frame-deny@file,robots-deny@file"
