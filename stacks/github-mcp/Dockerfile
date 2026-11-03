@@ -4,6 +4,8 @@
 # Stage 1: Download the github-mcp-server release binary
 FROM alpine:3.21 AS download
 ARG GITHUB_MCP_VERSION=v1.5.0
+# pipefail, so a curl error fails the build even when tar exits 0 on what arrived.
+SHELL ["/bin/ash", "-eo", "pipefail", "-c"]
 RUN apk add --no-cache curl tar \
   && curl -sSL "https://github.com/github/github-mcp-server/releases/download/${GITHUB_MCP_VERSION}/github-mcp-server_Linux_x86_64.tar.gz" \
     | tar xz -C /tmp/

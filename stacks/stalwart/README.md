@@ -196,18 +196,36 @@ refuses RSA keys shorter than 1024 bits.
 
 ### Regression check after deploy
 
-A round-trip is worth running once after any deploy that touches the
-DKIM pipeline:
+Every deploy already checks that each active DKIM key in Stalwart matches
+its public DNS record: `after.deploy.ts` stops Stalwart when one does not.
+To also check that sent mail carries valid signatures, run this once after
+any deploy that touches DKIM.
 
-```sh
-# Send a test message via SMTP submission, then read it back via JMAP
-# and verify the signature against the published DNS key. See issue #141
-# for the full reproduction script.
-```
+1. Look at the published keys (use your own selectors and domain):
 
-If `result.valid === true` for the `rsa-sha256` selector, outbound
-mail is signing correctly. Ed25519 will report `invalid` at Google
-regardless — that's RFC 8463 not being implemented there, not our bug.
+   ```sh
+   dig +short TXT v1-rsa-20260702._domainkey.example.com
+   dig +short TXT v1-ed25519-20260702._domainkey.example.com
+   ```
+
+2. Send a message from an account on the domain to a mailbox on another
+   provider, and save the received message as `message.eml` (in most mail
+   clients: "Show original", then "Download").
+
+3. Verify every signature in it against DNS:
+
+   ```sh
+   deno eval 'import { verifyDkimSignatures } from "jsr:@spy4x/email@1.103.0/dkim-verify"
+   const raw = await Deno.readFile(Deno.args[0])
+   for (const r of await verifyDkimSignatures(raw)) {
+     console.log(r.parsed?.selector ?? "-", r.parsed?.algorithm ?? "-", r.valid ? "valid" : r.reason)
+   }' message.eml
+   ```
+
+Outbound mail signs correctly when both the `rsa-sha256` and the
+`ed25519-sha256` line say `valid`. Google's DMARC reports still show
+Ed25519 as failing, because Google does not implement RFC 8463; that is
+not a fault here.
 
 ### Tolerates real-world input
 
