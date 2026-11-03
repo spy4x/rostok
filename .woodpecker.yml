@@ -11,6 +11,14 @@ when:
     ref: refs/tags/v*
 
 steps:
+  # Lints every Dockerfile in the checkout, so a new stack's Dockerfile is picked up without
+  # editing this step (#65). Ignored rules and their reasons are in .hadolint.yaml. It needs
+  # Docker nowhere and holds no secret; with no Dockerfile found, hadolint gets no file and fails.
+  hadolint:
+    image: hadolint/hadolint:v2.15.1-alpine@sha256:a1d49ae1a4e83c1dbad26b8c1ad7588c8bd1e04f4866b34ad3cac50335198552
+    commands:
+      - find . -path ./.git -prune -o -type f -iname '*dockerfile*' -print | sort | xargs hadolint
+
   check:
     # Pinned by digest, like `publish`: both steps share the working folder,
     # and the publish image has no git, so `deno publish` cannot refuse files
