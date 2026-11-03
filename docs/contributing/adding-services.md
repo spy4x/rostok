@@ -169,11 +169,11 @@ A hook must work under both, which leaves these imports:
   what other catalog hooks import (`npm:yaml@2.8.2`,
   `npm:bcryptjs@3.0.3`). A version the binary lacks fails with
   "Could not find constraint 'yaml@2.7.0' in the list of packages".
-- **`jsr:` packages only by the exact specifier** in the `imports` of
-  `deno.jsonc`, such as `jsr:@std/path@^1.1.4`. Any other specifier,
-  even `jsr:@std/path@1`, fails in the binary with
-  "Module not found: jsr:@std/path@1". Prefer `node:` or `npm:` where
-  one does the job.
+- **No `jsr:` imports.** A `jsr:` import works under a JSR install but
+  may fail in the binary with "Module not found", even one written
+  exactly as in `deno.jsonc` (`jsr:@std/dotenv`) and every subpath
+  (`jsr:@std/path@^1.1.4/join`). Use a `node:` built-in, a relative
+  import or an `npm:` package at the binary's version instead.
 - **Never an import-map name** like `"yaml"`: the import map does not
   apply to a hook run from its URL (`stacks/hook-imports.test.ts`
   enforces this and the stack-directory rule).
