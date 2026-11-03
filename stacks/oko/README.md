@@ -63,15 +63,14 @@ link in the footer calls this.
 
 ## Adding services
 
-The service list is the file `${PATH_APPS}/configs/oko/config.json` on the server. Edit it and the
-next page load shows the change; no restart or redeploy is needed. Each server in `servers` has a
-`name` and a list of `services`. Each service needs:
+The service list is `servers/<server>/configs/oko/config.json` in your rostok project. Edit it
+there and deploy: deploy copies it to `${PATH_APPS}/configs/oko/config.json`, and oko picks up the
+change without a restart. An edit made on the server itself is overwritten by the next deploy.
 
-- `name`, `url` — what the card shows and where it links
-- `endpoint` — the gatus endpoint key, for the status marker
-- `gatus_host` — the first label of the gatus host in `OKO_UPTIME_HOSTS` that exposes that key
-
-Optional: `icon`, `description`, `product`, `product_url`, `hidden`. The full format is in the
+Each server in `servers` has a `name` and a list of `services`. Each service needs a `name` and a
+`url`. For a status marker, set both `endpoint` (the gatus endpoint key) and `gatus_host` (the first
+label of the gatus host in `OKO_UPTIME_HOSTS` that exposes that key), or neither. Also optional:
+`icon`, `description`, `product`, `product_url`, `hidden`. The full format is in the
 [oko configuration docs](https://github.com/spy4x/oko/blob/main/docs/configuration.md).
 
 ## Variables

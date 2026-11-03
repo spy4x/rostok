@@ -16,8 +16,8 @@ Web UI: `https://${TRANSMISSION_DOMAIN}`
 
 **Auth**: Authelia SSO through Traefik forward auth. A login at the
 `authelia` stack's portal grants access. The router uses the `authelia@file`
-middleware, which `stacks/traefik/dynamic/00-base.yml` defines; the
-`authelia` stack must be deployed on the same server.
+middleware, which you add to a Traefik dynamic file on the server: see
+"Protecting a service" in `stacks/authelia/README.md`.
 
 ## Mobile Apps
 
