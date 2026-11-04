@@ -167,10 +167,12 @@ export async function runRemoteCommand(
  * rest of the script from stdin, and every command sees an empty stdin,
  * as it did when the script was an argument and ssh's stdin was null.
  * The newline before `}` ends a last line that is a comment or a
- * here-document terminator.
+ * here-document terminator. An empty script becomes `:`, since sh refuses
+ * an empty brace group: a stack whose only volume is a file mount
+ * produced one and failed its deploy.
  */
 export function shellStdinScript(script: string): string {
-  return `{\n${script}\n} </dev/null\n`
+  return `{\n${script.trim() ? script : ":"}\n} </dev/null\n`
 }
 
 /**
