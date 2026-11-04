@@ -27,6 +27,10 @@ services:
       - TURN_SERVER_URL=turns:${MIROTALK_DOMAIN:-talk.${DOMAIN}}:5349
       - TURN_SERVER_USERNAME=${MIROTALK_TURN_SERVER_USERNAME:?}
       - TURN_SERVER_CREDENTIAL=${MIROTALK_TURN_SERVER_CREDENTIAL:?}
+      # The image defaults load the vendor's Umami script on every page and send leaving users to
+      # a third-party survey.
+      - STATS_ENABLED=false
+      - SURVEY_ENABLED=false
     restart: unless-stopped
     deploy:
       resources:

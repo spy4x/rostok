@@ -35,6 +35,11 @@ services:
   akaunting:
     container_name: hl-akaunting
     image: akaunting/akaunting:${AKAUNTING_IMAGE_TAG:-latest}
+    # Every call to api.akaunting.com (update check, app store) carries the server's IP and counts
+    # of companies, users, invoices and customers, with no switch to turn it off. Blocking the host
+    # also turns off the app store and update notices.
+    extra_hosts:
+      - "api.akaunting.com:0.0.0.0"
     restart: unless-stopped
     depends_on:
       akaunting-db:

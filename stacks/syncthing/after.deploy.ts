@@ -468,6 +468,12 @@ async function apiGet<T>(path: string, validator: (v: unknown) => v is T): Promi
   return parseApiJson(path, res.stdout, validator)
 }
 
+/**
+ * Options set on every deploy: no crash reports to crash.syncthing.net, and usage reporting
+ * declined (-1) rather than left unanswered (0), so the UI never asks again.
+ */
+export const PRIVACY_OPTIONS = { crashReportingEnabled: false, urAccepted: -1 }
+
 async function apiSend(method: string, path: string, body?: unknown): Promise<void> {
   // We use curl inside the syncthing container (BusyBox wget only does
   // GET/POST — no PUT/DELETE method support). curl is the safer tool.
@@ -575,6 +581,7 @@ async function main() {
 
   console.log("Waiting for Syncthing API…")
   await waitForApi()
+  await apiSend("PATCH", "/rest/config/options", PRIVACY_OPTIONS)
 
   const status = await apiGet<{ myID: string }>("/rest/system/status", isSystemStatus)
   const myId = status.myID

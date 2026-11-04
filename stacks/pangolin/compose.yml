@@ -10,6 +10,10 @@ services:
     container_name: ${PANGOLIN_CONTAINER_NAME:-hl-pangolin}
     restart: unless-stopped
     user: "0:0"
+    # Anonymous usage data goes to PostHog by default; config.yml's
+    # app.telemetry.anonymous_usage turns it off, and this block covers installs that miss it.
+    extra_hosts:
+      - "telemetry.fossorial.io:0.0.0.0"
     # Pangolin reads its own settings, dashboard_url included, from config.yml in this volume.
     volumes:
       - pangolin-config:/app/config

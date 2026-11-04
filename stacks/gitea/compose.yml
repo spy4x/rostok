@@ -40,6 +40,8 @@ services:
       - GITEA__server__ROOT_URL=https://${GITEA_DOMAIN}
       - GITEA__server__HTTP_PORT=3000
       - GITEA__server__DOMAIN=${GITEA_DOMAIN}
+      # No weekly version check against dl.gitea.com.
+      - GITEA__cron_0X2E_update_checker__ENABLED=false
       - GITEA__admin__DEFAULT_EMAIL_NOTIFICATIONS=enabled
       - GITEA__security__MIN_PASSWORD_LENGTH=12
       - GITEA__security__DISABLE_GIT_HOOKS=false
