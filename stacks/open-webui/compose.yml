@@ -11,6 +11,8 @@ services:
     image: ghcr.io/open-webui/open-webui:${OPEN_WEBUI_IMAGE_TAG:-latest}
     restart: unless-stopped
     environment:
+      - ENABLE_VERSION_UPDATE_CHECK=false
+      - HF_HUB_DISABLE_TELEMETRY=1
       # --- Web page loader ---
       # Empty = Open WebUI's built-in loader. "playwright" needs the playwright stack and its URL.
       - WEB_LOADER_ENGINE=${OPEN_WEBUI_WEB_LOADER_ENGINE:-}

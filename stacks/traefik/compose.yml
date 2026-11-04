@@ -36,6 +36,8 @@ services:
       # dashboard-auth. Port 8080 on the proxy network answers /ping and nothing else; with
       # api.insecure it served the whole API, unauthenticated, to every container (spy4x/rostok#356).
       - "--api=true"
+      - "--global.checknewversion=false"
+      - "--global.sendanonymoususage=false"
       - "--ping=true"
       - "--providers.docker=true"
       - "--providers.docker.exposedbydefault=false"

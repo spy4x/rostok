@@ -12,6 +12,7 @@ services:
     image: woodpeckerci/woodpecker-server:${WOODPECKER_SERVER_IMAGE_TAG:-v3.19.0}
     environment:
       - WOODPECKER_OPEN=false
+      - WOODPECKER_DISABLE_VERSION_CHECK=true
       - WOODPECKER_HOST=https://${WOODPECKER_DOMAIN}
       - WOODPECKER_AGENT_SECRET=${WOODPECKER_AGENT_SECRET}
       # SQLite in WAL mode with a busy timeout. The default (rollback journal, no timeout) fails

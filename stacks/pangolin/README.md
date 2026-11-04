@@ -52,6 +52,18 @@ is not a plain host name or address.
 Pangolin's own settings (`dashboard_url`, `base_domain`, the gerbil endpoint)
 live in `config.yml` inside the `pangolin-config` volume, written by the
 initial setup. `dashboard_url` must be `https://${PANGOLIN_DOMAIN}`.
+Turn its usage telemetry and update notices off there too:
+
+```yaml
+app:
+  telemetry:
+    anonymous_usage: false
+  notifications:
+    product_updates: false
+    new_releases: false
+```
+
+The compose file also blocks `telemetry.fossorial.io` for installs that miss this step.
 
 Data lives in two named volumes, `pangolin-config` (database, site keys,
 gerbil's key) and `pangolin-letsencrypt` (certificates). Docker names them
