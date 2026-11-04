@@ -561,12 +561,17 @@ async function main() {
     )
   }
 
+  // Before the config check: a server without configs/syncthing.yml still gets these.
+  console.log("Waiting for Syncthing API…")
+  await waitForApi()
+  await apiSend("PATCH", "/rest/config/options", PRIVACY_OPTIONS)
+
   let text: string
   try {
     text = await Deno.readTextFile("configs/syncthing.yml")
   } catch (err) {
     if (err instanceof Deno.errors.NotFound) {
-      console.log("configs/syncthing.yml not found — skipping syncthing after-deploy")
+      console.log("configs/syncthing.yml not found — skipping folder and device setup")
       Deno.exit(0)
     }
     throw err
@@ -578,10 +583,6 @@ async function main() {
     throw new Error(`configs/syncthing.yml is not valid YAML: ${(err as Error).message}`)
   }
   const config = validateConfig(parsed)
-
-  console.log("Waiting for Syncthing API…")
-  await waitForApi()
-  await apiSend("PATCH", "/rest/config/options", PRIVACY_OPTIONS)
 
   const status = await apiGet<{ myID: string }>("/rest/system/status", isSystemStatus)
   const myId = status.myID

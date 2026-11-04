@@ -10,6 +10,7 @@ import {
   runRemoteShell,
   runRemoteSync,
   runRemoteSyncEntry,
+  shellStdinScript,
   shQuote,
   stripControlChars,
 } from "./exec.ts"
@@ -359,4 +360,17 @@ Deno.test("stripControlChars: removes C1 control characters (\\x80-\\x9f)", () =
   // whole; \x9c on its own is dropped.
   const input = "x\x9b2JPWNED\x9c real text"
   assertEquals(stripControlChars(input), "xPWNED real text")
+})
+
+Deno.test("shellStdinScript: an empty script still runs, and a failing one still fails", async () => {
+  const run = async (script: string) => {
+    const child = new Deno.Command("sh", { args: ["-s"], stdin: "piped", stderr: "piped" }).spawn()
+    const writer = child.stdin.getWriter()
+    await writer.write(new TextEncoder().encode(shellStdinScript(script)))
+    await writer.close()
+    return (await child.output()).code
+  }
+  assertEquals(await run(""), 0)
+  assertEquals(await run("\n"), 0)
+  assertEquals(await run("false"), 1)
 })
