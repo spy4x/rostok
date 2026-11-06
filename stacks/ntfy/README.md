@@ -44,8 +44,8 @@ alerting:
 
 ## Access
 
-Web UI: `https://${NTFY_DOMAIN}` — no default yet (no `+meta.ts` wizard
-for this stack); set it in `servers/<server>/.env`, e.g. `ntfy.${DOMAIN}`.
+Web UI: `https://${NTFY_DOMAIN}`, by default `ntfy.${DOMAIN}`. `rostok stack add ntfy`
+asks for it and writes it to the server's `.env` (see `+meta.ts`).
 
 ## Variables
 

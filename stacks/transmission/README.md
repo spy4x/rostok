@@ -14,10 +14,10 @@ BitTorrent client for downloading torrents.
 
 Web UI: `https://${TRANSMISSION_DOMAIN}`
 
-**Auth**: Authentik SSO (forward auth via Traefik). Login at
-[auth.${DOMAIN}](https://auth.${DOMAIN}) grants access. See
-Authelia forward-auth middleware (`authelia@file`) in `stacks/traefik/dynamic.yml`
-for the full setup.
+**Auth**: Authelia SSO through Traefik forward auth. A login at the
+`authelia` stack's portal grants access. The router uses the `authelia@file`
+middleware, which you add to a Traefik dynamic file on the server: see
+"Protecting a service" in `stacks/authelia/README.md`.
 
 ## Mobile Apps
 

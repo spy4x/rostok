@@ -14,7 +14,8 @@
   Stalwart would mail to every domain that writes to you. Reports other servers send you still
   arrive at `postmaster@`. Logic: `reports.ts`.
 - **Built-in anti-spam** (Bayesian, DNSBL, rate limiting)
-- **ACME** (Let's Encrypt) native — no external cert management needed
+- **TLS certificates** from Traefik: the `cert-sync` sidecar copies the `mail.<domain>`
+  certificate from Traefik's `acme.json` into Stalwart (see "Deploy order" below)
 - **Single binary** — no Postfix/Dovecot/Rspamd/Redis complexity
 
 ## Configuration
@@ -196,8 +197,8 @@ refuses RSA keys shorter than 1024 bits.
 
 ### Regression check after deploy
 
-Every deploy already checks that each active DKIM key in Stalwart matches
-its public DNS record: `after.deploy.ts` stops Stalwart when one does not.
+Every deploy already checks that each active DKIM key of this stack's
+domains (`DOMAIN` and `STALWART_EXTRA_DOMAINS`) matches its public DNS record: `after.deploy.ts` stops Stalwart when one does not.
 To also check that sent mail carries valid signatures, run this once after
 any deploy that touches DKIM.
 
