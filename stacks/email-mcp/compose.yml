@@ -35,6 +35,8 @@ services:
         limits:
           memory: 128M
           cpus: "0.2"
+    # No swap, as for upstream below: out of memory, it is killed and restarted, never left hanging.
+    memswap_limit: 128M
     networks:
       - mcp
       - upstream
@@ -99,6 +101,10 @@ services:
         limits:
           memory: 256M
           cpus: "0.3"
+    # No swap on top of the memory limit. With swap the kernel kept paging instead of killing, and
+    # the server hung for days with nothing to restart it; now it is killed and `restart` brings
+    # it back.
+    memswap_limit: 256M
     security_opt:
       - no-new-privileges:true
     networks:

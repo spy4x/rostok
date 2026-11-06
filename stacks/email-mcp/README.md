@@ -211,6 +211,9 @@ its later fixes.
   the healthcheck alone opens one every 30 seconds. That filled the 256M limit in about a day and
   a half, and the server then hung while compose still showed it running. The entrypoint turns on
   upstream's stateless mode, so no request leaves anything behind.
+- **No swap.** Both containers have `memswap_limit` equal to their memory limit. A container that
+  runs out of memory is killed and `restart: unless-stopped` starts it again; with swap it would
+  page for days instead and answer nothing.
 - Docker does not restart a container only because its healthcheck fails. If
   `hl-email-mcp-upstream` shows `unhealthy`, restart it by hand and read its logs.
 

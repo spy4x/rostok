@@ -15,6 +15,8 @@ interface Compose {
       environment?: string[]
       entrypoint?: string[]
       command?: string[]
+      memswap_limit?: string
+      deploy?: { resources: { limits: { memory: string } } }
     }
   >
 }
@@ -78,4 +80,11 @@ Deno.test("email-mcp: the upstream server turns on stateless HTTP before its CLI
   const start = code.indexOf(`app()`)
   const stateless = code.indexOf(`mcp.settings.stateless_http = True`)
   assertEquals(stateless >= 0 && stateless < start, true, code)
+})
+
+Deno.test("email-mcp: no service has swap on top of its memory limit", () => {
+  for (const [name, service] of Object.entries(compose.services)) {
+    assertEquals(service.memswap_limit, service.deploy?.resources.limits.memory, name)
+    assertEquals(service.memswap_limit !== undefined, true, name)
+  }
 })
