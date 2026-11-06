@@ -62,7 +62,17 @@ services:
     # Start the program the image already holds. The image's own entrypoint, `uv run`, builds the
     # project again at every start and fetches its build tool from PyPI, with no version: the
     # container would run whatever PyPI serves that day, and not start at all without it.
-    entrypoint: ["tini", "--", "/app/.venv/bin/mcp-email-server"]
+    # Stateless HTTP: upstream otherwise keeps every MCP session in memory until it restarts, and
+    # the healthcheck alone opens one every 30 seconds. About 45 MiB per 1000 sessions filled the
+    # memory limit in a day and a half, then the server hung. No setting turns this on, so the
+    # entrypoint sets it before the CLI starts; a setting upstream drops fails the start loudly.
+    entrypoint: [
+      "tini",
+      "--",
+      "/app/.venv/bin/python",
+      "-c",
+      "from mcp_email_server.app import mcp; mcp.settings.stateless_http = True; from mcp_email_server.cli import app; app()",
+    ]
     command: ["streamable-http"]
     restart: unless-stopped
     environment:
@@ -98,7 +108,8 @@ services:
       # Internal MCP — no Traefik exposure. Only the guard reaches it.
       - "traefik.enable=false"
     healthcheck:
-      # MCP Streamable HTTP — send initialize, expect 200 with "result" key.
+      # MCP Streamable HTTP — send initialize, expect 200 with "result" key. Stateless (see the
+      # entrypoint), so a check leaves no session behind.
       test: [
         "CMD",
         "python",
