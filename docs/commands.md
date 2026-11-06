@@ -69,6 +69,7 @@ when the output is not a terminal, when `CI` is set, and with
 | `rostok env encrypt`                         | Encrypt `.env` → `.env.age` (per-server + root, and each `configs/<app>.env`)    |
 | `rostok env decrypt`                         | Decrypt `.env.age` → `.env`                                                      |
 | `rostok env status`                          | Encryption posture + next steps                                                  |
+| `rostok llms [--check]`                      | Write `llms.txt`, the map of services for AI agents. `--check` fails when it is out of date. [Details](#service-map-for-ai-agents) |
 | `rostok env setup`                           | Generate `.age/key.txt` — `rostok` hides the key generation for you              |
 | `rostok offline status`                      | Backup paths, disks and tools for the external-drive copy. Changes nothing       |
 | `rostok offline backup --drive <disk>`       | Copy the restic repositories to the external drive, check them, SMART test, eject |
@@ -89,6 +90,29 @@ Flags:
 A `--var` value is taken whole, commas included (`--var WIREGUARD_PEERS=phone,laptop`).
 `stack add` refuses a `--var` key that neither the stack nor a stack it requires declares, and
 names the keys it does declare.
+
+## Service map for AI agents
+
+`rostok llms`, run from the project root, writes `llms.txt` there: every stack of every server,
+with its URLs, its catalog description and your notes, in three sections. An AI agent reads it to
+find a service, such as ntfy to notify you, and to learn whether it may use it. Two optional
+fields on a stack entry in `servers/<server>/config.json` decide where a stack goes:
+
+| Field      | Type    | Meaning                                                                       |
+| ---------- | ------- | ----------------------------------------------------------------------------- |
+| `aiCanUse` | boolean | `true`: agents may use it. `false`: they must not. Unset: ask the owner first |
+| `aiNotes`  | string  | How an agent should use it, such as where its token is and which topic to use |
+
+```json
+{ "stacks": [{ "name": "ntfy", "aiCanUse": true, "aiNotes": "token NTFY_TOKEN, topic agents" }] }
+```
+
+A URL is `https://` plus each of the stack's own `*_DOMAIN` keys in the plaintext `.env.root` and
+server `.env`, with `${SERVER_NAME}` and `${DOMAIN}` filled in. No other value of those files
+reaches `llms.txt`, but run `rostok env decrypt` first: a server without a `.env` is an error.
+Deploy checks the two fields' types and otherwise ignores them. Change a field, then rerun
+`rostok llms`; `rostok llms --check` exits non-zero when the file is out of date and writes
+nothing, so CI or a hook can catch a stale map.
 
 ## Image versions
 
