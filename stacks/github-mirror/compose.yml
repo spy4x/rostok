@@ -1,0 +1,40 @@
+networks:
+  proxy:
+    external: true
+
+services:
+  # Adds a Gitea pull mirror for each GitHub repository the account owns, once an hour (mirror.ts).
+  # No web UI and no Traefik route: it only calls the GitHub API and Gitea's API.
+  github-mirror:
+    container_name: hl-github-mirror
+    image: denoland/deno:${GITHUB_MIRROR_IMAGE_TAG:-alpine-2.9.7}
+    user: "1000:1000"
+    command:
+      - run
+      - --allow-env=GITHUB_TOKEN,GITEA_URL,GITEA_TOKEN
+      - --allow-net=api.github.com,hl-gitea:3000
+      - /mirror.ts
+    environment:
+      - DENO_DIR=/tmp/deno-dir
+      - DENO_NO_UPDATE_CHECK=1
+      - GITHUB_TOKEN=${GITHUB_MIRROR_GITHUB_TOKEN}
+      - GITEA_TOKEN=${GITHUB_MIRROR_GITEA_TOKEN}
+      # Gitea's own container on the shared network, so the calls skip Traefik and Authelia.
+      - GITEA_URL=http://hl-gitea:3000
+    volumes:
+      - ${PATH_APPS}/stacks/github-mirror/mirror.ts:/mirror.ts:ro,z
+    read_only: true
+    tmpfs:
+      - /tmp
+    networks:
+      - proxy
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: "0.1"
+          memory: 128M
+    security_opt:
+      - no-new-privileges:true
+    labels:
+      - "traefik.enable=false"
