@@ -205,13 +205,25 @@ accounts would need a copy of the whole stack in the project's
 `stacks/email-mcp/` folder, which replaces the shipped stack and gets none of
 its later fixes.
 
+## Staying up
+
+- **Stateless HTTP.** By default upstream keeps every MCP session in memory until it restarts, and
+  the healthcheck alone opens one every 30 seconds. That filled the 256M limit in about a day and
+  a half, and the server then hung while compose still showed it running. The entrypoint turns on
+  upstream's stateless mode, so no request leaves anything behind.
+- **No swap.** Both containers have `memswap_limit` equal to their memory limit. A container that
+  runs out of memory is killed and `restart: unless-stopped` starts it again; with swap it would
+  page for days instead and answer nothing.
+- Docker does not restart a container only because its healthcheck fails. If
+  `hl-email-mcp-upstream` shows `unhealthy`, restart it by hand and read its logs.
+
 ## Security notes
 
 - The guard is described under "How it is protected" above. It runs as a non-root user with a
   read-only filesystem, no capabilities, `no-new-privileges:true` and a 128M memory limit. Deno
   lets it listen on 9557, reach only `hl-email-mcp-upstream:9557`, and read only its two keys.
 - The upstream container runs as root, with `no-new-privileges:true` and a 256M memory limit. It
-  starts the program the image already holds (`/app/.venv/bin/mcp-email-server`), so a start
+  starts the program the image already holds (`mcp_email_server` in `/app/.venv`), so a start
   downloads nothing. Its DNS rebinding protection only makes it refuse a request whose `Host`
   header is not the name the guard calls it by, or localhost; that is not access control, since
   any caller can send that name. What keeps other containers away from it is the internal

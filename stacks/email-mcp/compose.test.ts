@@ -15,6 +15,8 @@ interface Compose {
       environment?: string[]
       entrypoint?: string[]
       command?: string[]
+      memswap_limit?: string
+      deploy?: { resources: { limits: { memory: string } } }
     }
   >
 }
@@ -65,10 +67,24 @@ Deno.test("email-mcp: compose refuses to start the guard without EMAIL_MCP_TOKEN
 Deno.test("email-mcp: the upstream server starts the installed program, not uv run", () => {
   // The image's own entrypoint, `uv run mcp-email-server`, rebuilds the project at every start and
   // fetches its build tool from PyPI (spy4x/rostok#410).
-  assertEquals(compose.services.upstream.entrypoint, [
-    `tini`,
-    `--`,
-    `/app/.venv/bin/mcp-email-server`,
-  ])
+  const [init, separator, program, flag, code] = compose.services.upstream.entrypoint ?? []
+  assertEquals([init, separator, program, flag], [`tini`, `--`, `/app/.venv/bin/python`, `-c`])
+  assertEquals(code.endsWith(`from mcp_email_server.cli import app; app()`), true, code)
   assertEquals(compose.services.upstream.command, [`streamable-http`])
+})
+
+Deno.test("email-mcp: the upstream server turns on stateless HTTP before its CLI starts", () => {
+  // In stateful mode every initialize, the healthcheck's included, leaves a session in memory until
+  // a restart: about 45 MiB per 1000, so the server ran out of memory and hung within days.
+  const code = compose.services.upstream.entrypoint?.[4] ?? ``
+  const start = code.indexOf(`app()`)
+  const stateless = code.indexOf(`mcp.settings.stateless_http = True`)
+  assertEquals(stateless >= 0 && stateless < start, true, code)
+})
+
+Deno.test("email-mcp: no service has swap on top of its memory limit", () => {
+  for (const [name, service] of Object.entries(compose.services)) {
+    assertEquals(service.memswap_limit, service.deploy?.resources.limits.memory, name)
+    assertEquals(service.memswap_limit !== undefined, true, name)
+  }
 })
