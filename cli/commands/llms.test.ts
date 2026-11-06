@@ -70,6 +70,34 @@ Deno.test("llms: resolves ${SERVER_NAME} and ${DOMAIN} in a stack's own _DOMAIN 
   })
 })
 
+Deno.test("llms: a _DOMAIN value never resolves a reference to another .env key", async () => {
+  await withProject(async (dir) => {
+    await writeServer(
+      dir,
+      "home",
+      [{ name: "ntfy" }],
+      "DOMAIN=example.com\nNTFY_TOKEN=s3cret\nNTFY_DOMAIN=${NTFY_TOKEN}.example.com\n",
+    )
+    const services = await collectServices(dir, CATALOG)
+    assertEquals(services[0].urls, ["https://${NTFY_TOKEN}.example.com"])
+    assertEquals(renderLlms(services).includes("s3cret"), false)
+  })
+})
+
+Deno.test("llms: the server .env wins over .env.root", async () => {
+  await withProject(async (dir) => {
+    await Deno.writeTextFile(join(dir, ".env.root"), "DOMAIN=root.example.com\n")
+    await writeServer(
+      dir,
+      "home",
+      [{ name: "ntfy" }],
+      "DOMAIN=example.com\nNTFY_DOMAIN=n.${DOMAIN}\n",
+    )
+    const [service] = await collectServices(dir, CATALOG)
+    assertEquals(service.urls, ["https://n.example.com"])
+  })
+})
+
 Deno.test("llms: a server without a plaintext .env fails and names rostok env decrypt", async () => {
   await withProject(async (dir) => {
     await writeServer(dir, "home", [{ name: "ntfy" }], undefined)
