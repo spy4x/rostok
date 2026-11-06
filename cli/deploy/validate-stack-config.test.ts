@@ -117,3 +117,11 @@ Deno.test("validateStackConfigs: refuses traefik-extra when only the catalog has
   assertStringIncludes(err.message, `rename "traefik-extra"`)
   assertStringIncludes(err.message, `stack "traefik"'s "TRAEFIK_"`)
 })
+
+Deno.test("validateStackConfigs: rejects a non-string aiNotes, naming stack and field", () => {
+  const err = assertThrows(
+    () => validateStackConfigs([{ name: "ntfy", aiNotes: 5 as unknown as string }], CONFIG_PATH),
+    UserError,
+  )
+  assertStringIncludes(err.message, `stack "ntfy" in ${CONFIG_PATH}: "aiNotes" must be a string`)
+})
