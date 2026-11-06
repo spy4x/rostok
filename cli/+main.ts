@@ -15,6 +15,7 @@ import { LOCAL_SSH_ADDRESS } from "./server-keys.ts"
 import { deployCommand } from "./commands/deploy.ts"
 import { envCommand } from "./commands/env.ts"
 import { imagesCommand } from "./commands/images.ts"
+import { llmsCommand } from "./commands/llms.ts"
 import { offlineCommand } from "./commands/offline.ts"
 import { stackListCommand } from "./commands/list.ts"
 import { stackAddCommand } from "./commands/stack-add.ts"
@@ -57,6 +58,7 @@ Examples:
     rostok deploy home                    # deploy over SSH
     rostok images outdated                # pinned images with a newer version
     rostok env status                     # encryption posture + next steps
+    rostok llms                           # write llms.txt, the service map for AI agents
     rostok offline status                 # backup drive: settings, disks, tools
     rostok offline backup --drive sdb -n  # copy the backups to an external drive
     rostok upgrade                        # replace this binary with the latest release`
@@ -165,6 +167,8 @@ Examples:
   cmd.command("env", envCommand)
 
   cmd.command("images", imagesCommand)
+
+  cmd.command("llms", llmsCommand)
 
   cmd.command("offline", offlineCommand)
 
