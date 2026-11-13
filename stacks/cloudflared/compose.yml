@@ -13,6 +13,9 @@ services:
     image: cloudflare/cloudflared:${CLOUDFLARED_IMAGE_TAG:-latest}
     restart: unless-stopped
     command: tunnel run
+    # cloudflared has a hard-coded Sentry DSN and no switch to turn crash reports off.
+    extra_hosts:
+      - "sentry.io:0.0.0.0"
     environment:
       - TUNNEL_TOKEN=${CLOUDFLARED_TUNNEL_TOKEN}
     networks:

@@ -76,6 +76,9 @@ services:
       - DB_USERNAME=postgres
       - DB_DATABASE_NAME=immich
       - REDIS_HOSTNAME=kv
+      # ONNX Runtime (Microsoft) and the Hugging Face model downloader send usage telemetry by default.
+      - ORT_DISABLE_TELEMETRY=1
+      - HF_HUB_DISABLE_TELEMETRY=1
     restart: always
     deploy:
       resources:

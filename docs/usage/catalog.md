@@ -69,6 +69,8 @@ monitoring stacks work together: [monitoring](monitoring.md).
 
 - [gitea](../../stacks/gitea/README.md) — self-hosted Git (GitHub
   alternative)
+- [github-mirror](../../stacks/github-mirror/README.md) — mirrors
+  every GitHub repository of one account into Gitea
 - [woodpecker](../../stacks/woodpecker/README.md) — CI/CD pipeline
 - [ci-agent](../../stacks/ci-agent/README.md) — extra
   Woodpecker agent on a second machine

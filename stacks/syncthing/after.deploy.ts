@@ -468,6 +468,12 @@ async function apiGet<T>(path: string, validator: (v: unknown) => v is T): Promi
   return parseApiJson(path, res.stdout, validator)
 }
 
+/**
+ * Options set on every deploy: no crash reports to crash.syncthing.net, and usage reporting
+ * declined (-1) rather than left unanswered (0), so the UI never asks again.
+ */
+export const PRIVACY_OPTIONS = { crashReportingEnabled: false, urAccepted: -1 }
+
 async function apiSend(method: string, path: string, body?: unknown): Promise<void> {
   // We use curl inside the syncthing container (BusyBox wget only does
   // GET/POST — no PUT/DELETE method support). curl is the safer tool.
@@ -555,12 +561,17 @@ async function main() {
     )
   }
 
+  // Before the config check: a server without configs/syncthing.yml still gets these.
+  console.log("Waiting for Syncthing API…")
+  await waitForApi()
+  await apiSend("PATCH", "/rest/config/options", PRIVACY_OPTIONS)
+
   let text: string
   try {
     text = await Deno.readTextFile("configs/syncthing.yml")
   } catch (err) {
     if (err instanceof Deno.errors.NotFound) {
-      console.log("configs/syncthing.yml not found — skipping syncthing after-deploy")
+      console.log("configs/syncthing.yml not found — skipping folder and device setup")
       Deno.exit(0)
     }
     throw err
@@ -572,9 +583,6 @@ async function main() {
     throw new Error(`configs/syncthing.yml is not valid YAML: ${(err as Error).message}`)
   }
   const config = validateConfig(parsed)
-
-  console.log("Waiting for Syncthing API…")
-  await waitForApi()
 
   const status = await apiGet<{ myID: string }>("/rest/system/status", isSystemStatus)
   const myId = status.myID

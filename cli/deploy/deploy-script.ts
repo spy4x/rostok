@@ -14,6 +14,10 @@ export interface StackConfig {
   deployAs?: string
   envs?: Record<string, string>
   watchFilesAndRestartIfChanged?: string[]
+  /** Whether AI agents may use the service: `true` yes, `false` never, unset ask the owner. Read by `rostok llms`, ignored by deploy. */
+  aiCanUse?: boolean
+  /** How an agent should use the service, printed by `rostok llms`. Ignored by deploy. */
+  aiNotes?: string
 }
 
 export interface DeployResult {

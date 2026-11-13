@@ -34,8 +34,26 @@ function validateStackValue(value: string, field: string, configPath: string): v
   }
 }
 
+/** Refuse a stack's optional `field` when it is set to something other than a `type` value. */
+function validateOptionalType(
+  stack: StackConfig,
+  field: "aiCanUse" | "aiNotes",
+  type: "boolean" | "string",
+  configPath: string,
+): void {
+  const value = stack[field]
+  if (value !== undefined && typeof value !== type) {
+    throw new UserError(
+      `stack "${stack.name}" in ${configPath}: "${field}" must be a ${type}, got ${
+        JSON.stringify(value)
+      }.`,
+    )
+  }
+}
+
 /**
- * Validate every stack's `name` and `deployAs` (when set). Throws on the
+ * Validate every stack's `name` and `deployAs` (when set), and the types of
+ * `aiCanUse` and `aiNotes`. Throws on the
  * first bad value, naming it, the field, and `configPath`. A name whose
  * key prefix nests with another configured stack's or a `catalogNames`
  * stack's is refused too (#265).
@@ -50,6 +68,8 @@ export function validateStackConfigs(
     if (stack.deployAs !== undefined) {
       validateStackValue(stack.deployAs, "deployAs", configPath)
     }
+    validateOptionalType(stack, "aiCanUse", "boolean", configPath)
+    validateOptionalType(stack, "aiNotes", "string", configPath)
     // A stack whose own key-prefix (stackKeyPrefix) starts with a
     // reserved prefix (GIT_, DOCKER_, SSH_, ...) would let its
     // .env-sourced keys collide with names tools a hook spawns treat
