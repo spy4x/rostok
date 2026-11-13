@@ -63,22 +63,15 @@ link in the footer calls this.
 
 ## Adding services
 
-Edit the canonical list at
-[`internal/config/config.go`](https://github.com/spy4x/oko/blob/main/internal/config/config.go)
-in the [`spy4x/oko`](https://github.com/spy4x/oko) repo. Each entry
-needs:
+The service list is `servers/<server>/configs/oko/config.json` in your rostok project. Edit it
+there and deploy: deploy copies it to `${PATH_APPS}/configs/oko/config.json`, and oko picks up the
+change without a restart. An edit made on the server itself is overwritten by the next deploy.
 
-- `Name`, `Product`, `ProductURL` — what shows on the card
-- `Endpoint` — gatus endpoint key
-- `GatusHost` — which gatus server exposes that key
-- `URL` — service URL, with `${DOMAIN}` substituted at render time
-- `Section` — `home` / `cloud` / `offsite` / `portable`
-- `Icon`, `Description` — display metadata
-- `Hidden` — `true` keeps gatus fetch on but skips rendering (phasing out)
-
-Push to `main` triggers the Woodpecker pipeline (`.woodpecker.yml`) to
-build + push `ghcr.io/spy4x/oko:latest`. Watchtower (already deployed
-on every server) picks up the new image and restarts the container.
+Each server in `servers` has a `name` and a list of `services`. Each service needs a `name` and a
+`url`. For a status marker, set both `endpoint` (the gatus endpoint key) and `gatus_host` (the first
+label of the gatus host in `OKO_UPTIME_HOSTS` that exposes that key), or neither. Also optional:
+`icon`, `description`, `product`, `product_url`, `hidden`. The full format is in the
+[oko configuration docs](https://github.com/spy4x/oko/blob/main/docs/configuration.md).
 
 ## Variables
 

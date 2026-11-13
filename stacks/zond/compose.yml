@@ -7,7 +7,7 @@ networks:
 services:
   # Zond — Internal health probe bridge
   # Probes Docker containers on the proxy network and returns 200/503 only.
-  # No auth needed — no sensitive data exposed.
+  # Public by default: /health/<target> shows which services exist and whether they are up.
   zond:
     container_name: hl-zond
     image: ghcr.io/spy4x/zond:${ZOND_IMAGE_TAG:-latest}
