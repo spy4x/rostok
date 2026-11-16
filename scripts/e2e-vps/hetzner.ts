@@ -165,8 +165,9 @@ const MIN_CORES = 2
 
 /**
  * Every x86 server type that is not deprecated and has at least `MIN_CORES` cores, in each location
- * that sells it, cheapest first. The caller tries them in order, because the cheapest one can be out
- * of stock.
+ * that sells it, cheapest first. A location the type lists as deprecated is skipped: Hetzner still
+ * prices it there but refuses the order. The caller tries them in order, because the cheapest one
+ * can be out of stock.
  */
 export async function cheapestX86(call: Call): Promise<Offer[]> {
   const json = await call("GET", "/server_types?per_page=50")
@@ -174,7 +175,13 @@ export async function cheapestX86(call: Call): Promise<Offer[]> {
   for (const t of json.server_types) {
     if (t.architecture !== "x86" || t.deprecated === true || t.deprecation) continue
     if (!(t.cores >= MIN_CORES)) continue
+    const retired = new Set(
+      (t.locations ?? []).filter((l: { deprecation?: unknown }) => l.deprecation).map((
+        l: { name: string },
+      ) => l.name),
+    )
     for (const p of t.prices ?? []) {
+      if (retired.has(p.location)) continue
       offers.push({ type: t.name, location: p.location, hourly: Number(p.price_hourly.net) })
     }
   }
