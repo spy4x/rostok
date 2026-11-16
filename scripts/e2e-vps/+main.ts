@@ -268,7 +268,11 @@ async function prepareSsh(ctx: Ctx, runId: string): Promise<string> {
   return (await Deno.readTextFile(`${key}.pub`)).trim()
 }
 
-/** Creates the key and the cheapest x86 server that is in stock, and waits until it runs. */
+/**
+ * Creates the key and the cheapest x86 server that is in stock, and waits until it runs. Hetzner
+ * can accept the order and then delete the server when placement fails, so a server that vanishes
+ * before it runs counts as out of stock and the next offer is tried.
+ */
 async function createMachine(
   ctx: Ctx,
   call: Call,
@@ -276,27 +280,41 @@ async function createMachine(
   publicKey: string,
 ): Promise<string> {
   const keyId = await createKey(call, runId, publicKey)
-  const offers = (await cheapestX86(call)).slice(0, 4)
+  const offers = (await cheapestX86(call)).slice(0, 8)
   if (offers.length === 0) throw new Error("the Hetzner API lists no x86 server type")
-  let server: Server | undefined
   const errors: string[] = []
   for (const offer of offers) {
     ctx.signal.throwIfAborted()
+    let server: Server
     try {
       server = await createServer(call, runId, offer, keyId, CLOUD_INIT)
-      log(ctx, `created server ${server.name}: ${offer.type} in ${offer.location}`)
-      break
     } catch (err) {
       errors.push(`${offer.type} in ${offer.location}: ${(err as Error).message}`)
+      continue
     }
+    log(ctx, `created server ${server.name}: ${offer.type} in ${offer.location}`)
+    const id = server.id
+    const ip = await waitFor(
+      `server ${server.name} to reach the status "running"`,
+      180_000,
+      async () => {
+        let current: Server
+        try {
+          current = (await call("GET", `/servers/${id}`)).server
+        } catch (err) {
+          if ((err as Error).message.includes(" 404 ")) return null
+          throw err
+        }
+        const ip = current.public_net?.ipv4?.ip
+        return current.status === "running" && ip ? ip : undefined
+      },
+      ctx.signal,
+    )
+    if (ip) return ip
+    errors.push(`${offer.type} in ${offer.location}: Hetzner removed the server before it ran`)
+    log(ctx, `server ${server.name} vanished before it ran; trying the next offer`)
   }
-  if (!server) throw new Error(`could not create a server:\n  ${errors.join("\n  ")}`)
-  const id = server.id
-  return await waitFor(`server ${server.name} to reach the status "running"`, 180_000, async () => {
-    const current: Server = (await call("GET", `/servers/${id}`)).server
-    const ip = current.public_net?.ipv4?.ip
-    return current.status === "running" && ip ? ip : undefined
-  }, ctx.signal)
+  throw new Error(`could not create a server:\n  ${errors.join("\n  ")}`)
 }
 
 /** Waits for the server to accept the key, then for cloud-init to finish installing Docker. */
