@@ -184,23 +184,26 @@ Deno.test("labels the key and the server it creates with the run id", async () =
   assertEquals([bodies[1].server_type, bodies[1].location], ["cx23", "hel1"])
 })
 
-Deno.test("offers the cheapest x86 type first and skips arm and deprecated types", async () => {
+Deno.test("offers the cheapest x86 type first and skips arm, deprecated and 1-core types", async () => {
   const price = (location: string, net: string) => ({ location, price_hourly: { net } })
   const fetchFn = () =>
     Promise.resolve(
       new Response(JSON.stringify({
         server_types: [
-          { name: "cpx11", architecture: "x86", prices: [price("fsn1", "0.0070")] },
+          { name: "cpx11", architecture: "x86", cores: 2, prices: [price("fsn1", "0.0070")] },
+          { name: "cpx02", architecture: "x86", cores: 1, prices: [price("hel1", "0.0030")] },
           { name: "cax11", architecture: "arm", prices: [price("fsn1", "0.0010")] },
           {
             name: "cx11",
             architecture: "x86",
+            cores: 2,
             deprecation: { announced: "2024-01-01T00:00:00Z" },
             prices: [price("fsn1", "0.0020")],
           },
           {
             name: "cx23",
             architecture: "x86",
+            cores: 2,
             deprecation: null,
             prices: [price("nbg1", "0.0060"), price("hel1", "0.0050")],
           },

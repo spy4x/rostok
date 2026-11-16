@@ -158,14 +158,22 @@ export interface Offer {
 }
 
 /**
- * Every x86 server type that is not deprecated, in each location that sells it, cheapest first.
- * The caller tries them in order, because the cheapest one can be out of stock.
+ * Catalog stacks cap some services at 2 CPUs, and Docker refuses a cap above the host's count, so
+ * the deploy fails on a 1-core server (#584). Test on the size users run.
+ */
+const MIN_CORES = 2
+
+/**
+ * Every x86 server type that is not deprecated and has at least `MIN_CORES` cores, in each location
+ * that sells it, cheapest first. The caller tries them in order, because the cheapest one can be out
+ * of stock.
  */
 export async function cheapestX86(call: Call): Promise<Offer[]> {
   const json = await call("GET", "/server_types?per_page=50")
   const offers: Offer[] = []
   for (const t of json.server_types) {
     if (t.architecture !== "x86" || t.deprecated === true || t.deprecation) continue
+    if (!(t.cores >= MIN_CORES)) continue
     for (const p of t.prices ?? []) {
       offers.push({ type: t.name, location: p.location, hourly: Number(p.price_hourly.net) })
     }
