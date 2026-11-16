@@ -14,8 +14,8 @@ Replaces the previous Prometheus + Loki stack with ~35% less memory and ~80% les
 | `victoria-logs`    | Log database               | 256M         | 0.3       |
 | `promtail`         | Log collector              | 128M         | 0.2       |
 | `node-exporter`    | Host metrics               | 64M          | 0.1       |
-| `cadvisor`         | Container metrics          | 128M         | 0.3       |
-| **Total**          |                            | **960M**     | **1.4**   |
+| `cadvisor`         | Container metrics          | 256M         | 0.3       |
+| **Total**          |                            | **1088M**    | **1.4**   |
 
 ## Network and retention
 
@@ -42,6 +42,12 @@ unit means months.
    ```bash
    rostok deploy <server>
    ```
+
+## SELinux hosts
+
+The stack starts on a Docker host that enforces SELinux (Fedora, RHEL) with no override.
+node-exporter, cAdvisor and promtail mount host-system paths without `:z` and run with
+`label=disable`, so they read host files under their own labels and Docker relabels nothing.
 
 ## Scrape targets
 

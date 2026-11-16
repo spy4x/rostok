@@ -55,3 +55,36 @@ Deno.test("victoria-metrics: both stores keep data for 14 days", () => {
     assertEquals(flags, ["--retentionPeriod=14d"], store)
   }
 })
+
+interface Service {
+  volumes?: string[]
+  security_opt?: string[]
+  command?: string[]
+}
+
+const services = compose.services as Record<string, Service>
+
+/** Host-system paths an SELinux-enforcing Docker refuses to relabel, or must never relabel. */
+const HOST_PATHS = ["/", "/proc", "/sys", "/var/run", "/var/lib/docker", "/var/log"]
+
+Deno.test("victoria-metrics: no host-system mount asks Docker to relabel it", () => {
+  // `:z` on `/`, `/sys` or `/var/log` stops the container on an SELinux host (spy4x/rostok#580).
+  for (const [name, service] of Object.entries(services)) {
+    for (const volume of service.volumes ?? []) {
+      const [source, , mode = ""] = volume.split(":")
+      const host = HOST_PATHS.some((p) => source === p || source.startsWith(`${p}/`))
+      if (host) assertEquals(/\bz\b|\bZ\b/.test(mode), false, `${name}: ${volume}`)
+    }
+  }
+})
+
+Deno.test("victoria-metrics: containers reading host files run unlabelled", () => {
+  for (const name of ["node-exporter", "cadvisor", "promtail"]) {
+    assertEquals(services[name].security_opt?.includes("label=disable"), true, name)
+  }
+})
+
+Deno.test("victoria-metrics: cAdvisor watches Docker containers only", () => {
+  // Walking every cgroup of a workstation got it killed and timed out every scrape.
+  assertEquals(services.cadvisor.command?.includes("--docker_only=true"), true)
+})

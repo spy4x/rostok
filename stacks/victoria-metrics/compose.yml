@@ -11,6 +11,10 @@ networks:
   logs:
     internal: true
 
+# Host-system mounts (`/`, `/proc`, `/sys`, `/var/run`, `/var/lib/docker`, `/var/log`, the Docker
+# socket) carry no `:z`: an SELinux-enforcing Docker refuses to relabel `/`, `/sys` and `/var/log`,
+# so the container never starts, and would relabel Docker's whole data folder. The three
+# containers that read them set `label=disable` instead. Config and data mounts keep `:z`.
 services:
   # ========================================================================
   # VictoriaMetrics Stack — primary observability pipeline.
@@ -96,9 +100,9 @@ services:
     image: grafana/promtail:${VICTORIA_METRICS_PROMTAIL_IMAGE_TAG:-3.2.1}
     volumes:
       - ${PATH_APPS}/configs/victoria-metrics/promtail.yml:/etc/promtail/config.yml:ro,z
-      - /var/log:/var/log:ro,z
-      - /var/lib/docker/containers:/var/lib/docker/containers:ro,z
-      - /var/run/docker.sock:/var/run/docker.sock:ro,z
+      - /var/log:/var/log:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
     restart: unless-stopped
     deploy:
       resources:
@@ -107,6 +111,7 @@ services:
           cpus: "0.2"
     security_opt:
       - no-new-privileges:true
+      - label=disable
     networks:
       - logs
 
@@ -115,9 +120,9 @@ services:
     container_name: hl-node-exporter
     image: prom/node-exporter:${VICTORIA_METRICS_NODE_EXPORTER_IMAGE_TAG:-latest}
     volumes:
-      - /proc:/host/proc:ro,z
-      - /sys:/host/sys:ro,z
-      - /:/rootfs:ro,z
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
     command:
       - "--path.procfs=/host/proc"
       - "--path.sysfs=/host/sys"
@@ -128,6 +133,8 @@ services:
         limits:
           memory: 64M
           cpus: "0.1"
+    security_opt:
+      - label=disable
     networks:
       - metrics
 
@@ -136,21 +143,28 @@ services:
   cadvisor:
     container_name: hl-cadvisor
     image: gcr.io/cadvisor/cadvisor:${VICTORIA_METRICS_CADVISOR_IMAGE_TAG:-v0.49.2}
+    # Docker containers only, and only their CPU, memory and network groups. Without these flags,
+    # on a host with many cgroups (a workstation with desktop apps) cAdvisor walked every one, was
+    # killed at 128M, and at 1G sat at its CPU cap and missed every scrape.
+    command:
+      - --docker_only=true
+      - --housekeeping_interval=15s
+      - --disable_metrics=advtcp,app,cpu_topology,cpuset,disk,diskIO,hugetlb,memory_numa,oom_event,percpu,perf_event,process,referenced_memory,resctrl,sched,tcp,udp
     volumes:
-      - /:/rootfs:ro,z
-      - /var/run:/var/run:ro,z
-      - /sys:/sys:ro,z
-      - /var/lib/docker:/var/lib/docker:ro,z
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker:/var/lib/docker:ro
     restart: unless-stopped
     deploy:
       resources:
         limits:
-          memory: 128M
+          memory: 256M
           cpus: "0.3"
     group_add:
       - "${DOCKER_GROUP_ID:-990}"
     security_opt:
       - seccomp=unconfined
-      - label=type:container_runtime_t
+      - label=disable
     networks:
       - metrics
