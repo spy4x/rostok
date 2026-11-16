@@ -11,7 +11,7 @@ them rather than repeating them.
 | [gatus](../../stacks/gatus/README.md)                               | URLs you list: status code, response time, body               | its status page, and ntfy alerts               |
 | [zond](../../stacks/zond/README.md)                                 | containers on the `proxy` network that have no public URL     | an HTTP answer (200 or 503) that gatus checks  |
 | [oko](../../stacks/oko/README.md)                                   | nothing itself: shows gatus's results as one page of services | its dashboard                                  |
-| [victoria-metrics](../../stacks/victoria-metrics/README.md)         | host and container metrics, and every container's log         | nothing: no UI and no alert rules in the stack |
+| [victoria-metrics](../../stacks/victoria-metrics/README.md)         | host and container metrics, and every container's log         | ntfy alerts; Grafana on the host's loopback    |
 | [ntfy](../../stacks/ntfy/README.md)                                 | nothing: it delivers the alerts the others send               | phone and desktop push                         |
 | [watchtower](../../stacks/watchtower/README.md)                     | new versions of the images your containers run, once a day    | nothing: no notifications are configured       |
 | [healthchecks](../../stacks/healthchecks/README.md)                 | jobs that must ping it on time, such as the backup runner     | its own e-mail alerts                          |
@@ -84,10 +84,13 @@ private, add the `authelia@file` middleware or basic auth to its router (see the
 ## Metrics and logs
 
 The victoria-metrics stack keeps 14 days of host metrics (node-exporter), container metrics
-(cAdvisor) and container logs (promtail into VictoriaLogs). It has no web UI, no Traefik route and
-no alert rules, and its stores take no password, so they sit on internal networks only. To read
-them, connect one dashboard container to the store's network yourself; anything on that network
-reads all the data, logs included. To scrape a target in another stack, connect `hl-vmagent` to
+(cAdvisor) and container logs (promtail into VictoriaLogs). vmalert checks host rules (and any
+rule files you add) and Alertmanager sends what fires to ntfy. Grafana shows both stores on
+`127.0.0.1:3000` of the server, with no Traefik route; open it through an SSH tunnel. The stores
+take no password, so they sit on internal networks only, shared only with the stack's own
+services (the collectors, vmalert and Grafana).
+To read them from another container, connect it to the store's network yourself; anything on
+that network reads all the data, logs included. To scrape a target in another stack, connect `hl-vmagent` to
 that stack's network. Both steps are in the victoria-metrics README.
 
 ## Image updates
@@ -121,6 +124,9 @@ Every alert in the catalog ends in ntfy, except healthchecks, which mails you.
 - **Gatus** posts to `GATUS_NTFY_URL`, topic `GATUS_NTFY_TOPIC_UPTIME` (default `alerts`), with
   `GATUS_NTFY_TOKEN_UPTIME`. With the URL or the token left blank, gatus runs without alerts.
 - **The backup runner** posts to `NTFY_URL_BACKUPS` with `NTFY_TOKEN_BACKUPS`.
+- **victoria-metrics** (its Alertmanager) posts to `VICTORIA_METRICS_ALERT_NTFY_URL`, topic
+  `VICTORIA_METRICS_ALERT_NTFY_TOPIC` (default `alerts`), with `VICTORIA_METRICS_ALERT_NTFY_TOKEN`.
+  With the URL blank, alerts stay in Alertmanager.
 
 An ntfy on the server that fails cannot deliver the alert about it. Host ntfy on a different
 server from the ones it watches, or use a hosted ntfy topic.

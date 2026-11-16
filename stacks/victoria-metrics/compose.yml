@@ -10,7 +10,16 @@ networks:
   # VictoriaLogs and promtail, nothing else: every container's log is in that store.
   logs:
     internal: true
+  # vmalert and Alertmanager. Not internal: Alertmanager sends to ntfy.
+  alerts:
+  # Grafana alone. Not internal: Grafana publishes its port on the host and downloads its
+  # VictoriaLogs plugin. Grafana also joins `metrics` and `logs` to query both stores.
+  grafana:
 
+# Host-system mounts (`/`, `/proc`, `/sys`, `/var/run`, `/var/lib/docker`, `/var/log`, the Docker
+# socket) carry no `:z`: an SELinux-enforcing Docker refuses to relabel `/`, `/sys` and `/var/log`,
+# so the container never starts, and would relabel Docker's whole data folder. The three
+# containers that read them set `label=disable` instead. Config and data mounts keep `:z`.
 services:
   # ========================================================================
   # VictoriaMetrics Stack — primary observability pipeline.
@@ -96,9 +105,9 @@ services:
     image: grafana/promtail:${VICTORIA_METRICS_PROMTAIL_IMAGE_TAG:-3.2.1}
     volumes:
       - ${PATH_APPS}/configs/victoria-metrics/promtail.yml:/etc/promtail/config.yml:ro,z
-      - /var/log:/var/log:ro,z
-      - /var/lib/docker/containers:/var/lib/docker/containers:ro,z
-      - /var/run/docker.sock:/var/run/docker.sock:ro,z
+      - /var/log:/var/log:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
     restart: unless-stopped
     deploy:
       resources:
@@ -107,6 +116,7 @@ services:
           cpus: "0.2"
     security_opt:
       - no-new-privileges:true
+      - label=disable
     networks:
       - logs
 
@@ -115,9 +125,9 @@ services:
     container_name: hl-node-exporter
     image: prom/node-exporter:${VICTORIA_METRICS_NODE_EXPORTER_IMAGE_TAG:-latest}
     volumes:
-      - /proc:/host/proc:ro,z
-      - /sys:/host/sys:ro,z
-      - /:/rootfs:ro,z
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
     command:
       - "--path.procfs=/host/proc"
       - "--path.sysfs=/host/sys"
@@ -128,6 +138,8 @@ services:
         limits:
           memory: 64M
           cpus: "0.1"
+    security_opt:
+      - label=disable
     networks:
       - metrics
 
@@ -136,21 +148,197 @@ services:
   cadvisor:
     container_name: hl-cadvisor
     image: gcr.io/cadvisor/cadvisor:${VICTORIA_METRICS_CADVISOR_IMAGE_TAG:-v0.49.2}
+    # Docker containers only, and only their CPU, memory and network groups. Without these flags,
+    # on a host with many cgroups (a workstation with desktop apps) cAdvisor walked every one, was
+    # killed at 128M, and at 1G sat at its CPU cap and missed every scrape.
+    command:
+      - --docker_only=true
+      - --housekeeping_interval=15s
+      - --disable_metrics=advtcp,app,cpu_topology,cpuset,disk,diskIO,hugetlb,memory_numa,oom_event,percpu,perf_event,process,referenced_memory,resctrl,sched,tcp,udp
     volumes:
-      - /:/rootfs:ro,z
-      - /var/run:/var/run:ro,z
-      - /sys:/sys:ro,z
-      - /var/lib/docker:/var/lib/docker:ro,z
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker:/var/lib/docker:ro
     restart: unless-stopped
     deploy:
       resources:
         limits:
-          memory: 128M
+          memory: 256M
           cpus: "0.3"
     group_add:
       - "${DOCKER_GROUP_ID:-990}"
     security_opt:
       - seccomp=unconfined
-      - label=type:container_runtime_t
+      - label=disable
     networks:
       - metrics
+
+  # ========================================================================
+  # Alerts and dashboards on top of the two stores.
+  # ========================================================================
+
+  # vmalert — evaluates the host rules below, plus every `*.yml` rule file in the server's
+  # `configs/victoria-metrics/alerts/` folder (a project's own rules go there), and hands what
+  # fires to Alertmanager.
+  vmalert:
+    container_name: hl-vmalert
+    image: victoriametrics/vmalert:${VICTORIA_METRICS_VMALERT_IMAGE_TAG:-v1.146.0}
+    command:
+      - "-rule=/etc/vmalert/host.yml"
+      - "-rule=/etc/vmalert/extra/*.yml"
+      - "-datasource.url=http://hl-victoria-metrics:8428"
+      # Alert state is kept in VictoriaMetrics, so a restart does not reset a pending alert.
+      - "-remoteWrite.url=http://hl-victoria-metrics:8428"
+      - "-remoteRead.url=http://hl-victoria-metrics:8428"
+      - "-notifier.url=http://hl-alertmanager:9093"
+    configs:
+      - source: host-alerts
+        target: /etc/vmalert/host.yml
+    volumes:
+      - ${PATH_APPS}/configs/victoria-metrics/alerts:/etc/vmalert/extra:ro,z
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+          cpus: "0.2"
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - metrics
+      - alerts
+
+  # Alertmanager — sends vmalert's alerts to ntfy, which formats Alertmanager's webhook itself
+  # (`?template=alertmanager`). With VICTORIA_METRICS_ALERT_NTFY_URL empty the alerts are kept here
+  # and sent nowhere, so a server without ntfy still starts the stack.
+  alertmanager:
+    container_name: hl-alertmanager
+    image: prom/alertmanager:${VICTORIA_METRICS_ALERTMANAGER_IMAGE_TAG:-v0.34.1}
+    environment:
+      - ALERT_NTFY_URL=${VICTORIA_METRICS_ALERT_NTFY_URL:-}
+      - ALERT_NTFY_TOPIC=${VICTORIA_METRICS_ALERT_NTFY_TOPIC:-alerts}
+      - ALERT_NTFY_TOKEN=${VICTORIA_METRICS_ALERT_NTFY_TOKEN:-}
+    # Alertmanager reads no environment variables, so the config is written from them at start.
+    # The files are private to the container's user: one of them holds the token.
+    entrypoint:
+      - sh
+      - -euc
+      - |
+          umask 077
+          cd /alertmanager
+          {
+            echo 'route:'
+            echo '  receiver: ntfy'
+            echo '  group_by: [alertname, server]'
+            echo '  repeat_interval: 4h'
+            echo 'receivers:'
+            echo '  - name: ntfy'
+            if [ -n "$$ALERT_NTFY_URL" ]; then
+              printf '%s' "$${ALERT_NTFY_URL%/}/$$ALERT_NTFY_TOPIC?template=alertmanager" > ntfy-url
+              echo '    webhook_configs:'
+              echo '      - url_file: /alertmanager/ntfy-url'
+              echo '        send_resolved: true'
+              if [ -n "$$ALERT_NTFY_TOKEN" ]; then
+                printf '%s' "$$ALERT_NTFY_TOKEN" > ntfy-token
+                echo '        http_config:'
+                echo '          authorization:'
+                echo '            credentials_file: /alertmanager/ntfy-token'
+              fi
+            fi
+          } > config.yml
+          exec /bin/alertmanager --config.file=/alertmanager/config.yml --storage.path=/alertmanager --cluster.listen-address=
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 64M
+          cpus: "0.1"
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - alerts
+
+  # Grafana — dashboards over both stores. On this machine only, never behind Traefik: from
+  # elsewhere, open it through an SSH tunnel (README, "Grafana"). User `admin`, password
+  # VICTORIA_METRICS_GRAFANA_PASSWORD.
+  grafana:
+    container_name: hl-grafana
+    image: grafana/grafana:${VICTORIA_METRICS_GRAFANA_IMAGE_TAG:-13.2.3}
+    user: "${PUID:-1000}:${PGID:-1000}"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=${VICTORIA_METRICS_GRAFANA_PASSWORD:?set VICTORIA_METRICS_GRAFANA_PASSWORD}
+      - GF_ANALYTICS_REPORTING_ENABLED=false
+      - GF_ANALYTICS_CHECK_FOR_UPDATES=false
+      - GF_ANALYTICS_CHECK_FOR_PLUGIN_UPDATES=false
+      # Grafana has no built-in VictoriaLogs data source; it downloads this plugin at first start.
+      - GF_PLUGINS_PREINSTALL_SYNC=victoriametrics-logs-datasource@0.32.0
+    configs:
+      - source: grafana-datasources
+        target: /etc/grafana/provisioning/datasources/datasources.yml
+    volumes:
+      - ${VOLUMES_PATH}/grafana/data:/var/lib/grafana:z
+    ports:
+      - ${VICTORIA_METRICS_GRAFANA_PORT:-127.0.0.1:3000}:3000
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: "0.5"
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - metrics
+      - logs
+      - grafana
+
+configs:
+  grafana-datasources:
+    content: |
+      apiVersion: 1
+      datasources:
+        - name: VictoriaMetrics
+          uid: victoriametrics
+          type: prometheus
+          access: proxy
+          url: http://hl-victoria-metrics:8428
+          isDefault: true
+        - name: VictoriaLogs
+          uid: victorialogs
+          type: victoriametrics-logs-datasource
+          access: proxy
+          url: http://hl-victoria-logs:9428
+
+  # Rules every host gets. Summaries name the host by the `server` label, which each scrape job
+  # in `scrape.yml` sets (README, "Before the first deploy").
+  host-alerts:
+    content: |
+      groups:
+        - name: host
+          rules:
+            - alert: TargetDown
+              expr: up == 0
+              for: 5m
+              annotations:
+                summary: "{{ $$labels.server }}: {{ $$labels.job }} has not answered a scrape for 5 minutes"
+            - alert: HostDiskSpaceLow
+              expr: node_filesystem_avail_bytes{fstype!~"tmpfs|overlay|squashfs|ramfs"} / node_filesystem_size_bytes < 0.1
+              for: 15m
+              annotations:
+                summary: "{{ $$labels.server }}: {{ $$labels.mountpoint }} has less than 10% free"
+            - alert: HostMemoryLow
+              expr: node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes < 0.05
+              for: 10m
+              annotations:
+                summary: "{{ $$labels.server }}: less than 5% of memory is available"
+            - alert: HostOverloaded
+              expr: node_load15 / on(server, instance) count by (server, instance) (node_cpu_seconds_total{mode="idle"}) > 2
+              for: 30m
+              annotations:
+                summary: "{{ $$labels.server }}: 15-minute load is over twice the CPU count"
+            - alert: HostHot
+              expr: node_hwmon_temp_celsius > 90
+              for: 10m
+              annotations:
+                summary: "{{ $$labels.server }}: sensor {{ $$labels.chip }} {{ $$labels.sensor }} is above 90 °C"

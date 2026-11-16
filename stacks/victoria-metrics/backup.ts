@@ -5,6 +5,7 @@ const backupConfig: BackupConfig = {
   sourcePaths: [
     `${VOLUMES_PATH}/victoria-metrics`,
     `${VOLUMES_PATH}/victoria-logs`,
+    `${VOLUMES_PATH}/grafana`,
   ],
   containers: {
     stop: "default",
