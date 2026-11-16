@@ -97,8 +97,9 @@ Both stores answer HTTP on their internal networks, so query them from inside a 
 ```bash
 # Metrics, PromQL
 docker exec hl-victoria-metrics wget -qO- 'http://127.0.0.1:8428/api/v1/query?query=up'
-# Logs, LogsQL: the last hour of one container's errors
-docker exec hl-victoria-logs wget -qO- --post-data 'query=_time:1h container:"hl-traefik" error' http://127.0.0.1:9428/select/logsql/query
+# Logs, LogsQL: the last hour of one container's errors. Recent VictoriaLogs
+# images have no wget, so ask from Grafana's container, which shares the network.
+docker exec hl-grafana wget -qO- --post-data 'query=_time:1h container:hl-traefik error' http://hl-victoria-logs:9428/select/logsql/query
 # What fires now
 docker exec hl-vmalert wget -qO- http://127.0.0.1:8880/api/v1/alerts
 ```
