@@ -1059,3 +1059,19 @@ Deno.test("printDeploySummary strips OSC and CSI escape sequences from a stack's
   assertStringIncludes(out, "compose")
   assertStringIncludes(out, "failed")
 })
+
+Deno.test("printDeploySummary shows the end of a long compose error, where compose puts the reason", () => {
+  const progress = Array.from({ length: 30 }, (_, i) => ` Image app:${i} Pulling `)
+  const out = summaryOf([{
+    name: "web",
+    deployAs: "web",
+    success: false,
+    error: [...progress, "", "Error response from daemon: toomanyrequests: rate limit", "", ""]
+      .join("\n"),
+  }]).join("\n")
+  assertStringIncludes(out, "toomanyrequests: rate limit")
+  assertStringIncludes(out, "(last lines)")
+  assertEquals(out.includes("app:0 "), false, out)
+  // Blank lines are dropped, so they do not use up the lines shown.
+  assertStringIncludes(out, "app:21 ")
+})

@@ -481,6 +481,9 @@ function printStackNotes(result: DeployResult): void {
   console.log(`     Recreated its containers: ${stripControlChars(result.recreated)}`)
 }
 
+/** How many lines of a failed stack's `docker compose` output the summary shows. */
+const ERROR_TAIL_LINES = 10
+
 /** Print a summary of deployment results. */
 export function printDeploySummary(results: DeployResult[]): void {
   console.log("\n========== DEPLOYMENT SUMMARY ==========")
@@ -517,8 +520,12 @@ export function printDeploySummary(results: DeployResult[]): void {
       } else if (result.error) {
         // The error is raw `docker compose` output from the server, so
         // anyone there could plant terminal escape sequences in it (#250).
-        const error = stripControlChars(result.error)
-        console.log(`     Error: ${error.substring(0, 200)}${error.length > 200 ? "..." : ""}`)
+        // `docker compose` prints pull and create progress first and the
+        // reason it failed last, so show the end.
+        const lines = stripControlChars(result.error).split("\n").filter((line) => line.trim())
+        const shown = lines.slice(-ERROR_TAIL_LINES)
+        console.log(`     Error:${lines.length > shown.length ? " (last lines)" : ""}`)
+        for (const line of shown) console.log(`     ${line.trim()}`)
       }
     }
   }
