@@ -33,7 +33,7 @@ monitoring stacks work together: [monitoring](monitoring.md).
 - [healthchecks](../../stacks/healthchecks/README.md) — cron-based
   health monitoring
 - [ntfy](../../stacks/ntfy/README.md) — push notifications / alerting
-- [victoria-metrics](../../stacks/victoria-metrics/README.md) — metrics
+- [victoria-metrics](../../stacks/victoria-metrics/README.md) — metrics, logs, alerts to ntfy and Grafana
   and logs storage (VictoriaMetrics + VictoriaLogs)
 - [watchtower](../../stacks/watchtower/README.md) — automatic container
   updates

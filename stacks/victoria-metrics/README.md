@@ -58,13 +58,24 @@ too, grouped by alert and server and repeated every 4 hours:
 - **Host rules**, built into `compose.yml`: a scrape target down for 5 minutes, a disk under 10%
   free, memory under 5% available, a 15-minute load over twice the CPU count, and a temperature
   sensor above 90 °C.
-- **Your own rules**: every `*.yml` file in the server's `configs/victoria-metrics/alerts/`
-  folder, in vmalert's rule format. A project that ships its metrics into this stack puts its rule
-  file there (Seed: `infra/configs/alerts.yml`), then restarts `hl-vmalert`.
+- **Your own rules**: every `*.yml` file in `servers/<server>/configs/victoria-metrics/alerts/` of
+  your rostok project, in vmalert's rule format. `rostok deploy` copies that folder to the server
+  and deletes files that are not in it, so a rule file copied straight to the server is lost on
+  the next deploy. A project that ships its metrics into this stack adds its rule file there
+  (Seed: `infra/configs/alerts.yml`), deploys, then restarts `hl-vmalert`. A file vmalert cannot
+  parse stops it from starting, host rules included: check it with `vmalert -dryRun` first.
+
+Every summary names the host by the `server` label, so set it on each scrape job (the sample
+`scrape.yml` below does).
 
 Set `VICTORIA_METRICS_ALERT_NTFY_URL`, `VICTORIA_METRICS_ALERT_NTFY_TOPIC` and
 `VICTORIA_METRICS_ALERT_NTFY_TOKEN` (a token that may publish to that topic). With the URL empty,
 alerts stay in Alertmanager and nothing is sent.
+
+## Upgrading an existing server
+
+The Grafana password is required. On a server that already runs the stack, run
+`rostok stack add victoria-metrics -s <server>` once to fill the new keys, then `rostok deploy`.
 
 ## Grafana
 
@@ -136,12 +147,15 @@ scrape_configs:
   - job_name: node
     static_configs:
       - targets: ["hl-node-exporter:9100"]
+        labels: { server: "<server>" }
   - job_name: cadvisor
     static_configs:
       - targets: ["hl-cadvisor:8080"]
+        labels: { server: "<server>" }
   - job_name: victoria-metrics
     static_configs:
       - targets: ["hl-victoria-metrics:8428"]
+        labels: { server: "<server>" }
 ```
 
 `promtail.yml`, docker container logs shipped to VictoriaLogs:

@@ -265,7 +265,7 @@ services:
   grafana:
     container_name: hl-grafana
     image: grafana/grafana:${VICTORIA_METRICS_GRAFANA_IMAGE_TAG:-13.2.3}
-    user: "0"
+    user: "${PUID:-1000}:${PGID:-1000}"
     environment:
       - GF_SECURITY_ADMIN_PASSWORD=${VICTORIA_METRICS_GRAFANA_PASSWORD:?set VICTORIA_METRICS_GRAFANA_PASSWORD}
       - GF_ANALYTICS_REPORTING_ENABLED=false
@@ -310,7 +310,8 @@ configs:
           access: proxy
           url: http://hl-victoria-logs:9428
 
-  # Rules every host gets. Each series carries the `server` label the scrape config sets.
+  # Rules every host gets. Summaries name the host by the `server` label, which each scrape job
+  # in `scrape.yml` sets (README, "Before the first deploy").
   host-alerts:
     content: |
       groups:
