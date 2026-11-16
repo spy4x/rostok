@@ -1,7 +1,8 @@
 # VictoriaMetrics Stack
 
 Primary observability stack. Provides metrics (VictoriaMetrics), logs (VictoriaLogs),
-and host/container-level exporters (node-exporter, cAdvisor).
+host/container-level exporters (node-exporter, cAdvisor), alerts to ntfy (vmalert, Alertmanager)
+and dashboards (Grafana, on the host's loopback only).
 
 Replaces the previous Prometheus + Loki stack with ~35% less memory and ~80% less CPU.
 
@@ -15,7 +16,10 @@ Replaces the previous Prometheus + Loki stack with ~35% less memory and ~80% les
 | `promtail`         | Log collector              | 128M         | 0.2       |
 | `node-exporter`    | Host metrics               | 64M          | 0.1       |
 | `cadvisor`         | Container metrics          | 256M         | 0.3       |
-| **Total**          |                            | **1088M**    | **1.4**   |
+| `vmalert`          | Evaluates alert rules      | 128M         | 0.2       |
+| `alertmanager`     | Sends alerts to ntfy       | 64M          | 0.1       |
+| `grafana`          | Dashboards                 | 512M         | 0.5       |
+| **Total**          |                            | **1792M**    | **2.2**   |
 
 ## Network and retention
 
@@ -25,7 +29,10 @@ secrets some services print included. So each store is reachable only on the sta
 networks:
 
 - `metrics`: `hl-victoria-metrics:8428` with vmagent, node-exporter and cAdvisor;
-- `logs`: `hl-victoria-logs:9428` with promtail, nothing else.
+- `logs`: `hl-victoria-logs:9428` with promtail and Grafana.
+
+Two more networks are not internal and hold no store: `alerts` (vmalert and Alertmanager, which
+sends to ntfy) and `grafana` (Grafana's host port and its plugin download).
 
 To query a store from a dashboard in another stack, connect that container to the store's network
 yourself (`docker network ls` shows it as `victoria-metrics_logs` or `victoria-metrics_metrics`),
@@ -42,6 +49,48 @@ unit means months.
    ```bash
    rostok deploy <server>
    ```
+
+## Alerts
+
+vmalert evaluates two sets of rules and Alertmanager sends what fires to ntfy, resolved alerts
+too, grouped by alert and server and repeated every 4 hours:
+
+- **Host rules**, built into `compose.yml`: a scrape target down for 5 minutes, a disk under 10%
+  free, memory under 5% available, a 15-minute load over twice the CPU count, and a temperature
+  sensor above 90 °C.
+- **Your own rules**: every `*.yml` file in the server's `configs/victoria-metrics/alerts/`
+  folder, in vmalert's rule format. A project that ships its metrics into this stack puts its rule
+  file there (Seed: `infra/configs/alerts.yml`), then restarts `hl-vmalert`.
+
+Set `VICTORIA_METRICS_ALERT_NTFY_URL`, `VICTORIA_METRICS_ALERT_NTFY_TOPIC` and
+`VICTORIA_METRICS_ALERT_NTFY_TOKEN` (a token that may publish to that topic). With the URL empty,
+alerts stay in Alertmanager and nothing is sent.
+
+## Grafana
+
+Grafana listens on `127.0.0.1:3000` of the server (`VICTORIA_METRICS_GRAFANA_PORT`), never
+behind Traefik. From another machine, open an SSH tunnel and browse `http://localhost:3000`:
+
+```bash
+ssh -L 3000:127.0.0.1:3000 <server>
+```
+
+Sign in as `admin` with `VICTORIA_METRICS_GRAFANA_PASSWORD`. Both stores are already set up as
+data sources; Grafana downloads the VictoriaLogs plugin at its first start. Its data is in
+`${VOLUMES_PATH}/grafana` and in the stack's backup.
+
+## Querying from a shell
+
+Both stores answer HTTP on their internal networks, so query them from inside a container:
+
+```bash
+# Metrics, PromQL
+docker exec hl-victoria-metrics wget -qO- 'http://127.0.0.1:8428/api/v1/query?query=up'
+# Logs, LogsQL: the last hour of one container's errors
+docker exec hl-victoria-logs wget -qO- --post-data 'query=_time:1h container:"hl-traefik" error' http://127.0.0.1:9428/select/logsql/query
+# What fires now
+docker exec hl-vmalert wget -qO- http://127.0.0.1:8880/api/v1/alerts
+```
 
 ## SELinux hosts
 
@@ -66,8 +115,9 @@ until you connect `hl-vmagent` to that stack's network.
 
 ## Variables
 
-Declared in `+meta.ts`. The stack has no variables of its own and no Traefik route; it reads only
-server-level keys (`DOCKER_GROUP_ID`, `VOLUMES_PATH`, `PATH_APPS`). The scrape and promtail
+Declared in `+meta.ts`: image tags, the Grafana password and host address, and the three ntfy
+settings for alerts. The stack has no Traefik route; it also reads the server-level keys
+`DOCKER_GROUP_ID`, `VOLUMES_PATH` and `PATH_APPS`. The scrape and promtail
 configs live in the server's `configs/victoria-metrics/` folder.
 
 ## Before the first deploy
