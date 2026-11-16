@@ -481,10 +481,10 @@ function printStackNotes(result: DeployResult): void {
   console.log(`     Recreated its containers: ${stripControlChars(result.recreated)}`)
 }
 
-/** Print a summary of deployment results. */
 /** How many lines of a failed stack's `docker compose` output the summary shows. */
 const ERROR_TAIL_LINES = 10
 
+/** Print a summary of deployment results. */
 export function printDeploySummary(results: DeployResult[]): void {
   console.log("\n========== DEPLOYMENT SUMMARY ==========")
 

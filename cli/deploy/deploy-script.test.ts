@@ -1066,9 +1066,12 @@ Deno.test("printDeploySummary shows the end of a long compose error, where compo
     name: "web",
     deployAs: "web",
     success: false,
-    error: [...progress, "Error response from daemon: toomanyrequests: rate limit"].join("\n"),
+    error: [...progress, "", "Error response from daemon: toomanyrequests: rate limit", "", ""]
+      .join("\n"),
   }]).join("\n")
   assertStringIncludes(out, "toomanyrequests: rate limit")
   assertStringIncludes(out, "(last lines)")
   assertEquals(out.includes("app:0 "), false, out)
+  // Blank lines are dropped, so they do not use up the lines shown.
+  assertStringIncludes(out, "app:21 ")
 })
