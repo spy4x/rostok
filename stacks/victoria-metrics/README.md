@@ -57,7 +57,8 @@ too, grouped by alert and server and repeated every 4 hours:
 
 - **Host rules**, built into `compose.yml`: a scrape target down for 5 minutes, a disk under 10%
   free, memory under 5% available, a 15-minute load over twice the CPU count, and a temperature
-  sensor above 90 °C.
+  sensor for 15 minutes within 5 °C of its critical limit, or at 95 °C when it reports none.
+  Each ntfy message is titled "<server>: <alert>", so the hosts are easy to tell apart.
 - **Your own rules**: every `*.yml` file in `servers/<server>/configs/victoria-metrics/alerts/` of
   your rostok project, in vmalert's rule format. `rostok deploy` copies that folder to the server
   and deletes files that are not in it, so a rule file copied straight to the server is lost on
