@@ -11,7 +11,7 @@ them rather than repeating them.
 | [gatus](../../stacks/gatus/README.md)                               | URLs you list: status code, response time, body               | its status page, and ntfy alerts               |
 | [zond](../../stacks/zond/README.md)                                 | containers on the `proxy` network that have no public URL     | an HTTP answer (200 or 503) that gatus checks  |
 | [oko](../../stacks/oko/README.md)                                   | nothing itself: shows gatus's results as one page of services | its dashboard                                  |
-| [victoria-metrics](../../stacks/victoria-metrics/README.md)         | host and container metrics, and every container's log         | ntfy alerts; Grafana on the host's loopback   |
+| [victoria-metrics](../../stacks/victoria-metrics/README.md)         | host and container metrics, and every container's log         | ntfy alerts; Grafana on the host's loopback    |
 | [ntfy](../../stacks/ntfy/README.md)                                 | nothing: it delivers the alerts the others send               | phone and desktop push                         |
 | [watchtower](../../stacks/watchtower/README.md)                     | new versions of the images your containers run, once a day    | nothing: no notifications are configured       |
 | [healthchecks](../../stacks/healthchecks/README.md)                 | jobs that must ping it on time, such as the backup runner     | its own e-mail alerts                          |
