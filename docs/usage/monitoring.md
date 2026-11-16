@@ -11,7 +11,7 @@ them rather than repeating them.
 | [gatus](../../stacks/gatus/README.md)                               | URLs you list: status code, response time, body               | its status page, and ntfy alerts               |
 | [zond](../../stacks/zond/README.md)                                 | containers on the `proxy` network that have no public URL     | an HTTP answer (200 or 503) that gatus checks  |
 | [oko](../../stacks/oko/README.md)                                   | nothing itself: shows gatus's results as one page of services | its dashboard                                  |
-| [victoria-metrics](../../stacks/victoria-metrics/README.md)         | host and container metrics, and every container's log         | ntfy alerts, and Grafana on the host's loopback |
+| [victoria-metrics](../../stacks/victoria-metrics/README.md)         | host and container metrics, and every container's log         | ntfy alerts; Grafana on the host's loopback   |
 | [ntfy](../../stacks/ntfy/README.md)                                 | nothing: it delivers the alerts the others send               | phone and desktop push                         |
 | [watchtower](../../stacks/watchtower/README.md)                     | new versions of the images your containers run, once a day    | nothing: no notifications are configured       |
 | [healthchecks](../../stacks/healthchecks/README.md)                 | jobs that must ping it on time, such as the backup runner     | its own e-mail alerts                          |
@@ -87,7 +87,8 @@ The victoria-metrics stack keeps 14 days of host metrics (node-exporter), contai
 (cAdvisor) and container logs (promtail into VictoriaLogs). vmalert checks host rules (and any
 rule files you add) and Alertmanager sends what fires to ntfy. Grafana shows both stores on
 `127.0.0.1:3000` of the server, with no Traefik route; open it through an SSH tunnel. The stores
-take no password, so they sit on internal networks only, shared with Grafana and nothing else.
+take no password, so they sit on internal networks only, shared only with the stack's own
+services (the collectors, vmalert and Grafana).
 To read them from another container, connect it to the store's network yourself; anything on
 that network reads all the data, logs included. To scrape a target in another stack, connect `hl-vmagent` to
 that stack's network. Both steps are in the victoria-metrics README.
