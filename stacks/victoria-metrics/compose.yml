@@ -209,8 +209,9 @@ services:
       - metrics
       - alerts
 
-  # Alertmanager — sends vmalert's alerts to ntfy, which formats Alertmanager's webhook itself
-  # (`?template=alertmanager`). With VICTORIA_METRICS_ALERT_NTFY_URL empty the alerts are kept here
+  # Alertmanager — sends vmalert's alerts to ntfy, which renders Alertmanager's webhook with the
+  # inline Go templates in NTFY_TEMPLATE: titled "<server>: <alert>", one summary per line.
+  # With VICTORIA_METRICS_ALERT_NTFY_URL empty the alerts are kept here
   # and sent nowhere, so a server without ntfy still starts the stack.
   alertmanager:
     container_name: hl-alertmanager
@@ -219,6 +220,10 @@ services:
       - ALERT_NTFY_URL=${VICTORIA_METRICS_ALERT_NTFY_URL:-}
       - ALERT_NTFY_TOPIC=${VICTORIA_METRICS_ALERT_NTFY_TOPIC:-alerts}
       - ALERT_NTFY_TOKEN=${VICTORIA_METRICS_ALERT_NTFY_TOKEN:-}
+      # URL-encoded ntfy query. Title: {{(index .alerts 0).labels.server}}:
+      # {{(index .alerts 0).labels.alertname}}{{if eq .status "resolved"}} resolved{{end}}.
+      # Message, per alert: {{if eq .status "resolved"}}Resolved: {{end}}{{.annotations.summary}}
+      - NTFY_TEMPLATE=tpl=yes&t=%7B%7B%28index%20.alerts%200%29.labels.server%7D%7D%3A%20%7B%7B%28index%20.alerts%200%29.labels.alertname%7D%7D%7B%7Bif%20eq%20.status%20%22resolved%22%7D%7D%20resolved%7B%7Bend%7D%7D&m=%7B%7Brange%20.alerts%7D%7D%7B%7Bif%20eq%20.status%20%22resolved%22%7D%7DResolved%3A%20%7B%7Bend%7D%7D%7B%7B.annotations.summary%7D%7D%0A%7B%7Bend%7D%7D
     # Alertmanager reads no environment variables, so the config is written from them at start.
     # The files are private to the container's user: one of them holds the token.
     entrypoint:
@@ -235,7 +240,7 @@ services:
             echo 'receivers:'
             echo '  - name: ntfy'
             if [ -n "$$ALERT_NTFY_URL" ]; then
-              printf '%s' "$${ALERT_NTFY_URL%/}/$$ALERT_NTFY_TOPIC?template=alertmanager" > ntfy-url
+              printf '%s' "$${ALERT_NTFY_URL%/}/$$ALERT_NTFY_TOPIC?$$NTFY_TEMPLATE" > ntfy-url
               echo '    webhook_configs:'
               echo '      - url_file: /alertmanager/ntfy-url'
               echo '        send_resolved: true'
@@ -337,8 +342,20 @@ configs:
               for: 30m
               annotations:
                 summary: "{{ $$labels.server }}: 15-minute load is over twice the CPU count"
+            # A sensor within 5 °C of its own critical limit, or at 95 °C when it reports none:
+            # AMD CPUs run above 90 °C under load by design, and a desktop Ryzen throttles at 95 °C.
+            # The join adds the sensor's name ("Tctl", "Composite"); unnamed sensors keep chip/sensor.
             - alert: HostHot
-              expr: node_hwmon_temp_celsius > 90
-              for: 10m
+              expr: |
+                (
+                  (node_hwmon_temp_celsius >= on(server, instance, chip, sensor) (node_hwmon_temp_crit_celsius - 5))
+                  or ((node_hwmon_temp_celsius unless on(server, instance, chip, sensor) node_hwmon_temp_crit_celsius) >= 95)
+                ) * on(server, instance, chip, sensor) group_left(label) node_hwmon_sensor_label
+                or on(server, instance, chip, sensor)
+                (
+                  (node_hwmon_temp_celsius >= on(server, instance, chip, sensor) (node_hwmon_temp_crit_celsius - 5))
+                  or ((node_hwmon_temp_celsius unless on(server, instance, chip, sensor) node_hwmon_temp_crit_celsius) >= 95)
+                )
+              for: 15m
               annotations:
-                summary: "{{ $$labels.server }}: sensor {{ $$labels.chip }} {{ $$labels.sensor }} is above 90 °C"
+                summary: '{{ $$labels.server }}: {{ if $$labels.label }}{{ $$labels.label }}{{ else }}{{ $$labels.chip }} {{ $$labels.sensor }}{{ end }} has been at {{ $$value | printf "%.0f" }} °C for 15 minutes, near its limit. Check the cooling (dust, fans, thermal paste) or lower the load.'
