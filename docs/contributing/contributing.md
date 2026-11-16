@@ -79,8 +79,9 @@ every stack's `+meta.ts` agrees with its `compose.yml` and hooks.
 ## Real-server test
 
 `deno task e2e:vps` does what a new user does, on a real machine: it
-creates the cheapest x86 Hetzner Cloud server with a throwaway SSH
-key, installs rostok, runs the wizard, adds traefik, gatus, librespeed
+creates the cheapest x86 Hetzner Cloud server with at least 2 cores
+(on 1 core, stacks with a 2-CPU cap fail to deploy, #584) and a
+throwaway SSH key, installs rostok, runs the wizard, adds traefik, gatus, librespeed
 and piped, deploys, and then checks that every container is healthy,
 that each service answers over HTTPS, that the `.env` files are mode
 600 and that a second deploy changes nothing. Then it deletes the
