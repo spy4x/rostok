@@ -40,6 +40,16 @@ export default {
       required: false,
     },
     {
+      key: "WOODPECKER_CI_MEM_LIMIT",
+      default: "0",
+      required: false,
+    },
+    {
+      key: "WOODPECKER_CI_AGENT_LABELS",
+      default: "",
+      required: false,
+    },
+    {
       key: "WOODPECKER_DOMAIN",
       question: "Public domain for Woodpecker?",
       default: "ci.${DOMAIN}",

@@ -38,5 +38,15 @@ export default {
       default: "",
       required: false,
     },
+    {
+      key: "CI_AGENT_MEM_LIMIT",
+      default: "0",
+      required: false,
+    },
+    {
+      key: "CI_AGENT_AGENT_LABELS",
+      default: "",
+      required: false,
+    },
   ],
 } satisfies StackMeta

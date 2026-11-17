@@ -50,22 +50,26 @@ steps:
 Declared in `+meta.ts`. Requires the `traefik` stack. Server-level keys `DOCKER_GROUP_ID`,
 `PUID` and `PGID` are shared by every stack.
 
-| Key                        | Default           | Meaning                                      |
-| -------------------------- | ----------------- | -------------------------------------------- |
-| `WOODPECKER_DOMAIN`        | `ci.${DOMAIN}`    | Public host of the web UI and OAuth callback |
-| `WOODPECKER_AGENT_SECRET`  | generated, secret | Shared secret between server and agent       |
-| `WOODPECKER_GITHUB_CLIENT` | asked             | Client ID of the GitHub OAuth app            |
-| `WOODPECKER_GITHUB_SECRET` | asked, secret     | Client secret of the GitHub OAuth app        |
-| `WOODPECKER_ADMIN`         | asked             | GitHub login that administers Woodpecker     |
-| `WOODPECKER_MAX_WORKFLOWS` | `4`               | Workflows the agent runs at once             |
-| `WOODPECKER_CI_CPU_SET`    | empty (all)       | CPUs workflows may use, such as `2-5,8-11`   |
-| `WOODPECKER_GRPC_DOMAIN`   | unset             | gRPC host for agents on other machines       |
+| Key                          | Default           | Meaning                                      |
+| ---------------------------- | ----------------- | -------------------------------------------- |
+| `WOODPECKER_DOMAIN`          | `ci.${DOMAIN}`    | Public host of the web UI and OAuth callback |
+| `WOODPECKER_AGENT_SECRET`    | generated, secret | Shared secret between server and agent       |
+| `WOODPECKER_GITHUB_CLIENT`   | asked             | Client ID of the GitHub OAuth app            |
+| `WOODPECKER_GITHUB_SECRET`   | asked, secret     | Client secret of the GitHub OAuth app        |
+| `WOODPECKER_ADMIN`           | asked             | GitHub login that administers Woodpecker     |
+| `WOODPECKER_MAX_WORKFLOWS`   | `4`               | Workflows the agent runs at once             |
+| `WOODPECKER_CI_CPU_SET`      | empty (all)       | CPUs workflows may use, such as `2-5,8-11`   |
+| `WOODPECKER_CI_MEM_LIMIT`    | `0` (none)        | Memory per workflow container in bytes       |
+| `WOODPECKER_CI_AGENT_LABELS` | empty             | Labels the agent reports                     |
+| `WOODPECKER_GRPC_DOMAIN`     | unset             | gRPC host for agents on other machines       |
 
 Each workflow runs as its own containers next to the agent, outside the agent's memory and CPU
 limits. Before raising `WOODPECKER_MAX_WORKFLOWS`, check that the host's free memory holds that
 many of your heaviest pipelines at their peak (`docker stats` on the `wp_*` containers during a
 run). On a host that also serves other things, set `WOODPECKER_CI_CPU_SET` to all but a core or
-two (`lscpu -e=CPU,CORE` lists which CPU numbers share a core), so a busy CI never starves them.
+two (`lscpu -e=CPU,CORE` lists which CPU numbers share a core), so a busy CI never starves them,
+and `WOODPECKER_CI_MEM_LIMIT` so one step cannot take all its memory. Labels, which send only light
+workflows to a weaker agent: the `ci-agent` stack's README, "Labels".
 
 ## Agents on other machines
 

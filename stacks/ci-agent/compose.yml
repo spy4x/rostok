@@ -20,6 +20,13 @@ services:
       # CPUs the workflow containers may use (Docker cpuset, such as "2-5,8-11"). Empty: all.
       # Keeping some cores out of it leaves them to the machine's other work under CI load.
       - WOODPECKER_BACKEND_DOCKER_LIMIT_CPU_SET=${CI_AGENT_CPU_SET:-}
+      # Memory each workflow container may use, in bytes (10737418240 is 10 GiB). 0: no limit. Swap
+      # gets the same value, which Docker reads as memory plus swap, so a step cannot swap past it.
+      - WOODPECKER_BACKEND_DOCKER_LIMIT_MEM=${CI_AGENT_MEM_LIMIT:-0}
+      - WOODPECKER_BACKEND_DOCKER_LIMIT_MEM_SWAP=${CI_AGENT_MEM_LIMIT:-0}
+      # Labels the agent reports, comma-separated key=value. A "!" before a key makes the agent take
+      # only workflows that set that label. Routing, not a security boundary (README, "Labels").
+      - WOODPECKER_AGENT_LABELS=${CI_AGENT_AGENT_LABELS:-}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       # agent.conf keeps the id the server gave the agent, so a restart does not register a new one.
