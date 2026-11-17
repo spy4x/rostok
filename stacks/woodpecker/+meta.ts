@@ -35,6 +35,11 @@ export default {
       required: false,
     },
     {
+      key: "WOODPECKER_CI_CPU_SET",
+      default: "",
+      required: false,
+    },
+    {
       key: "WOODPECKER_DOMAIN",
       question: "Public domain for Woodpecker?",
       default: "ci.${DOMAIN}",
