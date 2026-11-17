@@ -44,3 +44,29 @@ Deno.test("woodpecker compose.yml: the web UI route keeps port 8000 next to the 
   assertEquals(labels["traefik.http.routers.hl-woodpecker.service"], "hl-woodpecker")
   assertEquals(labels["traefik.http.services.hl-woodpecker.loadbalancer.server.port"], "8000")
 })
+
+Deno.test("woodpecker compose.yml: the agent passes the memory limit to memory and swap, and the labels", async () => {
+  const agentEnv = async (env: Record<string, string>) => {
+    const compose = parse(await renderCompose("woodpecker", env)) as {
+      services: Record<string, { environment: string[] }>
+    }
+    return compose.services["woodpecker-agent"].environment.filter((e) =>
+      /^WOODPECKER_(BACKEND_DOCKER_LIMIT_MEM|AGENT_LABELS)/.test(e)
+    )
+  }
+  assertEquals(await agentEnv(base), [
+    "WOODPECKER_BACKEND_DOCKER_LIMIT_MEM=0",
+    "WOODPECKER_BACKEND_DOCKER_LIMIT_MEM_SWAP=0",
+    "WOODPECKER_AGENT_LABELS=",
+  ])
+  const set = {
+    ...base,
+    WOODPECKER_CI_MEM_LIMIT: "6442450944",
+    WOODPECKER_CI_AGENT_LABELS: "size=small",
+  }
+  assertEquals(await agentEnv(set), [
+    "WOODPECKER_BACKEND_DOCKER_LIMIT_MEM=6442450944",
+    "WOODPECKER_BACKEND_DOCKER_LIMIT_MEM_SWAP=6442450944",
+    "WOODPECKER_AGENT_LABELS=size=small",
+  ])
+})

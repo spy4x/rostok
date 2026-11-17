@@ -89,3 +89,24 @@ Deno.test("ci-agent compose.yml: can share a server with the woodpecker stack an
   assertEquals(mine["ci-agent"].labels, undefined)
   assertEquals(mine["ci-agent"].depends_on, undefined)
 })
+
+/** The step limit and label lines of the agent's environment. */
+const limits = (s: Service) =>
+  s.environment.filter((e) => /^WOODPECKER_(BACKEND_DOCKER_LIMIT_MEM|AGENT_LABELS)/.test(e))
+
+Deno.test("ci-agent compose.yml: no memory limit and no labels unless set", async () => {
+  assertEquals(limits(await agent(env)), [
+    "WOODPECKER_BACKEND_DOCKER_LIMIT_MEM=0",
+    "WOODPECKER_BACKEND_DOCKER_LIMIT_MEM_SWAP=0",
+    "WOODPECKER_AGENT_LABELS=",
+  ])
+})
+
+Deno.test("ci-agent compose.yml: passes the memory limit to memory and swap, and the labels", async () => {
+  const set = { ...env, CI_AGENT_MEM_LIMIT: "8589934592", CI_AGENT_AGENT_LABELS: "!size=small" }
+  assertEquals(limits(await agent(set)), [
+    "WOODPECKER_BACKEND_DOCKER_LIMIT_MEM=8589934592",
+    "WOODPECKER_BACKEND_DOCKER_LIMIT_MEM_SWAP=8589934592",
+    "WOODPECKER_AGENT_LABELS=!size=small",
+  ])
+})

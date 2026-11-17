@@ -28,12 +28,35 @@ declare a key, so both stacks can live on one server.
 | `CI_AGENT_SECRET`        | asked, secret | A copy of the server's `WOODPECKER_AGENT_SECRET`               |
 | `CI_AGENT_MAX_WORKFLOWS` | `4`           | Workflows the agent runs at once                               |
 | `CI_AGENT_CPU_SET`       | empty (all)   | CPUs workflows may use, such as `2-5,8-11`                     |
+| `CI_AGENT_MEM_LIMIT`     | `0` (none)    | Memory per workflow container in bytes, swap included          |
+| `CI_AGENT_AGENT_LABELS`  | empty         | Labels the agent reports, such as `!size=small` ("Labels")     |
 
 Deploy stops with an error while the gRPC host or the secret is empty.
 
 Each workflow runs as its own containers next to the agent, outside the agent's memory and CPU
 limits. Size `CI_AGENT_MAX_WORKFLOWS` to the machine's free memory and cores, and set
-`CI_AGENT_CPU_SET` to keep a core or two free for the machine's other work.
+`CI_AGENT_CPU_SET` to keep a core or two free for the machine's other work. Set
+`CI_AGENT_MEM_LIMIT` (for example `10737418240`, 10 GiB) so one step that leaks or builds something
+large hits its own limit instead of pushing the machine's other work into swap. Measure first:
+`docker stats` on the `wp_*` containers during your heaviest pipeline.
+
+## Labels
+
+Without labels any agent takes any workflow, so a weak second machine (a laptop, a small board)
+takes browser suites and image builds it runs several times slower than the main agent. One label
+routes by size:
+
+- the main agent: `size=small` (`CI_AGENT_AGENT_LABELS`, or `WOODPECKER_CI_AGENT_LABELS` in the
+  `woodpecker` stack). It takes every workflow, labelled or not;
+- the weaker agent: `!size=small`. The `!` makes it take only workflows that set the label;
+- a project's light workflow (format, lint, type-check, unit tests): `labels: { size: small }`.
+
+A workflow that sets a label waits until an agent reports it, so give the agents their labels
+before any workflow sets one.
+
+Labels route work; they are not a security boundary. An agent reports its own labels, so a
+compromised agent can claim any of them. To restrict which workflows an agent may receive, use the
+server's agent filter (Settings → Agents), which overrides the agent's labels.
 
 ## Security
 
