@@ -58,12 +58,14 @@ Declared in `+meta.ts`. Requires the `traefik` stack. Server-level keys `DOCKER_
 | `WOODPECKER_GITHUB_SECRET` | asked, secret     | Client secret of the GitHub OAuth app        |
 | `WOODPECKER_ADMIN`         | asked             | GitHub login that administers Woodpecker     |
 | `WOODPECKER_MAX_WORKFLOWS` | `4`               | Workflows the agent runs at once             |
+| `WOODPECKER_CI_CPU_SET`    | empty (all)       | CPUs workflows may use, such as `2-5,8-11`   |
 | `WOODPECKER_GRPC_DOMAIN`   | unset             | gRPC host for agents on other machines       |
 
 Each workflow runs as its own containers next to the agent, outside the agent's memory and CPU
 limits. Before raising `WOODPECKER_MAX_WORKFLOWS`, check that the host's free memory holds that
 many of your heaviest pipelines at their peak (`docker stats` on the `wp_*` containers during a
-run).
+run). On a host that also serves other things, set `WOODPECKER_CI_CPU_SET` to all but a core or
+two (`lscpu -e=CPU,CORE` lists which CPU numbers share a core), so a busy CI never starves them.
 
 ## Agents on other machines
 

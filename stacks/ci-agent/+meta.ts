@@ -33,5 +33,10 @@ export default {
       default: "4",
       required: false,
     },
+    {
+      key: "CI_AGENT_CPU_SET",
+      default: "",
+      required: false,
+    },
   ],
 } satisfies StackMeta

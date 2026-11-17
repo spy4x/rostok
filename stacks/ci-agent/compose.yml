@@ -17,6 +17,9 @@ services:
       # Workflows the agent runs at once. Each one runs as its own containers beside the agent,
       # outside the agent's limits below, so size it to the host's free memory and cores.
       - WOODPECKER_MAX_WORKFLOWS=${CI_AGENT_MAX_WORKFLOWS:-4}
+      # CPUs the workflow containers may use (Docker cpuset, such as "2-5,8-11"). Empty: all.
+      # Keeping some cores out of it leaves them to the machine's other work under CI load.
+      - WOODPECKER_BACKEND_DOCKER_LIMIT_CPU_SET=${CI_AGENT_CPU_SET:-}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       # agent.conf keeps the id the server gave the agent, so a restart does not register a new one.

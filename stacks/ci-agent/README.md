@@ -27,11 +27,13 @@ declare a key, so both stacks can live on one server.
 | `CI_AGENT_GRPC_DOMAIN`   | asked         | The server's `WOODPECKER_GRPC_DOMAIN`; the agent uses port 443 |
 | `CI_AGENT_SECRET`        | asked, secret | A copy of the server's `WOODPECKER_AGENT_SECRET`               |
 | `CI_AGENT_MAX_WORKFLOWS` | `4`           | Workflows the agent runs at once                               |
+| `CI_AGENT_CPU_SET`       | empty (all)   | CPUs workflows may use, such as `2-5,8-11`                     |
 
 Deploy stops with an error while the gRPC host or the secret is empty.
 
 Each workflow runs as its own containers next to the agent, outside the agent's memory and CPU
-limits. Size `CI_AGENT_MAX_WORKFLOWS` to the machine's free memory and cores.
+limits. Size `CI_AGENT_MAX_WORKFLOWS` to the machine's free memory and cores, and set
+`CI_AGENT_CPU_SET` to keep a core or two free for the machine's other work.
 
 ## Security
 

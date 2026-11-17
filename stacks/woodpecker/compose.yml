@@ -125,6 +125,9 @@ services:
       # Workflows the agent runs at once. Each one runs as its own containers beside the agent,
       # outside the agent's limits below, so size it to the host's free memory and cores.
       - WOODPECKER_MAX_WORKFLOWS=${WOODPECKER_MAX_WORKFLOWS:-4}
+      # CPUs the workflow containers may use (Docker cpuset, such as "2-5,8-11"). Empty: all.
+      # Keeping some cores out of it leaves them to the host's other services under CI load.
+      - WOODPECKER_BACKEND_DOCKER_LIMIT_CPU_SET=${WOODPECKER_CI_CPU_SET:-}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - ${VOLUMES_PATH}/woodpecker-agent/cache:/woodpecker/cache # Empty unless a pipeline uses it as its cache
