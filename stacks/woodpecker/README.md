@@ -85,6 +85,13 @@ repository.
 Unset or empty, the route matches no connection, so gRPC stays reachable only by the agent in this
 stack.
 
+## Agent id
+
+`${VOLUMES_PATH}/woodpecker-agent/config/agent.conf` keeps the id the server gave the agent, so a
+recreated container (a deploy, an image update) does not register a new agent. It has no backup:
+when it is lost, the agent registers again once, and you can delete the old entry in the server's
+agent list.
+
 ## Database and build logs
 
 The server keeps its state in SQLite at `${VOLUMES_PATH}/woodpecker-server/woodpecker.sqlite`,
