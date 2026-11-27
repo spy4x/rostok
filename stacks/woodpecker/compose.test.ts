@@ -70,3 +70,17 @@ Deno.test("woodpecker compose.yml: the agent passes the memory limit to memory a
     "WOODPECKER_AGENT_LABELS=size=small",
   ])
 })
+
+Deno.test("woodpecker compose.yml: agent.conf survives a recreated container, so the agent keeps its id", async () => {
+  const compose = parse(
+    await renderCompose("woodpecker", { ...base, VOLUMES_PATH: `/srv/volumes` }),
+  ) as {
+    services: Record<string, { volumes: string[] }>
+  }
+  assertEquals(
+    compose.services["woodpecker-agent"].volumes.includes(
+      `/srv/volumes/woodpecker-agent/config:/etc/woodpecker:z`,
+    ),
+    true,
+  )
+})
