@@ -51,7 +51,9 @@ monitoring stacks work together: [monitoring](monitoring.md).
 - [audiobookshelf](../../stacks/audiobookshelf/README.md) — audiobook +
   podcast server
 - [filebrowser](../../stacks/filebrowser/README.md) — web-based file
-  manager
+  manager (archived upstream; use quantum-filebrowser)
+- [quantum-filebrowser](../../stacks/quantum-filebrowser/README.md) —
+  web-based file manager, the maintained File Browser fork
 - [metube](../../stacks/metube/README.md) — YouTube/bandcamp downloader
 
 ### Communication

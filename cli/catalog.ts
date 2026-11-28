@@ -39,6 +39,7 @@ import gatus from "../stacks/gatus/+meta.ts"
 import vaultwarden from "../stacks/vaultwarden/+meta.ts"
 import jellyfin from "../stacks/jellyfin/+meta.ts"
 import filebrowser from "../stacks/filebrowser/+meta.ts"
+import quantumFilebrowser from "../stacks/quantum-filebrowser/+meta.ts"
 import librespeed from "../stacks/librespeed/+meta.ts"
 import deepseekHarness from "../stacks/deepseek-harness/+meta.ts"
 import watchtower from "../stacks/watchtower/+meta.ts"
@@ -92,6 +93,7 @@ const STACK_META: Record<string, StackMeta> = {
   vaultwarden,
   jellyfin,
   filebrowser,
+  "quantum-filebrowser": quantumFilebrowser,
   librespeed,
   "deepseek-harness": deepseekHarness,
   watchtower,

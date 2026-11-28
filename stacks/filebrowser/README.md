@@ -1,5 +1,9 @@
 # FileBrowser
 
+> **Archived upstream.** The File Browser project (filebrowser/filebrowser) is archived and gets
+> no more releases. Use [quantum-filebrowser](../quantum-filebrowser/README.md), the maintained
+> fork, which mounts the same folders. Its README has a "Moving from filebrowser" section.
+
 Web-based file manager for server files.
 
 ## Features

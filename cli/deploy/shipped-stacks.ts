@@ -39,6 +39,10 @@ export const SHIPPED_STACK_FILES: Record<string, readonly string[]> = {
   filebrowser: [
     "compose.yml",
   ],
+  "quantum-filebrowser": [
+    "compose.yml",
+    "config.yaml",
+  ],
   librespeed: [
     "compose.yml",
   ],
