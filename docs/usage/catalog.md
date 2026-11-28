@@ -123,6 +123,8 @@ monitoring stacks work together: [monitoring](monitoring.md).
 - [caldiy](../../stacks/caldiy/README.md) — DIY CalDAV server (older
   setup, replaced by Stalwart)
 - [librespeed](../../stacks/librespeed/README.md) — LAN speed test
+- [solidtime](../../stacks/solidtime/README.md) — time tracking with reports and a desktop
+  app
 - [traggo](../../stacks/traggo/README.md) — time tracking
 
 ## Listing programmatically

@@ -23,6 +23,10 @@ const REQUIRED: [string, string, keyof Service, string[]][] = [
   ["mirotalk", "mirotalk", "environment", ["STATS_ENABLED=false", "SURVEY_ENABLED=false"]],
   ["bulwark", "bulwark", "environment", ["BULWARK_TELEMETRY=off", "BULWARK_UPDATE_CHECK=off"]],
   ["caldiy", "caldiy", "environment", ["CALCOM_TELEMETRY_DISABLED=1"]],
+  ["solidtime", "solidtime-scheduler", "environment", [
+    "SCHEDULING_TASK_SELF_HOSTING_TELEMETRY=false",
+    "SCHEDULING_TASK_SELF_HOSTING_CHECK_FOR_UPDATE=false",
+  ]],
   ["gitea", "gitea", "environment", ["GITEA__cron_0X2E_update_checker__ENABLED=false"]],
   ["woodpecker", "woodpecker-server", "environment", ["WOODPECKER_DISABLE_VERSION_CHECK=true"]],
   ["open-webui", "open-webui", "environment", [
@@ -43,6 +47,11 @@ async function service(stack: string, name: string): Promise<Service> {
   const compose = parse(text) as { services: Record<string, Service> }
   const found = compose.services[name]
   assert(found, `${stack}: no service ${name}`)
+  // An `environment` mapping (`KEY: value`) is compared in its list form, `KEY=value`.
+  const env: unknown = found.environment
+  if (env && !Array.isArray(env)) {
+    found.environment = Object.entries(env).map(([k, v]) => `${k}=${v}`)
+  }
   return found
 }
 

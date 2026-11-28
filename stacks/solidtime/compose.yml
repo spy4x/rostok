@@ -1,0 +1,215 @@
+name: ${PROJECT}
+
+networks:
+  proxy:
+    external: true
+  # The stack's own containers talk here: the database and Gotenberg have no route to the outside.
+  solidtime:
+    internal: true
+  # The scheduler and the queue worker send mail, so they need a way out. The web app gets one
+  # through `proxy`.
+  solidtime-egress:
+
+# Settings that the three solidtime containers (web, scheduler, queue) share; each merges them into
+# its own `environment` with `<<:`.
+x-solidtime-environment: &solidtime-environment
+  APP_ENV: production
+  APP_DEBUG: "false"
+  APP_URL: https://${SOLIDTIME_DOMAIN:-time.${DOMAIN}}
+  APP_FORCE_HTTPS: "true"
+  APP_KEY: ${SOLIDTIME_APP_KEY}
+  # Traefik reaches the app over the private `proxy` network.
+  TRUSTED_PROXIES: 10.0.0.0/8,172.16.0.0/12,192.168.0.0/16
+  # Nobody can sign up from the login page; create accounts with `php artisan admin:user:create`
+  # (README). `invite-only` or `on` opens it.
+  APP_ENABLE_REGISTRATION: "off"
+  # Comma-separated e-mail addresses that may open the admin panel at /admin.
+  SUPER_ADMINS: ${SOLIDTIME_SUPER_ADMINS:-}
+  LOG_CHANNEL: stderr
+  LOG_LEVEL: warning
+  DB_CONNECTION: pgsql
+  DB_HOST: solidtime-db
+  DB_PORT: "5432"
+  DB_DATABASE: solidtime
+  DB_USERNAME: solidtime
+  DB_PASSWORD: ${SOLIDTIME_DB_PASSWORD}
+  QUEUE_CONNECTION: database
+  FILESYSTEM_DISK: local
+  PUBLIC_FILESYSTEM_DISK: public
+  # PDF exports of reports.
+  GOTENBERG_URL: http://solidtime-gotenberg:3000
+  # `log` writes mails to the container log instead of sending them. Set SOLIDTIME_MAIL_MAILER=smtp
+  # and the SMTP values to send real mail.
+  MAIL_MAILER: ${SOLIDTIME_MAIL_MAILER:-log}
+  MAIL_HOST: ${SOLIDTIME_MAIL_HOST:-}
+  MAIL_PORT: ${SOLIDTIME_MAIL_PORT:-587}
+  MAIL_ENCRYPTION: ${SOLIDTIME_MAIL_ENCRYPTION:-tls}
+  MAIL_USERNAME: ${SOLIDTIME_MAIL_USERNAME:-}
+  MAIL_PASSWORD: ${SOLIDTIME_MAIL_PASSWORD:-}
+  MAIL_FROM_ADDRESS: ${SOLIDTIME_MAIL_FROM_ADDRESS:-noreply@${DOMAIN}}
+  MAIL_FROM_NAME: solidtime
+
+services:
+  solidtime-db:
+    container_name: hl-solidtime-db
+    image: postgres:${SOLIDTIME_DB_IMAGE_TAG:-18-alpine}
+    restart: unless-stopped
+    environment:
+      - POSTGRES_DB=solidtime
+      - POSTGRES_USER=solidtime
+      - POSTGRES_PASSWORD=${SOLIDTIME_DB_PASSWORD}
+    volumes:
+      - ${VOLUMES_PATH}/solidtime/postgres:/var/lib/postgresql:z
+    networks:
+      - solidtime
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U solidtime -d solidtime"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: "0.5"
+
+  # Renders the PDF export of reports. Its fonts come from the internet, which this network has no
+  # route to, so PDFs use the fallback font.
+  solidtime-gotenberg:
+    container_name: hl-solidtime-gotenberg
+    image: gotenberg/gotenberg:${SOLIDTIME_GOTENBERG_IMAGE_TAG:-8}
+    restart: unless-stopped
+    networks:
+      - solidtime
+    healthcheck:
+      test: ["CMD", "curl", "--silent", "--fail", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: "1"
+    security_opt:
+      - no-new-privileges:true
+
+  # solidtime - time tracker with its own sign-in, used by the web app and the desktop app.
+  # https://www.solidtime.io
+  solidtime:
+    container_name: hl-solidtime
+    image: solidtime/solidtime:${SOLIDTIME_IMAGE_TAG:-latest}
+    # The image's files belong to uid 1000; +meta.ts gives the storage folder to the same user.
+    user: "1000:1000"
+    restart: unless-stopped
+    # A fresh storage folder is empty: create the folders Laravel writes to, and the OAuth key pair
+    # the desktop app's sign-in needs (Passport reads storage/oauth-*.key). Then the image's own
+    # start script, which runs the migrations (AUTO_DB_MIGRATE) and the web server.
+    entrypoint:
+      - sh
+      - -c
+      - |
+          mkdir -p storage/app/public storage/framework/cache/data storage/framework/sessions storage/framework/views storage/logs
+          [ -f storage/oauth-private.key ] || php artisan passport:keys
+          exec start-container
+    environment:
+      <<: *solidtime-environment
+      CONTAINER_MODE: http
+      AUTO_DB_MIGRATE: "true"
+    volumes:
+      - ${VOLUMES_PATH}/solidtime/storage:/var/www/html/storage:z
+    depends_on:
+      solidtime-db:
+        condition: service_healthy
+      solidtime-gotenberg:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "http://localhost:8000/health-check/up"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 120s
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: "1"
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - proxy
+      - solidtime
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=proxy"
+      - "traefik.http.services.hl-solidtime.loadbalancer.server.port=8000"
+      - "traefik.http.routers.hl-solidtime.rule=Host(`${SOLIDTIME_DOMAIN:-time.${DOMAIN}}`)"
+      - "traefik.http.routers.hl-solidtime.middlewares=frame-deny@file,robots-deny@file"
+      - "traefik.http.routers.hl-solidtime.entrypoints=websecure"
+      - "traefik.http.routers.hl-solidtime.tls=true"
+      - "traefik.http.routers.hl-solidtime.tls.certresolver=myresolver"
+
+  solidtime-scheduler:
+    container_name: hl-solidtime-scheduler
+    image: solidtime/solidtime:${SOLIDTIME_IMAGE_TAG:-latest}
+    user: "1000:1000"
+    restart: unless-stopped
+    environment:
+      <<: *solidtime-environment
+      CONTAINER_MODE: scheduler
+      # Off: the daily usage report and update check sent to app.solidtime.io.
+      SCHEDULING_TASK_SELF_HOSTING_TELEMETRY: "false"
+      SCHEDULING_TASK_SELF_HOSTING_CHECK_FOR_UPDATE: "false"
+    volumes:
+      - ${VOLUMES_PATH}/solidtime/storage:/var/www/html/storage:z
+    # The web app creates the storage folders and runs the migrations first.
+    depends_on:
+      solidtime:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "healthcheck"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: "0.25"
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - solidtime
+      - solidtime-egress
+
+  solidtime-queue:
+    container_name: hl-solidtime-queue
+    image: solidtime/solidtime:${SOLIDTIME_IMAGE_TAG:-latest}
+    user: "1000:1000"
+    restart: unless-stopped
+    environment:
+      <<: *solidtime-environment
+      CONTAINER_MODE: worker
+      WORKER_COMMAND: php /var/www/html/artisan queue:work
+    volumes:
+      - ${VOLUMES_PATH}/solidtime/storage:/var/www/html/storage:z
+    depends_on:
+      solidtime:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "healthcheck"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: "0.5"
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - solidtime
+      - solidtime-egress

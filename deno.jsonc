@@ -245,6 +245,8 @@
       "!stacks/gitea/public/robots.txt",
       "!stacks/traggo/+meta.ts",
       "!stacks/traggo/compose.yml",
+      "!stacks/solidtime/+meta.ts",
+      "!stacks/solidtime/compose.yml",
       "!stacks/docker-registry/+meta.ts",
       "!stacks/docker-registry/compose.yml",
       "!stacks/docker-registry/before.deploy.ts",
