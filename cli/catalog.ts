@@ -63,6 +63,7 @@ import victoriaMetrics from "../stacks/victoria-metrics/+meta.ts"
 import akaunting from "../stacks/akaunting/+meta.ts"
 import gitea from "../stacks/gitea/+meta.ts"
 import traggo from "../stacks/traggo/+meta.ts"
+import solidtime from "../stacks/solidtime/+meta.ts"
 import dockerRegistry from "../stacks/docker-registry/+meta.ts"
 import dockerSockProxy from "../stacks/docker-sock-proxy/+meta.ts"
 import caldavMcp from "../stacks/caldav-mcp/+meta.ts"
@@ -116,6 +117,7 @@ const STACK_META: Record<string, StackMeta> = {
   akaunting,
   gitea,
   traggo,
+  solidtime,
   "docker-registry": dockerRegistry,
   "docker-sock-proxy": dockerSockProxy,
   "caldav-mcp": caldavMcp,

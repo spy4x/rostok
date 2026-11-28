@@ -134,6 +134,9 @@ export const SHIPPED_STACK_FILES: Record<string, readonly string[]> = {
   traggo: [
     "compose.yml",
   ],
+  solidtime: [
+    "compose.yml",
+  ],
   "docker-registry": [
     "compose.yml",
     "before.deploy.ts",

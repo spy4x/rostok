@@ -18,6 +18,10 @@ const DERIVED = new Map([
   // Immich requires the machine-learning image on the same release as the server, so it reads
   // the server's IMMICH_VERSION with the `-cuda` suffix instead of a variable of its own.
   ["immich/machine-learning", "${IMMICH_VERSION:-release}-cuda"],
+  // solidtime runs one image three times (web, scheduler, queue), and all three must be the same
+  // release.
+  ["solidtime/solidtime-scheduler", "${SOLIDTIME_IMAGE_TAG:-latest}"],
+  ["solidtime/solidtime-queue", "${SOLIDTIME_IMAGE_TAG:-latest}"],
 ])
 
 interface Service {
