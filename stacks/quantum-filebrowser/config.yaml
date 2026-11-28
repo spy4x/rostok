@@ -1,0 +1,28 @@
+# FileBrowser Quantum settings, mounted read-only by compose.yml.
+# Reference: https://filebrowserquantum.com/en/docs/configuration/
+#
+# No secret lives here: the admin password reaches the app as
+# FILEBROWSER_ADMIN_PASSWORD from the server's .env.
+http:
+  port: 80
+server:
+  # No calls home to check for a newer release.
+  disableUpdateCheck: true
+  # Thumbnails and archive downloads; its own folder, left out of the backup.
+  cacheDir: /home/filebrowser/cache
+  cacheDirCleanup: true
+  database:
+    path: /home/filebrowser/data/database.sqlite
+  # One source over the folders compose mounts under /srv, the same tree the
+  # old filebrowser stack showed.
+  sources:
+    - path: /srv
+      name: files
+auth:
+  methods:
+    # Every request needs a signed-in user; nobody can create an account.
+    noauth: false
+    password:
+      enabled: true
+      adminUsername: admin
+      signup: false

@@ -1,0 +1,56 @@
+networks:
+  proxy:
+    external: true
+  default:
+    external: true
+    name: proxy
+
+services:
+  quantum-filebrowser:
+    container_name: hl-quantum-filebrowser
+    image: ghcr.io/gtsteffaniak/filebrowser:${QUANTUM_FILEBROWSER_IMAGE_TAG:-stable}
+    healthcheck:
+      test: ["CMD", "curl", "-fs", "http://localhost:80/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    user: "${PUID:-1000}:${PGID:-1000}"
+    environment:
+      - TZ=${TIMEZONE}
+      - FILEBROWSER_CONFIG=/home/filebrowser/config.yaml
+      # Applied on every start: the admin's password always equals this value.
+      - FILEBROWSER_ADMIN_PASSWORD=${QUANTUM_FILEBROWSER_ADMIN_PASSWORD:?QUANTUM_FILEBROWSER_ADMIN_PASSWORD is not set}
+    volumes:
+      # ./config.yaml resolves relative to this compose file's directory.
+      - ./config.yaml:/home/filebrowser/config.yaml:ro,z
+      - ${VOLUMES_PATH}/quantum-filebrowser/data:/home/filebrowser/data:z
+      - ${VOLUMES_PATH}/quantum-filebrowser/cache:/home/filebrowser/cache:z
+      # The same folders the filebrowser stack mounts, so the tree stays the same.
+      - ${PATH_MEDIA}:/srv/media:z
+      - ${PATH_VIDEOS}:/srv/videos:z
+      - ${PATH_MUSIC}:/srv/music:z
+      - ${PATH_BOOKS}:/srv/books:z
+      - ${PATH_SYNC}:/srv/sync:z
+      - ${PATH_MOVIES}:/srv/movies:z
+      - ${PATH_SERIES}:/srv/series:z
+      - ${PATH_OTHER}:/srv/other:z
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: "1.0"
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - proxy
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=proxy"
+      - "traefik.http.services.hl-quantum-filebrowser.loadbalancer.server.port=80"
+      - "traefik.http.routers.hl-quantum-filebrowser.rule=Host(`${QUANTUM_FILEBROWSER_DOMAIN}`)"
+      - "traefik.http.routers.hl-quantum-filebrowser.middlewares=frame-deny@file,robots-deny@file"
+      - "traefik.http.routers.hl-quantum-filebrowser.entrypoints=websecure"
+      - "traefik.http.routers.hl-quantum-filebrowser.tls=true"
+      - "traefik.http.routers.hl-quantum-filebrowser.tls.certresolver=myresolver"
